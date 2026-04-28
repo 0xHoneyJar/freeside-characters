@@ -1,15 +1,16 @@
 /**
- * Discord embed builder for per-zone weekly digests.
+ * Discord post payload builder — varies shape by post type.
  *
- * Per persona "Discord-as-Material" rules:
- * - ALWAYS populate `message.content` as graceful fallback
- * - Sidebar color carries direction (or zone-flavored)
- * - Footer in subtext for muted metadata
- * - One embed per post (lean, no thumbnails, no author)
+ * digest / weaver / callout    → rich embed (sidebar color, structured)
+ * micro / lore_drop / question → plain message.content (no embed)
+ *
+ * For embedded types: ALWAYS populate `message.content` as graceful
+ * fallback for users with embeds disabled.
  */
 
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR } from '../score/types.ts';
+import { POST_TYPE_SPECS, type PostType } from '../llm/post-types.ts';
 import { escapeDiscordMarkdown } from './sanitize.ts';
 
 const DIRECTION_COLORS = {
@@ -19,12 +20,11 @@ const DIRECTION_COLORS = {
   yellow: 0xf39c12,
 } as const;
 
-/** Per-zone signature colors (used when direction is flat/unknown) */
 const ZONE_COLORS: Record<ZoneId, number> = {
-  stonehenge: 0x808890, // weathered stone gray
-  'bear-cave': 0x9b6a3f, // warm cave brown
-  'el-dorado': 0xc9a44c, // muted gold
-  'owsley-lab': 0x6f4ea1, // owsley purple (acid-house lineage)
+  stonehenge: 0x808890,
+  'bear-cave': 0x9b6a3f,
+  'el-dorado': 0xc9a44c,
+  'owsley-lab': 0x6f4ea1,
 };
 
 export interface DigestPayload {
@@ -39,43 +39,68 @@ export interface DiscordEmbed {
   footer?: { text: string };
 }
 
-export function buildZoneEmbedPayload(
+export function buildPostPayload(
   digest: ZoneDigest,
   voice: string,
+  postType: PostType,
 ): DigestPayload {
+  const spec = POST_TYPE_SPECS[postType];
+  const sanitized = escapeDiscordMarkdown(voice);
+
+  if (!spec.useEmbed) {
+    // Plain content for micro / lore_drop / question — lightweight
+    return {
+      content: sanitized,
+      embeds: [],
+    };
+  }
+
+  // Embedded types: digest / weaver / callout
   const flavor = ZONE_FLAVOR[digest.zone];
   const stats = digest.raw_stats;
 
-  // Direction inferred from spotlight + climbers
   const hasSpike = stats.spotlight !== null || stats.factor_trends.some((t) => t.multiplier > 2);
   const isThin = !digest.narrative && digest.narrative_error !== null;
   const hasDrops = stats.rank_changes.dropped.length > 0;
 
-  const color = isThin
-    ? DIRECTION_COLORS.yellow
-    : hasSpike
-      ? DIRECTION_COLORS.green
-      : hasDrops && stats.rank_changes.climbed.length === 0
-        ? DIRECTION_COLORS.red
-        : ZONE_COLORS[digest.zone];
+  const color =
+    postType === 'callout'
+      ? DIRECTION_COLORS.red // callout always red
+      : isThin
+        ? DIRECTION_COLORS.yellow
+        : hasSpike
+          ? DIRECTION_COLORS.green
+          : hasDrops && stats.rank_changes.climbed.length === 0
+            ? DIRECTION_COLORS.red
+            : ZONE_COLORS[digest.zone];
 
-  // Plain-text fallback above embed (graceful degradation)
-  const fallback = `${flavor.emoji} ${flavor.name} · ${stats.total_events} events · ${stats.active_wallets} wallets`;
-
-  // Sanitize the LLM's voice output (escape underscores in identifiers etc.)
-  const description = escapeDiscordMarkdown(voice);
-
-  // Footer carries deterministic provenance
-  const footerText = `computed at ${digest.computed_at} · score-mcp · zone:${digest.zone}`;
+  const fallback = buildFallback(digest, postType);
+  const footerText = `${postType} · computed at ${digest.computed_at} · zone:${digest.zone}`;
 
   return {
     content: fallback,
     embeds: [
       {
         color,
-        description,
+        description: sanitized,
         footer: { text: footerText },
       },
     ],
   };
+}
+
+function buildFallback(digest: ZoneDigest, postType: PostType): string {
+  const flavor = ZONE_FLAVOR[digest.zone];
+  const stats = digest.raw_stats;
+
+  switch (postType) {
+    case 'digest':
+      return `${flavor.emoji} ${flavor.name} · ${stats.total_events} events · ${stats.active_wallets} wallets`;
+    case 'weaver':
+      return `${flavor.emoji} ${flavor.name} · cross-zone weave 🪡`;
+    case 'callout':
+      return `🚨 ${flavor.name} · anomaly`;
+    default:
+      return `${flavor.emoji} ${flavor.name}`;
+  }
 }

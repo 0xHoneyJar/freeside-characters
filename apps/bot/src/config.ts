@@ -2,13 +2,12 @@ import { z } from 'zod';
 import type { ZoneId } from './score/types.ts';
 
 const ConfigSchema = z.object({
-  // ─── stub mode (data side; LLM side flips on key presence) ────────────
+  // ─── stub mode ────────────────────────────────────────────────────────
   STUB_MODE: z.string().default('true').transform((v) => v === 'true'),
 
-  // ─── score-mcp (zerker — production path) ─────────────────────────────
+  // ─── score-mcp (zerker — production data path) ────────────────────────
   SCORE_API_URL: z.string().url().default('https://score-api-production.up.railway.app'),
   SCORE_API_KEY: z.string().optional(),
-  /** X-MCP-Key header for /mcp endpoint (when score-mcp deploys to prod). */
   MCP_KEY: z.string().optional(),
 
   // ─── freeside agent-gateway (jani — production LLM path) ──────────────
@@ -16,14 +15,12 @@ const ConfigSchema = z.object({
   FREESIDE_API_KEY: z.string().optional(),
   FREESIDE_AGENT_MODEL: z.enum(['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect']).default('reasoning'),
 
-  // ─── anthropic-direct (V0 testing — bypasses freeside) ────────────────
+  // ─── anthropic-direct (V0 LLM testing) ────────────────────────────────
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),
 
   // ─── discord delivery — bot client OR webhook fallback ────────────────
-  /** Bot user token from Discord Developer Portal. When set, posts via Gateway client. */
   DISCORD_BOT_TOKEN: z.string().optional(),
-  /** Webhook URL (V0 testing path; used when bot token unset). */
   DISCORD_WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
 
   // ─── per-zone channel mapping (used when DISCORD_BOT_TOKEN is set) ────
@@ -32,12 +29,32 @@ const ConfigSchema = z.object({
   DISCORD_CHANNEL_EL_DORADO: z.string().optional(),
   DISCORD_CHANNEL_OWSLEY_LAB: z.string().optional(),
 
-  // ─── target ───────────────────────────────────────────────────────────
-  /** When ZONES is unset, fires all 4 zones. Otherwise comma-separated subset. */
+  // ─── target / cadence ─────────────────────────────────────────────────
   ZONES: z.string().optional(),
+  /** One-shot post-type override (used by digest-once CLI; ignored by scheduler). */
+  POST_TYPE: z.enum(['digest', 'micro', 'weaver', 'lore_drop', 'question', 'callout']).optional(),
+  /** When true, digest-once picks a random post type per zone instead of using POST_TYPE. */
+  MIX: z.string().default('false').transform((v) => v === 'true'),
+
+  // ─── digest backbone (weekly Sunday) ──────────────────────────────────
   DIGEST_CADENCE: z.enum(['weekly', 'daily', 'manual']).default('weekly'),
   DIGEST_DAY: z.enum(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']).default('sunday'),
   DIGEST_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(0),
+
+  // ─── pop-in random cadence (the arcade move) ──────────────────────────
+  /** When true, scheduler fires random pop-ins between digests. */
+  POP_IN_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  /** Hours between pop-in checks (each check rolls a die per zone). */
+  POP_IN_INTERVAL_HOURS: z.coerce.number().int().min(1).max(168).default(6),
+  /** Per-zone per-tick probability (0..1) of firing a pop-in. */
+  POP_IN_PROBABILITY: z.coerce.number().min(0).max(1).default(0.3),
+
+  // ─── weaver weekly mid-week (cross-zone) ──────────────────────────────
+  WEAVER_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  WEAVER_DAY: z.enum(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']).default('wednesday'),
+  WEAVER_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(12),
+  /** Where weaver posts land — usually stonehenge (cross-zone observatory). */
+  WEAVER_PRIMARY_ZONE: z.enum(['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab']).default('stonehenge'),
 
   // ─── meta ─────────────────────────────────────────────────────────────
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

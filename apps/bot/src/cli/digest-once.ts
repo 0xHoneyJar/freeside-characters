@@ -1,8 +1,10 @@
 /**
- * digest-once — fire one full sweep (all configured zones) and exit.
+ * digest-once — fire one sweep and exit.
  *
- * Useful for: local validation, manual cadence runs, CI smoke tests,
- * external cron triggers (Trigger.dev, GHA workflow_dispatch, EventBridge).
+ * Modes:
+ *   default                              → digest type for each zone
+ *   POST_TYPE=micro|weaver|lore_drop|... → that type for each zone
+ *   MIX=true                             → random non-digest type per zone (the arcade move)
  *
  * Filter zones via the ZONES env var:
  *   ZONES=stonehenge bun run digest:once
@@ -10,14 +12,28 @@
  */
 
 import { loadConfig, isDryRun, selectedZones } from '../config.ts';
-import { composeZoneDigest } from '../llm/digest.ts';
+import { composeZonePost } from '../llm/composer.ts';
 import { deliverZoneDigest } from '../discord/post.ts';
 import { ZONE_FLAVOR } from '../score/types.ts';
 import { getBotClient, shutdownClient } from '../discord/client.ts';
+import type { PostType } from '../llm/post-types.ts';
+import { POST_TYPE_SPECS } from '../llm/post-types.ts';
+
+const POP_IN_TYPES: PostType[] = ['micro', 'lore_drop', 'question', 'callout'];
+
+function pickType(config: ReturnType<typeof loadConfig>): PostType | 'mix' {
+  if (config.MIX) return 'mix';
+  return config.POST_TYPE ?? 'digest';
+}
+
+function rollMixType(): PostType {
+  return POP_IN_TYPES[Math.floor(Math.random() * POP_IN_TYPES.length)] ?? 'micro';
+}
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const zones = selectedZones(config);
+  const typeMode = pickType(config);
 
   const llmMode = config.ANTHROPIC_API_KEY
     ? `anthropic-direct (${config.ANTHROPIC_MODEL})`
@@ -35,16 +51,14 @@ async function main(): Promise<void> {
 
   console.log('ruggy: digest-once · firing immediately');
   console.log(`data: ${config.STUB_MODE ? 'STUB' : 'LIVE'} · llm: ${llmMode} · delivery: ${deliveryMode}`);
+  console.log(`mode: ${typeMode === 'mix' ? 'MIX (random non-digest per zone)' : typeMode}`);
   console.log(`zones: ${zones.map((z) => `${ZONE_FLAVOR[z].emoji} ${z}`).join(' · ')}`);
   console.log();
 
-  // Connect bot if token set
   if (config.DISCORD_BOT_TOKEN) {
     try {
       const client = await getBotClient(config);
-      if (client) {
-        console.log(`bot: connected as ${client.user?.tag ?? 'unknown'}`);
-      }
+      if (client) console.log(`bot: connected as ${client.user?.tag ?? 'unknown'}`);
     } catch (err) {
       console.error('bot client failed:', err);
       process.exit(1);
@@ -54,32 +68,40 @@ async function main(): Promise<void> {
   let totalMs = 0;
   let posted = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const zone of zones) {
+    const postType = typeMode === 'mix' ? rollMixType() : typeMode;
     const t0 = Date.now();
     try {
-      const { digest, payload } = await composeZoneDigest(config, zone);
+      const result = await composeZonePost(config, zone, postType);
+      if (!result) {
+        skipped++;
+        console.log(`[${zone}/${postType}] skipped (data didn't fit ${POST_TYPE_SPECS[postType].description})`);
+        continue;
+      }
+
       const compMs = Date.now() - t0;
       console.log(
-        `\n[${zone}] composed in ${compMs}ms · ${digest.raw_stats.total_events} events · ${digest.raw_stats.active_wallets} wallets · narrative ${digest.narrative ? 'present' : 'null'}`,
+        `\n[${zone}/${postType}] composed in ${compMs}ms · ${result.digest.raw_stats.total_events} events · ${result.digest.raw_stats.active_wallets} wallets`,
       );
 
-      const result = await deliverZoneDigest(config, zone, payload);
-      if (result.posted) {
+      const delivery = await deliverZoneDigest(config, zone, result.payload);
+      if (delivery.posted) {
         posted++;
-        console.log(`[${zone}] posted via ${result.via}` + (result.messageId ? ` (msg ${result.messageId})` : ''));
-      } else if (result.dryRun) {
-        console.log(`[${zone}] dry-run (${result.via})`);
+        console.log(`[${zone}/${postType}] posted via ${delivery.via}` + (delivery.messageId ? ` (msg ${delivery.messageId})` : ''));
+      } else if (delivery.dryRun) {
+        console.log(`[${zone}/${postType}] dry-run (${delivery.via})`);
       }
 
       totalMs += Date.now() - t0;
     } catch (err) {
       failed++;
-      console.error(`[${zone}] failed:`, err);
+      console.error(`[${zone}/${postType}] failed:`, err);
     }
   }
 
-  console.log(`\nruggy: ${zones.length} zones · ${posted} posted · ${failed} failed · ${totalMs}ms total`);
+  console.log(`\nruggy: ${zones.length} zones · ${posted} posted · ${failed} failed · ${skipped} skipped · ${totalMs}ms total`);
   await shutdownClient();
 }
 

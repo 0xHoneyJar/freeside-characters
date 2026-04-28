@@ -1,11 +1,11 @@
 /**
  * Persona loader — extracts Ruggy's system prompt from the canonical
- * persona doc at `apps/bot/src/persona/ruggy.md`, substitutes the
- * runtime placeholders, and returns the system + user prompt pair.
+ * persona doc, substitutes runtime placeholders, returns prompt pair.
  *
  * Placeholders the persona doc uses:
- *   {{CODEX_PRELUDE}}       — Mibera Codex llms.txt (loaded at runtime)
+ *   {{CODEX_PRELUDE}}       — Mibera Codex llms.txt
  *   {{ZONE_ID}}             — current zone (stonehenge / bear-cave / …)
+ *   {{POST_TYPE}}           — current post type (digest / micro / weaver / …)
  *   {{ZONE_DIGEST_JSON}}    — score-mcp ZoneDigest payload
  */
 
@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import type { ZoneId } from '../score/types.ts';
 import { loadCodexPrelude } from '../score/codex-context.ts';
+import type { PostType } from '../llm/post-types.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PERSONA_PATH = resolve(__dirname, 'ruggy.md');
@@ -47,19 +48,12 @@ export function loadSystemPrompt(): string {
 
 export interface BuildPromptArgs {
   zoneId: ZoneId;
+  postType: PostType;
   zoneDigestJson: string;
+  /** Optional supplementary context (used by weaver to include other zones' digests) */
+  supplement?: string;
 }
 
-/**
- * Compose the system + user prompt pair for an LLM call.
- *
- * The placeholders are split between the two roles intentionally:
- *   • System prompt: identity + voice + zone awareness + codex prelude
- *   • User message: the runtime ZoneDigest payload
- *
- * This lets the system prompt stay cacheable while the user message
- * varies per call.
- */
 export function buildPromptPair(args: BuildPromptArgs): {
   systemPrompt: string;
   userMessage: string;
@@ -67,8 +61,6 @@ export function buildPromptPair(args: BuildPromptArgs): {
   const template = loadTemplate();
   const codex = loadCodexPrelude();
 
-  // Substitute zone + codex into the system part. Split at the INPUT PAYLOAD
-  // marker so the runtime data goes into the user message.
   const inputPayloadMarker = '═══ INPUT PAYLOAD ═══';
   const idx = template.indexOf(inputPayloadMarker);
   if (idx === -1) {
@@ -78,14 +70,20 @@ export function buildPromptPair(args: BuildPromptArgs): {
   const systemHalf = template
     .slice(0, idx)
     .replace(/\{\{ZONE_ID\}\}/g, args.zoneId)
+    .replace(/\{\{POST_TYPE\}\}/g, args.postType)
     .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
     .trimEnd();
 
-  const userHalf = template
+  const userHalfBase = template
     .slice(idx)
     .replace(/\{\{ZONE_ID\}\}/g, args.zoneId)
+    .replace(/\{\{POST_TYPE\}\}/g, args.postType)
     .replace(/\{\{ZONE_DIGEST_JSON\}\}/g, args.zoneDigestJson)
     .trim();
+
+  const userHalf = args.supplement
+    ? `${userHalfBase}\n\n═══ SUPPLEMENTARY CONTEXT ═══\n${args.supplement}`
+    : userHalfBase;
 
   return {
     systemPrompt: systemHalf,

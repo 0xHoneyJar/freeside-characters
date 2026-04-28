@@ -1,16 +1,25 @@
 /**
- * Cron scheduler — fires all configured zones per cadence.
+ * Cron scheduler — three concurrent cadences.
  *
- * Default: Sunday UTC midnight (`0 0 * * 0`). Configurable via env:
- *   DIGEST_DAY=sunday|monday|...|saturday
- *   DIGEST_HOUR_UTC=0..23
- *   DIGEST_CADENCE=weekly|daily|manual
+ *   1. Weekly digest backbone (Sunday UTC midnight default) — fires
+ *      one digest per zone. Per persona "the keeper move" — what
+ *      accumulated since last check.
  *
- * `onFire` is invoked once per scheduled tick — the caller iterates zones.
+ *   2. Pop-in random cadence (every N hours; per-zone die-roll) — fires
+ *      0..1 non-digest pop-in per zone per tick. Per persona "the arcade
+ *      move" — surprise > schedule.
+ *
+ *   3. Weaver weekly mid-week (Wednesday noon UTC default) — fires one
+ *      cross-zone weaver post in primary zone (default stonehenge). Per
+ *      persona "the weaver move" — connections nobody asked for.
+ *
+ * All three are independent; can be enabled/disabled separately.
  */
 
 import cron from 'node-cron';
 import type { Config } from '../config.ts';
+import type { ZoneId } from '../score/types.ts';
+import type { PostType } from '../llm/post-types.ts';
 
 const DAY_TO_CRON: Record<string, number> = {
   sunday: 0,
@@ -22,48 +31,109 @@ const DAY_TO_CRON: Record<string, number> = {
   saturday: 6,
 };
 
-export interface ScheduleHandle {
-  expression: string;
-  task: cron.ScheduledTask;
+export interface FireRequest {
+  zone: ZoneId;
+  postType: PostType;
+}
+
+export interface SchedulerHandles {
+  digestExpression?: string;
+  popInExpression?: string;
+  weaverExpression?: string;
+  tasks: cron.ScheduledTask[];
   stop: () => void;
 }
 
-export function scheduleDigest(
-  config: Config,
-  onFire: () => Promise<void>,
-): ScheduleHandle | null {
-  if (config.DIGEST_CADENCE === 'manual') {
-    console.log('ruggy: cadence=manual — no cron scheduled. trigger via `bun run digest:once`.');
-    return null;
-  }
+export interface ScheduleArgs {
+  config: Config;
+  zones: ZoneId[];
+  /** Called for each zone+postType the scheduler decides to fire. */
+  onFire: (req: FireRequest) => Promise<void>;
+}
 
-  const hour = config.DIGEST_HOUR_UTC;
-  const dow = DAY_TO_CRON[config.DIGEST_DAY] ?? 0;
-
-  const expression =
-    config.DIGEST_CADENCE === 'daily'
-      ? `0 ${hour} * * *`
-      : `0 ${hour} * * ${dow}`;
-
-  if (!cron.validate(expression)) {
-    throw new Error(`invalid cron expression: ${expression}`);
-  }
-
-  const task = cron.schedule(
-    expression,
-    async () => {
-      try {
-        await onFire();
-      } catch (err) {
-        console.error('ruggy: digest fire failed:', err);
-      }
-    },
-    { timezone: 'UTC' },
-  );
-
-  return {
-    expression,
-    task,
-    stop: () => task.stop(),
+export function schedule(args: ScheduleArgs): SchedulerHandles {
+  const { config, zones, onFire } = args;
+  const tasks: cron.ScheduledTask[] = [];
+  const handles: SchedulerHandles = {
+    tasks,
+    stop: () => tasks.forEach((t) => t.stop()),
   };
+
+  // ─── 1. Weekly digest ───────────────────────────────────────────────
+  if (config.DIGEST_CADENCE !== 'manual') {
+    const hour = config.DIGEST_HOUR_UTC;
+    const dow = DAY_TO_CRON[config.DIGEST_DAY] ?? 0;
+    const expr =
+      config.DIGEST_CADENCE === 'daily' ? `0 ${hour} * * *` : `0 ${hour} * * ${dow}`;
+    if (!cron.validate(expr)) throw new Error(`invalid digest cron: ${expr}`);
+
+    handles.digestExpression = expr;
+    tasks.push(
+      cron.schedule(
+        expr,
+        async () => {
+          for (const zone of zones) {
+            try {
+              await onFire({ zone, postType: 'digest' });
+            } catch (err) {
+              console.error(`scheduler: digest ${zone} failed:`, err);
+            }
+          }
+        },
+        { timezone: 'UTC' },
+      ),
+    );
+  }
+
+  // ─── 2. Pop-in random cadence ───────────────────────────────────────
+  if (config.POP_IN_ENABLED) {
+    const interval = Math.max(1, config.POP_IN_INTERVAL_HOURS);
+    const expr = `0 */${interval} * * *`; // every N hours on the hour
+
+    handles.popInExpression = expr;
+    tasks.push(
+      cron.schedule(
+        expr,
+        async () => {
+          for (const zone of zones) {
+            // Per-zone die-roll
+            if (Math.random() > config.POP_IN_PROBABILITY) continue;
+            // Random non-digest, non-weaver type for pop-ins
+            const popInTypes: PostType[] = ['micro', 'lore_drop', 'question'];
+            const postType = popInTypes[Math.floor(Math.random() * popInTypes.length)]!;
+            try {
+              await onFire({ zone, postType });
+            } catch (err) {
+              console.error(`scheduler: pop-in ${zone}/${postType} failed:`, err);
+            }
+          }
+        },
+        { timezone: 'UTC' },
+      ),
+    );
+  }
+
+  // ─── 3. Weaver weekly mid-week ──────────────────────────────────────
+  if (config.WEAVER_ENABLED) {
+    const hour = config.WEAVER_HOUR_UTC;
+    const dow = DAY_TO_CRON[config.WEAVER_DAY] ?? 3;
+    const expr = `0 ${hour} * * ${dow}`;
+
+    handles.weaverExpression = expr;
+    tasks.push(
+      cron.schedule(
+        expr,
+        async () => {
+          try {
+            await onFire({ zone: config.WEAVER_PRIMARY_ZONE, postType: 'weaver' });
+          } catch (err) {
+            console.error('scheduler: weaver failed:', err);
+          }
+        },
+        { timezone: 'UTC' },
+      ),
+    );
+  }
+
+  return handles;
 }
