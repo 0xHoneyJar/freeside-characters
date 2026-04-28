@@ -26,7 +26,8 @@ async function main(): Promise<void> {
   const config = loadConfig();
 
   console.log(banner);
-  console.log(`mode:           ${config.STUB_MODE ? 'STUB (synthetic data + canned LLM)' : 'LIVE (real score-api + freeside)'}`);
+  console.log(`data:           ${config.STUB_MODE ? 'STUB (synthetic ActivitySummary)' : 'LIVE (score-api)'}`);
+  console.log(`llm:            ${describeLlmMode(config)}`);
   console.log(`target:         ${config.WORLD_ID} · ${config.APP_ID}`);
   console.log(`cadence:        ${config.DIGEST_CADENCE}` + (config.DIGEST_CADENCE !== 'manual' ? ` · ${config.DIGEST_DAY} ${String(config.DIGEST_HOUR_UTC).padStart(2, '0')}:00 UTC` : ''));
   console.log(`delivery:       ${isDryRun(config) ? 'DRY-RUN (stdout only)' : 'WEBHOOK (' + config.DISCORD_WEBHOOK_URL!.slice(0, 50) + '...)'}`);
@@ -82,6 +83,13 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+function describeLlmMode(config: ReturnType<typeof loadConfig>): string {
+  if (config.ANTHROPIC_API_KEY) return `anthropic-direct (${config.ANTHROPIC_MODEL})`;
+  if (config.STUB_MODE) return 'STUB (canned digest)';
+  if (config.FREESIDE_API_KEY) return `freeside agent-gw (${config.FREESIDE_AGENT_MODEL})`;
+  return 'UNCONFIGURED';
 }
 
 main().catch((err) => {

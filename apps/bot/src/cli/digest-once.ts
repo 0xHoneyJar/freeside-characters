@@ -18,8 +18,16 @@ import { deliverDigest } from '../discord/webhook.ts';
 async function main(): Promise<void> {
   const config = loadConfig();
 
+  const llmMode = config.ANTHROPIC_API_KEY
+    ? `anthropic-direct (${config.ANTHROPIC_MODEL})`
+    : config.STUB_MODE
+      ? 'STUB (canned)'
+      : config.FREESIDE_API_KEY
+        ? `freeside (${config.FREESIDE_AGENT_MODEL})`
+        : 'UNCONFIGURED';
+
   console.log('ruggy: digest-once · firing immediately');
-  console.log(`mode: ${config.STUB_MODE ? 'STUB' : 'LIVE'} · delivery: ${isDryRun(config) ? 'DRY-RUN' : 'WEBHOOK'}`);
+  console.log(`data: ${config.STUB_MODE ? 'STUB' : 'LIVE'} · llm: ${llmMode} · delivery: ${isDryRun(config) ? 'DRY-RUN' : 'WEBHOOK'}`);
 
   const t0 = Date.now();
   const { summary, payload } = await composeDigest(config);

@@ -28,17 +28,25 @@ export interface InvokeResponse {
 }
 
 /**
- * Routing:
- *   STUB_MODE=true            → canned digest (default)
- *   ANTHROPIC_API_KEY set     → anthropic-direct (V0 testing path)
- *   FREESIDE_API_KEY set      → freeside agent-gateway (production)
+ * Routing (anthropic key takes priority — V0 testing pattern):
+ *
+ *   ANTHROPIC_API_KEY set   → anthropic-direct (V0 testing; works even with
+ *                              STUB_MODE=true so score stays stubbed)
+ *   STUB_MODE=true          → canned digest (default)
+ *   FREESIDE_API_KEY set    → freeside agent-gateway (production)
+ *
+ * Common combinations:
+ *   STUB_MODE=true,  ANTHROPIC_API_KEY set  → real voice · stub data (V0 voice test)
+ *   STUB_MODE=false, ANTHROPIC_API_KEY set  → real voice · real score-api data
+ *   STUB_MODE=false, FREESIDE_API_KEY set   → real voice via freeside (production)
+ *   STUB_MODE=true,  no keys                → all stub
  */
 export async function invoke(config: Config, req: InvokeRequest): Promise<InvokeResponse> {
-  if (config.STUB_MODE) {
-    return generateStubDigest(req);
-  }
   if (config.ANTHROPIC_API_KEY) {
     return invokeAnthropicDirect(config, req);
+  }
+  if (config.STUB_MODE) {
+    return generateStubDigest(req);
   }
   if (config.FREESIDE_API_KEY) {
     return invokeFreeside(config, req);
