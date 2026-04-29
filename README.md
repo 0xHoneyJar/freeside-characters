@@ -1,18 +1,27 @@
-# freeside-ruggy
+# freeside-characters (née freeside-ruggy)
 
-> persona-layer activity reporter for the honey jar ecosystem. ruggy watches mibera-dimensions through [score-mcp](#topology), reads it through the [mibera codex](https://github.com/0xHoneyJar/construct-mibera-codex), passes it through a tripartite construct stack ([rosenzu](#the-constructs) · [arneson](#the-constructs) · [cabal-gygax](#the-constructs)), and posts in voice to four festival-zone channels in the thj discord.
+> **branch state (2026-04-30):** `main` is the V0.5-E single-character runtime that ships to production THJ. The umbrella architecture described below — substrate at `packages/persona-engine/`, characters at `apps/character-<id>/`, civic-layer doctrine docs — lives on [`staging`](https://github.com/0xHoneyJar/freeside-characters/tree/staging) for V0.6+ work. promote when V0.6 ships.
+
+---
+
+
+> participation-agent umbrella for the honey jar ecosystem. **substrate** at `packages/persona-engine/` (system-agent layer — cron · delivery · MCP orchestration · score-mcp client). **characters** at `apps/character-<id>/` (participation-agent layer — markdown + JSON profiles). **bot** at `apps/bot/` (thin runtime that loads characters and dispatches through the substrate).
 >
-> *honey jar's bear. laid-back. groovy. been here since the og chat days. now also keeps an eye on midi.*
+> V0.6-A pulled the layers apart structurally per [Eileen's civic-layer doctrine](https://github.com/0xHoneyJar/freeside-characters/blob/staging/docs/CIVIC-LAYER.md): system agents (governors) and participation agents (speakers) must not blur. Boundary enforced via package imports + the `CharacterConfig` type contract. New characters land as folders, not forks.
+>
+> *Ruggy is the first character — honey jar's bear, laid-back, groovy, been here since the og chat days. Satoshi (Mibera ancestor, codex grail #4488 = Hermes) joins in V0.6-C.*
 
 ```
 ʕ •ᴥ•ʔ  stay groovy 🐻
 ```
 
+**See:** [`docs/CIVIC-LAYER.md`](https://github.com/0xHoneyJar/freeside-characters/blob/staging/docs/CIVIC-LAYER.md) · [`docs/CHARACTER-AUTHORING.md`](https://github.com/0xHoneyJar/freeside-characters/blob/staging/docs/CHARACTER-AUTHORING.md) · [`docs/MULTI-REGISTER.md`](https://github.com/0xHoneyJar/freeside-characters/blob/staging/docs/MULTI-REGISTER.md) · [`apps/character-ruggy/ledger.md`](https://github.com/0xHoneyJar/freeside-characters/blob/staging/apps/character-ruggy/ledger.md)
+
 ---
 
 ## what this is
 
-ruggy is a **character**, not a bot. been around since 2023 — `0xHoneyJar/ruggy-bot/index.js:92` is the og system prompt. this repo is one surface of him: the activity-reporting one, running on discord.
+ruggy is a **character**, not a bot. been around since 2023 — `0xHoneyJar/ruggy-bot/index.js:92` is the og system prompt. this repo is one surface of him: the activity-reporting one, running on discord. as of V0.6-A, the runtime that carries his voice is shared substrate; future characters (satoshi · …) plug into the same engine.
 
 ```
    signal  ──▶  lens stack  ──▶  surface

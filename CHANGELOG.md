@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.6.0-A] — 2026-04-29
+
+### Substrate extraction — civic-layer split
+
+Pulls the system-agent layer (cron, MCP orchestration, Discord delivery, score-mcp client,
+persona+exemplar loading) out of `apps/bot/src` into a dedicated workspace package
+`@freeside-characters/persona-engine`. Characters become participation-agent profiles
+under `apps/character-<id>/` (markdown + JSON only, no runtime code). The bot shrinks
+to a thin character-loader + dispatch entry.
+
+Honors Eileen's civic-layer doctrine (`agent-native-civic-architecture.md`,
+`puruhani-as-spine.md`): system agents (governors) and participation agents (speakers)
+must not blur. Boundary enforced via package imports, filesystem ownership, and the
+`CharacterConfig` type contract.
+
+### Added
+- `packages/persona-engine/` — substrate package with public API barrel (compose,
+  schedule, deliverZoneDigest, loadConfig + types). Cabal-gygax prompt genericized
+  (no longer references "ruggy" specifically).
+- `apps/character-ruggy/` — Ruggy's persona profile extracted as markdown + JSON.
+  Contains `character.json`, `persona.md` (was `ruggy.md`), `creative-direction.md`,
+  `exemplars/`, `ledger.md`, `README.md`.
+- `apps/bot/src/character-loader.ts` — filesystem reader. Reads `CHARACTERS` env
+  (default `ruggy`), parses `apps/character-<id>/character.json`, returns
+  `CharacterConfig[]` for substrate dispatch.
+- `docs/CIVIC-LAYER.md` — load-bearing structural doctrine with violation patterns.
+- `docs/CHARACTER-AUTHORING.md` — how to add a new character. Folder shape, persona.md
+  conventions (system-prompt template, fragment markers, placeholders), enable via
+  `CHARACTERS` env, smoke-test recipe.
+- `docs/MULTI-REGISTER.md` — Eileen's same-character-different-registers doctrine, the
+  6 × 9 register slot combinatorics, character-stage → daemon-stage trajectory.
+
+### Changed
+- Workspace metadata renamed: `freeside-ruggy@0.1.0` → `freeside-characters@0.6.0`
+  (root); `@freeside-ruggy/bot` → `@freeside-characters/bot@0.6.0`;
+  `@freeside-ruggy/protocol` → `@freeside-characters/protocol@0.6.0`. Repo on disk
+  stays `freeside-ruggy` per Q1 — defer per-character repo split until experimentation
+  justifies.
+- Persona loader + exemplar loader now character-aware: accept `CharacterConfig`,
+  cache keyed per-path / per (id, post-type). Composer / agent-gateway / orchestrator
+  thread `CharacterConfig` through.
+- Emojis MCP cache path: `process.cwd()/.run/emoji-recent.jsonl` (was substrate-relative;
+  broke on package move).
+
+### Verification
+- `bun run typecheck` clean across `persona-engine` + `bot` packages.
+- `STUB_MODE=true LLM_PROVIDER=stub` digest:once produces V0.5-E-equivalent output
+  across all 4 zones (same colors, voice register, embed structure).
+- `CHARACTERS=ruggy` (explicit), unset (defaults to ruggy), and unknown-id (fails loud
+  with clear path-pointer error) all behave correctly.
+- All file moves use `git mv` — history preserved.
+
+### Daemon trajectory note (V0.7+, NOT V0.6 work)
+Per Eileen's `puruhani-as-spine.md` canon, characters elevate to daemons when ALL of:
+dNFT mint machinery + ERC-6551 token-bound accounts + state-transition handlers +
+designed-voice templates + memory ledger land. Until then, character-stage with the
+codex grail page (or analogous canonical text) as identity anchor is the right shape.
+"freeside-daemons" terminology is intentionally NOT introduced — that vocabulary
+belongs to Eileen's puruhani-daemon canon.
+
+
 ## [unreleased] — 2026-04-29
 
 ### Docs
