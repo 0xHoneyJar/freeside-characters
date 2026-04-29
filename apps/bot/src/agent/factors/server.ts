@@ -12,7 +12,13 @@
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { FACTORS, translateFactor } from './score-factors.ts';
+import {
+  FACTORS,
+  DIMENSIONS,
+  STONEHENGE_OBSERVES,
+  translateFactor,
+  translateDimension,
+} from './score-factors.ts';
 
 function ok(value: unknown) {
   return {
@@ -64,6 +70,35 @@ export const factorsServer = createSdkMcpServer({
           .filter((f) => f.dimension === dimension)
           .map(({ id, name }) => ({ id, name }));
         return ok({ dimension, factors: entries });
+      },
+    ),
+
+    tool(
+      'describe_dimension',
+      'Describe a score dimension (og / nft / onchain). Returns proper-cased name (use VERBATIM in prose — "NFT" not "nft"), description, archetype alignment, primary zone. Call this BEFORE writing a dimension name in prose. Returns null for stonehenge — it observes all three rather than carrying its own dimension.',
+      { dimension: z.string() },
+      async ({ dimension }) => {
+        const entry = translateDimension(dimension);
+        if (!entry) {
+          return ok({
+            found: false,
+            dimension,
+            note: 'Unknown dimension — fall back to ALL CAPS rendering of the id',
+          });
+        }
+        return ok({ found: true, ...entry });
+      },
+    ),
+
+    tool(
+      'list_dimensions',
+      'List all live dimensions with proper-cased names + archetype + primary zone. Use this when composing a digest or weaver to ground dimension-talk in canonical names. Stonehenge observes all three (cross-zone hub).',
+      {},
+      async () => {
+        return ok({
+          dimensions: Object.values(DIMENSIONS),
+          stonehenge_observes: STONEHENGE_OBSERVES,
+        });
       },
     ),
   ],

@@ -18,6 +18,71 @@
 
 export type FactorDimension = 'og' | 'nft' | 'onchain';
 
+/**
+ * Dimension metadata — vendored alongside factor metadata. Same UNIX
+ * boundary argument: score-mcp emits dimension IDs as machine labels
+ * (`og`, `nft`, `onchain`); consumers need a translation surface to
+ * render proper-cased prose ("NFT rank" not "nft rank") + understand
+ * what each dimension actually measures.
+ *
+ * Migration target: when score-mibera#70 ships
+ * `mcp__score__describe_dimension`, this constant gets deleted.
+ */
+export interface DimensionEntry {
+  id: FactorDimension;
+  /** Proper-cased name for prose. ALWAYS use this verbatim. */
+  name: string;
+  /** One-line — what this dimension measures. */
+  description: string;
+  /** Codex archetype this dimension leans into (per V0.4.5 creative direction). */
+  archetype: string;
+  /** Festival zone where this dimension is the primary signal. */
+  primary_zone: string;
+  /** Status — `live` is scoring backed; `aspirational` is frontend config only. */
+  status: 'live' | 'aspirational';
+}
+
+export const DIMENSIONS: Record<FactorDimension, DimensionEntry> = {
+  og: {
+    id: 'og',
+    name: 'OG',
+    description:
+      'Long-time community signal — friend.tech keys, canonical articles, sets, OG CubQuest badges. The "early belief" dimension.',
+    archetype: 'Freetekno · OG crew · rave-tribe lineage',
+    primary_zone: 'bear-cave',
+    status: 'live',
+  },
+  nft: {
+    id: 'nft',
+    name: 'NFT',
+    description:
+      'Collector signal — Mibera NFT trading, holdings, quality / rarity tier, Fracture sets. The "treasure-hunt" dimension.',
+    archetype: 'Milady · aspirational · mints-as-moves',
+    primary_zone: 'el-dorado',
+    status: 'live',
+  },
+  onchain: {
+    id: 'onchain',
+    name: 'Onchain',
+    description:
+      'Economic activity signal — DeFi positions, liquidity, burns, validator boosting, Honeyroad mints, PaddleFi. The "synthesis floor" dimension.',
+    archetype: 'Acidhouse · Owsley · late-night precision',
+    primary_zone: 'owsley-lab',
+    status: 'live',
+  },
+};
+
+/**
+ * Stonehenge is cross-zone — it doesn't have a single primary dimension;
+ * it observes all three. This export lets the persona prompt name that
+ * relationship without faking a 4th dimension entry.
+ */
+export const STONEHENGE_OBSERVES: FactorDimension[] = ['og', 'nft', 'onchain'];
+
+export function translateDimension(dimension: string): DimensionEntry | null {
+  return (DIMENSIONS as Record<string, DimensionEntry>)[dimension] ?? null;
+}
+
 export interface FactorEntry {
   id: string;
   name: string;
