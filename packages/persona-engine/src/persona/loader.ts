@@ -41,6 +41,10 @@ const codexAnchorsCache = new Map<string, string>();
  * Load a sibling-of-persona markdown file by convention. Used by both
  * voice-anchors and codex-anchors loaders — the same auto-discover pattern.
  * Returns empty string when absent (graceful · most characters won't have all).
+ *
+ * Cache lifetime: process-lifetime (no TTL · no invalidation). Edits to
+ * voice-anchors.md / codex-anchors.md require a bot restart to take effect.
+ * V0.6 ships with this constraint; hot-reload is V0.7+ daemon-stage work.
  */
 function loadSiblingMarkdown(
   personaPath: string,
@@ -243,12 +247,18 @@ default.`;
     .replace(/\{\{POST_TYPE\}\}/g, args.postType)
     .trimEnd();
 
+  // User-half intentionally covers the SAME block-injection placeholders as
+  // system-half. Today's templates only use a subset in the user message, but
+  // future template moves (e.g. exemplars or codex prelude relocated below
+  // ═══ INPUT PAYLOAD ═══) won't leak literals if we cover them defensively.
   const userHalf = template
     .slice(idx)
     .replace(/\{\{POST_TYPE_OUTPUT_INSTRUCTION\}\}/g, instruction)
     .replace(/\{\{MOVEMENT_GUIDANCE\}\}/g, movementGuidance)
     .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
     .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
+    .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
+    .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
     .replace(/\{\{ZONE_ID\}\}/g, args.zoneId)
     .replace(/\{\{ZONE_NAME\}\}/g, zoneName)
     .replace(/\{\{DIMENSION\}\}/g, dimensionName)
