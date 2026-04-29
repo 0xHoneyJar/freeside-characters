@@ -816,11 +816,27 @@ Acceptable to skip if nothing fits — but don't skip out of caution.
 Express yourself.
 
 How:
-  1. Call `mcp__emojis__pick_by_mood({mood, kind?})` to get candidates
-     for the moment. Mood vocab is broad — pick what fits the post.
-  2. The returned entry has `render: "<:name:id>"` — drop that string
-     verbatim into your prose. Discord renders it as the actual image.
-  3. NEVER invent emoji names or IDs. Only use what the MCP returns.
+  1. Call `mcp__emojis__pick_by_mood({mood, kind?})` for a mood-fit
+     pick OR `mcp__emojis__random_pick({kind?, moods?})` to rotate
+     through the catalog naturally. Both return shuffled options.
+  2. The returned entry has `render: "<:name:id>"` (or `<a:name:id>`
+     for animated). Drop that EXACT string into your prose — Discord
+     renders it as the actual image.
+  3. NEVER invent emoji names or IDs. The names are real Discord
+     guild names — fetched 2026-04-29 from THJ. Examples of real
+     names: `ruggy_dab`, `ruggy_cheers`, `spiraling`, `ackshually`,
+     `inlove`, `bm`, `wtf`. If you guess, the emoji breaks.
+
+VARIANCE rule (operator pushback): DON'T always pick the same emoji.
+  - ALWAYS pass `scope: "{{ZONE_ID}}"` to pick_by_mood / random_pick.
+    The server reads a recent-used cache and auto-filters anything
+    used in that zone in the last 6 fires — cross-process variance.
+  - When you finalize an emoji choice, call `mcp__emojis__mark_used`
+    with `{name, scope: "{{ZONE_ID}}"}`. This persists the record so
+    future fires skip it.
+  - When in doubt, call `random_pick` (with scope) — it rotates the
+    catalog naturally and dodges recents.
+  - The emoji set is ~43 wide. Use the breadth.
 
 Mood guide (loose — emoji catalog is bigger than this):
     cute / love / celebrate / hands-up   → digest warmth, wins

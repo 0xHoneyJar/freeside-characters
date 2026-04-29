@@ -10,3 +10,6 @@ dist
 coverage/
 .vscode/
 .idea/
+
+# bot runtime state (emoji recent-used cache, etc.)
+apps/bot/.run/

@@ -1,19 +1,23 @@
 /**
- * Custom emoji registry for the Mibera Discord guild.
+ * Custom emoji registry — The Honey Jar Discord guild.
  *
- * Operator dropped 43 emoji IDs (2026-04-29) — 26 mibera + 17 ruggy.
- * I fetched each PNG from `https://cdn.discordapp.com/emojis/{id}.png`
- * and tagged each by visual mood/expression. Naming is provisional —
- * operator refines as ruggy uses them in the wild.
+ * Names + animated flags fetched 2026-04-29 from
+ * `GET /api/v10/guilds/1135545260538339420/emojis` (THJ guild).
+ * Bot is in 2 guilds: The Honey Jar + project purupuru. All 43 IDs
+ * the operator gave are in THJ; bot can render every one.
  *
- * Discord render syntax: `<:name:id>` (or `<a:name:id>` for animated).
- * The `name` slot is cosmetic — Discord matches by ID. Using descriptive
- * names here just makes prose readable when ruggy authors a post.
+ * Operator dropped 2 batches: 26 mibera + 17 ruggy. The "mibera batch"
+ * is mibera-themed reaction stickers. The "ruggy batch" is ruggy-bear
+ * reactions, mostly animated.
  *
- * Usage rule (per persona): emojis are EXPRESSION, not decoration.
- * 0-1 per post is the default. A pop-in might lean on one custom
- * emoji as the punchline; a digest leans on regular emoji + maybe
- * one custom at warmth moment.
+ * Discord render syntax:
+ *   - static: `<:name:id>`
+ *   - animated: `<a:name:id>`
+ * Wrong prefix breaks rendering. The `renderEmoji` helper picks the
+ * correct prefix from the `animated` field.
+ *
+ * Mood tags are aids for `pick_by_mood`; the LLM can also search by
+ * name (use real meme/expression handles directly).
  */
 
 export type EmojiKind = 'mibera' | 'ruggy';
@@ -42,411 +46,415 @@ export type EmojiMood =
   | 'shrug'
   | 'pls'
   | 'nope'
-  | 'eyes';
+  | 'eyes'
+  | 'noted'
+  | 'rave'
+  | 'meme';
 
 export interface EmojiEntry {
   id: string;
   kind: EmojiKind;
-  /** Provisional handle. Operator will refine. */
+  /** ACTUAL Discord emoji name (matches server canon). */
   name: string;
   /** Best-fit mood tag for `pick_by_mood`. */
   mood: EmojiMood;
-  /** What ruggy "sees" — visual notes the LLM can read. */
+  /** What the emoji looks like (visual notes from CDN PNG inspection). */
   visual: string;
   /** When to use it — context cue for LLM picking. */
   use_when: string;
+  /** True if animated GIF — requires `<a:name:id>` syntax (not `<:name:id>`). */
   animated: boolean;
 }
 
 export const EMOJIS: EmojiEntry[] = [
-  // ─── mibera (26) ─────────────────────────────────────────────────
+  // ─── mibera (26) — all static ─────────────────────────────────────
   {
     id: '1450229316255355010',
     kind: 'mibera',
-    name: 'mibera_bear_peek',
+    name: 'KIII',
     mood: 'cute',
-    visual: 'brown bear-hooded mibera peeking out, soft cute eyes',
-    use_when: 'warm welcome, soft acknowledgement, "henlo" energy',
+    visual: 'bear-hooded mibera peeking, soft kawaii eyes',
+    use_when: 'soft kawaii moment, "KIII!", warm acknowledgement',
     animated: false,
   },
   {
     id: '1448669925076893776',
     kind: 'mibera',
-    name: 'mibera_wide_eyes',
+    name: 'aarrrr',
     mood: 'shocked',
     visual: 'blue-haired mibera, big surprised wide eyes',
-    use_when: 'genuine surprise — a real spike, an unexpected wallet move',
+    use_when: 'shocked reaction, "aarrrr", whoa moment',
     animated: false,
   },
   {
     id: '1448667662958858422',
     kind: 'mibera',
-    name: 'mibera_peace',
-    mood: 'peace',
-    visual: 'mibera in colorful fedora, peace fingers ✌',
-    use_when: 'casual sign-off, "all good", chill vibe',
+    name: 'ackshually',
+    mood: 'snark',
+    visual: 'fedora-hatted mibera with peace fingers',
+    use_when: 'um-actually moment, light correction, "ackshually..."',
     animated: false,
   },
   {
     id: '1448669964692230226',
     kind: 'mibera',
-    name: 'mibera_sparkle_eyes',
+    name: 'bleh',
     mood: 'cute',
     visual: 'dark-skinned mibera with sparkly anime eyes',
-    use_when: 'admiration, "respect", noting something beautiful',
+    use_when: 'tongue-out playful, "bleh", cheeky',
     animated: false,
   },
   {
     id: '1448670055947567136',
     kind: 'mibera',
-    name: 'mibera_could_be_shittin',
-    mood: 'snark',
-    visual: 'mibera in cap reading "I could be shittin\'", defiant',
-    use_when: 'playful skepticism, "ngl", honest take',
+    name: 'bm',
+    mood: 'cute',
+    visual: 'mibera in cap "I could be shittin\'"',
+    use_when: 'bera morning, casual gm, daily greeting',
     animated: false,
   },
   {
     id: '1450228983638655062',
     kind: 'mibera',
-    name: 'mibera_ninja',
-    mood: 'eyes',
-    visual: 'mibera with face-mask/ninja covering, only eyes showing',
-    use_when: 'stealth move, quiet stacking, "just appeared"',
+    name: 'cryingniqab1_1toogmiladystickerp',
+    mood: 'cry',
+    visual: 'mibera with face-mask covering, eyes only — crying milady sticker',
+    use_when: 'mock-crying, "im crying", milady-coded reaction',
     animated: false,
   },
   {
     id: '1448670251519574138',
     kind: 'mibera',
-    name: 'mibera_glasses',
+    name: 'glowy',
     mood: 'cool',
-    visual: 'dark-skinned mibera with oversized green glasses',
-    use_when: 'analyst mode, looking carefully, "let me peep that"',
+    visual: 'dark-skinned mibera with green oversized glasses',
+    use_when: 'glow-up moment, looking sharp, "glowy"',
     animated: false,
   },
   {
     id: '1448669989208068116',
     kind: 'mibera',
-    name: 'mibera_look_up',
-    mood: 'shocked',
+    name: 'hehe',
+    mood: 'cute',
     visual: 'blue-haired mibera looking up, big eyes',
-    use_when: 'gentle "oh!", noticing something',
+    use_when: 'playful giggle, "hehe", soft mischief',
     animated: false,
   },
   {
     id: '1450228846602358836',
     kind: 'mibera',
-    name: 'mibera_heart_eyes',
+    name: 'inlove',
     mood: 'love',
     visual: 'pink-haired mibera with heart eyes',
-    use_when: 'love for a move, beautiful play, fren energy',
+    use_when: 'genuine love, fren respect, "inlove"',
     animated: false,
   },
   {
     id: '1450228890390761492',
     kind: 'mibera',
-    name: 'mibera_clown_red',
+    name: 'mcdevil',
     mood: 'snark',
-    visual: 'mibera in red cap, slight clown vibe',
-    use_when: 'playful jab, "lol that\'s wild", roast-but-friendly',
+    visual: 'mibera in red McDonald\'s-style cap, devilish',
+    use_when: 'playful menace, jokey villainy, "mcdevil"',
     animated: false,
   },
   {
     id: '1450228956560097320',
     kind: 'mibera',
-    name: 'mibera_dark_eyes',
-    mood: 'angry',
-    visual: 'mibera with dark intense eye-glow, almost menacing',
-    use_when: 'spotlight an anomaly, "watch this one carefully"',
+    name: 'nani_',
+    mood: 'shocked',
+    visual: 'mibera with dark intense eyes',
+    use_when: 'nani?! disbelief, "what just happened"',
     animated: false,
   },
   {
     id: '1448670207936696431',
     kind: 'mibera',
-    name: 'mibera_writing',
-    mood: 'mining',
-    visual: 'green-haired mibera scribbling/writing with marker',
-    use_when: 'noting something, recording, "ruggy\'s logging this"',
+    name: 'noted',
+    mood: 'noted',
+    visual: 'green-haired mibera writing/scribbling',
+    use_when: 'noted, recording, "ruggy logged that"',
     animated: false,
   },
   {
     id: '1448670128110571601',
     kind: 'mibera',
-    name: 'mibera_bear_hood',
+    name: 'peek',
     mood: 'cute',
-    visual: 'brown bear-hooded mibera, classic cute',
-    use_when: 'warm sign-off, soft "stay groovy" alternative',
+    visual: 'brown bear-hooded mibera peeking',
+    use_when: 'peeking in, "peep", cautious approach',
     animated: false,
   },
   {
     id: '1448670014076092562',
     kind: 'mibera',
-    name: 'mibera_pls',
+    name: 'pls',
     mood: 'pls',
-    visual: 'blue-haired mibera with text "PLS"',
-    use_when: 'begging, "pls show up this week", playful ask',
+    visual: 'blue-haired mibera with "PLS" text',
+    use_when: 'begging, "pls show up", playful ask',
     animated: false,
   },
   {
     id: '1448670356167463075',
     kind: 'mibera',
-    name: 'mibera_oh_no',
+    name: 'pokubera',
     mood: 'shocked',
-    visual: 'blue-bandana mibera with hands on cheeks, shocked',
-    use_when: 'mild "oh no", a wallet slipping, gentle dismay',
+    visual: 'blue-bandana mibera, hands at face',
+    use_when: 'pokubera reaction, mild shock, fren moment',
     animated: false,
   },
   {
     id: '1450229012923416616',
     kind: 'mibera',
-    name: 'mibera_punk',
-    mood: 'angry',
-    visual: 'clown-y mibera with text "you fuckin a punk", aggro',
-    use_when: 'rare — only when calling out clear disrespect; sparingly',
+    name: 'proud',
+    mood: 'flex',
+    visual: 'mibera with text "you fuckin a punk", chest-out',
+    use_when: 'proud moment, big move from a fren, "respect"',
     animated: false,
   },
   {
     id: '1450228781636915344',
     kind: 'mibera',
-    name: 'mibera_cry',
+    name: 'qq',
     mood: 'cry',
     visual: 'teal-haired mibera with tearful eyes',
-    use_when: 'genuine ouch, a hard drop, fren slipping',
+    use_when: 'genuine sad, "qq", a fren slipping',
     animated: false,
   },
   {
     id: '1450228913996431382',
     kind: 'mibera',
-    name: 'mibera_palm',
-    mood: 'nope',
-    visual: 'red palm/hand-up mibera, stop gesture',
-    use_when: '"hold up", "wait, peep this", gentle stop',
+    name: 'slapped',
+    mood: 'shocked',
+    visual: 'mibera with red palm/hand mark',
+    use_when: 'slapped reaction, blindsided, "got slapped"',
     animated: false,
   },
   {
     id: '1448670378808311971',
     kind: 'mibera',
-    name: 'mibera_dazed',
+    name: 'spiraling',
     mood: 'dazed',
-    visual: 'grey-toned mibera with spiral eyes, zoned out',
-    use_when: 'overwhelmed by a wild week, "the spiral", confusion',
+    visual: 'grey-toned mibera with spiral eyes',
+    use_when: 'spiraling, overwhelmed, lost in the swirl',
     animated: false,
   },
   {
     id: '1450228868232515655',
     kind: 'mibera',
-    name: 'mibera_innocent',
-    mood: 'shy',
-    visual: 'blonde wide-eyed mibera, innocent look',
-    use_when: 'soft ask, naive question, gentle observation',
+    name: 'sweaty',
+    mood: 'concerned',
+    visual: 'blonde wide-eyed mibera, nervous',
+    use_when: 'sweaty palms, nervous reaction, "yikes"',
     animated: false,
   },
   {
     id: '1450228934796116029',
     kind: 'mibera',
-    name: 'mibera_sign',
-    mood: 'pls',
-    visual: 'green-haired mibera holding a small red sign',
-    use_when: 'making a statement, drawing attention, "look here"',
+    name: 'takeyourmeds',
+    mood: 'snark',
+    visual: 'green-haired mibera with red sign',
+    use_when: 'absurd take callout, "take your meds", kindly mocking',
     animated: false,
   },
   {
     id: '1448670327533207692',
     kind: 'mibera',
-    name: 'mibera_face_palm',
-    mood: 'concerned',
-    visual: 'mibera in bear hat with hands at face',
-    use_when: 'embarrassment, secondhand cringe, "yikes" moment',
+    name: 'talktothehands',
+    mood: 'nope',
+    visual: 'bear-hat mibera, hands-up gesture',
+    use_when: 'not engaging, "talk to the hand", dismissive',
     animated: false,
   },
   {
     id: '1450228703660609708',
     kind: 'mibera',
-    name: 'mibera_bear_classic',
+    name: 'tedeyes',
     mood: 'cute',
-    visual: 'brown bear-hooded mibera, classic peek pose',
-    use_when: 'classic warm bear energy, default friendly',
+    visual: 'bear-hooded mibera, classic peek pose',
+    use_when: 'teddy-eyes, soft warmth, classic mibera energy',
     animated: false,
   },
   {
     id: '1448670279978188901',
     kind: 'mibera',
-    name: 'mibera_question',
+    name: 'understood',
     mood: 'confused',
-    visual: 'white panda mibera with red question mark above',
-    use_when: 'genuine question post, "anyone know?", uncertainty',
+    visual: 'white panda mibera with red question mark',
+    use_when: '"understood" (sarcastic), confused acknowledgement',
     animated: false,
   },
   {
     id: '1448670300404318350',
     kind: 'mibera',
-    name: 'mibera_rugged',
-    mood: 'cute',
-    visual: 'mibera in blue rug-pattern hood',
-    use_when: 'reference to rugging culture, warm self-aware nod',
+    name: 'uwueyes',
+    mood: 'love',
+    visual: 'mibera in blue rug-pattern, soft uwu eyes',
+    use_when: 'uwu moment, soft delight, "cute"',
     animated: false,
   },
   {
     id: '1448670229839482921',
     kind: 'mibera',
-    name: 'mibera_concerned',
-    mood: 'concerned',
-    visual: 'blonde mibera with concerned/worried face',
-    use_when: 'worry, caution flag, "watch this carefully"',
+    name: 'wtf',
+    mood: 'shocked',
+    visual: 'blonde concerned mibera',
+    use_when: 'wtf reaction, what-the genuine surprise',
     animated: false,
   },
 
-  // ─── ruggy (17) ──────────────────────────────────────────────────
+  // ─── ruggy (17) — 12 of 17 are ANIMATED ───────────────────────────
   {
     id: '1138775429482819645',
     kind: 'ruggy',
-    name: 'ruggy_neutral',
+    name: 'ruggy',
     mood: 'cute',
     visual: 'ruggy face, neutral squinting bear',
-    use_when: 'default ruggy presence, "ruggy here"',
+    use_when: 'default ruggy presence, base bear energy',
     animated: false,
   },
   {
     id: '1142034838124253185',
     kind: 'ruggy',
-    name: 'ruggy_squint',
-    mood: 'cool',
-    visual: 'ruggy with yellow accent, squinting',
-    use_when: 'analytical look, "peeping", watching carefully',
-    animated: false,
+    name: 'ruggy_aaa',
+    mood: 'shocked',
+    visual: 'ruggy with yellow accent, aaaa scream',
+    use_when: 'screaming reaction, "aaa", overwhelmed',
+    animated: true,
   },
   {
     id: '1141258308737585162',
     kind: 'ruggy',
-    name: 'ruggy_celebrate',
+    name: 'ruggy_cheers',
     mood: 'celebrate',
-    visual: 'ruggy in suit holding champagne/drink',
-    use_when: 'celebration, big-week wins, "we did it" moment',
+    visual: 'ruggy in suit holding champagne',
+    use_when: 'cheers / toast, big-week wins, celebration',
     animated: false,
   },
   {
     id: '1142035114008772608',
     kind: 'ruggy',
-    name: 'ruggy_lets_go',
+    name: 'ruggy_dab',
     mood: 'celebrate',
-    visual: 'ruggy chibi in yellow shirt jumping/excited',
-    use_when: 'hyped moment, "let\'s go", momentum',
-    animated: false,
+    visual: 'ruggy in yellow shirt, dab pose',
+    use_when: 'dab, victory move, "we ate", playful win',
+    animated: true,
   },
   {
     id: '1143652000110747720',
     kind: 'ruggy',
-    name: 'ruggy_hands_up',
-    mood: 'hands-up',
-    visual: 'ruggy raising arms — crowd / cheer',
-    use_when: 'crowd celebration, "the og crew showed up", communal',
+    name: 'ruggy_flex',
+    mood: 'flex',
+    visual: 'ruggy raising arms — flex pose',
+    use_when: 'big stack flex, strong move, "flexing"',
     animated: false,
   },
   {
     id: '1142014493476532234',
     kind: 'ruggy',
-    name: 'ruggy_dripped',
+    name: 'ruggy_honeydrip',
     mood: 'honey',
     visual: 'ruggy with melting/dripping yellow honey',
-    use_when: 'honey reference, sticky-good, "henlock" energy',
-    animated: false,
+    use_when: 'honey moment, $HENLO, sticky-good vibes',
+    animated: true,
   },
   {
     id: '1142020693123420223',
     kind: 'ruggy',
-    name: 'ruggy_aura',
+    name: 'ruggy_onfire',
     mood: 'celebrate',
-    visual: 'ruggy with yellow burst behind, illuminated',
-    use_when: 'spotlight moment, eureka, "this hit different"',
-    animated: false,
+    visual: 'ruggy with yellow flame burst behind',
+    use_when: 'on fire, hot streak, "ruggy on fire"',
+    animated: true,
   },
   {
     id: '1142029237994389534',
     kind: 'ruggy',
-    name: 'ruggy_flex',
+    name: 'ruggy_point',
     mood: 'flex',
-    visual: 'ruggy in yellow shirt, flex/gym pose',
-    use_when: 'wallet flexing big numbers, "stacking", strong move',
+    visual: 'ruggy in yellow shirt, pointing',
+    use_when: 'pointing at something, calling attention, "look here"',
     animated: false,
   },
   {
     id: '1142514520032555189',
     kind: 'ruggy',
-    name: 'ruggy_psychedelic',
+    name: 'ruggy_rainbow',
     mood: 'psychedelic',
     visual: 'ruggy with rainbow/tie-dye background',
-    use_when: 'owsley-lab vibes, late-night, acidhouse moments',
-    animated: false,
+    use_when: 'rainbow vibes, owsley-lab energy, trippy moment',
+    animated: true,
   },
   {
     id: '1144175906412314634',
     kind: 'ruggy',
-    name: 'ruggy_love',
-    mood: 'love',
-    visual: 'ruggy in pink/heart pose',
-    use_when: 'fren love, deep respect, warm ack',
-    animated: false,
+    name: 'ruggy_rave',
+    mood: 'rave',
+    visual: 'ruggy in pink, raving / heart-eyes',
+    use_when: 'rave moment, bear-cave energy, full party',
+    animated: true,
   },
   {
     id: '1141009764864770068',
     kind: 'ruggy',
-    name: 'ruggy_chibi',
-    mood: 'cute',
-    visual: 'small ruggy chibi, shy bear',
-    use_when: 'soft moment, low-key, "a little" qualifier',
-    animated: false,
+    name: 'ruggy_reee',
+    mood: 'angry',
+    visual: 'small ruggy chibi, reee rage face',
+    use_when: 'reee rage, frustrated reaction, "REEE"',
+    animated: true,
   },
   {
     id: '1143651985208385628',
     kind: 'ruggy',
-    name: 'ruggy_treasure',
-    mood: 'mining',
-    visual: 'ruggy with bear pendant/key/treasure',
-    use_when: 'el-dorado vibes, treasure-hunt, mints stacking',
-    animated: false,
+    name: 'ruggy_reeegun',
+    mood: 'angry',
+    visual: 'ruggy with bear pendant/key, reee with gun',
+    use_when: 'reee with weapon, hyperbolic frustration',
+    animated: true,
   },
   {
     id: '1141256545779331123',
     kind: 'ruggy',
-    name: 'ruggy_pickaxe',
-    mood: 'mining',
-    visual: 'ruggy holding pickaxe, mining',
-    use_when: 'el-dorado mining, grinding, "putting in the work"',
-    animated: false,
+    name: 'ruggy_sadge',
+    mood: 'cry',
+    visual: 'ruggy with pickaxe, sadge face',
+    use_when: 'sadge moment, fren slipping, soft loss',
+    animated: true,
   },
   {
     id: '1142014302040104991',
     kind: 'ruggy',
-    name: 'ruggy_dapper',
+    name: 'ruggy_smoke',
     mood: 'dapper',
-    visual: 'ruggy in suit, dapper, sophisticated pose',
-    use_when: 'formal observation, "ruggy reports", weekly digest tone',
-    animated: false,
+    visual: 'ruggy in suit smoking',
+    use_when: 'dapper smoke, contemplating, formal observation',
+    animated: true,
   },
   {
     id: '1142020697376444497',
     kind: 'ruggy',
-    name: 'ruggy_grin',
-    mood: 'cute',
-    visual: 'ruggy big grinning face, happy',
-    use_when: 'genuine smile, warm moment, "love to see it"',
+    name: 'ruggy_tears',
+    mood: 'cry',
+    visual: 'ruggy big-faced grinning OR teared up',
+    use_when: 'tears (joy or sad), strong emotional moment',
     animated: false,
   },
   {
     id: '1148914343291928619',
     kind: 'ruggy',
-    name: 'ruggy_dark',
+    name: 'ruggy_zoom',
     mood: 'eyes',
-    visual: 'ruggy face simple, darker tone',
-    use_when: 'serious moment, late-night observation, owsley-lab',
-    animated: false,
+    visual: 'ruggy face, zoomed/serious',
+    use_when: 'zooming in, focused look, "let me peep that"',
+    animated: true,
   },
   {
     id: '1143937395998331071',
     kind: 'ruggy',
-    name: 'ruggy_honey',
-    mood: 'honey',
-    visual: 'ruggy with golden/honey blob, holding it',
-    use_when: 'honey reference, $HENLO/$BGT, treasure moment',
+    name: 'ruggytubbies',
+    mood: 'meme',
+    visual: 'ruggy with golden honey blob, teletubbies-style',
+    use_when: 'absurd cute moment, ruggytubbies meme',
     animated: false,
   },
 ];
@@ -468,6 +476,16 @@ export function findByName(name: string): EmojiEntry | null {
 
 export function pickByMood(mood: EmojiMood, kind?: EmojiKind): EmojiEntry[] {
   return EMOJIS.filter((e) => e.mood === mood && (kind ? e.kind === kind : true));
+}
+
+/** Fisher-Yates shuffle for variance — variance is anti-Westworld for emoji too. */
+export function shuffle<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
 }
 
 export const ALL_MOODS: EmojiMood[] = [
@@ -495,4 +513,7 @@ export const ALL_MOODS: EmojiMood[] = [
   'pls',
   'nope',
   'eyes',
+  'noted',
+  'rave',
+  'meme',
 ];
