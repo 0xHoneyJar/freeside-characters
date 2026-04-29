@@ -1,8 +1,8 @@
 {
-  "name": "@freeside-ruggy/protocol",
-  "version": "0.1.0",
+  "name": "@freeside-characters/protocol",
+  "version": "0.6.0",
   "private": true,
-  "description": "Placeholder for sealed-schema package. Ruggy V1 is a score-vault consumer; this package may grow if ruggy ever publishes schemas (ChannelConfig, DigestPostMeta, etc.).",
+  "description": "Placeholder for sealed-schema package. Each character is a score-vault consumer; this package may grow if characters publish schemas (ChannelConfig, DigestPostMeta, etc.).",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {

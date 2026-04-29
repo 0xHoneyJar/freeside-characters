@@ -1,6 +1,9 @@
 /**
  * digest-once — fire one sweep and exit.
  *
+ * V0.6-A: routes through @freeside-characters/persona-engine substrate
+ * with the primary character (CHARACTERS env, default 'ruggy').
+ *
  * Modes:
  *   default                              → digest type for each zone
  *   POST_TYPE=micro|weaver|lore_drop|... → that type for each zone
@@ -11,13 +14,20 @@
  *   ZONES=bear-cave,el-dorado bun run digest:once
  */
 
-import { loadConfig, isDryRun, selectedZones } from '../config.ts';
-import { composeZonePost } from '../llm/composer.ts';
-import { deliverZoneDigest } from '../discord/post.ts';
-import { ZONE_FLAVOR, getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
-import { getBotClient, shutdownClient } from '../discord/client.ts';
-import type { PostType } from '../llm/post-types.ts';
-import { POST_TYPE_SPECS } from '../llm/post-types.ts';
+import {
+  loadConfig,
+  selectedZones,
+  composeForCharacter,
+  deliverZoneDigest,
+  getBotClient,
+  shutdownClient,
+  ZONE_FLAVOR,
+  getWindowEventCount,
+  getWindowWalletCount,
+  POST_TYPE_SPECS,
+  type PostType,
+} from '@freeside-characters/persona-engine';
+import { loadCharacters } from '../character-loader.ts';
 
 const POP_IN_TYPES: PostType[] = ['micro', 'lore_drop', 'question', 'callout'];
 
@@ -32,6 +42,12 @@ function rollMixType(): PostType {
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  const characters = loadCharacters();
+  if (characters.length === 0) {
+    console.error('digest-once: no characters loaded — set CHARACTERS env or ensure apps/character-ruggy/ exists');
+    process.exit(1);
+  }
+  const primary = characters[0]!;
   const zones = selectedZones(config);
   const typeMode = pickType(config);
 
@@ -49,7 +65,7 @@ async function main(): Promise<void> {
       ? 'WEBHOOK'
       : 'DRY-RUN';
 
-  console.log('ruggy: digest-once · firing immediately');
+  console.log(`${primary.id}: digest-once · firing immediately`);
   console.log(`data: ${config.STUB_MODE ? 'STUB' : 'LIVE'} · llm: ${llmMode} · delivery: ${deliveryMode}`);
   console.log(`mode: ${typeMode === 'mix' ? 'MIX (random non-digest per zone)' : typeMode}`);
   console.log(`zones: ${zones.map((z) => `${ZONE_FLAVOR[z].emoji} ${z}`).join(' · ')}`);
@@ -74,7 +90,7 @@ async function main(): Promise<void> {
     const postType = typeMode === 'mix' ? rollMixType() : typeMode;
     const t0 = Date.now();
     try {
-      const result = await composeZonePost(config, zone, postType);
+      const result = await composeForCharacter(config, primary, zone, postType);
       if (!result) {
         skipped++;
         console.log(`[${zone}/${postType}] skipped (data didn't fit ${POST_TYPE_SPECS[postType].description})`);
@@ -101,12 +117,12 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log(`\nruggy: ${zones.length} zones · ${posted} posted · ${failed} failed · ${skipped} skipped · ${totalMs}ms total`);
+  console.log(`\n${primary.id}: ${zones.length} zones · ${posted} posted · ${failed} failed · ${skipped} skipped · ${totalMs}ms total`);
   await shutdownClient();
 }
 
 main().catch(async (err) => {
-  console.error('ruggy digest-once failed:', err);
+  console.error('digest-once failed:', err);
   await shutdownClient();
   process.exit(1);
 });

@@ -10,7 +10,7 @@
 import type { Config } from '../config.ts';
 import { isDryRun, getZoneChannelId } from '../config.ts';
 import type { ZoneId } from '../score/types.ts';
-import type { DigestPayload } from '../format/embed.ts';
+import type { DigestPayload } from './embed.ts';
 import { getBotClient, postToChannel } from './client.ts';
 
 export interface DeliveryResult {

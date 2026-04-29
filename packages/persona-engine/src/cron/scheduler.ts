@@ -19,7 +19,7 @@
 import cron from 'node-cron';
 import type { Config } from '../config.ts';
 import type { ZoneId } from '../score/types.ts';
-import type { PostType } from '../llm/post-types.ts';
+import type { PostType } from '../compose/post-types.ts';
 
 const DAY_TO_CRON: Record<string, number> = {
   sunday: 0,

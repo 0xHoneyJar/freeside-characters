@@ -10,8 +10,19 @@
       },
     },
     "apps/bot": {
-      "name": "@freeside-ruggy/bot",
-      "version": "0.2.0",
+      "name": "@freeside-characters/bot",
+      "version": "0.6.0",
+      "dependencies": {
+        "@freeside-characters/persona-engine": "workspace:*",
+      },
+    },
+    "apps/character-ruggy": {
+      "name": "@freeside-characters/character-ruggy",
+      "version": "0.6.0",
+    },
+    "packages/persona-engine": {
+      "name": "@freeside-characters/persona-engine",
+      "version": "0.6.0",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.2.122",
         "discord.js": "^14.16.3",
@@ -25,8 +36,8 @@
       },
     },
     "packages/protocol": {
-      "name": "@freeside-ruggy/protocol",
-      "version": "0.1.0",
+      "name": "@freeside-characters/protocol",
+      "version": "0.6.0",
       "dependencies": {
         "zod": "^3.24.1",
       },
@@ -67,9 +78,13 @@
 
     "@discordjs/ws": ["@discordjs/ws@1.2.3", "", { "dependencies": { "@discordjs/collection": "^2.1.0", "@discordjs/rest": "^2.5.1", "@discordjs/util": "^1.1.0", "@sapphire/async-queue": "^1.5.2", "@types/ws": "^8.5.10", "@vladfrangu/async_event_emitter": "^2.2.4", "discord-api-types": "^0.38.1", "tslib": "^2.6.2", "ws": "^8.17.0" } }, "sha512-wPlQDxEmlDg5IxhJPuxXr3Vy9AjYq5xCvFWGJyD7w7Np8ZGu+Mc+97LCoEc/+AYCo2IDpKioiH0/c/mj5ZR9Uw=="],
 
-    "@freeside-ruggy/bot": ["@freeside-ruggy/bot@workspace:apps/bot"],
+    "@freeside-characters/bot": ["@freeside-characters/bot@workspace:apps/bot"],
 
-    "@freeside-ruggy/protocol": ["@freeside-ruggy/protocol@workspace:packages/protocol"],
+    "@freeside-characters/character-ruggy": ["@freeside-characters/character-ruggy@workspace:apps/character-ruggy"],
+
+    "@freeside-characters/persona-engine": ["@freeside-characters/persona-engine@workspace:packages/persona-engine"],
+
+    "@freeside-characters/protocol": ["@freeside-characters/protocol@workspace:packages/protocol"],
 
     "@hono/node-server": ["@hono/node-server@1.19.14", "", { "peerDependencies": { "hono": "^4" } }, "sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw=="],
 

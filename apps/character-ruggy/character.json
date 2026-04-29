@@ -1,0 +1,16 @@
+{
+  "$schema": "https://freeside-characters/schema/character.v0.json",
+  "id": "ruggy",
+  "displayName": "Ruggy",
+  "personaFile": "persona.md",
+  "exemplarsDir": "exemplars",
+  "emojiAffinity": {
+    "primary": "ruggy",
+    "fallback": "mibera"
+  },
+  "doc": {
+    "creativeDirection": "creative-direction.md"
+  },
+  "stage": "character",
+  "stageNotes": "V0.6 character-stage participation agent. Codex-grounded, LLM-driven. Daemon stage (V0.7+) requires dNFT mint machinery + ERC-6551 TBA + designed-voice templates per Eileen's puruhani-as-spine canon."
+}

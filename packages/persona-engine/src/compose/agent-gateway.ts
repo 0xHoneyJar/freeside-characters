@@ -23,14 +23,16 @@
  */
 
 import type { Config } from '../config.ts';
+import type { CharacterConfig } from '../types.ts';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR } from '../score/types.ts';
 import { generateStubZoneDigest } from '../score/client.ts';
 import { getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
 import type { PostType } from './post-types.ts';
-import { runOrchestratorQuery } from '../agent/orchestrator.ts';
+import { runOrchestratorQuery } from '../orchestrator/index.ts';
 
 export interface InvokeRequest {
+  character: CharacterConfig;
   systemPrompt: string;
   userMessage: string;
   modelAlias?: 'cheap' | 'fast-code' | 'reviewer' | 'reasoning' | 'architect';
@@ -100,6 +102,7 @@ async function invokeAnthropicSdk(config: Config, req: InvokeRequest): Promise<I
     throw new Error('invokeAnthropicSdk: zoneHint and postTypeHint are required');
   }
   const result = await runOrchestratorQuery(config, {
+    character: req.character,
     systemPrompt: req.systemPrompt,
     userMessage: req.userMessage,
     zone: req.zoneHint,

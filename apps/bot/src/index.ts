@@ -1,30 +1,55 @@
 /**
- * freeside-ruggy bot — entry point.
+ * freeside-characters bot — entry point.
  *
- * V0.3 pipeline:
- *   1. Load config + persona + codex
- *   2. (If DISCORD_BOT_TOKEN) Login to Discord as Ruggy
- *   3. Schedule three cadences (digest backbone + pop-in random + weaver weekly)
- *   4. On fire: composeZonePost(zone, postType) → deliverZoneDigest
+ * V0.6-A pipeline (substrate split — system-agent layer extracted to
+ * @freeside-characters/persona-engine):
+ *   1. Load runtime config + selected characters from `apps/character-<id>`
+ *   2. (If DISCORD_BOT_TOKEN) Login to Discord
+ *   3. Schedule three cadences (digest backbone + pop-in random +
+ *      weaver weekly) via substrate's `schedule()`
+ *   4. On fire: composeForCharacter(config, character, zone, postType)
+ *      → deliverZoneDigest(config, zone, payload)
  *   5. Stay up (or exit if cadence=manual)
+ *
+ * Multi-character routing (V0.6-D): for now the bot dispatches all fires
+ * through the FIRST loaded character (V0.5-E parity). When V0.6-D lands
+ * the router will pick a character per fire from affinity + mention.
  */
 
-import { loadConfig, isDryRun, selectedZones, getZoneChannelId } from './config.ts';
-import { composeZonePost } from './llm/composer.ts';
-import { deliverZoneDigest } from './discord/post.ts';
-import { schedule, type FireRequest } from './cron/scheduler.ts';
-import { loadSystemPrompt } from './persona/loader.ts';
-import { exemplarStats } from './persona/exemplar-loader.ts';
-import { getBotClient, shutdownClient } from './discord/client.ts';
-import { ZONE_FLAVOR, getWindowEventCount } from './score/types.ts';
-import { getCodexLineCount } from './score/codex-context.ts';
+import {
+  loadConfig,
+  selectedZones,
+  getZoneChannelId,
+  composeForCharacter,
+  schedule,
+  deliverZoneDigest,
+  getBotClient,
+  shutdownClient,
+  exemplarStats,
+  loadSystemPrompt,
+  ZONE_FLAVOR,
+  getWindowEventCount,
+  getCodexLineCount,
+  type FireRequest,
+  type CharacterConfig,
+} from '@freeside-characters/persona-engine';
+import { loadCharacters } from './character-loader.ts';
 
-const banner = `─── ruggy · freeside-ruggy v0.3.0 ──────────────────────────────`;
+const banner = `─── freeside-characters bot · v0.6.0-A ────────────────────────`;
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  const characters = loadCharacters();
+  if (characters.length === 0) {
+    console.error('bot: no characters loaded — set CHARACTERS env or ensure apps/character-ruggy/ exists');
+    process.exit(1);
+  }
+  // V0.6-A: route everything through the primary (first) character. V0.6-D
+  // will introduce per-fire character selection via affinity + mentions.
+  const primary = characters[0]!;
 
   console.log(banner);
+  console.log(`characters:     ${characters.map((c) => c.displayName ?? c.id).join(' · ')} (primary: ${primary.id})`);
   console.log(`data:           ${config.STUB_MODE ? 'STUB (synthetic ZoneDigest)' : 'LIVE (score-mcp)'}`);
   console.log(`llm:            ${describeLlmMode(config)}`);
   console.log(`zones:          ${selectedZones(config).map((z) => `${ZONE_FLAVOR[z].emoji} ${z}`).join(' · ')}`);
@@ -34,9 +59,9 @@ async function main(): Promise<void> {
   console.log(`delivery:       ${describeDelivery(config)}`);
 
   try {
-    const prompt = loadSystemPrompt();
+    const prompt = loadSystemPrompt(primary);
     const codexLines = getCodexLineCount();
-    const exemplars = exemplarStats();
+    const exemplars = exemplarStats(primary);
     const exemplarTotal = Object.values(exemplars).reduce((s, n) => s + n, 0);
     const exemplarSummary = exemplarTotal === 0
       ? 'no exemplars (ICE off — rules-only voice)'
@@ -66,48 +91,48 @@ async function main(): Promise<void> {
 
   const fireOne = async (req: FireRequest): Promise<void> => {
     const t0 = Date.now();
-    console.log(`ruggy: fire ${req.zone}/${req.postType} at ${new Date().toISOString()}`);
+    console.log(`${primary.id}: fire ${req.zone}/${req.postType} at ${new Date().toISOString()}`);
     try {
-      const result = await composeZonePost(config, req.zone, req.postType);
+      const result = await composeForCharacter(config, primary, req.zone, req.postType);
       if (!result) {
-        console.log(`ruggy: ${req.zone}/${req.postType} skipped (data didn't fit)`);
+        console.log(`${primary.id}: ${req.zone}/${req.postType} skipped (data didn't fit)`);
         return;
       }
-      console.log(`ruggy: ${req.zone}/${req.postType} composed (${getWindowEventCount(result.digest.raw_stats)} events) in ${Date.now() - t0}ms`);
+      console.log(`${primary.id}: ${req.zone}/${req.postType} composed (${getWindowEventCount(result.digest.raw_stats)} events) in ${Date.now() - t0}ms`);
 
       const delivery = await deliverZoneDigest(config, req.zone, result.payload);
       if (delivery.posted) {
-        console.log(`ruggy: ${req.zone}/${req.postType} posted via ${delivery.via}` + (delivery.messageId ? ` (msg ${delivery.messageId})` : ''));
+        console.log(`${primary.id}: ${req.zone}/${req.postType} posted via ${delivery.via}` + (delivery.messageId ? ` (msg ${delivery.messageId})` : ''));
       } else if (delivery.dryRun) {
-        console.log(`ruggy: ${req.zone}/${req.postType} dry-run (${delivery.via})`);
+        console.log(`${primary.id}: ${req.zone}/${req.postType} dry-run (${delivery.via})`);
       }
     } catch (err) {
-      console.error(`ruggy: ${req.zone}/${req.postType} failed:`, err);
+      console.error(`${primary.id}: ${req.zone}/${req.postType} failed:`, err);
     }
   };
 
   const handle = schedule({ config, zones, onFire: fireOne });
-  if (handle.digestExpression) console.log(`ruggy: digest cron · ${handle.digestExpression}`);
-  if (handle.popInExpression) console.log(`ruggy: pop-in cron · ${handle.popInExpression}`);
-  if (handle.weaverExpression) console.log(`ruggy: weaver cron · ${handle.weaverExpression}`);
+  if (handle.digestExpression) console.log(`${primary.id}: digest cron · ${handle.digestExpression}`);
+  if (handle.popInExpression) console.log(`${primary.id}: pop-in cron · ${handle.popInExpression}`);
+  if (handle.weaverExpression) console.log(`${primary.id}: weaver cron · ${handle.weaverExpression}`);
 
   // Always fire digest sweep once on boot in dev or manual
   if (config.NODE_ENV === 'development' || config.DIGEST_CADENCE === 'manual') {
-    console.log('ruggy: firing digest sweep once on boot (dev/manual mode)');
+    console.log(`${primary.id}: firing digest sweep once on boot (dev/manual mode)`);
     for (const zone of zones) {
       await fireOne({ zone, postType: 'digest' });
     }
   }
 
   if (config.DIGEST_CADENCE === 'manual') {
-    console.log('ruggy: manual mode — exiting after single fire');
+    console.log(`${primary.id}: manual mode — exiting after single fire`);
     handle.stop();
     await shutdownClient();
     process.exit(0);
   }
 
   const shutdown = async (signal: string) => {
-    console.log(`\nruggy: ${signal} — shutting down`);
+    console.log(`\n${primary.id}: ${signal} — shutting down`);
     handle.stop();
     await shutdownClient();
     process.exit(0);
@@ -137,6 +162,6 @@ function describeDelivery(config: ReturnType<typeof loadConfig>): string {
 }
 
 main().catch((err) => {
-  console.error('ruggy: fatal:', err);
+  console.error('bot: fatal:', err);
   shutdownClient().finally(() => process.exit(1));
 });

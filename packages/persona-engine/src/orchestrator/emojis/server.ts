@@ -20,7 +20,6 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   EMOJIS,
   ALL_MOODS,
@@ -37,9 +36,13 @@ import {
 // processes — cron sweeps + digest-once CLI fires share state. Filters
 // the last N uses out of pick results so the model can't repeat without
 // explicitly choosing to.
+//
+// V0.6-A: substrate moved to packages/persona-engine. Cache path now
+// resolves against process.cwd() (the runtime's working dir, typically
+// apps/bot/) rather than the substrate's own location, since this is
+// runtime state not engine code.
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CACHE_PATH = resolve(__dirname, '../../../.run/emoji-recent.jsonl');
+const CACHE_PATH = resolve(process.cwd(), '.run/emoji-recent.jsonl');
 const RECENT_WINDOW = 6;
 
 interface RecentEntry {

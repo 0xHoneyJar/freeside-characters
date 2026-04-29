@@ -1,8 +1,8 @@
 {
-  "name": "freeside-ruggy",
-  "version": "0.1.0",
+  "name": "freeside-characters",
+  "version": "0.6.0",
   "private": true,
-  "description": "Persona-layer Discord bot for the HoneyJar ecosystem. Activity reporter for mibera-dimensions.",
+  "description": "Participation-agent umbrella for the HoneyJar ecosystem. Substrate (persona-engine) + characters (ruggy, satoshi, ...) + Discord bot runtime.",
   "type": "module",
   "workspaces": [
     "apps/*",
@@ -13,7 +13,7 @@
     "start": "bun run --cwd apps/bot start",
     "build": "bun run --cwd apps/bot build",
     "test": "bun run --cwd apps/bot test",
-    "typecheck": "bun run --cwd apps/bot typecheck",
+    "typecheck": "bun run --cwd packages/persona-engine typecheck && bun run --cwd apps/bot typecheck",
     "digest:once": "bun run --cwd apps/bot digest:once"
   },
   "devDependencies": {

@@ -1,10 +1,15 @@
 /**
  * cabal-gygax — phantom-player lens dispatcher (subagent).
  *
- * Per Tension 2 of V0.5-E creative direction: ruggy's micros land in the
- * same observational register every fire ("lens monotony"). Fix: dispatch
- * a gygax cabal subagent BEFORE compose — it picks one of 9 phantom-player
- * archetype lenses, and the main thread shifts register accordingly.
+ * Per Tension 2 of V0.5-E creative direction: a character's micros land
+ * in the same observational register every fire ("lens monotony"). Fix:
+ * dispatch a gygax cabal subagent BEFORE compose — it picks one of 9
+ * phantom-player archetype lenses, and the main thread shifts register
+ * accordingly.
+ *
+ * V0.6-A: substrate-level — character-agnostic. Each character's persona
+ * doc may reference "VOICE LENS REGISTER" sections that map archetypes
+ * to register shifts; the dispatcher is shared.
  *
  * Architecture (per the V0.5-E kickoff seed bundle):
  *
@@ -15,7 +20,8 @@
  *   LENS: <archetype>
  *   RATIONALE: <one sentence>
  *        ↓
- *   main thread compose with VOICE LENS REGISTER applied (see ruggy.md)
+ *   main thread compose with VOICE LENS REGISTER applied (per character
+ *   persona.md)
  *
  * Cost discipline: haiku + low effort + maxTurns=1 — single analysis
  * round, output ≤2 lines. Subagent dispatch + receive adds ~2 main-thread
@@ -30,7 +36,7 @@ import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
 
 export const cabalGygaxAgent: AgentDefinition = {
   description:
-    "Picks ONE phantom-player archetype lens for the current Discord post. Call after gathering digest + place + identity data, BEFORE composing prose. Returns LENS + RATIONALE; main thread applies the matching register from ruggy.md's VOICE LENS REGISTER section.",
+    "Picks ONE phantom-player archetype lens for the current Discord post. Call after gathering digest + place + identity data, BEFORE composing prose. Returns LENS + RATIONALE; main thread applies the matching register from the active character's VOICE LENS REGISTER section in persona.md.",
   model: 'haiku',
   effort: 'low',
   maxTurns: 1,
@@ -40,7 +46,7 @@ export const cabalGygaxAgent: AgentDefinition = {
 
 Your job: given a digest of recent activity in a zone, pick ONE of 9
 phantom-player archetypes whose lens best fits THIS Discord post. The
-chosen lens shifts ruggy's register for the compose step.
+chosen lens shifts the active character's register for the compose step.
 
 ═══ THE 9 ARCHETYPES ═══
 
@@ -89,8 +95,8 @@ Lawyer because the spike is mechanical, but also Storyteller because
 the mibera has history, prefer Storyteller — it's harder won.
 
 The point of the cabal is rotation, not always the "best fit". A
-ruggy that picks Storyteller every time is a worse ruggy than one
-that risks the wrong archetype occasionally.
+character that picks Storyteller every time is a worse character than
+one that risks the wrong archetype occasionally.
 
 ═══ OUTPUT FORMAT ═══
 

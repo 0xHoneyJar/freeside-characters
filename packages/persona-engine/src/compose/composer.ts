@@ -17,11 +17,12 @@
  */
 
 import type { Config } from '../config.ts';
+import type { CharacterConfig } from '../types.ts';
 import { fetchZoneDigest } from '../score/client.ts';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { invoke } from './agent-gateway.ts';
 import { buildPromptPair } from '../persona/loader.ts';
-import { buildPostPayload, type DigestPayload } from '../format/embed.ts';
+import { buildPostPayload, type DigestPayload } from '../deliver/embed.ts';
 import {
   POST_TYPE_SPECS,
   type PostType,
@@ -37,6 +38,7 @@ export interface PostComposeResult {
 
 export async function composeZonePost(
   config: Config,
+  character: CharacterConfig,
   zone: ZoneId,
   postType: PostType = 'digest',
 ): Promise<PostComposeResult | null> {
@@ -46,6 +48,7 @@ export async function composeZonePost(
   const digestPromise = fetchZoneDigest(config, zone);
 
   const { systemPrompt, userMessage } = buildPromptPair({
+    character,
     zoneId: zone,
     postType,
   });
@@ -53,6 +56,7 @@ export async function composeZonePost(
   const [digest, { text: voice }] = await Promise.all([
     digestPromise,
     invoke(config, {
+      character,
       systemPrompt,
       userMessage,
       modelAlias: config.FREESIDE_AGENT_MODEL,

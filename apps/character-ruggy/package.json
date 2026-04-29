@@ -1,0 +1,7 @@
+{
+  "name": "@freeside-characters/character-ruggy",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Participation-agent profile for Ruggy. Persona, creative direction, and voice exemplars. Consumed by @freeside-characters/bot via @freeside-characters/persona-engine.",
+  "type": "module"
+}

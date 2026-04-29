@@ -27,14 +27,16 @@
 
 import { query, type McpServerConfig, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from '../config.ts';
+import type { CharacterConfig } from '../types.ts';
 import type { ZoneId } from '../score/types.ts';
-import type { PostType } from '../llm/post-types.ts';
+import type { PostType } from '../compose/post-types.ts';
 import { rosenzuServer } from './rosenzu/server.ts';
 import { freesideAuthServer } from './freeside_auth/server.ts';
 import { emojisServer } from './emojis/server.ts';
 import { cabalGygaxAgent } from './cabal/gygax.ts';
 
 export interface OrchestratorRequest {
+  character: CharacterConfig;
   systemPrompt: string;
   userMessage: string;
   zone: ZoneId;

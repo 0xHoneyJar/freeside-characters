@@ -10,7 +10,7 @@
 
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR, getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
-import { POST_TYPE_SPECS, type PostType } from '../llm/post-types.ts';
+import { POST_TYPE_SPECS, type PostType } from '../compose/post-types.ts';
 import { escapeDiscordMarkdown } from './sanitize.ts';
 
 const DIRECTION_COLORS = {
