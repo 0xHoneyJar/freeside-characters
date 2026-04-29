@@ -21,7 +21,8 @@
  *     {{POST_TYPE_GUIDANCE}} {{POST_TYPE_OUTPUT_INSTRUCTION}} {{EXEMPLARS}}
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import type { ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR, DIMENSION_NAME } from '../score/types.ts';
 import { loadCodexPrelude } from '../score/codex-context.ts';
@@ -33,6 +34,39 @@ const SECTION_HEADER = '## System prompt template';
 
 const docCache = new Map<string, string>();
 const templateCache = new Map<string, string>();
+const voiceAnchorsCache = new Map<string, string>();
+
+/**
+ * Load `voice-anchors.md` if it exists alongside the character's persona.md.
+ *
+ * Voice anchors are operator-curated cross-post-type voice texture grounding
+ * — past character utterances that calibrate "is this character?" without
+ * being post-type-specific exemplars. Distinct from ICE exemplars (which are
+ * per-post-type · injected via {{EXEMPLARS}}).
+ *
+ * V0.6-D voice/v5+ (2026-04-30): operator added voice-anchors.md to ruggy
+ * with old reactive-reply samples to ground voice texture. Auto-discovered by
+ * convention (no CharacterConfig field needed) — if a character has
+ * `voice-anchors.md` next to its persona.md, it gets injected. Empty string
+ * if absent (graceful · most characters won't have it).
+ *
+ * Trajectory note (V0.7+ daemon-stage): voice anchors become "voice template
+ * DNA" that the dNFT metadata points at. Today's markdown is tomorrow's
+ * structured template-engine input.
+ */
+function loadVoiceAnchors(personaPath: string): string {
+  const cached = voiceAnchorsCache.get(personaPath);
+  if (cached !== undefined) return cached;
+
+  const anchorsPath = resolve(dirname(personaPath), 'voice-anchors.md');
+  if (!existsSync(anchorsPath)) {
+    voiceAnchorsCache.set(personaPath, '');
+    return '';
+  }
+  const content = readFileSync(anchorsPath, 'utf8');
+  voiceAnchorsCache.set(personaPath, content);
+  return content;
+}
 
 function loadDoc(personaPath: string): string {
   const cached = docCache.get(personaPath);
@@ -124,6 +158,7 @@ export function buildPromptPair(args: BuildPromptArgs): {
   const fragment = loadFragment(character.personaPath, args.postType);
   const instruction = outputInstruction(args.postType);
   const exemplars = buildExemplarBlock(character, args.postType); // empty when no exemplars on disk
+  const voiceAnchors = loadVoiceAnchors(character.personaPath);  // empty when voice-anchors.md absent
 
   const inputPayloadMarker = '═══ INPUT PAYLOAD ═══';
   const idx = template.indexOf(inputPayloadMarker);
@@ -179,6 +214,7 @@ default.`;
     .replace(/\{\{POST_TYPE\}\}/g, args.postType)
     .replace(/\{\{POST_TYPE_GUIDANCE\}\}/g, fragment)
     .replace(/\{\{MOVEMENT_GUIDANCE\}\}/g, movementGuidance)
+    .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
     .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
     .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
     .trimEnd();
@@ -191,6 +227,7 @@ default.`;
     .replace(/\{\{POST_TYPE\}\}/g, args.postType)
     .replace(/\{\{POST_TYPE_OUTPUT_INSTRUCTION\}\}/g, instruction)
     .replace(/\{\{MOVEMENT_GUIDANCE\}\}/g, movementGuidance)
+    .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
     .trim();
 
   return {
