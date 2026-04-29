@@ -20,6 +20,10 @@
       "name": "@freeside-characters/character-ruggy",
       "version": "0.6.0",
     },
+    "apps/character-satoshi": {
+      "name": "@freeside-characters/character-satoshi",
+      "version": "0.6.0",
+    },
     "packages/persona-engine": {
       "name": "@freeside-characters/persona-engine",
       "version": "0.6.0",
@@ -81,6 +85,8 @@
     "@freeside-characters/bot": ["@freeside-characters/bot@workspace:apps/bot"],
 
     "@freeside-characters/character-ruggy": ["@freeside-characters/character-ruggy@workspace:apps/character-ruggy"],
+
+    "@freeside-characters/character-satoshi": ["@freeside-characters/character-satoshi@workspace:apps/character-satoshi"],
 
     "@freeside-characters/persona-engine": ["@freeside-characters/persona-engine@workspace:packages/persona-engine"],
 
