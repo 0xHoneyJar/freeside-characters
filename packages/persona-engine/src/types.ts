@@ -52,6 +52,44 @@ export interface CharacterConfig {
   displayName?: string;
   webhookAvatarUrl?: string;
   webhookUsername?: string;
+  /**
+   * V0.6-D voice/v4: anchored archetypes per character — the 1-2 cabal
+   * archetypes that genuinely map to who the character IS (NOT rotating
+   * filters · gumi correction §0.5 #1 · 2026-04-29 walkthrough).
+   *
+   * Examples:
+   *   ruggy   = ['Storyteller', 'GM']        // festival NPC narrator
+   *   satoshi = ['Veteran', 'Chaos-Agent']   // long view + uncertainty
+   *
+   * Promoted from persona.md frontmatter to first-class CharacterConfig
+   * field per WEAVER review 2026-04-30 (leverage point: enables /cabal
+   * post-design reception tester to know which archetypes to AUDIT
+   * against · enables future V0.6-D phase 2 router for character
+   * selection per @mention pattern).
+   *
+   * The other 7 archetypes per character are CULLED — Newcomer-confusion
+   * with satoshi's voice is correct reception, not a bug.
+   */
+  anchoredArchetypes?: CabalArchetype[];
 }
+
+/**
+ * The 9 cabal-gygax phantom-player archetypes — AUDIENCE postures, NOT
+ * character voice modes (gumi correction §0.5 #1 · 2026-04-29). Used:
+ * (a) per-character anchored identity declaration · (b) post-design
+ * /cabal reception-test targeting (when that command lands).
+ *
+ * Source: packages/persona-engine/src/orchestrator/cabal/gygax.ts
+ */
+export type CabalArchetype =
+  | 'Optimizer'
+  | 'Newcomer'
+  | 'Storyteller'
+  | 'Rules-Lawyer'
+  | 'Chaos-Agent'
+  | 'GM'
+  | 'Anxious-Player'
+  | 'Veteran'
+  | 'Explorer';
 
 export type { ZoneId, PostType };

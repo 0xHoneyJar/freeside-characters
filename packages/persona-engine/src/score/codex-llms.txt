@@ -15,13 +15,16 @@
 |------|------|-------|--------|
 | Mibera | miberas/{0001-10000}.md | 10,000 | YAML frontmatter + Markdown table |
 | Trait | traits/**/*.md | 1,337 | YAML frontmatter |
-| Drug | drugs-detailed/*.md | 78 | YAML frontmatter |
+| Drug/Molecule | traits/overlays/molecules/*.md | 78 | YAML frontmatter |
 | Ancestor | core-lore/ancestors/*.md | 33 | YAML frontmatter |
 | Tarot Card | core-lore/tarot-cards/*.md | 78 | YAML frontmatter |
-| Birthday Era | birthdays/*.md | 11 | Structured headings |
-| Special Collection | special-collections/*.md | 32 | YAML frontmatter |
+| Birthday Era | birthdays/*.md | 10 | Structured headings |
+| Special Collection | special-collections/**/*.md | 33 | YAML frontmatter |
 | VM Exclusive Trait | vending-machine/**/*.md | 102 | YAML frontmatter |
-| Grail | grails/{slug}.md | 42 | YAML frontmatter |
+| Grail | grails/{slug}.md | 43 | YAML frontmatter |
+| Mibera Set | mibera-sets/{slug}.md | 12 | YAML frontmatter |
+| MiParcel | miparcels/{0001-10000}.md | 10,000 | YAML frontmatter |
+| Fracture | fractures/*.md | 11 | YAML frontmatter |
 | Oracle | oracle/oracle.md | 1 | System prompt markdown |
 
 ## Lookup Patterns
@@ -34,13 +37,15 @@
 2. Slugify the name: "Golden Hoop" → `golden-hoop.md`
 3. Read `traits/{subcategory}/{slug}.md`
 
+### Find a MiParcel by ID
+1. Read `miparcels/{ID}.md` (zero-padded 4 digits: #42 → `miparcels/0042.md`)
+
 ### Find all Miberas with a given trait
 1. Read `browse/by-{dimension}.md` for grouped listings
 
 ### Ask the Oracle
 1. Read `oracle/oracle.md` for the system prompt
 2. Paste it into any LLM with codex access
-3. Ask your question — the Oracle routes to the right voice (Data, Lore, or Sight)
 
 ### Embody a Mibera
 1. Read `IDENTITY.md` for synthesis constraints
@@ -57,7 +62,10 @@
 
 ## Data Exports & Schemas
 
+- _codex/data/graph.json — Knowledge graph (11,475 nodes, 192,707 edges, all 24 trait dimensions)
 - _codex/data/miberas.jsonl — All 10,000 Miberas as JSONL (one JSON object per line)
+- _codex/data/grails.jsonl — All 43 Grails as JSONL
+- _codex/data/stats.md — Aggregate statistics dashboard
 - _codex/schema/*.schema.json — JSON Schema files for all entity types
 - llms-full.txt — Complete conceptual framework (~530KB, all core lore + ancestors + drugs)
 
@@ -71,14 +79,17 @@ Modifiers: Swag Rank → Astrology
 
 ### What This Codex Tracks
 - 10,000 generative Miberas (COMPLETE)
-- 42 hand-drawn Grails / 1/1s (COMPLETE)
-- 1,337 visual traits across 18 subcategories (COMPLETE)
-- 78 drugs, 78 tarot cards, 33 ancestors (COMPLETE)
-- 32 special/partner collections (PARTIAL)
+- 10,000 MiParcels — Phase 1 reveal with 15 trait categories (COMPLETE)
+- 43 Grails — 42 canonical hand-drawn 1/1s + 1 creator community (COMPLETE)
+- 1,337 visual traits across 20 subcategories (COMPLETE)
+- 78 drugs, 78 tarot cards, 33 ancestors, 10 birthday eras (COMPLETE)
+- 12 Mibera Sets — Honey Road ERC-1155 tokens on Optimism (COMPLETE)
+- 11 Fractures — reveal phase documentation (COMPLETE)
+- 33 special/partner collections (PARTIAL)
+- 102 VM-exclusive shadow traits (WIP)
 
 ### What This Codex Does NOT Track
 - Ownership / wallet balances / transfers
-- Custom commissioned art beyond the 42 canonical Grails
 - On-chain state (marketplace activity, token transfers)
 - Community member identities
 - Price or market data

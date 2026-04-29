@@ -31,6 +31,8 @@ interface CharacterJson {
   webhookAvatarUrl?: string;
   /** V0.6-D: per-message webhook username override (defaults to displayName ?? id). */
   webhookUsername?: string;
+  /** V0.6-D voice/v4: anchored cabal archetypes (1-2 per character). */
+  anchoredArchetypes?: string[];
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -66,6 +68,7 @@ export function loadCharacter(id: string): CharacterConfig {
     emojiAffinity: json.emojiAffinity,
     webhookAvatarUrl: json.webhookAvatarUrl,
     webhookUsername: json.webhookUsername,
+    anchoredArchetypes: json.anchoredArchetypes as CharacterConfig['anchoredArchetypes'],
   };
 }
 

@@ -8,6 +8,7 @@
     "primary": "ruggy",
     "fallback": "ruggy"
   },
+  "anchoredArchetypes": ["Storyteller", "GM"],
   "webhookAvatarUrl": "https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/staging/apps/character-ruggy/avatar.png",
   "webhookUsername": "Ruggy",
   "webhookAvatarTarget": "https://assets.0xhoneyjar.xyz/freeside-characters/ruggy/avatar.png — canonical target per SDD §0.2 per-world URL contract; bridge URL above points at the staging branch's avatar.png (operator-uploaded 2026-04-30); swap to canonical when assets.0xhoneyjar.xyz CDN cycle reaches /freeside-characters/",
