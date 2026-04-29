@@ -18,10 +18,23 @@
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { ZONE_SPATIAL, ALL_ZONES, furnishKansei } from './lynch-primitives.ts';
-import type { ZoneId } from '../../score/types.ts';
+import {
+  ZONE_SPATIAL,
+  ALL_ZONES,
+  furnishKansei,
+  type SpatialZoneId,
+} from './lynch-primitives.ts';
 
-const ZoneSchema = z.enum(['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab']);
+// Spatial zones include the-warehouse (vocab-only, no Discord channel).
+// Postable SpatialZoneId is a subset; rosenzu tools accept the wider set so
+// weaver references and future-activation paths are pre-wired.
+const ZoneSchema = z.enum([
+  'stonehenge',
+  'bear-cave',
+  'el-dorado',
+  'owsley-lab',
+  'the-warehouse',
+]);
 
 function ok(value: unknown) {
   return {
@@ -35,16 +48,19 @@ export const rosenzuServer = createSdkMcpServer({
   tools: [
     tool(
       'get_current_district',
-      'Returns the spatial profile for a zone — lynch primitive (node/district/edge/path/inner_sanctum), codex archetype, baseline KANSEI vector. Call this BEFORE composing any post to ground the prose in place.',
+      'Returns the spatial profile for a zone — lynch primitive (node/district/edge/path/inner_sanctum), codex archetype, era resonance, essence prose, baseline KANSEI vector. Call this BEFORE composing any post to ground the prose in place.',
       { zone: ZoneSchema },
       async ({ zone }) => {
-        const profile = ZONE_SPATIAL[zone as ZoneId];
+        const profile = ZONE_SPATIAL[zone as SpatialZoneId];
         return ok({
           zone: profile.zone,
           primitive: profile.primitive,
           archetype: profile.archetype,
+          era: profile.era,
+          essence: profile.essence,
           base_kansei: profile.base_kansei,
           landmark_count: profile.landmarks.length,
+          district_count: profile.districts.length,
         });
       },
     ),
@@ -71,14 +87,17 @@ export const rosenzuServer = createSdkMcpServer({
 
     tool(
       'fetch_landmarks',
-      'Returns persistent orientation cues for a zone — landmark names + edges. Use these as anchor points in scene description so the place feels load-bearing across posts.',
+      'Returns persistent orientation cues for a zone — landmarks, edges, districts, paths, nodes. Use these as anchor points in scene description so the place feels load-bearing across posts.',
       { zone: ZoneSchema },
       async ({ zone }) => {
-        const profile = ZONE_SPATIAL[zone as ZoneId];
+        const profile = ZONE_SPATIAL[zone as SpatialZoneId];
         return ok({
           zone: profile.zone,
           landmarks: profile.landmarks,
           edges: profile.edges,
+          districts: profile.districts,
+          paths: profile.paths,
+          nodes: profile.nodes,
         });
       },
     ),
@@ -91,7 +110,7 @@ export const rosenzuServer = createSdkMcpServer({
         fire_id: z.number().int().optional().describe('Optional fire identifier for deterministic variance. Omit to seed from current hour.'),
       },
       async ({ zone, fire_id }) => {
-        const vector = furnishKansei(zone as ZoneId, fire_id);
+        const vector = furnishKansei(zone as SpatialZoneId, fire_id);
         return ok(vector);
       },
     ),
@@ -112,8 +131,8 @@ export const rosenzuServer = createSdkMcpServer({
             note: 'no threshold — same zone',
           });
         }
-        const fromProfile = ZONE_SPATIAL[from_zone as ZoneId];
-        const toProfile = ZONE_SPATIAL[to_zone as ZoneId];
+        const fromProfile = ZONE_SPATIAL[from_zone as SpatialZoneId];
+        const toProfile = ZONE_SPATIAL[to_zone as SpatialZoneId];
         return ok({
           departure: {
             zone: from_zone,

@@ -30,6 +30,8 @@ import type { Config } from '../config.ts';
 import type { ZoneId } from '../score/types.ts';
 import type { PostType } from '../llm/post-types.ts';
 import { rosenzuServer } from './rosenzu/server.ts';
+import { factorsServer } from './factors/server.ts';
+import { freesideAuthServer } from './freeside_auth/server.ts';
 
 export interface OrchestratorRequest {
   systemPrompt: string;
@@ -57,6 +59,8 @@ export interface OrchestratorResponse {
 function buildMcpServers(config: Config): Record<string, McpServerConfig> {
   const servers: Record<string, McpServerConfig> = {
     rosenzu: rosenzuServer,
+    factors: factorsServer,
+    freeside_auth: freesideAuthServer,
   };
 
   // Register score-mcp whenever MCP_KEY is set. STUB_MODE used to gate
@@ -128,10 +132,10 @@ export async function runOrchestratorQuery(
     // The skill carries TTRPG-DM scene-gen rules; loads progressively.
     settingSources: ['project'],
     tools: [],
-    // V0.5-B: 8 turns to allow rosenzu + score tool-call rounds before
-    // final compose. Most posts settle in 3-4 turns; cap is a safety
-    // bound, not a target.
-    maxTurns: 8,
+    // V0.5-C: 12 turns to allow rosenzu + score + factors + freeside_auth
+    // tool-call rounds before final compose. Most posts settle in 4-6
+    // turns; cap is a safety bound, not a target.
+    maxTurns: 12,
     // V0.5-B: medium effort — operator pick. high (~30-77s/zone) was
     // overkill for cron-driven cadence; medium is ~15s/zone. drop to
     // 'low' if voice holds and we want closer to V0.4.5 latency.
