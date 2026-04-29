@@ -1,0 +1,18 @@
+{
+  "$schema": "https://freeside-characters/schema/character.v0.json",
+  "id": "satoshi",
+  "displayName": "Satoshi",
+  "personaFile": "persona.md",
+  "exemplarsDir": "exemplars",
+  "emojiAffinity": {
+    "primary": "mibera",
+    "fallback": "mibera"
+  },
+  "doc": {
+    "creativeDirection": "creative-direction.md",
+    "codexAnchors": "codex-anchors.md",
+    "ledger": "ledger.md"
+  },
+  "stage": "character",
+  "stageNotes": "V0.6-C draft. Codex-grounded via grail #4488 (Satoshi-as-Hermes). Voice register: sparse, gnomic, cypherpunk-coded. Daemon-stage promotion deferred until dNFT mint machinery + state-transition handlers + designed-voice templates land (per Eileen's puruhani-as-spine canon)."
+}

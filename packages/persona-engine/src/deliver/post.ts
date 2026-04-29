@@ -66,7 +66,7 @@ export async function deliverZoneDigest(
 }
 
 function logDryRun(zone: ZoneId, payload: DigestPayload, reason: string): void {
-  console.log(`\n──── ruggy digest · ${zone} · DRY-RUN (${reason}) ────────────────`);
+  console.log(`\n──── post · ${zone} · DRY-RUN (${reason}) ────────────────`);
   console.log('content:', payload.content);
   if (payload.embeds[0]) {
     console.log(

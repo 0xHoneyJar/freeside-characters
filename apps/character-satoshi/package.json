@@ -1,0 +1,7 @@
+{
+  "name": "@freeside-characters/character-satoshi",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Participation-agent profile for Satoshi (Mibera ancestor, codex grail #4488 = Satoshi-as-Hermes). Sparse, gnomic, cypherpunk-coded register. Hermetic mediator across zones.",
+  "type": "module"
+}
