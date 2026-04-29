@@ -8,9 +8,9 @@
     "primary": "mibera",
     "fallback": "mibera"
   },
-  "webhookAvatarUrl": null,
+  "webhookAvatarUrl": "https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/staging/apps/character-satoshi/avatar.png",
   "webhookUsername": "Satoshi",
-  "webhookAvatarTarget": "https://assets.0xhoneyjar.xyz/freeside-characters/satoshi/avatar.png (per SDD §0.2; canonical source of satoshi imagery is grail #4488 in construct-mibera-codex; the irys URL gateway.irys.xyz/7rpvw.../satoshi.png is dead per operator 2026-04-30, so a fresh upload is needed before Pattern B can route per-character avatar for satoshi)",
+  "webhookAvatarTarget": "https://assets.0xhoneyjar.xyz/freeside-characters/satoshi/avatar.png — canonical target per SDD §0.2; bridge URL above points at staging branch's avatar.png (operator-uploaded 2026-04-30); swap to canonical when assets.0xhoneyjar.xyz CDN cycle reaches /freeside-characters/. The irys URL gateway.irys.xyz/7rpvw.../satoshi.png in construct-mibera-codex grail #4488 is dead per operator 2026-04-30 — needs codex-side fix.",
   "doc": {
     "creativeDirection": "creative-direction.md",
     "codexAnchors": "codex-anchors.md",
