@@ -105,14 +105,143 @@ Ruggy doesn't need:
 
 May need a module variant: `modules/world-bot` instead of `modules/world` — file as a follow-up issue. For initial migration, can deploy via `modules/world` and ignore the unused ALB resources, or use a simpler standalone ECS task definition.
 
-## Alternative: Railway deploy
+## Railway deploy — current path (2026-04-30)
 
-If ECS coordination delays the migration, Railway is a faster path matching `score-api`'s deploy pattern:
+**Decision**: deploying to Railway first (faster iteration), Freeside ECS migration deferred.
+**Operator**: 2 services for staging→prod separation. Staging iterates forward; production
+pins to a stable build until manually bumped.
 
-```bash
-railway link
-railway up
-# set env vars via Railway dashboard
+### Topology
+
+```
+            github: 0xHoneyJar/freeside-ruggy:main
+                              │
+                              ▼
+                     ┌────────┴────────┐
+                     │                 │
+                     ▼                 ▼
+              ╔════════════╗    ╔════════════╗
+              ║  staging   ║    ║ production ║
+              ╚════╤═══════╝    ╚════╤═══════╝
+                   │                 │
+         token: ruggy#1157          token: ruggy-prod
+         guild: project purupuru    guild: The Honey Jar
+         auto-deploy on push        manual deploy only
+         iterates forward           pinned (until you bump)
 ```
 
-Easier ops; no Freeside infra coupling. Migration to Freeside ECS happens once the runtime is stable in Railway. Operator's call.
+Same Dockerfile, same image, only env diverges per service. The build artifacts live in this repo:
+
+- `Dockerfile` — Bun-based, copies workspace + apps/bot, runs the bot via `bun run`
+- `.dockerignore` — excludes node_modules, .env, .run/, grimoires
+- `railway.json` — points Railway at the Dockerfile + sets restart policy
+
+### First-time setup
+
+#### 1. Create production bot identity
+
+`ruggy#1157` already lives in two guilds — use it for STAGING. For PRODUCTION, register a separate Discord application + bot so accidental staging fires can't cross-pollute.
+
+```
+discord.com/developers/applications → New Application
+  name: "ruggy-prod" (or "freeside-ruggy")
+Bot tab → Reset Token → save as PROD_DISCORD_BOT_TOKEN
+OAuth2 → URL Generator
+  scopes: bot, applications.commands
+  permissions: Send Messages, Embed Links, Use External Emojis,
+               Read Message History
+Visit URL → install into "The Honey Jar" guild → verify bot in member list
+```
+
+#### 2. Provision Railway services
+
+```
+railway.app → New Project → Empty Project
+  name: "freeside-ruggy"
+Add Service → Deploy from GitHub Repo
+  repo:   0xHoneyJar/freeside-ruggy
+  branch: main
+  name:   "ruggy-staging"
+Add Service → Deploy from same repo
+  name:   "ruggy-prod"
+ruggy-prod → Settings → Source → DISABLE auto-deploy on push
+  (so prod stays pinned until you manually bump)
+```
+
+#### 3. Set env vars per service
+
+Per service: Settings → Variables → paste from `.env.example`.
+
+**Shared (both services):**
+```
+ANTHROPIC_API_KEY=sk-ant-api03-...
+ANTHROPIC_MODEL=claude-sonnet-4-6
+LLM_PROVIDER=anthropic
+SCORE_API_URL=https://score-api-production.up.railway.app
+MCP_KEY=<X-MCP-Key from zerker>
+RAILWAY_MIBERA_DATABASE_URL=<from `railway variables` in mibera-dimensions>
+NODE_ENV=production
+LOG_LEVEL=info
+```
+
+**ruggy-staging only:**
+```
+ENV=staging
+DISCORD_BOT_TOKEN=<token for ruggy#1157>
+DISCORD_CHANNEL_STONEHENGE=1498822402900230294
+DISCORD_CHANNEL_BEAR_CAVE=1498822450316578907
+DISCORD_CHANNEL_EL_DORADO=1498822480587002038
+DISCORD_CHANNEL_OWSLEY_LAB=1498822512442609694
+```
+
+**ruggy-prod only:**
+```
+ENV=production
+DISCORD_BOT_TOKEN=<token for ruggy-prod>
+DISCORD_CHANNEL_STONEHENGE=1497618160592097464
+DISCORD_CHANNEL_BEAR_CAVE=1497618042560188517
+DISCORD_CHANNEL_EL_DORADO=1497618131269718106    # discord display: "agora"
+DISCORD_CHANNEL_OWSLEY_LAB=1497617952831176777
+```
+
+Code-side zone IDs stay `el-dorado` even when production Discord displays the channel as `agora` — channel IDs are what matter; display names are cosmetic.
+
+### Iteration loop
+
+```
+1. develop locally                 LLM_PROVIDER=anthropic with real keys
+2. push to main                    auto-deploys ruggy-staging
+3. validate in purupuru server     digest, micro, callout — peep voice + emoji
+4. when staging proves out         manual deploy ruggy-prod via Railway UI
+5. monitor THJ channels            same code, prod identity
+```
+
+Rollback if needed: Railway → Deployments → redeploy a prior successful build.
+
+### Health checks
+
+The bot doesn't expose HTTP healthz (Discord gateway client). Railway monitors process liveness; restart policy = `ON_FAILURE`, max 10 retries. Beyond that, monitor:
+- `[ruggy] discord client ready as <name>` log on each restart
+- weekly digest sweep (sunday 00:00 UTC by default)
+- pop-in cadence (~1-2/day per zone)
+
+### Ephemeral state
+
+`apps/bot/.run/emoji-recent.jsonl` (cross-process emoji-variance cache) lives on the container's writable filesystem. Resets on each deploy/restart — that's fine; the cache only buys within-deploy variance.
+
+### Cost guidance
+
+- Railway: 2 services × 512MB-1GB RAM × ~$5/GB/mo ≈ $5-10/mo each
+- Anthropic API: ~$0.05-0.20 per fire (medium effort, 4-6 tool calls). Weekly 4-zone sweep + ~1-2 pop-ins/day per zone ≈ $5-10/mo
+- Total: **~$15-30/mo combined** before any future scale-up
+
+## Future zones (when score-mibera adds tl + irl)
+
+Operator confirmed prep for 5 dim zones + stonehenge hub. When tl (Timeline) and irl (Poppy Field) ship in score-mibera and Eileen names the Discord channels:
+
+1. Add `tl` / `irl` to `apps/bot/src/score/types.ts` (`ZoneId`, `ZONE_TO_DIMENSION`, `ZONE_FLAVOR`)
+2. Add KANSEI vocab to `apps/bot/src/agent/rosenzu/lynch-primitives.ts`
+3. Add channel ID env vars to both Railway services
+4. Update `.env.example` + this doc
+
+The architecture supports vocab-only zones (see gumi's `the-warehouse` in `lynch-primitives.ts`) so there's no big-bang change.

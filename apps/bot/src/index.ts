@@ -16,7 +16,7 @@ import { schedule, type FireRequest } from './cron/scheduler.ts';
 import { loadSystemPrompt } from './persona/loader.ts';
 import { exemplarStats } from './persona/exemplar-loader.ts';
 import { getBotClient, shutdownClient } from './discord/client.ts';
-import { ZONE_FLAVOR } from './score/types.ts';
+import { ZONE_FLAVOR, getWindowEventCount } from './score/types.ts';
 import { getCodexLineCount } from './score/codex-context.ts';
 
 const banner = `─── ruggy · freeside-ruggy v0.3.0 ──────────────────────────────`;
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
         console.log(`ruggy: ${req.zone}/${req.postType} skipped (data didn't fit)`);
         return;
       }
-      console.log(`ruggy: ${req.zone}/${req.postType} composed (${result.digest.raw_stats.total_events} events) in ${Date.now() - t0}ms`);
+      console.log(`ruggy: ${req.zone}/${req.postType} composed (${getWindowEventCount(result.digest.raw_stats)} events) in ${Date.now() - t0}ms`);
 
       const delivery = await deliverZoneDigest(config, req.zone, result.payload);
       if (delivery.posted) {

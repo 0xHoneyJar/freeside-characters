@@ -225,10 +225,15 @@ export function generateStubZoneDigest(zone: ZoneId): ZoneDigest {
     })),
   );
 
+  const totalE = shape.label === 'thin' ? 89 : totalEvents;
+  const activeW = shape.label === 'thin' ? 12 : activeWallets;
   const rawStats: RawStats = {
-    schema_version: '1.0.0',
-    total_events: shape.label === 'thin' ? 89 : totalEvents,
-    active_wallets: shape.label === 'thin' ? 12 : activeWallets,
+    schema_version: '2.0.0',
+    // v2 names — real window totals (stub fakes them as = sample for simplicity)
+    window_event_count: totalE,
+    window_wallet_count: activeW,
+    top_event_count: topEvents.length,
+    top_wallet_count: activeW,
     top_movers: climbed,
     top_events: topEvents,
     spotlight:
@@ -262,7 +267,7 @@ export function generateStubZoneDigest(zone: ZoneId): ZoneDigest {
     window_start: windowStart.toISOString(),
     window_end: windowEnd.toISOString(),
     stale: false,
-    schema_version: '1.0.0',
+    schema_version: '2.0.0',
     narrative,
     narrative_error: shape.narrative ? null : 'narrative_unavailable',
     narrative_error_hint: shape.narrative
@@ -273,8 +278,8 @@ export function generateStubZoneDigest(zone: ZoneId): ZoneDigest {
 }
 
 function buildStubNarrative(zone: ZoneId, label: string, stats: RawStats): NarrativeShape {
-  const totalEvents = stats.total_events;
-  const activeWallets = stats.active_wallets;
+  const totalEvents = stats.window_event_count ?? stats.top_event_count ?? 0;
+  const activeWallets = stats.window_wallet_count ?? stats.top_wallet_count ?? 0;
   const topFactor = stats.factor_trends[0];
 
   const headlines: Record<string, string> = {

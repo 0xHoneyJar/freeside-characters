@@ -26,6 +26,7 @@ import type { Config } from '../config.ts';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR } from '../score/types.ts';
 import { generateStubZoneDigest } from '../score/client.ts';
+import { getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
 import type { PostType } from './post-types.ts';
 import { runOrchestratorQuery } from '../agent/orchestrator.ts';
 
@@ -166,8 +167,8 @@ function generateStubPost(req: InvokeRequest): InvokeResponse {
 function stubDigest(digest: ZoneDigest): string {
   const flavor = ZONE_FLAVOR[digest.zone];
   const stats = digest.raw_stats;
-  const total = stats.total_events;
-  const wallets = stats.active_wallets;
+  const total = getWindowEventCount(stats);
+  const wallets = getWindowWalletCount(stats);
   const factors = stats.factor_trends;
   const lead = factors[0];
   const climbed = stats.rank_changes.climbed[0];
@@ -228,14 +229,14 @@ function stubMicro(digest: ZoneDigest): string {
   const opts = [
     `yo, just peeped ${flavor.name} — ${lead ? `\`${lead.factor_id}\` is steady (${lead.current_count} events). ` : ''}${climbed ? `\`${climbed.wallet}\` quietly climbing.` : 'nothing wild but the og crew is moving.'}`,
     `${flavor.name}'s been ${lead && lead.multiplier > 2 ? 'buzzin' : 'kinda chill'} today. ${lead ? `\`${lead.factor_id}\` carrying the load.` : 'holding pattern.'}`,
-    `quick peep at ${flavor.name} — ${digest.raw_stats.total_events} events, ${digest.raw_stats.active_wallets} miberas active. ${climbed ? `solid stack from \`${climbed.wallet}\`.` : 'steady.'}`,
+    `quick peep at ${flavor.name} — ${getWindowEventCount(digest.raw_stats)} events, ${getWindowWalletCount(digest.raw_stats)} miberas active. ${climbed ? `solid stack from \`${climbed.wallet}\`.` : 'steady.'}`,
   ];
   return opts[Math.floor(Math.random() * opts.length)] ?? opts[0]!;
 }
 
 function stubWeaver(digest: ZoneDigest): string {
   const flavor = ZONE_FLAVOR[digest.zone];
-  return `noticed something across the festival this week — ${flavor.name} is buzzin (${digest.raw_stats.total_events} events) but the same miberas keep showing up across multiple zones. that's the og pattern: stack everywhere, not just one zone. keep a peep on the cross-zone movers.`;
+  return `noticed something across the festival this week — ${flavor.name} is buzzin (${getWindowEventCount(digest.raw_stats)} events) but the same miberas keep showing up across multiple zones. that's the og pattern: stack everywhere, not just one zone. keep a peep on the cross-zone movers.`;
 }
 
 function stubLoreDrop(digest: ZoneDigest): string {
@@ -248,7 +249,7 @@ function stubLoreDrop(digest: ZoneDigest): string {
 function stubQuestion(digest: ZoneDigest): string {
   const flavor = ZONE_FLAVOR[digest.zone];
   const opts = [
-    `ngl, ${flavor.name}'s been weirdly ${digest.raw_stats.total_events < 200 ? 'chill' : 'lively'} this week. anyone else see it?`,
+    `ngl, ${flavor.name}'s been weirdly ${getWindowEventCount(digest.raw_stats) < 200 ? 'chill' : 'lively'} this week. anyone else see it?`,
     `serious question — what's everyone's read on ${flavor.name} right now?`,
     `${flavor.name} regulars: y'all noticing the same patterns ruggy is?`,
   ];

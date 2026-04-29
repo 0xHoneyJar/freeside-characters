@@ -9,7 +9,7 @@
  */
 
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
-import { ZONE_FLAVOR } from '../score/types.ts';
+import { ZONE_FLAVOR, getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
 import { POST_TYPE_SPECS, type PostType } from '../llm/post-types.ts';
 import { escapeDiscordMarkdown } from './sanitize.ts';
 
@@ -95,7 +95,7 @@ function buildFallback(digest: ZoneDigest, postType: PostType): string {
 
   switch (postType) {
     case 'digest':
-      return `${flavor.emoji} ${flavor.name} · ${stats.total_events} events · ${stats.active_wallets} wallets`;
+      return `${flavor.emoji} ${flavor.name} · ${getWindowEventCount(stats)} events · ${getWindowWalletCount(stats)} miberas`;
     case 'weaver':
       return `${flavor.emoji} ${flavor.name} · cross-zone weave 🪡`;
     case 'callout':

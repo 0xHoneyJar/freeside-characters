@@ -113,7 +113,8 @@ export function popInFits(digest: ZoneDigest): boolean {
   if (stats.spotlight !== null) return true;
   if (stats.rank_changes.climbed.length > 0) return true;
   if (stats.factor_trends.some((t) => t.multiplier >= 1.3 || t.multiplier <= 0.7)) return true;
-  if (stats.factor_trends.length >= 2 && stats.total_events >= 50) return true;
+  const totalEvents = stats.window_event_count ?? stats.top_event_count ?? stats.total_events ?? 0;
+  if (stats.factor_trends.length >= 2 && totalEvents >= 50) return true;
   return false;
 }
 

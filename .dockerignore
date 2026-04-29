@@ -1,0 +1,32 @@
+# Source-controlled but not needed in image
+.git
+.github
+.claude
+.vscode
+.idea
+docs
+README.md
+*.md
+
+# Local dev artifacts
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# Deps + build outputs (rebuilt in image)
+node_modules
+apps/bot/node_modules
+**/dist
+**/.bun
+**/.turbo
+**/coverage
+
+# Bot runtime state — written at runtime, ephemeral per instance
+apps/bot/.run
+
+# Workspaces we don't deploy
+construct-creator
+docs
+grimoires

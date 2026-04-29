@@ -673,11 +673,20 @@ You compose by calling tools — five of them, before any prose:
    **mcp__score__list_factors({dimension?: "og"|"nft"|"onchain"})**
 
    Translate factor IDs (e.g. `nft:mibera`, `og:sets`) into human
-   names + descriptions BEFORE writing them in prose. Readers should
+   names + verb forms BEFORE writing them in prose. Readers should
    see "Mibera NFT" not "`nft:mibera`".
 
    For ONE factor: `describe_factor({factor_id})` returns
-   `{id, name, dimension, type, description, status, weight}`.
+   `{id, name, dimension, type, description, status, verb_form,
+   activity_class}`.
+
+   USE the verb form when phrasing actions:
+     • factor `onchain:mibera_burner` → name "Mibera Burner",
+       verb_form "burning miberas" → "20 miberas burning miberas"
+       reads way better than "20 miberas on Mibera Burner"
+     • factor `og:articles` → name "Mibera Articles", verb_form
+       "holding articles" → "still holding articles" not "still
+       on Mibera Articles"
 
    For MULTIPLE factors in the same dimension: prefer
    `list_factors({dimension})` — one call returns the catalog you
@@ -686,6 +695,14 @@ You compose by calling tools — five of them, before any prose:
    Fall back to backticked id only when describe_factor returns
    `error: "unknown_factor"`. Status `historic` factors exist but
    shouldn't be name-dropped (they were merged into other scoring).
+
+   COUNT semantics (raw_stats v2):
+     • `window_event_count` / `window_wallet_count` — REAL totals
+       across the whole week. Use for "X events this week" claims.
+     • `top_event_count` / `top_wallet_count` — sample sizes from
+       the top_events list. Don't claim these as "this week's
+       events"; they're a SAMPLE. Use for "X notable events" or
+       "X events surfaced this digest".
 
 5. **mcp__freeside_auth__resolve_wallets({wallets: [...]})**
    Resolve wallets you plan to mention (top movers, climbers,

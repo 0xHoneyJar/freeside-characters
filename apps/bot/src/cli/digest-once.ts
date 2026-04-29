@@ -14,7 +14,7 @@
 import { loadConfig, isDryRun, selectedZones } from '../config.ts';
 import { composeZonePost } from '../llm/composer.ts';
 import { deliverZoneDigest } from '../discord/post.ts';
-import { ZONE_FLAVOR } from '../score/types.ts';
+import { ZONE_FLAVOR, getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
 import { getBotClient, shutdownClient } from '../discord/client.ts';
 import type { PostType } from '../llm/post-types.ts';
 import { POST_TYPE_SPECS } from '../llm/post-types.ts';
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
 
       const compMs = Date.now() - t0;
       console.log(
-        `\n[${zone}/${postType}] composed in ${compMs}ms · ${result.digest.raw_stats.total_events} events · ${result.digest.raw_stats.active_wallets} wallets`,
+        `\n[${zone}/${postType}] composed in ${compMs}ms · ${getWindowEventCount(result.digest.raw_stats)} events · ${getWindowWalletCount(result.digest.raw_stats)} miberas`,
       );
 
       const delivery = await deliverZoneDigest(config, zone, result.payload);

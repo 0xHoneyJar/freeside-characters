@@ -12,6 +12,25 @@ export const RAW_STATS_SCHEMA_VERSION = '1.0.0';
 // ──────────────────────────────────────────────────────────────────────
 // Zones (festival metaphor — zerker's flavor choice)
 // ──────────────────────────────────────────────────────────────────────
+//
+// CURRENT ZONES (4 postable):
+//   - stonehenge:  cross-dim hub / leaderboard center (NOT a dimension)
+//   - bear-cave:   og dimension       (LIVE)
+//   - el-dorado:   nft dimension      (LIVE — discord display: "agora")
+//   - owsley-lab:  onchain dimension  (LIVE)
+//
+// FUTURE ZONES (per operator 2026-04-30 — prep for 5 dims + hub = 6):
+//   - tl  → Timeline / HÖR        (NOT LIVE in score yet — 5th zone TBD)
+//   - irl → Poppy Field           (NOT LIVE in score yet — 6th zone TBD)
+// When score-mibera adds tl/irl scoring + Eileen names the Discord
+// channels, expand:
+//   ZoneId, ZONE_IDS, ZONE_TO_DIMENSION, ZONE_FLAVOR
+//   apps/bot/src/agent/rosenzu/lynch-primitives.ts (vocab + KANSEI)
+//   .env.example (DISCORD_CHANNEL_<NEW> per server)
+//
+// midi's Dimension type is `og | nft | onchain | tl | irl`; ruggy
+// currently maps only the 3 live + hub. Drift is intentional — channels
+// don't exist for tl/irl yet, so the zones aren't postable.
 
 export type ZoneId = 'stonehenge' | 'bear-cave' | 'el-dorado' | 'owsley-lab';
 export type DimensionId = 'og' | 'nft' | 'onchain';
@@ -83,15 +102,57 @@ export interface RankChanges {
   exited_top_tier: TopMover[];
 }
 
+/**
+ * Score raw_stats — supports v1.0.0 and v2.0.0.
+ *
+ * v2 (score-mibera PR #75, merged 2026-04-29) renamed sample-derived
+ * counts and ADDED real window totals:
+ *   total_events  → top_event_count   (sample-derived, capped)
+ *   active_wallets → top_wallet_count (sample-derived, unique)
+ *   NEW: window_event_count  (actual total events in window)
+ *   NEW: window_wallet_count (actual unique wallets in window)
+ *
+ * Score's parseRow auto-migrates v1 → v2 on read, so consumers see
+ * v2 shape post-deploy. We treat all v1 fields as optional + carry
+ * v2 fields as the canonical surface. RuntimeShape branch on
+ * schema_version when we need to disambiguate.
+ */
 export interface RawStats {
-  schema_version: '1.0.0';
-  total_events: number;
-  active_wallets: number;
+  schema_version: '1.0.0' | '2.0.0';
+  /** v2: real total events in window. v1: same as top_event_count (sample). */
+  window_event_count?: number;
+  /** v2: real unique wallets in window. v1: same as top_wallet_count (sample). */
+  window_wallet_count?: number;
+  /** v2: count of events surfaced in `top_events` (sample). v1 emitted as `total_events`. */
+  top_event_count?: number;
+  /** v2: unique wallets across `top_events` + `rank_changes` (sample). v1 emitted as `active_wallets`. */
+  top_wallet_count?: number;
+  /** v1 alias — score-mcp v1.1.0 emits this. Migrate to top_event_count on read. */
+  total_events?: number;
+  /** v1 alias — score-mcp v1.1.0 emits this. Migrate to top_wallet_count on read. */
+  active_wallets?: number;
   top_movers: TopMover[];
   top_events: RecentEvent[];
   spotlight: Spotlight | null;
   rank_changes: RankChanges;
   factor_trends: FactorTrend[];
+}
+
+/** Helpers to read counts regardless of v1/v2 shape. */
+export function getWindowEventCount(stats: RawStats): number {
+  return stats.window_event_count ?? stats.top_event_count ?? stats.total_events ?? 0;
+}
+
+export function getWindowWalletCount(stats: RawStats): number {
+  return stats.window_wallet_count ?? stats.top_wallet_count ?? stats.active_wallets ?? 0;
+}
+
+export function getTopEventCount(stats: RawStats): number {
+  return stats.top_event_count ?? stats.total_events ?? 0;
+}
+
+export function getTopWalletCount(stats: RawStats): number {
+  return stats.top_wallet_count ?? stats.active_wallets ?? 0;
 }
 
 // ──────────────────────────────────────────────────────────────────────
