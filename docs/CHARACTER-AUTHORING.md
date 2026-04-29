@@ -4,6 +4,16 @@ How to add a new participation-agent profile under
 `apps/character-<id>/`. Read `CIVIC-LAYER.md` first — it explains why
 characters are markdown + JSON only and the substrate handles all runtime.
 
+> 🪩 **Before you author a character, the Discord side must be ready.**
+> Pattern B (webhook-shell) requires `MANAGE_WEBHOOKS` on every channel
+> the character posts to. Without it, the LLM composes text but delivery
+> returns `403 Missing Permissions` and posts vanish silently.
+>
+> See [`DISCORD-SETUP.md`](./DISCORD-SETUP.md) for: invite-link generator,
+> permission bitmask reference, per-channel grants, and troubleshooting.
+> The shell-bot setup is shared across all characters in the deployment;
+> per-character work is voice + persona + lore (not Discord plumbing).
+
 ## Folder shape
 
 ```

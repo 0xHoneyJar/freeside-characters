@@ -101,16 +101,22 @@ LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=… \
 
 ### 1. Grant `MANAGE_WEBHOOKS` to the shell bot
 
-The V0.5-E ruggy bot's OAuth permissions don't include `MANAGE_WEBHOOKS`. V0.6-D needs it for fetch-or-create-webhook-per-channel. Two paths:
+> See [`DISCORD-SETUP.md`](./DISCORD-SETUP.md) for the canonical Discord-side
+> doc — invite-link generator script, full permission bitmask reference,
+> intents matrix, troubleshooting. The summary below is the operator-quick
+> path; consult the full doc for new guild provisioning or debugging
+> 403/code 50013 errors.
 
-**Option A — re-invite via OAuth URL (cleanest):**
+Pattern B (webhook-shell · per-character avatar+username override) needs
+`MANAGE_WEBHOOKS` to fetch-or-create webhooks per channel. Two paths:
+
+**Option A — generate invite link with the right perms (cleanest):**
+```bash
+DISCORD_BOT_TOKEN=<bot-token> bun run scripts/print-invite-link.ts
 ```
-discord.com/developers/applications → Ruggy → OAuth2 → URL Generator
-  scopes: bot
-  permissions: Send Messages · Embed Links · Use External Emojis ·
-               Read Message History · MANAGE WEBHOOKS
-Visit URL → reauthorize bot in BOTH guilds (THJ + project purupuru)
-```
+Outputs an OAuth URL with `permissions=537185280` preconfigured (covers
+`VIEW_CHANNEL · SEND_MESSAGES · EMBED_LINKS · ATTACH_FILES · USE_EXTERNAL_EMOJIS · MANAGE_WEBHOOKS`).
+Visit URL → authorize in target guild.
 
 **Option B — per-channel grant (no re-OAuth needed):**
 - Guild Settings → Roles → bot role → Permissions → enable `Manage Webhooks`

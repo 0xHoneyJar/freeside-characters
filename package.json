@@ -14,7 +14,8 @@
     "build": "bun run --cwd apps/bot build",
     "test": "bun run --cwd apps/bot test",
     "typecheck": "bun run --cwd packages/persona-engine typecheck && bun run --cwd apps/bot typecheck",
-    "digest:once": "bun run --cwd apps/bot digest:once"
+    "digest:once": "bun run --cwd apps/bot digest:once",
+    "discord:invite": "bun run scripts/print-invite-link.ts"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
