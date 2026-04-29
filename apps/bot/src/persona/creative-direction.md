@@ -111,13 +111,111 @@ Future persona-bots (puru-daemon, aphive-beekeeper, etc.) walk the
 same 5-card deck. The composition is operator IP per loom doctrine
 (curated set IS the moat).
 
+## Construct integration plan (2026-04-28 follow-up subagent study)
+
+Operator directed deep study of Gumi-authored TTRPG constructs +
+rosenzu spatial construct. All three installed at
+`~/.loa/constructs/packs/`. For each: install pruned (extract patterns,
+not full tool suite). Ruggy V0.5 weaves them via Claude Agent SDK
+skill-loading.
+
+### 🎲 construct-gygax (Game systems analyst — Gary Gygax persona)
+
+Install: pruned. Keep `/attune` (ingest) + `/cabal` (9-archetype
+phantom-player simulation) + `/scry` (forked design experiments).
+Skip `/augury` + full `/lore` (TTRPG-specific math + heuristics not
+relevant to ruggy).
+
+For Ruggy specifically:
+- Cabal's **9 phantom-player archetypes** (Optimizer / Explorer /
+  Storyteller / Rules-Lawyer / Newcomer / Chaos-Agent / GM / Anxious-
+  Player / Veteran) → voice-variance technique. Ruggy can adopt an
+  archetype lens per post (Storyteller-voiced lore drop vs
+  Optimizer-voiced anomaly callout).
+- Cabal's **8 experience signals** (confusion / excitement /
+  dead-time / decision-paralysis / frustration / cool-moment /
+  cognitive-overload / mastery-reward) → KEEPER-style baseline
+  drift detection on community engagement.
+- **Pacing tempo** framework (setup / rising / climax / falling /
+  resolution per narrative phase) → cadence calibration for
+  digest + pop-in mix.
+
+### 🎭 construct-arneson (TTRPG narrative instrument — Dave Arneson persona)
+
+Install: pruned. Keep `/voice` + `/scene` + `/narrate`. Skip
+`/braunstein` + `/distill` (full session machinery — too heavyweight
+for stagehand role).
+
+For Ruggy specifically:
+- **`/voice`** — NPC persistence model. Voice persists across sessions;
+  identity learns; growth shows over weeks. **Direct fit** for V0.4.7
+  wallet-recognition log — ruggy "voices" each recognized wallet across
+  weeks, building continuity.
+- **`/scene`** — scene-from-seed generator (ground in game-state, flag
+  improvisation). **Direct fit** for V0.4.6 festival-zones environmental
+  descriptions — each zone has a `/scene` template that grounds ruggy's
+  posts in the room before naming numbers.
+- **`/narrate`** — fiction-mechanics-fiction primitive. mechanical_intent
+  governs outcome (raw_stats); experiential_intent governs tone
+  (zone atmosphere). **This IS ruggy's rewrite architecture** — arneson
+  codifies what we already do.
+- Persona discipline: warm, collaborative, improvisational; stay in
+  character; ground in data or flag improvisation; never break
+  character to comment on design.
+
+### 🗺️ construct-rosenzu (Spatial awareness — Kevin Lynch persona)
+
+Install: as **planning tool** (V0.5+), not runtime dependency. Manual
+`/map` per season; `/spatial-audit` monthly health check.
+
+Lynch primitives for ruggy:
+
+| Element | Definition | Ruggy use |
+|---|---|---|
+| Paths | navigation flows | weekly digest cadence + multi-zone weaver |
+| Edges | boundaries | discord channel separators; zone emoji anchors |
+| Districts | themed zones | each festival zone (Freetekno/Milady/Acidhouse) |
+| Nodes | convergence points | stonehenge (hub); weekly digest as ritual moment |
+| Landmarks | persistent orientation | ruggy's voice, ascii bear, lowercase invariant |
+
+**KANSEI tokens per zone** (from rosenzu `/furnish` analysis — feeds
+directly into V0.4.6 `core-lore/festival-zones.md` authoring):
+
+| Zone | warmth | motion speed | shadow | easing | feel |
+|---|---|---|---|---|---|
+| 🗿 stonehenge | 0.3 (cool-neutral) | panoramic, broad-view | mid | objective | broad observatory |
+| 🐻 bear-cave | 0.7 (warm honey) | 700ms+ ritual motion | deep | intimate | low-lit warehouse, og sound |
+| ⛏️ el-dorado | 0.5 (neon-edge) | 200ms snap | mid | playful, alert | gold-tinged, treasure-hunt |
+| 🧪 owsley-lab | 0.4 (ethereal) | 2000ms+ breathing | deep | otherworldly | humming amber, late-night |
+
+These are the texture vectors operator should use when authoring
+festival-zones.md descriptions.
+
+### Composition layer-cake
+
+```
+   rosenzu       maps WHERE      (topology / Lynch primitives)
+   codex         grounds WHAT    (archetype / ancestor / drug-tarot)
+   arneson       voices HOW      (scene / voice / narrate)
+   gygax         tunes BALANCE   (cabal archetypes / pacing)
+                  ────────────
+   ruggy         weaves all four into post
+
+   score-mcp     supplies WHEN   (data / activity / state)
+```
+
+Each construct owns a clean responsibility. Ruggy's persona doc
+references all four; the agent loop (V0.5 SDK migration) loads them
+on-demand as skills.
+
 ## Open / deferred
 
 - Voice register variants beyond OG laid-back groovy
 - Visual identity (avatar / custom emoji refresh / color)
 - Cross-persona coherence (when puru-daemon + ruggy share honey jar guild)
 - Lore-stewarding RFC (ruggy writes to canonical chronicle)
-- Riot/Bungie/FFXIV creator-economy bot pattern research (Gemini prompt drafted, not run yet)
+- Riot/Bungie/FFXIV creator-economy bot pattern research (Gemini prompt
+  v2 enhanced with TTRPG construct lineage; ready to run)
 
 ## Provenance
 
