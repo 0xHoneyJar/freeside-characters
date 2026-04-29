@@ -100,9 +100,6 @@ export function loadSystemPrompt(): string {
 export interface BuildPromptArgs {
   zoneId: ZoneId;
   postType: PostType;
-  zoneDigestJson: string;
-  /** Optional supplementary context (used by weaver to include other zones' digests) */
-  supplement?: string;
 }
 
 export function buildPromptPair(args: BuildPromptArgs): {
@@ -130,17 +127,12 @@ export function buildPromptPair(args: BuildPromptArgs): {
     .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
     .trimEnd();
 
-  const userHalfBase = template
+  const userHalf = template
     .slice(idx)
     .replace(/\{\{ZONE_ID\}\}/g, args.zoneId)
     .replace(/\{\{POST_TYPE\}\}/g, args.postType)
     .replace(/\{\{POST_TYPE_OUTPUT_INSTRUCTION\}\}/g, instruction)
-    .replace(/\{\{ZONE_DIGEST_JSON\}\}/g, args.zoneDigestJson)
     .trim();
-
-  const userHalf = args.supplement
-    ? `${userHalfBase}\n\n═══ SUPPLEMENTARY CONTEXT ═══\n${args.supplement}`
-    : userHalfBase;
 
   return {
     systemPrompt: systemHalf,

@@ -1,36 +1,35 @@
 /**
- * Orchestrator — Claude Agent SDK execution layer (V0.5-A).
+ * Orchestrator — Claude Agent SDK execution layer.
  *
- * Wraps a single LLM call through `@anthropic-ai/claude-agent-sdk`'s
- * `query()` runtime. This is the V0.5 successor to V0.4.5's manual
- * `invokeAnthropicDirect` fetch in `agent-gateway.ts` — the SDK gives us
- * the loop primitives (mcpServers, settingSources, permissionMode,
- * subagents) that V0.5-B and V0.5-C will lean on.
+ * Wraps each LLM call through `@anthropic-ai/claude-agent-sdk`'s `query()`
+ * runtime. The SDK gives us mcpServers, settingSources, permissionMode,
+ * subagents — the loop primitives V0.5 leans on.
  *
- * V0.5-A scope (this file):
- *   - Single-turn query, no tool calls (preserves V0.4.5 voice/output)
- *   - Digest data is still pre-fetched by `score/client.ts` and embedded
- *     in the user message (zero behavior change vs V0.4.5)
- *   - mcpServers config is wired but the LLM has no reason to invoke
- *     them yet — persona prompt doesn't direct tool use
+ * V0.5-A:
+ *   - Single-turn, no tool calls (parity with V0.4.5)
+ *   - Digest data pre-fetched, embedded in user message
+ *   - mcpServers wired but unused
  *
- * V0.5-B will:
- *   - Add Arneson skill via `.claude/skills/arneson/SKILL.md`
- *   - Add Rosenzu HTTP MCP alongside score
- *   - Update persona to call `mcp__rosenzu__get_current_district` +
- *     `mcp__rosenzu__furnish_kansei` before scene-gen
- *   - Then `score/client.ts` prefetch can be retired in favor of LLM
- *     calling `mcp__score__get_zone_digest` directly
+ * V0.5-B (this file's current state):
+ *   - Tripartite locus active — codex (vocab) + score-mcp (trigger) +
+ *     persona/arneson (lens). LLM calls tools to compose grounded posts.
+ *   - rosenzu in-bot MCP via `createSdkMcpServer` (no separate deploy)
+ *   - score-mcp lit; LLM calls `mcp__score__get_zone_digest` directly
+ *   - arneson SKILL.md loaded via `settingSources: ['project']`
+ *   - maxTurns: 8 — allows tool-call rounds
+ *   - effort: 'medium' — ~15s/zone (operator pick)
  *
  * V0.5-C will:
  *   - Add Gygax subagent via `agents` config
- *   - Wire `/memories` via `settingSources: ['project']`
+ *   - Wire `/memories` for wallet-recognition
+ *   - Implement 5 anti-pattern guards
  */
 
 import { query, type McpServerConfig, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from '../config.ts';
 import type { ZoneId } from '../score/types.ts';
 import type { PostType } from '../llm/post-types.ts';
+import { rosenzuServer } from './rosenzu/server.ts';
 
 export interface OrchestratorRequest {
   systemPrompt: string;
@@ -47,15 +46,24 @@ export interface OrchestratorResponse {
 /**
  * Build the mcpServers map for the SDK query options.
  *
- * V0.5-A registers `score` (zerker's score-mcp) when MCP_KEY is set so
- * V0.5-B's persona-prompt update is a one-line activation. The LLM does
- * not invoke score tools in V0.5-A — digest data arrives pre-fetched in
- * the user message.
+ * - `score` — zerker's HTTP MCP (live ZoneDigest path). Registered when
+ *   MCP_KEY is set and STUB_MODE is off. The LLM is directed by persona
+ *   prompt to call `mcp__score__get_zone_digest` before composing.
+ * - `rosenzu` — in-process SDK MCP (spatial awareness). Always
+ *   registered; no env requirement. The LLM is directed to call
+ *   `mcp__rosenzu__furnish_kansei` + `mcp__rosenzu__get_current_district`
+ *   before scene-gen.
  */
 function buildMcpServers(config: Config): Record<string, McpServerConfig> {
-  const servers: Record<string, McpServerConfig> = {};
+  const servers: Record<string, McpServerConfig> = {
+    rosenzu: rosenzuServer,
+  };
 
-  if (!config.STUB_MODE && config.MCP_KEY) {
+  // Register score-mcp whenever MCP_KEY is set. STUB_MODE used to gate
+  // this in V0.4.x but its scope was the data layer's stub generator,
+  // not the LLM tool-call layer. With MCP_KEY present, the LLM has a
+  // real backend; STUB_MODE alone shouldn't strip it.
+  if (config.MCP_KEY) {
     servers.score = {
       type: 'http',
       url: `${config.SCORE_API_URL}/mcp`,
@@ -116,11 +124,18 @@ export async function runOrchestratorQuery(
     mcpServers,
     allowedTools,
     permissionMode: 'dontAsk',
-    // V0.5-A: empty — don't load project CLAUDE.md / skills (would change
-    // voice). V0.5-B flips this to ['project'] to load Arneson skill.
-    settingSources: [],
+    // V0.5-B: load arneson skill via project's .claude/skills/arneson/.
+    // The skill carries TTRPG-DM scene-gen rules; loads progressively.
+    settingSources: ['project'],
     tools: [],
-    maxTurns: 1,
+    // V0.5-B: 8 turns to allow rosenzu + score tool-call rounds before
+    // final compose. Most posts settle in 3-4 turns; cap is a safety
+    // bound, not a target.
+    maxTurns: 8,
+    // V0.5-B: medium effort — operator pick. high (~30-77s/zone) was
+    // overkill for cron-driven cadence; medium is ~15s/zone. drop to
+    // 'low' if voice holds and we want closer to V0.4.5 latency.
+    effort: 'medium',
     env: buildSdkEnv(config),
     stderr: (data) => {
       if (config.LOG_LEVEL === 'debug') {

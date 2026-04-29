@@ -25,6 +25,7 @@
 import type { Config } from '../config.ts';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR } from '../score/types.ts';
+import { generateStubZoneDigest } from '../score/client.ts';
 import type { PostType } from './post-types.ts';
 import { runOrchestratorQuery } from '../agent/orchestrator.ts';
 
@@ -137,12 +138,12 @@ async function invokeFreeside(config: Config, req: InvokeRequest): Promise<Invok
 // ──────────────────────────────────────────────────────────────────────
 
 function generateStubPost(req: InvokeRequest): InvokeResponse {
-  const digest = extractZoneDigest(req.userMessage);
-  const postType = req.postTypeHint ?? 'digest';
-
-  if (!digest) {
-    return { text: 'yo team — stub could not parse the input.' };
+  const zone = req.zoneHint;
+  if (!zone) {
+    return { text: 'yo team — stub needs a zoneHint to generate.' };
   }
+  const digest = generateStubZoneDigest(zone);
+  const postType = req.postTypeHint ?? 'digest';
 
   switch (postType) {
     case 'digest':
@@ -269,14 +270,4 @@ function stubCallout(digest: ZoneDigest): string {
     return `🚨 ${flavor.name} — \`${factor.factor_id}\` running at ${factor.multiplier.toFixed(1)}× baseline this window. that's well above pattern.`;
   }
   return `🚨 ${flavor.name} — anomaly check tripped but pattern is unclear. ruggy'll dig into this.`;
-}
-
-function extractZoneDigest(userMessage: string): ZoneDigest | null {
-  const jsonMatch = userMessage.match(/\{[\s\S]+\}/);
-  if (!jsonMatch) return null;
-  try {
-    return JSON.parse(jsonMatch[0]) as ZoneDigest;
-  } catch {
-    return null;
-  }
 }

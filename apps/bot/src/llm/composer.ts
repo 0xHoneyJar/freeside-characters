@@ -1,20 +1,19 @@
 /**
- * Post composer — orchestrates per-zone post generation across all
- * post types (digest, micro, weaver, lore_drop, question, callout).
+ * Post composer — builds prompt pairs and dispatches to the LLM gateway.
  *
- * For zone-local types (digest, micro, lore_drop, question, callout):
- *   1. Fetch ZoneDigest from score-mcp (or stub)
- *   2. Build prompt pair with post-type guidance
- *   3. Invoke LLM
- *   4. Build Discord payload (embed for digest/callout/weaver; plain
- *      message.content for micro/lore_drop/question)
+ * V0.5-B shape — composer no longer prefetches ZoneDigest. The LLM is
+ * directed by the persona prompt to call:
+ *   - mcp__score__get_zone_digest      (data trigger)
+ *   - mcp__rosenzu__get_current_district + mcp__rosenzu__furnish_kansei
+ *     (place lens)
+ * before composing. Composer's job shrinks to: build prompt pair → invoke.
  *
- * For weaver (cross-zone):
- *   1. Fetch ALL configured zones' digests
- *   2. Pick a primary zone (where the post lands)
- *   3. Build prompt with all 4 digests as supplementary context
- *   4. Invoke LLM
- *   5. Build Discord payload
+ * For digest delivery, the bot still needs SOME ZoneDigest in hand for
+ * embed metadata (color, footer timestamp). We fetch a lean digest in
+ * parallel with the LLM call, NOT to feed the LLM but to wrap the embed.
+ *
+ * Stub-mode (LLM_PROVIDER=stub) keeps its own canned-output path; never
+ * touches the SDK or MCP layer.
  */
 
 import type { Config } from '../config.ts';
@@ -26,7 +25,6 @@ import { buildPostPayload, type DigestPayload } from '../format/embed.ts';
 import {
   POST_TYPE_SPECS,
   type PostType,
-  postTypeFitsData,
 } from './post-types.ts';
 
 export interface PostComposeResult {
@@ -35,8 +33,6 @@ export interface PostComposeResult {
   digest: ZoneDigest;
   voice: string;
   payload: DigestPayload;
-  /** When weaver post: also includes the supplementary digests */
-  supplementaryDigests?: ZoneDigest[];
 }
 
 export async function composeZonePost(
@@ -44,94 +40,29 @@ export async function composeZonePost(
   zone: ZoneId,
   postType: PostType = 'digest',
 ): Promise<PostComposeResult | null> {
-  // Weaver needs cross-zone context — fetch all zones inside that path
-  if (postType === 'weaver') {
-    return composeWeaverPost(config, zone);
-  }
-
-  // Fetch this zone's digest first; gate post-type fit before LLM call.
-  // Per persona "the keeper move" — pop-ins skip on flat data; don't pop
-  // in to say "still nothing." Operator directive 2026-04-28: don't make
-  // ruggy annoying.
-  const digest = await fetchZoneDigest(config, zone);
-  if (!postTypeFitsData(postType, digest)) {
-    console.log(
-      `[${zone}/${postType}] data doesn't fit (${POST_TYPE_SPECS[postType].description}) — skipping`,
-    );
-    return null;
-  }
+  // Fetch a digest in parallel with the LLM call — the LLM gets its own
+  // copy via mcp__score__get_zone_digest; this one is for embed metadata
+  // (color, footer timestamp, structured payload). Cheap; same MCP call.
+  const digestPromise = fetchZoneDigest(config, zone);
 
   const { systemPrompt, userMessage } = buildPromptPair({
     zoneId: zone,
     postType,
-    zoneDigestJson: JSON.stringify(digest, null, 2),
   });
 
-  const { text: voice } = await invoke(config, {
-    systemPrompt,
-    userMessage,
-    modelAlias: config.FREESIDE_AGENT_MODEL,
-    zoneHint: zone,
-    postTypeHint: postType,
-  });
+  const [digest, { text: voice }] = await Promise.all([
+    digestPromise,
+    invoke(config, {
+      systemPrompt,
+      userMessage,
+      modelAlias: config.FREESIDE_AGENT_MODEL,
+      zoneHint: zone,
+      postTypeHint: postType,
+    }),
+  ]);
 
   const payload = buildPostPayload(digest, voice, postType);
-
   return { zone, postType, digest, voice, payload };
-}
-
-/**
- * Weaver post: fetches all 4 zone digests, asks LLM to find a connection
- * across them, posts in the primary zone (default: stonehenge — the
- * cross-zone observatory).
- */
-async function composeWeaverPost(
-  config: Config,
-  primaryZone: ZoneId,
-): Promise<PostComposeResult> {
-  const allZones: ZoneId[] = ['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab'];
-
-  const allDigests = await Promise.all(allZones.map((z) => fetchZoneDigest(config, z)));
-  const primaryIndex = allZones.indexOf(primaryZone);
-  const primaryDigest = allDigests[primaryIndex]!;
-
-  // Compose supplementary context — slim summaries of the OTHER zones
-  const supplements = allZones
-    .map((z, i) => {
-      if (z === primaryZone) return null;
-      const d = allDigests[i]!;
-      return `${z}: ${d.raw_stats.total_events} events, ${d.raw_stats.active_wallets} wallets, top factor: ${d.raw_stats.factor_trends[0]?.factor_id ?? 'none'} @ ${d.raw_stats.factor_trends[0]?.multiplier?.toFixed(2) ?? '?'}× baseline${d.raw_stats.spotlight ? ` · spotlight: ${d.raw_stats.spotlight.wallet}` : ''}`;
-    })
-    .filter(Boolean)
-    .join('\n');
-
-  const supplement = `Other zones in this window (for cross-zone weaving — find a connection if one exists):\n${supplements}`;
-
-  const { systemPrompt, userMessage } = buildPromptPair({
-    zoneId: primaryZone,
-    postType: 'weaver',
-    zoneDigestJson: JSON.stringify(primaryDigest, null, 2),
-    supplement,
-  });
-
-  const { text: voice } = await invoke(config, {
-    systemPrompt,
-    userMessage,
-    modelAlias: config.FREESIDE_AGENT_MODEL,
-    zoneHint: primaryZone,
-    postTypeHint: 'weaver',
-  });
-
-  const payload = buildPostPayload(primaryDigest, voice, 'weaver');
-
-  return {
-    zone: primaryZone,
-    postType: 'weaver',
-    digest: primaryDigest,
-    voice,
-    payload,
-    supplementaryDigests: allDigests.filter((_, i) => i !== primaryIndex),
-  };
 }
 
 export const ALL_ZONES: ZoneId[] = ['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab'];
