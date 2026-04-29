@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.6.0-D phase 1] — 2026-04-30
+
+### Webhook-shell delivery primitive (Pattern B)
+
+Substrate gains the canonical multi-identity Discord pattern: ONE Discord application
+acts as the runtime shell hosting N characters via per-channel webhooks with
+per-message `username` + `avatar_url` override. Per Eileen's `puruhani-as-spine.md`
+canon: *"the Discord App becomes the interface/runtime shell."* Reference
+implementation: PluralKit's "Members within Systems" model.
+
+Doctrinal alignment AND operational survival — the shell pattern is the only
+architecture that survives Discord's hard 50-bot-per-guild ceiling, established by
+gemini deep research dig 2026-04-30. Pattern A (one app per character) hits the
+ceiling at N=51; Pattern B scales infinitely within one shell.
+
+### Added
+- `packages/persona-engine/src/deliver/webhook.ts` — webhook delivery primitive.
+  `getOrCreateChannelWebhook(client, channelId)` is idempotent (fetch by name + bot
+  owner, create if missing). `sendViaWebhook(webhook, character, payload)` puppets
+  per-character identity with `username` + `avatarURL` override.
+  `invalidateWebhookCache()` for "unknown webhook" recovery (admin deletes via UI).
+- `CharacterConfig` extended with `webhookAvatarUrl?` and `webhookUsername?` fields.
+  Target URL hierarchy per SDD §0.2 + operator pick:
+  `https://assets.0xhoneyjar.xyz/freeside-characters/<id>/avatar.png`.
+  Until that CDN cycle reaches `/freeside-characters/`, any stable HTTPS URL works.
+- `apps/bot/src/character-loader.ts` reads new fields from `character.json`.
+- DEPLOY.md fully rewritten for Pattern B shape — 1 bot account · 2 services
+  (prod-ruggy on main · staging-shell on staging hosting BOTH characters).
+  OAuth permission update documented (`MANAGE_WEBHOOKS` required).
+
+### Changed
+- `deliverZoneDigest(config, character, zone, payload)` — now takes character.
+  Delivery priority: webhook-shell → bot.send (when no webhookAvatarUrl) →
+  legacy webhook fallback → dry-run.
+- `DeliveryResult.via` gains `'webhook-shell' | 'webhook-fallback'` values.
+- Dry-run banner now per-character: `── ruggy · stonehenge · DRY-RUN`.
+- Repo description updated to `one shell, many speakers · discord persona umbrella for the honey jar`.
+- README on main retitled with branch-state callout pointing to staging for V0.6+.
+
+### Verified
+- `bun run typecheck` clean across both packages.
+- `CHARACTERS=ruggy STUB` digest:once → dry-run banner per-character correct.
+- `CHARACTERS=satoshi STUB` digest:once → same.
+- Pattern B path falls back gracefully to bot.send when `webhookAvatarUrl` is null.
+
+### Deferred to V0.6-D phase 2 (post-observation iteration)
+- `apps/bot/src/router.ts` — Gateway message listener + content-name parser.
+  Design question: when satoshi is mentioned, what does he POST? Probably a new
+  compose path that accepts user-message context.
+- `apps/bot/src/reaction-handler.ts` — PluralKit-canonical ❓ reaction protocol.
+  React ❓ to a webhook post → DM the reactor with the true author identity +
+  codex anchor.
+- Per-webhook burst queue with token-bucket + `Retry-After` header parsing for
+  the 5-requests-per-2-seconds rate limit.
+- File-based JSONL memory v1 with 4-way matrix (human↔agent · agent→world ·
+  world→agent · agent↔agent). Cross-character read for ruggy → satoshi reference.
+
+### Operator action required before staging deploy
+- Grant `MANAGE_WEBHOOKS` to the ruggy bot (re-invite via OAuth URL OR per-channel
+  permission grant in guild settings).
+- Upload character avatars to a stable HTTPS endpoint (S3, GitHub raw, or Discord
+  CDN). Until `assets.0xhoneyjar.xyz/freeside-characters/<id>/avatar.png` is live,
+  a temp URL works.
+- Set `webhookAvatarUrl` in each `apps/character-<id>/character.json` once
+  uploaded.
+
+### Known sidenote
+- Irys URL `gateway.irys.xyz/7rpvw.../satoshi.png` is dead per operator 2026-04-30.
+  Codex grail #4488 references this URL; needs codex-side fix when fresh upload
+  lands at canonical path.
+
 ## [0.6.0-A] — 2026-04-29
 
 ### Substrate extraction — civic-layer split
