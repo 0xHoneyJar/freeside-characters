@@ -33,7 +33,11 @@ import type { PostType } from '../compose/post-types.ts';
 import { rosenzuServer } from './rosenzu/server.ts';
 import { freesideAuthServer } from './freeside_auth/server.ts';
 import { emojisServer } from './emojis/server.ts';
-import { cabalGygaxAgent } from './cabal/gygax.ts';
+// V0.6-C reconciliation 2026-04-30: cabalGygaxAgent retired from per-fire
+// compose path per gumi correction §0.5 #1 — the 9 cabal archetypes are
+// AUDIENCE postures, not character voice modes. The subagent code is
+// preserved at ./cabal/gygax.ts as a building block for a future /cabal
+// command (post-design audience reception tester). No longer imported here.
 
 export interface OrchestratorRequest {
   character: CharacterConfig;
@@ -91,13 +95,17 @@ function buildMcpServers(config: Config): Record<string, McpServerConfig> {
  * Allowed tool whitelist for headless safety.
  *
  * `permissionMode: 'dontAsk'` denies anything not pre-approved. We
- * whitelist `mcp__<server>__*` for each registered MCP server, plus
- * `Task` so the main thread can dispatch to subagents (V0.5-E:
- * cabal-gygax for lens rotation).
+ * whitelist `mcp__<server>__*` for each registered MCP server.
+ *
+ * V0.6-C reconciliation 2026-04-30: `Task` removed from allowedTools.
+ * The only consumer was cabal-gygax dispatch, which retired from per-fire
+ * compose path per gumi correction §0.5 #1. If a future subagent needs
+ * Task dispatch (e.g. the /cabal post-design reception tester running
+ * separately from compose), re-add then.
  */
 function buildAllowedTools(mcpServers: Record<string, McpServerConfig>): string[] {
   const mcpTools = Object.keys(mcpServers).map((name) => `mcp__${name}__*`);
-  return [...mcpTools, 'Task'];
+  return mcpTools;
 }
 
 /**
@@ -144,17 +152,14 @@ export async function runOrchestratorQuery(
     // The skill carries TTRPG-DM scene-gen rules; loads progressively.
     settingSources: ['project'],
     tools: [],
-    // V0.5-E: cabal-gygax subagent for lens rotation. Main thread
-    // dispatches via Task tool; haiku model + low effort keeps the
-    // pre-step cheap. Per the kickoff seed: solves "lens monotony"
-    // tension by rotating among 9 phantom-player archetypes.
-    agents: {
-      'cabal-gygax': cabalGygaxAgent,
-    },
-    // V0.5-C: 12 turns to allow rosenzu + score + factors + freeside_auth
-    // tool-call rounds before final compose. V0.5-E: +cabal dispatch (~2
-    // turns). Most posts settle in 6-8 turns now; cap stays at 12 as
-    // safety bound.
+    // V0.6-C reconciliation 2026-04-30: cabal-gygax subagent removed from
+    // `agents` per gumi correction §0.5 #1 (cabal archetypes are audience
+    // postures, not character voice modes). Per-character anchored
+    // archetypes are now identity properties baked into persona.md prompts,
+    // not runtime modes. No subagents registered for compose.
+    // V0.5-C: 12 turns for rosenzu + score + factors + freeside_auth tool
+    // rounds. V0.6-C: cabal dispatch removed — most posts settle in 6-8
+    // turns; cap stays at 12 as safety bound.
     maxTurns: 12,
     // V0.5-B: medium effort — operator pick. high (~30-77s/zone) was
     // overkill for cron-driven cadence; medium is ~15s/zone. drop to

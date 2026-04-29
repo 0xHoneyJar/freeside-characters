@@ -1,15 +1,32 @@
 /**
- * cabal-gygax — phantom-player lens dispatcher (subagent).
+ * cabal-gygax — phantom-player archetype DISPATCHER (preserved for
+ * future /cabal post-design reception tester).
  *
+ * ⚠ RETIRED FROM PER-FIRE COMPOSE PATH 2026-04-30 (V0.6-C reconciliation
+ * per gumi correction §0.5 #1).
+ *
+ * Why: gumi clarified that the 9 cabal archetypes are AUDIENCE POSTURES —
+ * different player ways of receiving a locked voice — not character voice
+ * modes. Filtering them as a character's "moods" was a category error.
+ * Per-character: 1-2 archetypes anchored as identity properties (e.g.
+ * ruggy = Storyteller + GM; satoshi = Veteran + Chaos-Agent), baked into
+ * persona.md prompts — NOT rotating runtime filters.
+ *
+ * This file is preserved as a building block for a future `/cabal`
+ * command that runs cabal POST-DESIGN against published posts: each
+ * archetype reads the post and reports back resonance/divergence
+ * findings, producing audience-fit reception data for the operator.
+ * That's the gumi-canonical use of cabal.
+ *
+ * Original V0.5-E framing (kept for context, not used at compose):
  * Per Tension 2 of V0.5-E creative direction: a character's micros land
- * in the same observational register every fire ("lens monotony"). Fix:
- * dispatch a gygax cabal subagent BEFORE compose — it picks one of 9
- * phantom-player archetype lenses, and the main thread shifts register
- * accordingly.
+ * in the same observational register every fire ("lens monotony"). Fix
+ * proposed at the time: dispatch a gygax cabal subagent BEFORE compose —
+ * it picks one of 9 phantom-player archetype lenses, and the main thread
+ * shifts register accordingly. This was the wrong shape per gumi 2026-04-29.
  *
- * V0.6-A: substrate-level — character-agnostic. Each character's persona
- * doc may reference "VOICE LENS REGISTER" sections that map archetypes
- * to register shifts; the dispatcher is shared.
+ * Substrate-level — character-agnostic. Each character's persona doc may
+ * reference anchored archetypes; the dispatcher is shared.
  *
  * Architecture (per the V0.5-E kickoff seed bundle):
  *
