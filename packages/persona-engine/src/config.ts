@@ -24,7 +24,11 @@ const ConfigSchema = z.object({
 
   // ─── anthropic-direct (V0 LLM testing) ────────────────────────────────
   ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),
+  /** Default flipped sonnet-4-6 → opus-4-7 (operator pick 2026-04-30 ·
+   *  V0.7-A.0 ship pass · highest voice-fidelity model for both digest
+   *  and chat-mode pipelines). Override via env when a per-deploy cost
+   *  tradeoff calls for sonnet/haiku. */
+  ANTHROPIC_MODEL: z.string().default('claude-opus-4-7'),
 
   // ─── discord delivery — bot client OR webhook fallback ────────────────
   DISCORD_BOT_TOKEN: z.string().optional(),
