@@ -116,17 +116,20 @@ Cosmetic cost of B: users in shared guilds see two `/satoshi` entries
 (operator's freeside-characters and Eileen's satoshi-local). They appear
 distinct via different bot avatars in autocomplete. Acceptable.
 
-## Tomorrow's session
+## Tomorrow's session — atomic items
 
-Operator + agent + (optionally) Eileen pair on:
+Ordered for build sequence (earlier unblocks later). Full plan at
+`~/bonfire/grimoires/bonfire/specs/eileen-local-bedrock-split.md`.
 
-1. Read her bedrock spec
-2. Wire `LLM_PROVIDER=bedrock` in `compose/reply.ts` + `agent-gateway.ts`
-3. Add `BEDROCK_MODEL_ID` + AWS creds to `config.ts`
-4. Write `apps/bot/scripts/satoshi-dev.ts` launcher
-5. Update this doc with the actual setup walkthrough (replace placeholders)
-6. Eileen test-runs it with operator on standby
-7. Hand over portal URL or Eileen registers her own app per option above
+1. **`LLM_PROVIDER=bedrock` provider** — chat-mode path · `@aws-sdk/client-bedrock-runtime` · ~1h
+2. **`CharacterConfig.anthropicModel`** optional override · per-character model selection · ~30m
+3. **`apps/bot/scripts/satoshi-dev.ts`** easy-launcher · tunnel + bot + portal-URL printing · ~1h
+4. **Update this doc** with concrete walkthrough · replace placeholder env block · ~30m
+5. **Eileen creates `satoshi-local` Discord app** — her hands · her bot token + Public Key · ~30m
+6. **Paired first solo run** — verify her loop end-to-end · ~30m
+
+Optional fast-followers (parallel-friendly): `/usage` slash, ledger LRU cap,
+ruggy persona negative-constraint audit.
 
 ## Coordination
 
