@@ -321,5 +321,8 @@ export function splitForDiscord(content: string, maxLength: number): string[] {
     remaining = remaining.slice(splitAt).trim();
   }
 
-  return out;
+  // Filter empty chunks — whitespace-only LLM output or trim-on-boundary
+  // edge cases can yield empty strings, which Discord rejects with 400
+  // (bridgebuilder F10 2026-04-30).
+  return out.filter((c) => c.length > 0);
 }

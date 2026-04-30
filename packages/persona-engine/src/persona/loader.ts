@@ -369,7 +369,13 @@ export function buildReplyPromptPair(args: BuildReplyPromptArgs): {
   const { character } = args;
   const template = loadTemplate(character.personaPath);
   const codex = loadCodexPrelude();
-  const exemplars = buildExemplarBlock(character, 'digest'); // chat has no exemplars; reuse digest as voice anchor texture
+  // No exemplars in chat-mode (bridgebuilder F20 2026-04-30) — the digest
+  // exemplars are greeting + headline + structured-data shaped, which
+  // contradicts the CONVERSATION_MODE_OVERRIDE that tells the LLM to skip
+  // those shapes. Mixed-signal · contributed to the satoshi voice drift.
+  // Persona description + voice anchors + codex anchors carry the voice
+  // texture in chat-mode without dragging digest shape with them.
+  const exemplars = '';
   const voiceAnchors = loadVoiceAnchors(character.personaPath);
   const codexAnchors = loadCodexAnchors(character.personaPath);
 

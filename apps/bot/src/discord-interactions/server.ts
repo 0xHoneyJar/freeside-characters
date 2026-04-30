@@ -94,6 +94,13 @@ export function startInteractionServer(args: InteractionServerArgs): Interaction
 // Discord POST handler
 // ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Maximum age of a Discord-signed request, in seconds. Beyond this, the
+ * request is rejected as stale (replay protection · bridgebuilder F6
+ * 2026-04-30). Discord's reference implementations use a 5-minute window.
+ */
+const SIGNATURE_FRESHNESS_WINDOW_SECONDS = 5 * 60;
+
 async function handleDiscordPost(
   request: Request,
   publicKey: string,
@@ -104,6 +111,17 @@ async function handleDiscordPost(
 
   if (!signature || !timestamp) {
     return new Response('missing signature headers', { status: 401 });
+  }
+
+  // Freshness check before crypto verify — rejects stale/replayed signatures
+  // cheaply (no Ed25519 work on captured POSTs older than the window).
+  const timestampSeconds = Number(timestamp);
+  if (!Number.isFinite(timestampSeconds)) {
+    return new Response('malformed signature timestamp', { status: 401 });
+  }
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (Math.abs(nowSeconds - timestampSeconds) > SIGNATURE_FRESHNESS_WINDOW_SECONDS) {
+    return new Response('stale signature timestamp', { status: 401 });
   }
 
   const body = await request.text();
