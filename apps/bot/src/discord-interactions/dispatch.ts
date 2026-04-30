@@ -232,12 +232,21 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
     //   - ephemeral=true   → interaction PATCH (webhooks can't be ephemeral ·
     //                        invoker chose this · accepts shell identity)
     //   - ephemeral=false  → Pattern B webhook (per-character avatar + username)
-    //                        with PATCH fallback if webhook delivery fails
+    //                        with the user's prompt quote-prepended for channel
+    //                        context · PATCH fallback if webhook delivery fails
     if (ephemeral) {
       await deliverViaInteraction(interaction, character, result.chunks, true);
     } else {
       try {
-        await deliverViaWebhook(interaction, config, character, channelId, result.chunks);
+        await deliverViaWebhook(
+          interaction,
+          config,
+          character,
+          channelId,
+          result.chunks,
+          prompt,
+          invoker.username,
+        );
       } catch (webhookErr) {
         console.warn(
           `interactions: ${character.id} webhook delivery failed · falling back to PATCH:`,
@@ -281,6 +290,11 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
  * webhook). The deferred "thinking" PATCH placeholder is DELETEd once
  * the first chunk lands, leaving a clean Pattern B-shaped channel timeline.
  *
+ * The user's prompt is quote-prepended to the first chunk so other channel
+ * members see what was asked (slash-command argument values aren't shown
+ * in Discord's invocation header). Bridge until V0.7-A.3 lands @-mention
+ * routing where the user's message is a regular Discord post everyone sees.
+ *
  * Throws on any webhook failure so the caller can fall back to PATCH.
  */
 async function deliverViaWebhook(
@@ -289,6 +303,8 @@ async function deliverViaWebhook(
   character: CharacterConfig,
   channelId: string,
   chunks: string[],
+  prompt: string,
+  authorUsername: string,
 ): Promise<void> {
   const client = await getBotClient(config);
   if (!client) {
@@ -296,9 +312,19 @@ async function deliverViaWebhook(
   }
   const webhook = await getOrCreateChannelWebhook(client, channelId);
 
-  for (let i = 0; i < chunks.length; i++) {
+  // Prepend the user's prompt as a Discord blockquote on the first chunk so
+  // others in the channel see context. allowedMentions:[] (set in
+  // sendChatReplyViaWebhook) prevents the @ from triggering a ping.
+  const quote = buildQuotePrefix(authorUsername, prompt);
+  const firstWithQuote = quote + chunks[0]!;
+  const allChunks =
+    firstWithQuote.length <= DISCORD_CHAR_LIMIT
+      ? [firstWithQuote, ...chunks.slice(1)]
+      : [...splitForDiscord(firstWithQuote, DISCORD_CHAR_LIMIT), ...chunks.slice(1)];
+
+  for (let i = 0; i < allChunks.length; i++) {
     if (i > 0) await sleep(FOLLOW_UP_THROTTLE_MS);
-    await sendChatReplyViaWebhook(webhook, character, chunks[i]!);
+    await sendChatReplyViaWebhook(webhook, character, allChunks[i]!);
     if (i === 0) {
       // Delete the deferred "thinking..." placeholder once the first
       // webhook chunk is up. Best-effort — if it fails (e.g., expired
@@ -311,6 +337,23 @@ async function deliverViaWebhook(
       });
     }
   }
+}
+
+const QUOTE_PROMPT_MAX_LEN = 240;
+
+/**
+ * Build a single-line Discord blockquote of the user's prompt. The `@` is
+ * decorative (no ping fires because allowedMentions is empty). Multi-line
+ * prompts collapse to one line so the blockquote renders as one visual
+ * unit · long prompts truncate with an ellipsis (full text remains in the
+ * conversation ledger for LLM context on subsequent invocations).
+ */
+function buildQuotePrefix(authorUsername: string, prompt: string): string {
+  let body = prompt.trim().replace(/\s+/g, ' ');
+  if (body.length > QUOTE_PROMPT_MAX_LEN) {
+    body = body.slice(0, QUOTE_PROMPT_MAX_LEN - 1) + '…';
+  }
+  return `> @${authorUsername} asked: ${body}\n\n`;
 }
 
 /**
