@@ -7,10 +7,11 @@ const ConfigSchema = z.object({
 
   // ─── explicit LLM provider (V0.4 — codex-rescue F1: replace implicit
   // key-presence inference; fail loud if intent is ambiguous) ────────────
-  /** stub | anthropic | freeside | auto (auto = back-compat: anthropic key
-   *  wins → stub → freeside, matching V0.3 behavior). Defaults to 'auto'
-   *  for back-compat; recommend explicit value in production. */
-  LLM_PROVIDER: z.enum(['stub', 'anthropic', 'freeside', 'auto']).default('auto'),
+  /** stub | anthropic | freeside | bedrock | auto (auto = back-compat:
+   *  anthropic key wins → stub → freeside, matching V0.3 behavior).
+   *  Bedrock is opt-in only; auto does NOT fall back to bedrock by design.
+   *  Defaults to 'auto' for back-compat; recommend explicit value in production. */
+  LLM_PROVIDER: z.enum(['stub', 'anthropic', 'freeside', 'bedrock', 'auto']).default('auto'),
 
   // ─── score-mcp (zerker — production data path) ────────────────────────
   SCORE_API_URL: z.string().url().default('https://score-api-production.up.railway.app'),
@@ -34,6 +35,17 @@ const ConfigSchema = z.object({
   FREESIDE_BASE_URL: z.string().url().default('https://api.freeside.0xhoneyjar.xyz'),
   FREESIDE_API_KEY: z.string().optional(),
   FREESIDE_AGENT_MODEL: z.enum(['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect']).default('reasoning'),
+
+  // ─── AWS Bedrock (Eileen's local-satoshi path · LLM_PROVIDER=bedrock) ─
+  /** AWS Bedrock API key (newer Bedrock auth method · long-lived bearer). */
+  AWS_BEARER_TOKEN_BEDROCK: z.string().optional(),
+  /** Alternate Bedrock auth · either AWS_BEARER_TOKEN_BEDROCK or this. */
+  BEDROCK_API_KEY: z.string().optional(),
+  /** Bedrock model id (e.g. anthropic.claude-sonnet-4-5-20250929-v1:0).
+   *  Per-deploy override; Eileen sets this to her region's available model. */
+  BEDROCK_MODEL_ID: z.string().optional(),
+  /** AWS region for Bedrock runtime. Eileen sets to her access region. */
+  AWS_REGION: z.string().optional(),
 
   // ─── anthropic-direct (V0 LLM testing) ────────────────────────────────
   ANTHROPIC_API_KEY: z.string().optional(),

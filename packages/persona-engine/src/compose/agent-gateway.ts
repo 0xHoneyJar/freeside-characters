@@ -63,6 +63,16 @@ function resolveProvider(config: Config): ResolvedProvider {
         throw new Error('LLM_PROVIDER=freeside but FREESIDE_API_KEY is unset');
       }
       return 'freeside';
+    case 'bedrock':
+      // Bedrock is chat-mode-only (Eileen's local-satoshi setup). The
+      // digest path uses the Claude Agent SDK with MCPs which doesn't
+      // support Bedrock natively for tool-call rounds. If a deploy needs
+      // bedrock for digest fires, fail loud rather than silently fall back.
+      throw new Error(
+        'LLM_PROVIDER=bedrock is chat-mode-only · digest path requires ' +
+          'anthropic or freeside (Claude Agent SDK + MCP tool-call rounds). ' +
+          'See docs/EILEEN-LOCAL-BEDROCK-SPLIT.md.',
+      );
     case 'auto': {
       // V0.3 back-compat: anthropic > stub > freeside
       const resolved: ResolvedProvider = config.ANTHROPIC_API_KEY

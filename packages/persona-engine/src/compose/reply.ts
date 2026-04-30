@@ -138,7 +138,8 @@ interface ChatInvokeArgs {
 async function invokeChat(config: Config, req: ChatInvokeArgs): Promise<string> {
   // Provider resolution mirrors agent-gateway.ts but for chat-mode the
   // anthropic path is the canonical one. Stub returns a canned in-voice
-  // reply; freeside path uses the gateway's chat shape.
+  // reply; freeside path uses the gateway's chat shape; bedrock path is
+  // Eileen's local-satoshi setup (in-flight at apps/character-satoshi/...).
   switch (resolveChatProvider(config)) {
     case 'anthropic':
       return invokeChatAnthropicSdk(config, req);
@@ -146,6 +147,8 @@ async function invokeChat(config: Config, req: ChatInvokeArgs): Promise<string> 
       return invokeChatStub(req);
     case 'freeside':
       return invokeChatFreeside(config, req);
+    case 'bedrock':
+      return invokeChatBedrock(config, req);
   }
 }
 
@@ -225,6 +228,27 @@ async function invokeChatAnthropicSdk(
     );
   }
   return text;
+}
+
+/**
+ * Bedrock chat-mode invocation — STUB (Eileen's in-flight work).
+ *
+ * Type plumbing landed in commits 37c8f5d + 3fea5da (Eileen 2026-04-30):
+ * `'bedrock'` in ChatProvider type · resolveChatProvider validates
+ * AWS_BEARER_TOKEN_BEDROCK / BEDROCK_API_KEY env. The actual SDK call
+ * (`@aws-sdk/client-bedrock-runtime` · InvokeModelCommand with
+ * `anthropic_version: 'bedrock-2023-05-31'`) is pending Eileen's next
+ * commits or tomorrow's pair session. Until then this throws clearly.
+ */
+async function invokeChatBedrock(
+  _config: Config,
+  _req: ChatInvokeArgs,
+): Promise<string> {
+  throw new Error(
+    'LLM_PROVIDER=bedrock: invokeChatBedrock not yet implemented · ' +
+      'awaiting @aws-sdk/client-bedrock-runtime wiring (in-flight per ' +
+      'docs/EILEEN-LOCAL-BEDROCK-SPLIT.md atomic item #1)',
+  );
 }
 
 async function invokeChatFreeside(
