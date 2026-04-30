@@ -1,0 +1,405 @@
+/**
+ * Slash command dispatch (V0.7-A.0).
+ *
+ * Discord sends an APPLICATION_COMMAND interaction (POST to our endpoint).
+ * We:
+ *   1. Apply the anti-spam invariant guard (bot-author skip).
+ *   2. Resolve which character the command targets (`/ruggy` → ruggy, etc).
+ *   3. ACK the interaction with a deferred "Application is thinking..." response.
+ *   4. Kick off composeReply in the background.
+ *   5. PATCH the original deferred message with the LLM reply when ready
+ *      (or with a friendly error on timeout/failure).
+ *
+ * The hard rules:
+ *   - 14m30s timeout (Discord interaction token expires at exactly 15:00;
+ *     PATCH after that = 404 + silent UI freeze).
+ *   - 5 req / 2 sec rate limit on follow-ups (per Gemini DR 2026-04-30).
+ *     Multi-chunk replies throttle at 1.5s between sends.
+ *   - Circuit breaker: 3 consecutive 403s on a channel → blacklist ID
+ *     in-process · halt processing until restart (prevents 10K invalid req
+ *     / 10 min Cloudflare global ban from cascading orphaned PATCHes).
+ *
+ * Anti-spam invariant (operator-named load-bearing 2026-04-30):
+ *   characters NEVER respond to bot-authored invocations · NEVER respond
+ *   to webhook invocations · ONLY respond to explicit user invocations.
+ */
+
+import {
+  composeReply,
+  splitForDiscord,
+  type CharacterConfig,
+  type Config,
+} from '@freeside-characters/persona-engine';
+import {
+  InteractionResponseType,
+  InteractionType,
+  MessageFlags,
+  interactionInvoker,
+  readBooleanOption,
+  readStringOption,
+  type DiscordInteraction,
+  type DiscordInteractionResponse,
+} from './types.ts';
+
+const DISCORD_API_BASE = 'https://discord.com/api/v10';
+const DISCORD_CHAR_LIMIT = 2000;
+const FOLLOW_UP_THROTTLE_MS = 1_500; // ≥1.5s between follow-ups (5 req / 2 sec ceiling)
+const TOKEN_LIFETIME_MS = 14 * 60 * 1000 + 30 * 1000; // 14m30s safety margin under 15-min hard expiry
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+
+// Per-channel circuit breaker state. Keyed by channel_id (or interaction.id
+// fallback for DMs). A channel is blacklisted after N consecutive 403s on
+// PATCH/POST attempts; subsequent dispatches in that channel short-circuit
+// until process restart.
+interface CircuitState {
+  consecutive403s: number;
+  blacklisted: boolean;
+}
+const circuitStates = new Map<string, CircuitState>();
+
+function getCircuitState(channelId: string): CircuitState {
+  let s = circuitStates.get(channelId);
+  if (!s) {
+    s = { consecutive403s: 0, blacklisted: false };
+    circuitStates.set(channelId, s);
+  }
+  return s;
+}
+
+function recordPatchOutcome(channelId: string, status: number): void {
+  const s = getCircuitState(channelId);
+  if (status === 403) {
+    s.consecutive403s += 1;
+    if (s.consecutive403s >= CIRCUIT_BREAKER_THRESHOLD) {
+      s.blacklisted = true;
+      console.error(
+        `interactions: circuit breaker tripped for channel ${channelId} ` +
+          `(${s.consecutive403s} consecutive 403s) — blacklisted until restart`,
+      );
+    }
+  } else {
+    s.consecutive403s = 0;
+  }
+}
+
+/**
+ * Main entry — handles APPLICATION_COMMAND interactions.
+ *
+ * Returns the immediate Discord response (deferred ACK or error). Side
+ * effects: when the command is valid, kicks off `doReplyAsync` to PATCH
+ * the deferred message later.
+ */
+export async function dispatchSlashCommand(
+  interaction: DiscordInteraction,
+  config: Config,
+  characters: CharacterConfig[],
+): Promise<DiscordInteractionResponse> {
+  if (interaction.type !== InteractionType.APPLICATION_COMMAND) {
+    return ephemeralReply(`unsupported interaction type ${interaction.type}`);
+  }
+
+  // ─── Anti-spam invariant guard ─────────────────────────────────────
+  // Operator-named load-bearing: characters NEVER respond to bots.
+  // The webhook-author check is a defense-in-depth on top of `bot:true`
+  // since some Discord API versions don't reliably set the bot flag on
+  // webhook-authored invocations (Gemini DR 2026-04-30).
+  const invoker = interactionInvoker(interaction);
+  if (!invoker) {
+    console.warn(`interactions: dropped command with no invoker (id=${interaction.id})`);
+    return ephemeralReply('could not resolve invoker — skipping.');
+  }
+  if (invoker.bot === true) {
+    console.warn(
+      `interactions: ANTI-SPAM SKIP · bot invocation rejected ` +
+        `(invoker=${invoker.username}/${invoker.id})`,
+    );
+    return ephemeralReply('characters do not respond to bot invocations.');
+  }
+
+  // ─── Circuit breaker pre-check ─────────────────────────────────────
+  const channelId = interaction.channel_id ?? `dm:${invoker.id}`;
+  const circuit = getCircuitState(channelId);
+  if (circuit.blacklisted) {
+    console.warn(
+      `interactions: circuit breaker active · skipping channel ${channelId}`,
+    );
+    return ephemeralReply(
+      'this channel is temporarily unavailable for character replies. try again after the next restart.',
+    );
+  }
+
+  // ─── Resolve target character ──────────────────────────────────────
+  const commandName = interaction.data?.name;
+  if (!commandName) {
+    return ephemeralReply('no command name in interaction.');
+  }
+  const character = characters.find((c) => c.id === commandName);
+  if (!character) {
+    return ephemeralReply(
+      `unknown character: \`${commandName}\`. available: ${characters.map((c) => `/${c.id}`).join(', ') || '(none loaded)'}`,
+    );
+  }
+
+  // ─── Read options ──────────────────────────────────────────────────
+  const prompt = readStringOption(interaction, 'prompt');
+  if (!prompt || prompt.trim().length === 0) {
+    return ephemeralReply('prompt is required.');
+  }
+  const ephemeral = readBooleanOption(interaction, 'ephemeral') ?? false;
+
+  // ─── Defer + kick off async work ───────────────────────────────────
+  // The deferred response opens a 15-min token window. We must PATCH
+  // /messages/@original before that window expires or the UI freezes.
+  void doReplyAsync({
+    interaction,
+    config,
+    character,
+    prompt: prompt.trim(),
+    ephemeral,
+    channelId,
+    invoker,
+  }).catch((err) => {
+    // doReplyAsync handles its own errors, but a top-level catch here
+    // prevents an unhandled rejection from crashing the bot.
+    console.error(`interactions: doReplyAsync top-level error:`, err);
+  });
+
+  return {
+    type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+    data: ephemeral ? { flags: MessageFlags.EPHEMERAL } : {},
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Async reply worker
+// ──────────────────────────────────────────────────────────────────────
+
+interface AsyncWorkerArgs {
+  interaction: DiscordInteraction;
+  config: Config;
+  character: CharacterConfig;
+  prompt: string;
+  ephemeral: boolean;
+  channelId: string;
+  invoker: { id: string; username: string };
+}
+
+async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
+  const { interaction, config, character, prompt, ephemeral, channelId, invoker } = args;
+  const t0 = Date.now();
+
+  console.log(
+    `interactions: ${character.id} dispatch · invoker=${invoker.username} ` +
+      `channel=${channelId} ephemeral=${ephemeral} prompt="${truncate(prompt, 80)}"`,
+  );
+
+  try {
+    // Wrap composeReply in a 14m30s timeout so we never PATCH against an
+    // expired interaction token (404 → silent freeze in Discord UI).
+    const result = await Promise.race([
+      composeReply({
+        config,
+        character,
+        prompt,
+        channelId,
+        authorId: invoker.id,
+        authorUsername: invoker.username,
+      }),
+      timeoutAfter(TOKEN_LIFETIME_MS),
+    ]);
+
+    if (result === TIMEOUT_SENTINEL) {
+      console.error(
+        `interactions: ${character.id} TIMEOUT after ${Date.now() - t0}ms · channel=${channelId}`,
+      );
+      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'timeout'));
+      return;
+    }
+
+    if (!result) {
+      console.warn(
+        `interactions: ${character.id} composeReply returned null · channel=${channelId}`,
+      );
+      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'empty'));
+      return;
+    }
+
+    const { chunks } = formatReply(character, result.chunks);
+
+    // PATCH first chunk on the deferred response.
+    await patchOriginal(interaction, ephemeral, chunks[0] ?? '');
+
+    // POST remaining chunks as follow-ups, throttled to stay under the
+    // 5-req/2-sec follow-up rate limit (Gemini DR 2026-04-30).
+    for (let i = 1; i < chunks.length; i++) {
+      await sleep(FOLLOW_UP_THROTTLE_MS);
+      await postFollowUp(interaction, ephemeral, chunks[i]!);
+    }
+
+    console.log(
+      `interactions: ${character.id} delivered · ` +
+        `channel=${channelId} chunks=${chunks.length} ` +
+        `compose_ms=${result.contextUsed.durationMs} ` +
+        `total_ms=${Date.now() - t0} ` +
+        `ledger=${result.contextUsed.ledgerSize}`,
+    );
+  } catch (err) {
+    console.error(
+      `interactions: ${character.id} dispatch failed · channel=${channelId}`,
+      err,
+    );
+    try {
+      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'error'));
+    } catch (patchErr) {
+      // Already-failed PATCH attempt feeds the circuit breaker via
+      // recordPatchOutcome inside patchOriginal. No further recovery.
+      console.error(`interactions: PATCH-original after error also failed:`, patchErr);
+    }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Reply rendering — bold-prefix attribution
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Format the reply with character attribution prefix on the FIRST chunk
+ * only. Subsequent chunks render bare so the prefix doesn't repeat awkwardly.
+ *
+ * The bold-prefix exists because slash command responses come from the
+ * SHELL bot identity (no per-message webhook override is available on
+ * interaction patches per Gemini DR 2026-04-30). It's the unobtrusive
+ * disambiguation when multiple characters share one shell-bot identity.
+ */
+function formatReply(
+  character: CharacterConfig,
+  rawChunks: string[],
+): { chunks: string[] } {
+  if (rawChunks.length === 0) {
+    return { chunks: [`**${character.displayName ?? character.id}**\n\n(empty reply — try again?)`] };
+  }
+  const displayName = character.displayName ?? character.id;
+  const prefix = `**${displayName}**\n\n`;
+  const first = prefix + rawChunks[0]!;
+
+  // If prefix push first chunk over Discord's 2000-char limit, re-split.
+  const chunks: string[] = [];
+  if (first.length <= DISCORD_CHAR_LIMIT) {
+    chunks.push(first);
+    for (let i = 1; i < rawChunks.length; i++) {
+      chunks.push(rawChunks[i]!);
+    }
+  } else {
+    const reSplit = splitForDiscord(first, DISCORD_CHAR_LIMIT);
+    chunks.push(...reSplit);
+    for (let i = 1; i < rawChunks.length; i++) {
+      chunks.push(rawChunks[i]!);
+    }
+  }
+  return { chunks };
+}
+
+function formatErrorReply(character: CharacterConfig, kind: 'timeout' | 'empty' | 'error'): string {
+  const displayName = character.displayName ?? character.id;
+  switch (kind) {
+    case 'timeout':
+      return `**${displayName}**\n\nthat took longer than i had time for. mind trying again?`;
+    case 'empty':
+      return `**${displayName}**\n\ncables got crossed — nothing came back. try again?`;
+    case 'error':
+      return `**${displayName}**\n\nsomething broke. try again?`;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Discord REST helpers — PATCH original + POST follow-up
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * PATCH the deferred response with the actual reply content.
+ * Endpoint: PATCH /webhooks/{application_id}/{interaction_token}/messages/@original
+ * Note: interaction token in URL · NO Authorization header needed.
+ */
+async function patchOriginal(
+  interaction: DiscordInteraction,
+  ephemeral: boolean,
+  content: string,
+): Promise<void> {
+  const url = `${DISCORD_API_BASE}/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`;
+  const body: { content: string; flags?: number } = { content };
+  if (ephemeral) body.flags = MessageFlags.EPHEMERAL;
+
+  const channelId = interaction.channel_id ?? `dm:${interactionInvoker(interaction)?.id ?? 'unknown'}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  recordPatchOutcome(channelId, response.status);
+
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '<unreadable body>');
+    throw new Error(
+      `interactions: PATCH @original failed status=${response.status} body=${txt.slice(0, 200)}`,
+    );
+  }
+}
+
+/**
+ * POST a follow-up message (used for chunks 2..N when reply > 2000 chars).
+ * Endpoint: POST /webhooks/{application_id}/{interaction_token}
+ */
+async function postFollowUp(
+  interaction: DiscordInteraction,
+  ephemeral: boolean,
+  content: string,
+): Promise<void> {
+  const url = `${DISCORD_API_BASE}/webhooks/${interaction.application_id}/${interaction.token}`;
+  const body: { content: string; flags?: number } = { content };
+  if (ephemeral) body.flags = MessageFlags.EPHEMERAL;
+
+  const channelId = interaction.channel_id ?? `dm:${interactionInvoker(interaction)?.id ?? 'unknown'}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  recordPatchOutcome(channelId, response.status);
+
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '<unreadable body>');
+    throw new Error(
+      `interactions: follow-up POST failed status=${response.status} body=${txt.slice(0, 200)}`,
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Util
+// ──────────────────────────────────────────────────────────────────────
+
+const TIMEOUT_SENTINEL = Symbol('timeout');
+type TimeoutSentinel = typeof TIMEOUT_SENTINEL;
+
+function timeoutAfter(ms: number): Promise<TimeoutSentinel> {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(TIMEOUT_SENTINEL), ms);
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function ephemeralReply(content: string): DiscordInteractionResponse {
+  return {
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data: { content, flags: MessageFlags.EPHEMERAL },
+  };
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n - 1) + '…';
+}

@@ -34,6 +34,10 @@ import {
   type CharacterConfig,
 } from '@freeside-characters/persona-engine';
 import { loadCharacters } from './character-loader.ts';
+import {
+  startInteractionServer,
+  type InteractionServerHandle,
+} from './discord-interactions/server.ts';
 
 const banner = `─── freeside-characters bot · v0.6.0-A ────────────────────────`;
 
@@ -116,6 +120,24 @@ async function main(): Promise<void> {
   if (handle.popInExpression) console.log(`${primary.id}: pop-in cron · ${handle.popInExpression}`);
   if (handle.weaverExpression) console.log(`${primary.id}: weaver cron · ${handle.weaverExpression}`);
 
+  // V0.7-A.0: Discord Interactions endpoint for slash commands.
+  // Disjoint from digest cron — failure here doesn't affect Pattern B writes.
+  let interactionServer: InteractionServerHandle | null = null;
+  if (config.DISCORD_PUBLIC_KEY) {
+    try {
+      interactionServer = startInteractionServer({ config, characters, port: config.INTERACTIONS_PORT });
+      console.log(
+        `interactions:   listening on :${interactionServer.port} · ` +
+          `commands /${characters.map((c) => c.id).join(' /')}`,
+      );
+    } catch (err) {
+      console.error('interactions: failed to start —', err);
+      interactionServer = null;
+    }
+  } else {
+    console.log(`interactions:   DISABLED (set DISCORD_PUBLIC_KEY to enable slash commands)`);
+  }
+
   // Always fire digest sweep once on boot in dev or manual
   if (config.NODE_ENV === 'development' || config.DIGEST_CADENCE === 'manual') {
     console.log(`${primary.id}: firing digest sweep once on boot (dev/manual mode)`);
@@ -127,6 +149,7 @@ async function main(): Promise<void> {
   if (config.DIGEST_CADENCE === 'manual') {
     console.log(`${primary.id}: manual mode — exiting after single fire`);
     handle.stop();
+    interactionServer?.stop();
     await shutdownClient();
     process.exit(0);
   }
@@ -134,6 +157,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     console.log(`\n${primary.id}: ${signal} — shutting down`);
     handle.stop();
+    interactionServer?.stop();
     await shutdownClient();
     process.exit(0);
   };

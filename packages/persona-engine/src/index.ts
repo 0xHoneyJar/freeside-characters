@@ -42,6 +42,18 @@ export { loadConfig, getZoneChannelId, selectedZones } from './config.ts';
 export { loadSystemPrompt } from './persona/loader.ts';
 export { exemplarStats } from './persona/exemplar-loader.ts';
 
+// Reply API (V0.7-A.0 — chat-mode pipeline for slash command replies)
+export { composeReply, splitForDiscord } from './compose/reply.ts';
+export type { ReplyComposeArgs, ReplyComposeResult } from './compose/reply.ts';
+
+// Conversation ledger (V0.7-A.0 — in-process per-channel ring buffer)
+export {
+  appendToLedger,
+  getLedgerSnapshot,
+  ledgerChannelCount,
+} from './conversation/ledger.ts';
+export type { LedgerEntry } from './conversation/ledger.ts';
+
 // Score helpers — bot's CLI uses ZONE_FLAVOR for log emoji + counts
 export { ZONE_FLAVOR, getWindowEventCount, getWindowWalletCount } from './score/types.ts';
 export { getCodexLineCount } from './score/codex-context.ts';

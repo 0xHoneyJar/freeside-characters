@@ -65,6 +65,13 @@ const ConfigSchema = z.object({
   /** Where weaver posts land — usually stonehenge (cross-zone observatory). */
   WEAVER_PRIMARY_ZONE: z.enum(['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab']).default('stonehenge'),
 
+  // ─── V0.7-A.0 — Discord Interactions endpoint (slash commands) ────────
+  /** Ed25519 public key from Discord developer portal. When unset the
+   *  interactions server doesn't start (digest cron path is unaffected). */
+  DISCORD_PUBLIC_KEY: z.string().optional(),
+  /** Port the interactions HTTP server binds to (default 3001). */
+  INTERACTIONS_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+
   // ─── meta ─────────────────────────────────────────────────────────────
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),

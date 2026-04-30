@@ -270,3 +270,144 @@ default.`;
     userMessage: userHalf,
   };
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// V0.7-A.0 — chat-mode prompt builder
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * V0.7-A.0 conversation-mode override block that neutralizes the digest
+ * framing in the existing persona template. Substituted in for
+ * `{{POST_TYPE_GUIDANCE}}` when building reply prompts so we don't have to
+ * fork the template (KISS · operator 2026-04-30).
+ *
+ * Why this exists: the digest template references zone headlines, MCP
+ * tool-call architecture, and per-zone movement framing. For slash-command
+ * replies none of that applies — the LLM should drop digest shape, not
+ * call tools, and respond conversationally in the locked register.
+ */
+const CONVERSATION_MODE_OVERRIDE = `═══ CONVERSATION MODE (V0.7-A.0) — read this last, it OVERRIDES above ═══
+You are NOT writing a scheduled digest right now. You are in a Discord
+conversation. A user invoked a slash command (/ruggy or /satoshi) and is
+waiting for a reply.
+
+OVERRIDE these earlier instructions:
+- DO NOT call any tools (mcp__score__*, mcp__rosenzu__*, mcp__emojis__*, etc).
+  They aren't available in this mode. Compose from persona alone.
+- DO NOT use the digest greeting "yo <zone> team" — you're mid-conversation,
+  not opening a thread.
+- DO NOT include the digest headline shape (\`yo Zone · N events · M miberas\`)
+  — no data has been fetched.
+- DO NOT name a zone unless the user did.
+
+KEEP from the persona above:
+- Your voice register (cadence, vocabulary, format).
+- Your character (who you are, what you remember, your stance).
+- Your refusal patterns (banned words, anti-voice, codex grounding).
+
+OUTPUT SHAPE:
+- 1-3 short paragraphs is the target. The user wants a reply, not a wall.
+- Plain text — Discord markdown subset (bold, italic, code) is allowed.
+- No embeds, no images, no follow-up CTAs. The substrate handles attribution.
+- The conversation transcript below is for context — speak to the CURRENT
+  message, don't recap the history.
+═══`;
+
+/**
+ * Output instruction for chat-mode (slot replaces {{POST_TYPE_OUTPUT_INSTRUCTION}}).
+ */
+const CONVERSATION_OUTPUT_INSTRUCTION = `Respond now in voice. Concise. No greeting, no closing rituals — just the reply.`;
+
+export interface BuildReplyPromptArgs {
+  character: CharacterConfig;
+  /** The user's message text (the slash-command `prompt:` option). */
+  prompt: string;
+  /** Discord username of the invoker (for situation hint + transcript). */
+  authorUsername: string;
+  /** Recent ledger entries (already snapshotted by caller). */
+  history: ReplyTranscriptEntry[];
+}
+
+export interface ReplyTranscriptEntry {
+  role: 'user' | 'character';
+  authorUsername: string;
+  content: string;
+}
+
+/**
+ * Build a chat-mode prompt pair (V0.7-A.0).
+ *
+ * Reuses the persona template's system half so all voice / vocab / codex
+ * machinery stays loaded — but substitutes the digest-shaped placeholders
+ * with conversation-mode equivalents and replaces the user half entirely
+ * with a transcript+message frame.
+ *
+ * Civic-layer note: the substrate supplies the conversation framing.
+ * Characters supply voice. They never compose Discord plumbing themselves.
+ */
+export function buildReplyPromptPair(args: BuildReplyPromptArgs): {
+  systemPrompt: string;
+  userMessage: string;
+} {
+  const { character } = args;
+  const template = loadTemplate(character.personaPath);
+  const codex = loadCodexPrelude();
+  const exemplars = buildExemplarBlock(character, 'digest'); // chat has no exemplars; reuse digest as voice anchor texture
+  const voiceAnchors = loadVoiceAnchors(character.personaPath);
+  const codexAnchors = loadCodexAnchors(character.personaPath);
+
+  const inputPayloadMarker = '═══ INPUT PAYLOAD ═══';
+  const idx = template.indexOf(inputPayloadMarker);
+  if (idx === -1) {
+    throw new Error(`persona loader: could not find INPUT PAYLOAD marker in template (${character.personaPath})`);
+  }
+
+  // Conversation-mode placeholder substitution. Zone bits get neutral
+  // fallbacks so any {{ZONE_NAME}} embedded inside voice anchors / codex
+  // anchors / vocab sections doesn't leak literal placeholder syntax to
+  // the LLM. Zone-specific guidance is overridden by CONVERSATION_MODE_OVERRIDE.
+  const systemHalf = template
+    .slice(0, idx)
+    .replace(/\{\{POST_TYPE_GUIDANCE\}\}/g, CONVERSATION_MODE_OVERRIDE)
+    .replace(/\{\{MOVEMENT_GUIDANCE\}\}/g, '(not applicable in conversation mode)')
+    .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
+    .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
+    .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
+    .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
+    .replace(/\{\{ZONE_ID\}\}/g, 'conversation')
+    .replace(/\{\{ZONE_NAME\}\}/g, 'this conversation')
+    .replace(/\{\{DIMENSION\}\}/g, 'Conversation')
+    .replace(/\{\{POST_TYPE\}\}/g, 'reply')
+    .trimEnd();
+
+  // User-half is freshly built — the template's INPUT PAYLOAD section
+  // (Zone/Post-type/raw-stats) doesn't apply in conversation mode.
+  const transcript = renderTranscript(args.history, character.displayName ?? character.id);
+  const parts: string[] = [];
+  parts.push(`You're chatting with ${args.authorUsername} in Discord.`);
+  if (transcript) {
+    parts.push(``);
+    parts.push(`Recent conversation in this channel (oldest first):`);
+    parts.push(transcript);
+  }
+  parts.push(``);
+  parts.push(`${args.authorUsername} just said:`);
+  parts.push(args.prompt.trim());
+  parts.push(``);
+  parts.push(CONVERSATION_OUTPUT_INSTRUCTION);
+
+  return {
+    systemPrompt: systemHalf,
+    userMessage: parts.join('\n'),
+  };
+}
+
+function renderTranscript(history: ReplyTranscriptEntry[], characterDisplayName: string): string {
+  if (history.length === 0) return '';
+  return history
+    .map((h) => {
+      const speaker = h.role === 'character' ? characterDisplayName : h.authorUsername;
+      return `${speaker}: ${h.content}`;
+    })
+    .join('\n');
+}
