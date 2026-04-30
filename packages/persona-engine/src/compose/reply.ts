@@ -149,7 +149,7 @@ async function invokeChat(config: Config, req: ChatInvokeArgs): Promise<string> 
   }
 }
 
-type ChatProvider = 'stub' | 'anthropic' | 'freeside';
+type ChatProvider = 'stub' | 'anthropic' | 'freeside' | 'bedrock';
 
 function resolveChatProvider(config: Config): ChatProvider {
   switch (config.LLM_PROVIDER) {
