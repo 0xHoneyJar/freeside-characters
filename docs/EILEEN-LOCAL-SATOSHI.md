@@ -4,8 +4,7 @@
 > built yet. Eileen will share her Bedrock model spec; we'll wire the
 > provider + a one-command launcher in the next session. The architectural
 > split this doc commits to is laid out in
-> `~/bonfire/grimoires/bonfire/specs/eileen-local-bedrock-split.md`
-> (operator-side planning).
+> [`EILEEN-LOCAL-BEDROCK-SPLIT.md`](EILEEN-LOCAL-BEDROCK-SPLIT.md).
 
 ## What this is for
 
@@ -119,7 +118,7 @@ distinct via different bot avatars in autocomplete. Acceptable.
 ## Tomorrow's session — atomic items
 
 Ordered for build sequence (earlier unblocks later). Full plan at
-`~/bonfire/grimoires/bonfire/specs/eileen-local-bedrock-split.md`.
+[`EILEEN-LOCAL-BEDROCK-SPLIT.md`](EILEEN-LOCAL-BEDROCK-SPLIT.md).
 
 1. **`LLM_PROVIDER=bedrock` provider** — chat-mode path · `@aws-sdk/client-bedrock-runtime` · ~1h
 2. **`CharacterConfig.anthropicModel`** optional override · per-character model selection · ~30m
@@ -134,4 +133,7 @@ ruggy persona negative-constraint audit.
 ## Coordination
 
 When Eileen's spec arrives or this doc needs updates: ping operator (soju).
-The build doc roadmap is in `~/bonfire/grimoires/bonfire/specs/listener-router-substrate.md` (operator's planning vault).
+
+**In-repo planning**: [`EILEEN-LOCAL-BEDROCK-SPLIT.md`](EILEEN-LOCAL-BEDROCK-SPLIT.md) — strategic split decision · risks · open questions · tomorrow's atomic items.
+
+**Operator-side roadmap** (out-of-repo): `~/bonfire/grimoires/bonfire/specs/listener-router-substrate.md` (full V0.7-A → V0.7-B phase plan · ask operator if relevant context for Eileen's work).
