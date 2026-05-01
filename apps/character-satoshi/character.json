@@ -13,6 +13,25 @@
   "webhookAvatarUrl": "https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/staging/apps/character-satoshi/avatar.png",
   "webhookUsername": "Satoshi",
   "webhookAvatarTarget": "https://assets.0xhoneyjar.xyz/freeside-characters/satoshi/avatar.png — canonical target per SDD §0.2; bridge URL above points at staging branch's avatar.png (operator-uploaded 2026-04-30); swap to canonical when assets.0xhoneyjar.xyz CDN cycle reaches /freeside-characters/. The irys URL gateway.irys.xyz/7rpvw.../satoshi.png in construct-mibera-codex grail #4488 is dead per operator 2026-04-30 — needs codex-side fix.",
+  "slash_commands": [
+    {
+      "name": "satoshi",
+      "description": "talk to satoshi",
+      "handler": "chat",
+      "options": [
+        { "name": "prompt", "description": "what to say to satoshi", "type": 3, "required": true },
+        { "name": "ephemeral", "description": "only you see the reply", "type": 5, "required": false }
+      ]
+    },
+    {
+      "name": "satoshi-image",
+      "description": "satoshi generates an image",
+      "handler": "imagegen",
+      "options": [
+        { "name": "prompt", "description": "image prompt — be explicit about subject + scene + light", "type": 3, "required": true }
+      ]
+    }
+  ],
   "doc": {
     "creativeDirection": "creative-direction.md",
     "codexAnchors": "codex-anchors.md",

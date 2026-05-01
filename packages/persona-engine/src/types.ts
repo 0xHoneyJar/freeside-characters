@@ -71,6 +71,58 @@ export interface CharacterConfig {
    * with satoshi's voice is correct reception, not a bug.
    */
   anchoredArchetypes?: CabalArchetype[];
+
+  /**
+   * V0.7-A.1: per-character slash command set. Eileen's framing
+   * (2026-04-30): "commands are diff otherwise they'd be reporting the
+   * same shit." When omitted, the substrate auto-generates the default
+   * `/<id> prompt:<text> ephemeral:<bool>` command (V0.7-A.0 parity)
+   * routed to the `chat` handler.
+   *
+   * Examples:
+   *   ruggy   = undefined           → default /ruggy chat
+   *   satoshi = [/satoshi (chat),
+   *              /satoshi-image (imagegen)]
+   *
+   * The substrate flattens commands across all loaded characters at
+   * publish time (see apps/bot/scripts/publish-commands.ts) and routes
+   * by command name + handler at dispatch time
+   * (apps/bot/src/discord-interactions/dispatch.ts).
+   */
+  slash_commands?: SlashCommandSpec[];
+}
+
+/**
+ * V0.7-A.1: a single slash command declared by a character. Maps 1:1 to
+ * Discord's Application Command shape so character.json can declare
+ * commands without runtime translation. The `handler` field is the
+ * substrate-side hook — `chat` runs through composeReply (V0.7-A.0
+ * pipeline), `imagegen` runs through the imagegen MCP scaffold.
+ *
+ * Future handlers (`stats`, `lore`, `score`, etc.) extend the union; the
+ * dispatch switch is the single point of registration.
+ */
+export interface SlashCommandSpec {
+  /** Discord command name (lowercase, hyphenated). Must match Discord's
+   *  /^[-_\p{L}\p{N}]{1,32}$/ regex. */
+  name: string;
+  /** 1-100 char description shown in Discord's autocomplete UI. */
+  description: string;
+  /** Substrate-side handler that runs when this command fires. */
+  handler: SlashCommandHandler;
+  /** Discord application command options (0-25). type values: 3=STRING,
+   *  4=INTEGER, 5=BOOLEAN, 10=NUMBER (canonical Discord enum). */
+  options?: SlashCommandOption[];
+}
+
+export type SlashCommandHandler = 'chat' | 'imagegen';
+
+export interface SlashCommandOption {
+  name: string;
+  description: string;
+  /** Discord application command option type. Common: 3=STRING, 5=BOOLEAN. */
+  type: number;
+  required?: boolean;
 }
 
 /**

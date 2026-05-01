@@ -16,7 +16,15 @@
  */
 
 // Public types
-export type { CharacterConfig, ZoneId, PostType, EmojiAffinityKind } from './types.ts';
+export type {
+  CharacterConfig,
+  ZoneId,
+  PostType,
+  EmojiAffinityKind,
+  SlashCommandSpec,
+  SlashCommandHandler,
+  SlashCommandOption,
+} from './types.ts';
 export type { Config } from './config.ts';
 export type { FireRequest, SchedulerHandles, ScheduleArgs } from './cron/scheduler.ts';
 export type { PostComposeResult } from './compose/composer.ts';

@@ -25,6 +25,7 @@
  */
 
 import {
+  appendToLedger,
   composeReply,
   getBotClient,
   getOrCreateChannelWebhook,
@@ -33,7 +34,11 @@ import {
   splitForDiscord,
   type CharacterConfig,
   type Config,
+  type LedgerEntry,
+  type SlashCommandHandler,
 } from '@freeside-characters/persona-engine';
+import { invokeStability } from '@freeside-characters/persona-engine/orchestrator/imagegen';
+import { resolveSlashCommandTarget } from '../character-loader.ts';
 import {
   InteractionResponseType,
   InteractionType,
@@ -132,17 +137,26 @@ export async function dispatchSlashCommand(
     );
   }
 
-  // ─── Resolve target character ──────────────────────────────────────
+  // ─── Resolve target command + handler ──────────────────────────────
+  // V0.7-A.1: characters may declare divergent commands (e.g. /satoshi-
+  // image alongside /satoshi). Lookup is by command NAME, not character
+  // id, since the two diverged at this phase.
   const commandName = interaction.data?.name;
   if (!commandName) {
     return ephemeralReply('no command name in interaction.');
   }
-  const character = characters.find((c) => c.id === commandName);
-  if (!character) {
+  const target = resolveSlashCommandTarget(commandName, characters);
+  if (!target) {
+    const available = characters
+      .flatMap((c) => (c.slash_commands ?? []).map((s) => s.name).concat(c.slash_commands ? [] : [c.id]))
+      .map((n) => `/${n}`)
+      .join(', ');
     return ephemeralReply(
-      `unknown character: \`${commandName}\`. available: ${characters.map((c) => `/${c.id}`).join(', ') || '(none loaded)'}`,
+      `unknown command: \`${commandName}\`. available: ${available || '(none loaded)'}`,
     );
   }
+  const { character, spec } = target;
+  const handler = spec.handler;
 
   // ─── Read options ──────────────────────────────────────────────────
   const prompt = readStringOption(interaction, 'prompt');
@@ -158,6 +172,7 @@ export async function dispatchSlashCommand(
     interaction,
     config,
     character,
+    handler,
     prompt: prompt.trim(),
     ephemeral,
     channelId,
@@ -182,18 +197,35 @@ interface AsyncWorkerArgs {
   interaction: DiscordInteraction;
   config: Config;
   character: CharacterConfig;
+  handler: SlashCommandHandler;
   prompt: string;
   ephemeral: boolean;
   channelId: string;
   invoker: { id: string; username: string };
 }
 
+/**
+ * V0.7-A.1: handler-aware async dispatch. Each handler shares the same
+ * delivery primitives (deliverViaWebhook / deliverViaInteraction, the
+ * 14m30s timeout, the circuit breaker) but produces its own reply chunks.
+ * New handlers register here as additional cases — `chat` and `imagegen`
+ * land first.
+ */
 async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
+  switch (args.handler) {
+    case 'chat':
+      return doReplyChat(args);
+    case 'imagegen':
+      return doReplyImagegen(args);
+  }
+}
+
+async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
   const { interaction, config, character, prompt, ephemeral, channelId, invoker } = args;
   const t0 = Date.now();
 
   console.log(
-    `interactions: ${character.id} dispatch · invoker=${invoker.username} ` +
+    `interactions: ${character.id}/chat dispatch · invoker=${invoker.username} ` +
       `channel=${channelId} ephemeral=${ephemeral} prompt="${truncate(prompt, 80)}"`,
   );
 
@@ -214,7 +246,7 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
 
     if (result === TIMEOUT_SENTINEL) {
       console.error(
-        `interactions: ${character.id} TIMEOUT after ${Date.now() - t0}ms · channel=${channelId}`,
+        `interactions: ${character.id}/chat TIMEOUT after ${Date.now() - t0}ms · channel=${channelId}`,
       );
       await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'timeout'));
       return;
@@ -222,7 +254,7 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
 
     if (!result) {
       console.warn(
-        `interactions: ${character.id} composeReply returned null · channel=${channelId}`,
+        `interactions: ${character.id}/chat composeReply returned null · channel=${channelId}`,
       );
       await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'empty'));
       return;
@@ -249,7 +281,7 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
         );
       } catch (webhookErr) {
         console.warn(
-          `interactions: ${character.id} webhook delivery failed · falling back to PATCH:`,
+          `interactions: ${character.id}/chat webhook delivery failed · falling back to PATCH:`,
           webhookErr,
         );
         invalidateWebhookCache(channelId);
@@ -258,7 +290,7 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
     }
 
     console.log(
-      `interactions: ${character.id} delivered · ` +
+      `interactions: ${character.id}/chat delivered · ` +
         `channel=${channelId} chunks=${result.chunks.length} ` +
         `compose_ms=${result.contextUsed.durationMs} ` +
         `total_ms=${Date.now() - t0} ` +
@@ -267,7 +299,7 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
     );
   } catch (err) {
     console.error(
-      `interactions: ${character.id} dispatch failed · channel=${channelId}`,
+      `interactions: ${character.id}/chat dispatch failed · channel=${channelId}`,
       err,
     );
     try {
@@ -278,6 +310,127 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
       console.error(`interactions: PATCH-original after error also failed:`, patchErr);
     }
   }
+}
+
+/**
+ * V0.7-A.1 imagegen handler. Calls invokeStability directly (no LLM
+ * intermediation) — the slash arg `prompt:` IS the image prompt. The
+ * autoprompt-driven path (where the LLM decides to imagegen mid-reply)
+ * is V0.7-A.x persona-iteration territory and uses the imagegen MCP
+ * through the digest pipeline; this handler is the manual surface
+ * (Eileen: "manual /satoshi-image prompt:..." per kickoff §unblocks).
+ */
+async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
+  const { interaction, config, character, prompt, ephemeral, channelId, invoker } = args;
+  const t0 = Date.now();
+
+  console.log(
+    `interactions: ${character.id}/imagegen dispatch · invoker=${invoker.username} ` +
+      `channel=${channelId} ephemeral=${ephemeral} prompt="${truncate(prompt, 80)}"`,
+  );
+
+  try {
+    const result = await Promise.race([
+      invokeStability(config, { prompt }),
+      timeoutAfter(TOKEN_LIFETIME_MS),
+    ]);
+
+    if (result === TIMEOUT_SENTINEL) {
+      console.error(
+        `interactions: ${character.id}/imagegen TIMEOUT after ${Date.now() - t0}ms · channel=${channelId}`,
+      );
+      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'timeout'));
+      return;
+    }
+
+    const reply = formatImagegenReply(character, result);
+    const chunks = splitForDiscord(reply, DISCORD_CHAR_LIMIT);
+
+    // Ledger discipline: append both the user's prompt and the imagegen
+    // result so subsequent chat-mode invocations in this channel see
+    // context that an image was generated. Mirrors composeReply's
+    // ledger pattern.
+    const nowIso = new Date().toISOString();
+    const userEntry: LedgerEntry = {
+      role: 'user',
+      content: prompt,
+      authorId: invoker.id,
+      authorUsername: invoker.username,
+      timestamp: nowIso,
+    };
+    const characterEntry: LedgerEntry = {
+      role: 'character',
+      content: `[imagegen] ${result.url}`,
+      characterId: character.id,
+      authorId: character.id,
+      authorUsername: character.displayName ?? character.id,
+      timestamp: new Date().toISOString(),
+    };
+    appendToLedger(channelId, userEntry);
+    appendToLedger(channelId, characterEntry);
+
+    if (ephemeral) {
+      await deliverViaInteraction(interaction, character, chunks, true);
+    } else {
+      try {
+        await deliverViaWebhook(
+          interaction,
+          config,
+          character,
+          channelId,
+          chunks,
+          prompt,
+          invoker.username,
+        );
+      } catch (webhookErr) {
+        console.warn(
+          `interactions: ${character.id}/imagegen webhook delivery failed · falling back to PATCH:`,
+          webhookErr,
+        );
+        invalidateWebhookCache(channelId);
+        await deliverViaInteraction(interaction, character, chunks, false);
+      }
+    }
+
+    console.log(
+      `interactions: ${character.id}/imagegen delivered · ` +
+        `channel=${channelId} model=${result.model} seed=${result.seed} ` +
+        `placeholder=${result.placeholder} total_ms=${Date.now() - t0} ` +
+        `via=${ephemeral ? 'patch' : 'webhook'}`,
+    );
+  } catch (err) {
+    console.error(
+      `interactions: ${character.id}/imagegen dispatch failed · channel=${channelId}`,
+      err,
+    );
+    try {
+      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'error'));
+    } catch (patchErr) {
+      console.error(`interactions: PATCH-original after imagegen error also failed:`, patchErr);
+    }
+  }
+}
+
+/**
+ * Format the imagegen reply for Discord delivery. When the substrate is
+ * in scaffold mode (Eileen's Bedrock Stability invoke not yet landed),
+ * the result.placeholder flag is true and we annotate so collaborators
+ * see the URL is synthetic rather than burning time wondering why
+ * placehold.co looks broken.
+ */
+function formatImagegenReply(
+  character: CharacterConfig,
+  result: { url: string; model: string; seed: number; placeholder: boolean },
+): string {
+  const displayName = character.displayName ?? character.id;
+  if (result.placeholder) {
+    return (
+      `**${displayName}** · imagegen scaffold\n\n` +
+      `${result.url}\n` +
+      `_model=${result.model} · seed=${result.seed} · placeholder=true · awaiting Eileen's Stability invoke PR_`
+    );
+  }
+  return `${result.url}\n_${displayName} · model=${result.model} · seed=${result.seed}_`;
 }
 
 // ──────────────────────────────────────────────────────────────────────

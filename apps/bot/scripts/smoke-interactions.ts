@@ -16,7 +16,13 @@ import {
   splitForDiscord,
 } from '@freeside-characters/persona-engine';
 import { startInteractionServer } from '../src/discord-interactions/server.ts';
-import { loadCharacters } from '../src/character-loader.ts';
+import {
+  defaultSlashCommands,
+  loadCharacters,
+  resolveSlashCommandTarget,
+  resolveSlashCommands,
+} from '../src/character-loader.ts';
+import type { CharacterConfig } from '@freeside-characters/persona-engine';
 // V0.7-A.1 imagegen substrate scaffold — smoke at the substrate boundary
 // rather than through the SDK loop (the LLM-driven invocation is exercised
 // end-to-end by the dispatch handler smoke once #2 commands land).
@@ -111,6 +117,67 @@ async function main(): Promise<void> {
   if (!stub.url.startsWith('https://placehold.co/imagegen?')) fail(`imagegen placeholder URL shape broken: ${stub.url}`);
   if (typeof stub.seed !== 'number') fail(`imagegen seed should be number, got ${typeof stub.seed}`);
   ok('imagegen · invokeStability placeholder returns valid GenerateOutput shape');
+
+  // ── per-character slash command resolution smoke (V0.7-A.1 #2) ────
+  const ruggyConfig: CharacterConfig = {
+    id: 'ruggy',
+    displayName: 'Ruggy',
+    personaPath: '/tmp/ruggy.md',
+  };
+  const ruggyDefault = defaultSlashCommands(ruggyConfig);
+  if (ruggyDefault.length !== 1 || ruggyDefault[0]?.name !== 'ruggy' || ruggyDefault[0]?.handler !== 'chat') {
+    fail(`defaultSlashCommands shape broken for ruggy: ${JSON.stringify(ruggyDefault)}`);
+  } else {
+    ok('slash · default fallback yields /ruggy chat handler');
+  }
+  const ruggyResolved = resolveSlashCommands(ruggyConfig);
+  if (ruggyResolved.length !== 1 || ruggyResolved[0]?.name !== 'ruggy') {
+    fail('resolveSlashCommands should fallback to default when slash_commands undefined');
+  } else {
+    ok('slash · resolveSlashCommands falls back to default when undeclared');
+  }
+
+  const satoshiConfig: CharacterConfig = {
+    id: 'satoshi',
+    displayName: 'Satoshi',
+    personaPath: '/tmp/satoshi.md',
+    slash_commands: [
+      { name: 'satoshi', description: 'talk to satoshi', handler: 'chat', options: [] },
+      { name: 'satoshi-image', description: 'image', handler: 'imagegen', options: [] },
+    ],
+  };
+  const satoshiResolved = resolveSlashCommands(satoshiConfig);
+  if (satoshiResolved.length !== 2 || satoshiResolved[1]?.handler !== 'imagegen') {
+    fail(`resolveSlashCommands should pass through declared commands: ${JSON.stringify(satoshiResolved)}`);
+  } else {
+    ok('slash · resolveSlashCommands passes through declared 2-command set');
+  }
+
+  const characterFleet = [ruggyConfig, satoshiConfig];
+  const ruggyTarget = resolveSlashCommandTarget('ruggy', characterFleet);
+  if (!ruggyTarget || ruggyTarget.character.id !== 'ruggy' || ruggyTarget.spec.handler !== 'chat') {
+    fail('resolveSlashCommandTarget should route /ruggy → ruggy/chat');
+  } else {
+    ok('slash · /ruggy resolves to ruggy + chat handler');
+  }
+  const satoshiTarget = resolveSlashCommandTarget('satoshi', characterFleet);
+  if (!satoshiTarget || satoshiTarget.character.id !== 'satoshi' || satoshiTarget.spec.handler !== 'chat') {
+    fail('resolveSlashCommandTarget should route /satoshi → satoshi/chat');
+  } else {
+    ok('slash · /satoshi resolves to satoshi + chat handler');
+  }
+  const imageTarget = resolveSlashCommandTarget('satoshi-image', characterFleet);
+  if (!imageTarget || imageTarget.character.id !== 'satoshi' || imageTarget.spec.handler !== 'imagegen') {
+    fail('resolveSlashCommandTarget should route /satoshi-image → satoshi/imagegen');
+  } else {
+    ok('slash · /satoshi-image resolves to satoshi + imagegen handler');
+  }
+  const unknownTarget = resolveSlashCommandTarget('rumple', characterFleet);
+  if (unknownTarget !== null) {
+    fail('resolveSlashCommandTarget should return null for unknown commands');
+  } else {
+    ok('slash · unknown command resolves to null');
+  }
 
   // ── HTTP server smoke ─────────────────────────────────────────────
   process.env.DISCORD_PUBLIC_KEY = DUMMY_PUBLIC_KEY;
