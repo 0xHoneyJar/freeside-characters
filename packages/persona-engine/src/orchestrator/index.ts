@@ -186,6 +186,24 @@ export async function runOrchestratorQuery(
   const mcpServers = buildMcpServers(config);
   const allowedTools = buildAllowedTools(mcpServers, req.character.mcps);
 
+  // V0.7-A.1 observability: when a character's declared mcps name servers
+  // not currently registered (env-gated MCP not configured, OR a typo in
+  // character.json), they're silently dropped from the allowedTools
+  // intersection. Surface that to the operator so a missed env var or a
+  // misspelled scope name doesn't masquerade as "the LLM just chose not
+  // to use the tool." Logged once per fire — for V0.6 cron cadence (1-2
+  // fires/day) this is negligible noise; if it ever becomes load-bearing
+  // we can dedup by (characterId, droppedSet) at startup.
+  if (req.character.mcps) {
+    const registered = Object.keys(mcpServers);
+    const dropped = req.character.mcps.filter((n) => !registered.includes(n));
+    if (dropped.length > 0) {
+      console.warn(
+        `orchestrator: character ${req.character.id} declared mcps [${dropped.join(', ')}] not currently registered — dropped from allowedTools`,
+      );
+    }
+  }
+
   const options: Options = {
     systemPrompt: req.systemPrompt,
     model: config.ANTHROPIC_MODEL,

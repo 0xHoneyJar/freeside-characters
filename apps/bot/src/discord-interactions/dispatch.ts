@@ -38,7 +38,7 @@ import {
   type SlashCommandHandler,
 } from '@freeside-characters/persona-engine';
 import { invokeStability } from '@freeside-characters/persona-engine/orchestrator/imagegen';
-import { resolveSlashCommandTarget } from '../character-loader.ts';
+import { resolveSlashCommands, resolveSlashCommandTarget } from '../character-loader.ts';
 import {
   InteractionResponseType,
   InteractionType,
@@ -147,9 +147,11 @@ export async function dispatchSlashCommand(
   }
   const target = resolveSlashCommandTarget(commandName, characters);
   if (!target) {
+    // Single source of truth for available commands — resolveSlashCommands
+    // handles the declared-vs-default fallback identically here and at
+    // publish time, so this listing can never drift from what's registered.
     const available = characters
-      .flatMap((c) => (c.slash_commands ?? []).map((s) => s.name).concat(c.slash_commands ? [] : [c.id]))
-      .map((n) => `/${n}`)
+      .flatMap((c) => resolveSlashCommands(c).map((s) => `/${s.name}`))
       .join(', ');
     return ephemeralReply(
       `unknown command: \`${commandName}\`. available: ${available || '(none loaded)'}`,
@@ -346,27 +348,21 @@ async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
     const reply = formatImagegenReply(character, result);
     const chunks = splitForDiscord(reply, DISCORD_CHAR_LIMIT);
 
-    // Ledger discipline: append both the user's prompt and the imagegen
-    // result so subsequent chat-mode invocations in this channel see
-    // context that an image was generated. Mirrors composeReply's
-    // ledger pattern.
-    const nowIso = new Date().toISOString();
-    const userEntry: LedgerEntry = {
-      role: 'user',
-      content: prompt,
-      authorId: invoker.id,
-      authorUsername: invoker.username,
-      timestamp: nowIso,
-    };
+    // Ledger discipline (V0.7-A.1 imagegen): append a SINGLE character
+    // marker entry — no user-prompt entry (image prompts aren't chat
+    // utterances) and no URL in content (the URL is delivery metadata,
+    // not utterance text · letting it leak into chat-mode prompt context
+    // pollutes the LLM's view of the conversation). The marker keeps the
+    // prompt summary so subsequent chat invocations have continuity
+    // ("what scene did you generate?") without LLM-quoteable URLs.
     const characterEntry: LedgerEntry = {
       role: 'character',
-      content: `[imagegen] ${result.url}`,
+      content: `[generated an image · prompt: "${truncate(prompt, 80)}"]`,
       characterId: character.id,
       authorId: character.id,
       authorUsername: character.displayName ?? character.id,
       timestamp: new Date().toISOString(),
     };
-    appendToLedger(channelId, userEntry);
     appendToLedger(channelId, characterEntry);
 
     if (ephemeral) {

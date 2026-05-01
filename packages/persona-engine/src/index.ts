@@ -24,6 +24,7 @@ export type {
   SlashCommandSpec,
   SlashCommandHandler,
   SlashCommandOption,
+  DiscordApplicationCommandOptionType,
 } from './types.ts';
 export type { Config } from './config.ts';
 export type { FireRequest, SchedulerHandles, ScheduleArgs } from './cron/scheduler.ts';
