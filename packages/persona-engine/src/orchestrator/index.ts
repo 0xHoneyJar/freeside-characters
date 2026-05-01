@@ -33,6 +33,8 @@ import type { PostType } from '../compose/post-types.ts';
 import { rosenzuServer } from './rosenzu/server.ts';
 import { freesideAuthServer } from './freeside_auth/server.ts';
 import { emojisServer } from './emojis/server.ts';
+import { createImagegenServer } from './imagegen/server.ts';
+import { isImagegenConfigured } from './imagegen/bedrock-client.ts';
 // V0.6-C reconciliation 2026-04-30: cabalGygaxAgent retired from per-fire
 // compose path per gumi correction §0.5 #1 — the 9 cabal archetypes are
 // AUDIENCE postures, not character voice modes. The subagent code is
@@ -101,6 +103,17 @@ function buildMcpServers(config: Config): Record<string, McpServerConfig> {
       type: 'http',
       url: `${config.CODEX_MCP_URL}/mcp`,
     };
+  }
+
+  // imagegen-mcp (Bedrock Stability text-to-image) — V0.7-A.1 substrate
+  // scaffold. Registered when AWS_REGION + BEDROCK_STABILITY_MODEL_ID
+  // are set. Body is a placeholder stub awaiting Eileen's PR; the tool
+  // surface is exercisable today via /satoshi-image dispatch. Per-
+  // character scope (ruggy=no-imagegen, satoshi=imagegen) lands with
+  // V0.7-A.3 — until then, chat-mode bypasses MCPs entirely so ruggy's
+  // voice register is uncontested even when this server is registered.
+  if (isImagegenConfigured(config)) {
+    servers.imagegen = createImagegenServer(config);
   }
 
   return servers;

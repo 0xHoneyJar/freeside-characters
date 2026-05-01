@@ -17,6 +17,13 @@ import {
 } from '@freeside-characters/persona-engine';
 import { startInteractionServer } from '../src/discord-interactions/server.ts';
 import { loadCharacters } from '../src/character-loader.ts';
+// V0.7-A.1 imagegen substrate scaffold — smoke at the substrate boundary
+// rather than through the SDK loop (the LLM-driven invocation is exercised
+// end-to-end by the dispatch handler smoke once #2 commands land).
+import {
+  invokeStability,
+  isImagegenConfigured,
+} from '@freeside-characters/persona-engine/orchestrator/imagegen';
 
 const PORT = Number(process.env.SMOKE_PORT ?? '34501');
 const DUMMY_PUBLIC_KEY = '0'.repeat(64); // 32-byte hex, valid format · won't verify real sigs
@@ -84,6 +91,26 @@ async function main(): Promise<void> {
   const longChunks = splitForDiscord(longParas, 2000);
   if (longChunks.length !== 2) fail(`split paragraph break expected 2 chunks, got ${longChunks.length}`);
   else ok('split · paragraph break preserved');
+
+  // ── imagegen MCP scaffold smoke ───────────────────────────────────
+  const emptyConfig = {} as Parameters<typeof isImagegenConfigured>[0];
+  if (isImagegenConfigured(emptyConfig)) fail('imagegen env gate should be false on empty config');
+  else ok('imagegen · env gate false when AWS_REGION + model id unset');
+
+  const wiredConfig = {
+    AWS_REGION: 'us-west-2',
+    BEDROCK_STABILITY_MODEL_ID: 'stability.stable-image-ultra-v1:0',
+    AWS_BEARER_TOKEN_BEDROCK: 'stub',
+  } as Parameters<typeof invokeStability>[0];
+  if (!isImagegenConfigured(wiredConfig)) fail('imagegen env gate should be true when both env set');
+  else ok('imagegen · env gate true when AWS_REGION + model id set');
+
+  const stub = await invokeStability(wiredConfig, { prompt: 'a satoshi at dusk', style: 'cinematic' });
+  if (!stub.placeholder) fail('imagegen placeholder body should set placeholder=true');
+  if (stub.model !== 'stability.stable-image-ultra-v1:0') fail(`imagegen model echo broken: ${stub.model}`);
+  if (!stub.url.startsWith('https://placehold.co/imagegen?')) fail(`imagegen placeholder URL shape broken: ${stub.url}`);
+  if (typeof stub.seed !== 'number') fail(`imagegen seed should be number, got ${typeof stub.seed}`);
+  ok('imagegen · invokeStability placeholder returns valid GenerateOutput shape');
 
   // ── HTTP server smoke ─────────────────────────────────────────────
   process.env.DISCORD_PUBLIC_KEY = DUMMY_PUBLIC_KEY;

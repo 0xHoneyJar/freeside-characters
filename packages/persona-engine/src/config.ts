@@ -44,6 +44,11 @@ const ConfigSchema = z.object({
   /** Bedrock model id (e.g. anthropic.claude-sonnet-4-5-20250929-v1:0).
    *  Per-deploy override; Eileen sets this to her region's available model. */
   BEDROCK_MODEL_ID: z.string().optional(),
+  /** Bedrock Stability model id for imagegen (e.g.
+   *  stability.stable-image-ultra-v1:0 or stability.stable-diffusion-xl-v1).
+   *  Separate from BEDROCK_MODEL_ID (chat-mode Claude). When set together
+   *  with AWS_REGION, the orchestrator registers the imagegen MCP. */
+  BEDROCK_STABILITY_MODEL_ID: z.string().optional(),
   /** AWS region for Bedrock runtime. Eileen sets to her access region. */
   AWS_REGION: z.string().optional(),
 
