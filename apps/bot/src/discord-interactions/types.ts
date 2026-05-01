@@ -103,10 +103,15 @@ export interface DiscordInteractionResponse {
 }
 
 /** Helper: extract the invoking user from member (guild) or user (DM). */
-export function interactionInvoker(
-  interaction: DiscordInteraction,
-): DiscordInteractionUser | undefined {
-  return interaction.member?.user ?? interaction.user;
+export function interactionInvoker(interaction: DiscordInteraction): string {
+  return (
+    interaction.member?.nick ??
+    interaction.member?.user?.global_name ??
+    interaction.user?.global_name ??
+    interaction.member?.user?.username ??
+    interaction.user?.username ??
+    'someone'
+  );
 }
 
 /** Helper: read a typed string option from interaction.data.options. */
