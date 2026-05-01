@@ -144,16 +144,6 @@ if (!commandName) {
   return ephemeralReply('no command name in interaction.');
 }
 
-if (commandName === 'satoshi-image') {
-  const imagePrompt =
-    readStringOption(interaction, 'prompt') ??
-    'Satoshi in Freeside, cinematic, no text, no logos';
-
-  return ephemeralReply(
-    `satoshi-image command reached. prompt: ${imagePrompt}`,
-  );
-}
-
 const target = resolveSlashCommandTarget(commandName, characters);
 if (!target) {
   const available = characters
