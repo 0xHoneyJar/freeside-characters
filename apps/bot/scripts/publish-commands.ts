@@ -1,9 +1,13 @@
 /**
- * Publish slash commands to Discord (V0.7-A.0 → V0.7-A.1).
+ * Publish slash commands to Discord (V0.7-A.1).
  *
  * One-shot script — run after character set or command schema changes.
- * Registers every command declared by every loaded character. Characters
+ * Registers `/ruggy`, `/satoshi`, and any additional characters loaded
+ * via the standard CHARACTERS env mechanism.
+* Registers every command declared by every loaded character. Characters
+ * Registers `/ruggy`, `/satoshi`, and any additional characters loaded
  * that don't declare `slash_commands` get the V0.7-A.0 default `/<id>
+ * via the standard CHARACTERS env mechanism.
  * prompt:<text> ephemeral:<bool>` (chat handler).
  *
  * V0.7-A.1: characters can now declare divergent command sets in their
@@ -36,10 +40,18 @@ import type { SlashCommandOption, SlashCommandSpec } from '@freeside-characters/
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
-interface DiscordCommandSchema {
+interface CommandOption {
   name: string;
   description: string;
-  options: SlashCommandOption[];
+  /** Discord application command option type. STRING=3, BOOLEAN=5. */
+  type: number;
+  required?: boolean;
+}
+
+interface CommandSchema {
+  name: string;
+  description: string;
+  options: CommandOption[];
 }
 
 async function main(): Promise<void> {
@@ -65,25 +77,28 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Flatten every character's resolved (declared or defaulted) commands
-  // into one Discord-shaped registration payload. Reject duplicates loud
-  // — Discord silently overwrites by name, but a clash within our own
-  // codebase is a config error worth surfacing rather than papering over.
-  const commands: DiscordCommandSchema[] = [];
-  const ownerByName = new Map<string, string>();
-  for (const c of characters) {
-    for (const spec of resolveSlashCommands(c)) {
-      const existingOwner = ownerByName.get(spec.name);
-      if (existingOwner) {
-        console.error(
-          `publish-commands: duplicate command name /${spec.name} declared by both ${existingOwner} and ${c.id}`,
-        );
-        process.exit(1);
-      }
-      ownerByName.set(spec.name, c.id);
-      commands.push(toDiscordSchema(spec));
-    }
-  }
+  const commands: CommandSchema[] = characters.map((c) => buildCommand(c.id, c.displayName ?? c.id));
+
+if (characters.some((c) => c.id === 'satoshi')) {
+  commands.push({
+    name: 'satoshi-image',
+    description: 'Ask Satoshi to generate an image',
+    options: [
+      {
+        name: 'prompt',
+        description: 'Describe the image you want Satoshi to generate',
+        type: 3,
+        required: true,
+      },
+      {
+        name: 'ephemeral',
+        description: 'only you see the reply',
+        type: 5,
+        required: false,
+      },
+    ],
+  });
+}
 
   const url = guildId
     ? `${DISCORD_API_BASE}/applications/${applicationId}/guilds/${guildId}/commands`
@@ -92,8 +107,7 @@ async function main(): Promise<void> {
   const scope = guildId ? `guild ${guildId}` : 'GLOBAL (1-hour propagation)';
   console.log(`publish-commands: registering ${commands.length} commands → ${scope}`);
   for (const cmd of commands) {
-    const owner = ownerByName.get(cmd.name) ?? 'unknown';
-    console.log(`  · /${cmd.name} (${owner}) — ${cmd.description}`);
+    console.log(`  · /${cmd.name} — ${cmd.description}`);
   }
 
   const response = await fetch(url, {
@@ -119,11 +133,15 @@ async function main(): Promise<void> {
   }
 }
 
-function toDiscordSchema(spec: SlashCommandSpec): DiscordCommandSchema {
+function buildCommand(id: string, displayName: string): CommandSchema {
+  const lower = displayName.toLowerCase();
   return {
-    name: spec.name,
-    description: spec.description,
-    options: spec.options ?? [],
+    name: id,
+    description: `talk to ${lower}`,
+    options: [
+      { name: 'prompt', description: `what to say to ${lower}`, type: 3, required: true },
+      { name: 'ephemeral', description: 'only you see the reply', type: 5, required: false },
+    ],
   };
 }
 
