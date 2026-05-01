@@ -139,7 +139,7 @@ async function invokeChat(config: Config, req: ChatInvokeArgs): Promise<string> 
   // Provider resolution mirrors agent-gateway.ts but for chat-mode the
   // anthropic path is the canonical one. Stub returns a canned in-voice
   // reply; freeside path uses the gateway's chat shape; bedrock path is
-  // Eileen's local-satoshi setup (in-flight at apps/character-satoshi/...).
+  // Eileen's satoshi setup (in-flight at apps/character-satoshi/...).
   switch (resolveChatProvider(config)) {
     case 'anthropic':
       return invokeChatAnthropicSdk(config, req);
@@ -177,6 +177,7 @@ function resolveChatProvider(config: Config): ChatProvider {
       if (config.ANTHROPIC_API_KEY) return 'anthropic';
       if (config.STUB_MODE) return 'stub';
       if (config.FREESIDE_API_KEY) return 'freeside';
+      if (config.BEDROCK_API_KEY) return 'bedrock';
       throw new Error('LLM_PROVIDER=auto: no chat provider available');
   }
 }
@@ -240,15 +241,72 @@ async function invokeChatAnthropicSdk(
  * `anthropic_version: 'bedrock-2023-05-31'`) is pending Eileen's next
  * commits or tomorrow's pair session. Until then this throws clearly.
  */
-async function invokeChatBedrock(
-  _config: Config,
-  _req: ChatInvokeArgs,
-): Promise<string> {
-  throw new Error(
-    'LLM_PROVIDER=bedrock: invokeChatBedrock not yet implemented · ' +
-      'awaiting @aws-sdk/client-bedrock-runtime wiring (in-flight per ' +
-      'docs/EILEEN-LOCAL-BEDROCK-SPLIT.md atomic item #1)',
-  );
+async function invokeBedrockChat(config: Config, req: ChatInvokeArgs): Promise<string> {
+  const apiKey = config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY;
+  if (!apiKey) {
+    throw new Error('Bedrock provider selected but AWS_BEARER_TOKEN_BEDROCK or BEDROCK_API_KEY is unset');
+  }
+
+  const region = config.BEDROCK_TEXT_REGION || config.AWS_REGION;
+  const modelId = config.BEDROCK_TEXT_MODEL_ID;
+  if (!modelId) {
+    throw new Error('Bedrock provider selected but BEDROCK_TEXT_MODEL_ID is unset');
+  }
+
+  const encodedModelId = encodeURIComponent(modelId);
+  const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodedModelId}/converse`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      system: [
+        {
+          text: req.systemPrompt,
+        },
+      ],
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              text: req.userMessage,
+            },
+          ],
+        },
+      ],
+      inferenceConfig: {
+        maxTokens: 1024,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`bedrock chat error: ${response.status} ${await response.text()}`);
+  }
+
+  const data = (await response.json()) as {
+    output?: {
+      message?: {
+        content?: Array<{ text?: string }>;
+      };
+    };
+  };
+
+  const text = data.output?.message?.content
+    ?.map((part) => part.text)
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+
+  if (!text) {
+    throw new Error(`bedrock chat returned no text: ${JSON.stringify(data)}`);
+  }
+
+  return text;
 }
 
 async function invokeChatFreeside(
@@ -284,11 +342,11 @@ function invokeChatStub(req: ChatInvokeArgs): string {
   // burning Anthropic credits or risking voice drift in tests).
   const id = req.character.id;
   if (id === 'satoshi') {
-    return 'the ledger acknowledges. attention is the asset; you brought yours. that is the relevant transaction.';
+    return 'the ledger acknowledges stub mode. attention is the asset; you brought yours. that is the relevant transaction.';
   }
   if (id === 'ruggy') {
     return [
-      'yo — ruggy here, stub-mode (no llm wired).',
+      'yo, ruggy here, stub-mode (no llm wired).',
       ``,
       `you said: "${truncate(req.userMessage, 120)}"`,
       ``,
