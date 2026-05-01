@@ -231,26 +231,16 @@ async function invokeChatAnthropicSdk(
   return text;
 }
 
-/**
- * Bedrock chat-mode invocation — STUB (Eileen's in-flight work).
- *
- * Type plumbing landed in commits 37c8f5d + 3fea5da (Eileen 2026-04-30):
- * `'bedrock'` in ChatProvider type · resolveChatProvider validates
- * AWS_BEARER_TOKEN_BEDROCK / BEDROCK_API_KEY env. The actual SDK call
- * (`@aws-sdk/client-bedrock-runtime` · InvokeModelCommand with
- * `anthropic_version: 'bedrock-2023-05-31'`) is pending Eileen's next
- * commits or tomorrow's pair session. Until then this throws clearly.
- */
-async function invokeBedrockChat(config: Config, req: ChatInvokeArgs): Promise<string> {
+async function invokeChatBedrock(config: Config, req: ChatInvokeArgs): Promise<string> {
   const apiKey = config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY;
   if (!apiKey) {
-    throw new Error('Bedrock provider selected but AWS_BEARER_TOKEN_BEDROCK or BEDROCK_API_KEY is unset');
+    throw new Error('LLM_PROVIDER=bedrock but AWS_BEARER_TOKEN_BEDROCK or BEDROCK_API_KEY is unset');
   }
 
   const region = config.BEDROCK_TEXT_REGION || config.AWS_REGION;
   const modelId = config.BEDROCK_TEXT_MODEL_ID;
   if (!modelId) {
-    throw new Error('Bedrock provider selected but BEDROCK_TEXT_MODEL_ID is unset');
+    throw new Error('LLM_PROVIDER=bedrock but BEDROCK_TEXT_MODEL_ID is unset');
   }
 
   const encodedModelId = encodeURIComponent(modelId);
@@ -293,6 +283,11 @@ async function invokeBedrockChat(config: Config, req: ChatInvokeArgs): Promise<s
       message?: {
         content?: Array<{ text?: string }>;
       };
+    };
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
     };
   };
 
