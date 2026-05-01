@@ -140,10 +140,20 @@ export type SlashCommandHandler = 'chat' | 'imagegen';
 export interface SlashCommandOption {
   name: string;
   description: string;
-  /** Discord application command option type. Common: 3=STRING, 5=BOOLEAN. */
-  type: number;
+  /** Discord application command option type. We currently use the basic
+   *  scalar set: 3=STRING, 4=INTEGER, 5=BOOLEAN, 10=NUMBER. The full
+   *  Discord enum also covers SUB_COMMAND (1), SUB_COMMAND_GROUP (2), and
+   *  the entity-reference types (USER/CHANNEL/ROLE/MENTIONABLE/ATTACHMENT).
+   *  Extend this union when a character needs one of those. */
+  type: DiscordApplicationCommandOptionType;
   required?: boolean;
 }
+
+/** Subset of Discord's ApplicationCommandOptionType enum currently used by
+ *  the character substrate. Narrowing to a literal union catches typos at
+ *  compile time — `type: 99` would type-check under plain `number` and
+ *  fail only at Discord publish (400 Bad Request). */
+export type DiscordApplicationCommandOptionType = 3 | 4 | 5 | 10;
 
 /**
  * The 9 cabal-gygax phantom-player archetypes — AUDIENCE postures, NOT

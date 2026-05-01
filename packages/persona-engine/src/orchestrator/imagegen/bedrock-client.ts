@@ -79,11 +79,16 @@ function buildPlaceholderUrl(input: GenerateInput, seed: number): string {
  * gives reproducible-enough placeholder URLs in tests without pulling in
  * a hash dep. Eileen can replace with crypto.randomBytes when the real
  * Stability call lands and reproducibility matters.
+ *
+ * `>>> 0` coerces the int32 to unsigned-32-bit, dodging the
+ * `Math.abs(INT32_MIN) === INT32_MIN` edge case (Math.abs has no positive
+ * int32 representation for -2147483648, so the result would still be
+ * negative · breaks any downstream `nonnegative` zod check).
  */
 function deterministicSeed(prompt: string): number {
   let h = 5381;
   for (let i = 0; i < prompt.length; i++) {
     h = ((h << 5) + h + prompt.charCodeAt(i)) | 0;
   }
-  return Math.abs(h);
+  return h >>> 0;
 }
