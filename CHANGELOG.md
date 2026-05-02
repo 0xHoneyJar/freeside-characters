@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.1] — 2026-05-01 — permit tools per env block tool_invocation_style
+
+<details open>
+<summary>the gap</summary>
+
+### Fixed
+
+- **chat-mode**: permit tools per env block tool_invocation_style (#7)
+
+_Source: PR #7_
+
+
 ## [0.9.0] — 2026-05-01 — environment substrate (Phases B-E · cycle-001)
 
 
