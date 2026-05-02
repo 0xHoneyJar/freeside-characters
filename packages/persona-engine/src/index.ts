@@ -59,6 +59,10 @@ export { exemplarStats } from './persona/exemplar-loader.ts';
 export { composeReply, splitForDiscord } from './compose/reply.ts';
 export type { ReplyComposeArgs, ReplyComposeResult } from './compose/reply.ts';
 
+// Orchestrator tool-use streaming (V0.7-A.1 · chat dispatcher uses this
+// to surface tool calls progressively in Discord — see ruggy-v2 pattern).
+export type { ToolUseEvent } from './orchestrator/index.ts';
+
 // Bedrock image generation
 export * from './compose/bedrock-image.ts';
 

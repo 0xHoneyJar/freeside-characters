@@ -51,6 +51,22 @@ import { isImagegenConfigured } from './imagegen/bedrock-client.ts';
  */
 export type OrchestratorPostType = PostType | 'chat';
 
+/**
+ * Tool-use event surfaced from the SDK's `assistant` stream. Callers
+ * (chat dispatcher) use these to render Claude-style progressive UI:
+ * "🔧 pulling zone digest…" while the round-trip is in flight.
+ *
+ * Pattern reference: `~/Documents/GitHub/ruggy-v2/src/agent.ts` onToolUse.
+ */
+export interface ToolUseEvent {
+  /** Fully-qualified tool name (e.g., `mcp__score__get_zone_digest`). */
+  name: string;
+  /** SDK-assigned tool-use block id (stable for tool→result correlation). */
+  id: string;
+  /** Tool args the LLM sent (opaque · for trajectory logging only). */
+  input: unknown;
+}
+
 export interface OrchestratorRequest {
   character: CharacterConfig;
   systemPrompt: string;
@@ -60,11 +76,21 @@ export interface OrchestratorRequest {
   zone?: ZoneId;
   /** Required for digest (caller's PostType). Optional for chat ('chat'). */
   postType?: OrchestratorPostType;
+  /**
+   * V0.7-A.1: optional callback fired when the LLM emits a `tool_use` block
+   * mid-stream (before the SDK invokes the tool). Used by the chat dispatcher
+   * to PATCH the deferred Discord message with progress ("🔧 pulling X…").
+   * Fires once per tool_use block; multiple tool calls in one query produce
+   * multiple events.
+   */
+  onToolUse?: (event: ToolUseEvent) => void;
 }
 
 export interface OrchestratorResponse {
   text: string;
   meta?: Record<string, unknown>;
+  /** Tool calls observed during the run (most recent first never — append order). */
+  toolUses?: ToolUseEvent[];
 }
 
 /**
@@ -256,8 +282,37 @@ export async function runOrchestratorQuery(
 
   let text = '';
   let usage: Record<string, unknown> | undefined;
+  const toolUses: ToolUseEvent[] = [];
 
+  // V0.7-A.1 streaming refactor (pattern: ruggy-v2/src/agent.ts):
+  // We previously skipped every event except `result.success`, which made
+  // mid-flight tool_use blocks invisible. Now we extract tool_use from
+  // `assistant` messages so the dispatcher can surface them to Discord
+  // (and trajectory logs see what the LLM actually invoked vs narrated).
+  // Final synthesized text still comes from `result.success.result` —
+  // pre-tool-call narration accumulated mid-stream is intentionally not
+  // returned to the caller (the SDK handles synthesis after tool round-trip).
   for await (const message of query({ prompt: req.userMessage, options })) {
+    if (message.type === 'assistant') {
+      for (const block of message.message.content) {
+        if (block.type === 'tool_use') {
+          const event: ToolUseEvent = {
+            name: block.name,
+            id: block.id,
+            input: block.input,
+          };
+          toolUses.push(event);
+          // Best-effort callback — caller errors don't break the SDK loop.
+          try {
+            req.onToolUse?.(event);
+          } catch (err) {
+            console.error(`orchestrator: onToolUse callback threw — ${err}`);
+          }
+        }
+      }
+      continue;
+    }
+
     if (message.type !== 'result') continue;
 
     if (message.subtype === 'success') {
@@ -267,6 +322,8 @@ export async function runOrchestratorQuery(
         duration_api_ms: message.duration_api_ms,
         num_turns: message.num_turns,
         total_cost_usd: message.total_cost_usd,
+        tool_uses: toolUses.length,
+        tool_names: toolUses.map((t) => t.name),
         ...message.usage,
       };
       break;
@@ -282,5 +339,5 @@ export async function runOrchestratorQuery(
     throw new Error('orchestrator: SDK query completed without an assistant text response');
   }
 
-  return { text, meta: usage };
+  return { text, meta: usage, toolUses };
 }

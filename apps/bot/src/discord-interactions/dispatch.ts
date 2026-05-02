@@ -38,8 +38,10 @@ import {
   type SlashCommandHandler,
 } from '@freeside-characters/persona-engine';
 import { invokeStability } from '@freeside-characters/persona-engine/orchestrator/imagegen';
+import type { ToolUseEvent } from '@freeside-characters/persona-engine';
 import { resolveSlashCommands, resolveSlashCommandTarget, selectedCharacterIds } from '../character-loader.ts';
 import { getZoneForChannel } from '../lib/channel-zone-map.ts';
+import { toolVerb } from './tool-verb.ts';
 import {
   InteractionResponseType,
   InteractionType,
@@ -237,6 +239,33 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     const zone = getZoneForChannel(config, channelId);
     const otherCharactersHere = selectedCharacterIds().filter((id) => id !== character.id);
 
+    // V0.7-A.1 progressive UX (pattern: ruggy-v2 onToolUse): when the
+    // orchestrator surfaces a tool_use block mid-stream, PATCH the deferred
+    // interaction message with a status line ("🔧 pulling zone digest…").
+    // The dispatcher's existing flow handles the final delivery: ephemeral=true
+    // PATCHes again with the response; ephemeral=false delivers via Pattern B
+    // webhook and then DELETEs the deferred placeholder. So progressive
+    // status is naturally replaced by the final artifact in either case.
+    //
+    // Fire-and-forget: PATCH errors are logged but don't block the round-trip.
+    // We coalesce by tool ID so multiple identical PATCHes within one tool's
+    // lifecycle (rare but possible if the SDK re-emits) don't stack.
+    const seenToolIds = new Set<string>();
+    const onToolUse = (event: ToolUseEvent): void => {
+      if (seenToolIds.has(event.id)) return;
+      seenToolIds.add(event.id);
+      const status = toolVerb(event.name);
+      console.log(
+        `interactions: ${character.id}/chat tool_use · ${event.name} · status="${status}"`,
+      );
+      patchOriginal(interaction, ephemeral, status).catch((err) => {
+        console.warn(
+          `interactions: ${character.id}/chat onToolUse PATCH failed (best-effort):`,
+          err,
+        );
+      });
+    };
+
     // Wrap composeReply in a 14m30s timeout so we never PATCH against an
     // expired interaction token (404 → silent freeze in Discord UI).
     const result = await Promise.race([
@@ -247,6 +276,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
         channelId,
         zone,
         otherCharactersHere,
+        onToolUse,
         authorId: invoker.id,
         authorUsername: invoker.username,
       }),
