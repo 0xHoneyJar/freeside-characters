@@ -27,6 +27,7 @@ import {
   emojisServerContract,
 } from "./schema.ts";
 import { emojisHandlers } from "./server.ts";
+import { EMOJIS, ALL_MOODS } from "./registry.ts";
 
 // ─── helpers ─────────────────────────────────────────────────────────
 
@@ -77,10 +78,11 @@ describe("list_moods", () => {
   });
 
   test("output: handler produces decodable response", async () => {
-    const env = await emojisHandlers.list_moods();
+    const env = await emojisHandlers.list_moods({});
     const payload = unwrapEnvelope(env);
     const decoded = decodeUnknown(listMoodsContract.output, payload);
-    expect(decoded.moods.length).toBe(27);
+    // Count derives from registry source-of-truth · F5 (PR #18 review)
+    expect(decoded.moods.length).toBe(ALL_MOODS.length);
   });
 });
 
@@ -261,19 +263,22 @@ describe("list_all", () => {
     ).toThrow();
   });
 
-  test("output: full catalog has count = 43", async () => {
+  test("output: full catalog matches registry", async () => {
+    // Count derives from registry source-of-truth · F5 (PR #18 review).
+    // Adding an emoji to registry.ts no longer triple-edits.
     const env = await emojisHandlers.list_all({});
     const payload = unwrapEnvelope(env);
     const decoded = decodeUnknown(listAllContract.output, payload);
-    expect(decoded.count).toBe(43);
-    expect(decoded.emojis.length).toBe(43);
+    expect(decoded.count).toBe(EMOJIS.length);
+    expect(decoded.emojis.length).toBe(EMOJIS.length);
   });
 
   test("output: kind=ruggy returns ruggy-only subset", async () => {
     const env = await emojisHandlers.list_all({ kind: "ruggy" });
     const payload = unwrapEnvelope(env);
     const decoded = decodeUnknown(listAllContract.output, payload);
-    expect(decoded.count).toBe(17);
+    const ruggyCount = EMOJIS.filter((e) => e.kind === "ruggy").length;
+    expect(decoded.count).toBe(ruggyCount);
     for (const e of decoded.emojis) {
       expect(e.kind).toBe("ruggy");
     }

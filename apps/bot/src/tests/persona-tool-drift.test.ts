@@ -63,11 +63,24 @@ const IN_BOT_TOOLS: Record<string, ReadonlySet<string>> = {
 /**
  * External HTTP MCPs — federated tenants on `mcp.0xhoneyjar.xyz`.
  *
- * Update this allowlist when a new tool ships upstream (score-mibera or
- * construct-mibera-codex). Per `gateway-as-registry` doctrine, the
- * upstream MCP is the source of truth — when v0.3 broadcast lands
- * (federation-extended `/.well-known/mcp.json`), we can replace this
- * with a build-time fetch + frozen snapshot.
+ * ⚠️ SNAPSHOT DRIFT: this allowlist catches CONSUMER drift (persona.md
+ * names a tool the consumer can't actually call) but NOT PRODUCER drift
+ * (upstream renames a tool · this allowlist still passes against the
+ * stale name). Per Bridgebuilder F2 (PR #18 review · 2026-05-02) +
+ * Meta Buck schema-registry postmortems, snapshot tests are wonderful
+ * at consumer drift and useless at producer drift.
+ *
+ *   ✅ Verified against upstream: 2026-05-02
+ *   📋 Verified against:
+ *      - score-mibera v1.1.0 (zerker · gateway tenant since v0.2)
+ *      - construct-mibera-codex (gumi · gateway tenant since v0.1)
+ *   🎯 Refresh trigger: when zerker/gumi PR a capability change
+ *      (per `.github/ISSUE_TEMPLATE/capability-request.md` flow), or
+ *      monthly drift sweep, whichever first.
+ *   🏗️  Replace with build-time fetch when gateway v0.3 ships
+ *      (federation-extended `/.well-known/mcp.json` per
+ *      `gateway-as-registry` doctrine). Track at:
+ *      grimoires/loa/proposals/capability-request-template-draft.md.
  */
 const EXTERNAL_TOOLS: Record<string, ReadonlySet<string>> = {
   score: new Set([

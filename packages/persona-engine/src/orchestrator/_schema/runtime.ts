@@ -1,37 +1,22 @@
 /**
  * Runtime helpers for Effect.Schema-typed MCP contracts.
  *
- * `decodeInput` / `decodeOutput` run Effect's boundary decode against a
- * tool contract. Used by:
- *   - boundary contract tests (§4.3a) to verify the schema rejects
- *     malformed input + accepts valid input,
- *   - handlers that want defense-in-depth validation (the SDK's Zod
- *     layer ALREADY validates; Effect.decode is redundant in production
- *     but proves contract parity in tests).
+ * Currently exports a single primitive: `assertZodParity<T>()(shape)` —
+ * a TYPE-LEVEL helper that enforces the Effect↔Zod boundary at compile
+ * time (no runtime cost; function body is a no-op identity).
  *
- * `assertZodParity` is a TYPE-LEVEL helper invoked once per tool's
- * schema.ts — it accepts a Zod shape that must produce the same type
- * as the Effect schema. If the two drift, TypeScript fails at the call
- * site. No runtime cost; the function body is a no-op identity.
+ * Bridgebuilder F1 (PR #18 review · 2026-05-02): earlier drafts also
+ * shipped `decodeInput`/`decodeOutput` boundary helpers as
+ * defense-in-depth. Removed because the SDK's Zod validation already
+ * runs at the JSON-RPC boundary and tests call `Schema.decodeUnknownSync`
+ * directly — parallel validators create "which one was authoritative?"
+ * incidents under postmortem (the AWS Smithy migration cited it). If a
+ * downstream surface needs explicit Effect.decode (e.g., the v0.3
+ * federation broadcast manifest), reintroduce locally rather than as a
+ * shared substrate primitive.
  */
 
-import { Schema } from "effect";
 import type { z } from "zod";
-import type { McpToolContract } from "./contract.ts";
-
-export function decodeInput<TInput, TOutput>(
-  contract: McpToolContract<TInput, TOutput>,
-  raw: unknown,
-): TInput {
-  return Schema.decodeUnknownSync(contract.input)(raw);
-}
-
-export function decodeOutput<TInput, TOutput>(
-  contract: McpToolContract<TInput, TOutput>,
-  raw: unknown,
-): TOutput {
-  return Schema.decodeUnknownSync(contract.output)(raw);
-}
 
 /**
  * Type-level parity check: caller passes the Effect schema's decoded

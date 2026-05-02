@@ -36,8 +36,6 @@ import {
   pickByMood,
   findByName,
   renderEmoji,
-  type EmojiKind,
-  type EmojiMood,
 } from './registry.ts';
 import {
   listMoodsContract,
@@ -52,6 +50,12 @@ import {
   markUsedInputZod,
   renderByNameInputZod,
   listAllInputZod,
+  type ListMoodsInputT,
+  type PickByMoodInputT,
+  type RandomPickInputT,
+  type MarkUsedInputT,
+  type RenderByNameInputT,
+  type ListAllInputT,
 } from './schema.ts';
 export { emojisServerContract } from './schema.ts';
 
@@ -138,16 +142,18 @@ function entryToView(e: ReturnType<typeof findByName> & {}) {
 // Tests JSON.parse the text payload and validate against the output
 // schema declared in `./schema.ts`.
 
-async function handleListMoods() {
+// Handler arg types are SCHEMA-DERIVED (Bridgebuilder F12 · PR #18 · 2026-05-02).
+// Each handler signs against `<Tool>InputT` from `./schema.ts`, which is
+// `Schema.Schema.Type<typeof <Tool>Input>`. If a schema field is added,
+// renamed, or retyped, the handler signature errors at compile time —
+// closing the schema↔handler boundary the same way `assertZodParity`
+// closes the schema↔Zod boundary. Three boundaries, one source of truth.
+
+async function handleListMoods(_args: ListMoodsInputT) {
   return ok({ moods: ALL_MOODS });
 }
 
-async function handlePickByMood(args: {
-  mood: EmojiMood;
-  kind?: EmojiKind;
-  scope?: string;
-  exclude_names?: string[];
-}) {
+async function handlePickByMood(args: PickByMoodInputT) {
   const { mood, kind, scope, exclude_names } = args;
   const autoExclude = recentNames(scope);
   const manualExclude = new Set(exclude_names ?? []);
@@ -175,12 +181,7 @@ async function handlePickByMood(args: {
   });
 }
 
-async function handleRandomPick(args: {
-  kind?: EmojiKind;
-  moods?: EmojiMood[];
-  scope?: string;
-  exclude_names?: string[];
-}) {
+async function handleRandomPick(args: RandomPickInputT) {
   const { kind, moods, scope, exclude_names } = args;
   const autoExclude = recentNames(scope);
   const manualExclude = new Set(exclude_names ?? []);
@@ -203,7 +204,7 @@ async function handleRandomPick(args: {
   return ok({ found: true, scope: scope ?? null, ...entryToView(pick) });
 }
 
-async function handleMarkUsed(args: { name: string; scope: string }) {
+async function handleMarkUsed(args: MarkUsedInputT) {
   const { name, scope } = args;
   const entry = findByName(name);
   if (!entry) {
@@ -213,7 +214,7 @@ async function handleMarkUsed(args: { name: string; scope: string }) {
   return ok({ recorded: true, scope, name });
 }
 
-async function handleRenderByName(args: { name: string }) {
+async function handleRenderByName(args: RenderByNameInputT) {
   const { name } = args;
   const entry = findByName(name);
   if (!entry) {
@@ -226,7 +227,7 @@ async function handleRenderByName(args: { name: string }) {
   return ok({ found: true, ...entryToView(entry) });
 }
 
-async function handleListAll(args: { kind?: EmojiKind }) {
+async function handleListAll(args: ListAllInputT) {
   const filtered = args.kind ? EMOJIS.filter((e) => e.kind === args.kind) : EMOJIS;
   return ok({
     count: filtered.length,

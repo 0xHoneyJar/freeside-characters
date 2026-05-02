@@ -3,7 +3,6 @@
  *
  * Exports:
  *   - `McpToolContract` / `McpServerContract` types (contract.ts)
- *   - `decodeInput` / `decodeOutput` boundary helpers (runtime.ts)
  *   - `assertZodParity` type-level Effect↔Zod parity check (runtime.ts)
  *
  * Each MCP server lives in `<mcp>/{schema.ts, server.ts}`. The schema
@@ -17,8 +16,4 @@
  */
 
 export type { McpToolContract, McpServerContract } from "./contract.ts";
-export {
-  decodeInput,
-  decodeOutput,
-  assertZodParity,
-} from "./runtime.ts";
+export { assertZodParity } from "./runtime.ts";
