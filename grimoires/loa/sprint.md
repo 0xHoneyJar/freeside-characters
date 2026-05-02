@@ -67,23 +67,23 @@ Establish the canonical reverse mapping (`channelId → ZoneId`) and zone-metada
 > From spec line 56-57: "`config.ts:166-177` (`getZoneChannelId(zone) → channelId`) is the **forward** direction only. The reverse (`getZoneForChannel(channelId) → ZoneId`) doesn't exist. Without it, no chat handler can answer 'which codex location am I in?' without a hand-rolled lookup."
 
 ### Deliverables
-- [ ] `apps/bot/src/lib/channel-zone-map.ts` exports `getZoneForChannel(config, channelId): ZoneId | undefined`
-- [ ] `apps/bot/src/lib/channel-zone-map.ts` exports `getCodexAnchorForZone(zone): { name, dimension, emoji }`
-- [ ] Smoke script asserts forward+reverse round-trip across all four codex zones
+- [x] `apps/bot/src/lib/channel-zone-map.ts` exports `getZoneForChannel(config, channelId): ZoneId | undefined`
+- [x] `apps/bot/src/lib/channel-zone-map.ts` exports `getCodexAnchorForZone(zone): { name, dimension, emoji }`
+- [x] Smoke script asserts forward+reverse round-trip across all four codex zones
 
 ### Acceptance Criteria
-- [ ] `getZoneForChannel(config, env.DISCORD_CHANNEL_STONEHENGE)` returns `'stonehenge'`
-- [ ] `getZoneForChannel(config, '1234567890')` returns `undefined` for unknown
-- [ ] All four zones (stonehenge, bear-cave, el-dorado, owsley-lab) round-trip cleanly
-- [ ] `getCodexAnchorForZone('stonehenge')` returns `{ name, dimension, emoji }` with non-empty fields
-- [ ] `bun run typecheck` clean across workspace
-- [ ] No existing source files modified (purely additive)
+- [x] `getZoneForChannel(config, env.DISCORD_CHANNEL_STONEHENGE)` returns `'stonehenge'`
+- [x] `getZoneForChannel(config, '1234567890')` returns `undefined` for unknown
+- [x] All four zones (stonehenge, bear-cave, el-dorado, owsley-lab) round-trip cleanly
+- [x] `getCodexAnchorForZone('stonehenge')` returns `{ name, dimension, emoji }` with non-empty fields
+- [x] `bun run typecheck` clean across workspace
+- [x] No existing source files modified (purely additive)
 
 ### Technical Tasks
 
-- [ ] Task 1.1: Create `apps/bot/src/lib/channel-zone-map.ts` with `ZONE_CHANNEL_FORWARD` constant, `getZoneForChannel()`, and `getCodexAnchorForZone()` per spec component-spec lines 122-145 → **[G-1]**
-- [ ] Task 1.2: Decide and document `getCodexAnchorForZone()` data source — either pull from `packages/persona-engine/src/score/types.ts ZONE_TO_DIMENSION` constant (sync) OR call codex-mcp `lookup_zone` (async, requires `CODEX_MCP_URL`). Document the decision inline; default to sync from existing constant for V1 to keep Sprint 1 hermetic → **[G-1]**
-- [ ] Task 1.3: Create `apps/bot/scripts/smoke-zone-map.ts` (~10 lines) asserting forward+reverse round-trip + unknown-channel undefined + four-zone enumeration; verify with `bun run --cwd apps/bot tsx scripts/smoke-zone-map.ts` → **[G-1]**
+- [x] Task 1.1: Create `apps/bot/src/lib/channel-zone-map.ts` with `ZONE_CHANNEL_FORWARD` constant, `getZoneForChannel()`, and `getCodexAnchorForZone()` per spec component-spec lines 122-145 → **[G-1]**
+- [x] Task 1.2: Decide and document `getCodexAnchorForZone()` data source — either pull from `packages/persona-engine/src/score/types.ts ZONE_TO_DIMENSION` constant (sync) OR call codex-mcp `lookup_zone` (async, requires `CODEX_MCP_URL`). Document the decision inline; default to sync from existing constant for V1 to keep Sprint 1 hermetic → **[G-1]**
+- [x] Task 1.3: Create `apps/bot/scripts/smoke-zone-map.ts` (~10 lines) asserting forward+reverse round-trip + unknown-channel undefined + four-zone enumeration; verify with `bun run --cwd apps/bot tsx scripts/smoke-zone-map.ts` → **[G-1]**
 
 ### Dependencies
 - Phase A (Loa mount) — already shipped via commit `daed064`
