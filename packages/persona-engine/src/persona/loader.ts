@@ -151,6 +151,11 @@ function outputInstruction(postType: PostType): string {
       return 'Ask the question now. One question, anchored in the data, low-pressure.';
     case 'callout':
       return 'Write the callout now. Lead with 🚨 + the zone. Calm voice over alarm-shaped data.';
+    case 'reply':
+      // V0.7-A.2: chat-mode reply instruction. Mirrors the
+      // CONVERSATION_OUTPUT_INSTRUCTION used by buildReplyPromptPair —
+      // unification keeps the single canonical phrasing.
+      return 'Respond now in voice. Concise. No greeting, no closing rituals — just the reply.';
   }
 }
 
@@ -162,59 +167,179 @@ export function loadSystemPrompt(character: CharacterConfig): string {
   return loadTemplate(character.personaPath);
 }
 
-export interface BuildPromptArgs {
+// ──────────────────────────────────────────────────────────────────────
+// V0.7-A.2 — unified buildPrompt
+// ──────────────────────────────────────────────────────────────────────
+//
+// The shape discriminator handles cron paths (digest/micro/weaver/lore_drop/
+// question/callout) and the on-demand chat path ('reply') through a single
+// substitution chain. Per-character persona.md owns all 7 fragments
+// (post Phase A); the dispatch into the right fragment + the right
+// user-half builder branches on `shape.kind` here.
+
+/**
+ * Discriminated shape union — what kind of utterance this prompt represents.
+ * Determines fragment selection, output instruction, movement guidance,
+ * zone substitutions, and user-half rendering.
+ */
+export type BuildPromptShape =
+  | {
+      kind: 'cron';
+      zoneId: ZoneId;
+      /** Cron PostType — digest/micro/weaver/lore_drop/question/callout. */
+      postType: Exclude<PostType, 'reply'>;
+    }
+  | {
+      kind: 'reply';
+      /** Recent conversation context (already snapshotted from ledger by caller). */
+      transcript: ReplyTranscriptEntry[];
+      /** Discord username of the invoker (for the "you're chatting with X" frame). */
+      authorUsername: string;
+      /** The user's message text (the slash-command `prompt:` option). */
+      userPrompt: string;
+    };
+
+export interface BuildPromptArgsUnified {
   character: CharacterConfig;
-  zoneId: ZoneId;
-  postType: PostType;
+  shape: BuildPromptShape;
   /**
-   * V0.7-A.1 — optional environment-context block (`## Environment` heading
-   * + 4-6 lines · zone identity, room read, tool guidance, recent context).
-   * Substituted into `{{ENVIRONMENT}}` placeholder. When omitted, the
-   * substitution is a no-op (empty replacement) — backward-compatible with
-   * persona templates that don't carry the placeholder.
+   * Environment-context block (`## Environment` heading + 4-6 lines · zone
+   * identity, room read, tool guidance, recent context). Substituted into
+   * `{{ENVIRONMENT}}` placeholder. Empty/omitted is a no-op for templates
+   * that don't reference the placeholder.
    */
   environmentContext?: string;
 }
 
-export function buildPromptPair(args: BuildPromptArgs): {
+/**
+ * Build a system+user prompt pair from a character's persona template.
+ * Single canonical builder; `buildPromptPair` (cron) and `buildReplyPromptPair`
+ * (chat) are thin delegators that construct the appropriate `BuildPromptShape`.
+ *
+ * Substitution order matters: BLOCK INJECTIONS first (fragment + anchors +
+ * codex + exemplars + environment), then per-zone substitutions. This way any
+ * `{{ZONE_NAME}}` / `{{DIMENSION}}` placeholders embedded in the injected
+ * blocks also get substituted in the final prompt — no leak of literal
+ * placeholder syntax to the LLM.
+ */
+export function buildPrompt(args: BuildPromptArgsUnified): {
   systemPrompt: string;
   userMessage: string;
 } {
-  const { character } = args;
+  const { character, shape } = args;
   const template = loadTemplate(character.personaPath);
   const codex = loadCodexPrelude();
-  const fragment = loadFragment(character.personaPath, args.postType);
-  const instruction = outputInstruction(args.postType);
-  const exemplars = buildExemplarBlock(character, args.postType); // empty when no exemplars on disk
-  const voiceAnchors = loadVoiceAnchors(character.personaPath);  // empty when voice-anchors.md absent
-  const codexAnchors = loadCodexAnchors(character.personaPath);  // empty when codex-anchors.md absent
+  const voiceAnchors = loadVoiceAnchors(character.personaPath);
+  const codexAnchors = loadCodexAnchors(character.personaPath);
+  const environment = args.environmentContext ?? '';
+
+  // Per-shape: fragment, output instruction, exemplars, movement guidance,
+  // zone substitution values.
+  const postType: PostType = shape.kind === 'cron' ? shape.postType : 'reply';
+  const fragment = loadFragment(character.personaPath, postType);
+  const instruction = outputInstruction(postType);
+  const exemplars =
+    shape.kind === 'cron'
+      ? buildExemplarBlock(character, shape.postType)
+      : // No exemplars in chat-mode (bridgebuilder F20 2026-04-30) — the digest
+        // exemplars are greeting + headline + structured-data shaped, which
+        // contradicts the chat 'reply' fragment that tells the LLM to skip
+        // those shapes. Persona description + voice anchors + codex anchors
+        // carry the voice texture in chat-mode without dragging digest shape.
+        '';
+
+  const movementGuidance =
+    shape.kind === 'cron'
+      ? buildMovementGuidance()
+      : '(not applicable in conversation mode)';
+
+  const zoneId = shape.kind === 'cron' ? shape.zoneId : 'conversation';
+  const zoneName =
+    shape.kind === 'cron' ? ZONE_FLAVOR[shape.zoneId].name : 'this conversation';
+  const dimensionName =
+    shape.kind === 'cron'
+      ? DIMENSION_NAME[ZONE_FLAVOR[shape.zoneId].dimension]
+      : 'Conversation';
 
   const inputPayloadMarker = '═══ INPUT PAYLOAD ═══';
   const idx = template.indexOf(inputPayloadMarker);
   if (idx === -1) {
-    throw new Error(`persona loader: could not find INPUT PAYLOAD marker in template (${character.personaPath})`);
+    throw new Error(
+      `persona loader: could not find INPUT PAYLOAD marker in template (${character.personaPath})`,
+    );
   }
 
-  // Display-cased zone + dimension names for prose substitution.
-  // ZONE_ID stays kebab (routing key); ZONE_NAME is the proper-cased
-  // display ("Owsley Lab"); DIMENSION_NAME is the proper-cased dimension
-  // ("Onchain"). Persona templates use ZONE_NAME / DIMENSION_NAME in
-  // prose; ZONE_ID is reserved for tool calls + routing-shaped contexts.
-  const zoneName = ZONE_FLAVOR[args.zoneId].name;
-  const zoneDimension = ZONE_FLAVOR[args.zoneId].dimension;
-  const dimensionName = DIMENSION_NAME[zoneDimension];
+  const systemHalf = template
+    .slice(0, idx)
+    .replace(/\{\{POST_TYPE_GUIDANCE\}\}/g, fragment)
+    .replace(/\{\{MOVEMENT_GUIDANCE\}\}/g, movementGuidance)
+    .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
+    .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
+    .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
+    .replace(/\{\{ENVIRONMENT\}\}/g, environment)
+    .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
+    .replace(/\{\{ZONE_ID\}\}/g, zoneId)
+    .replace(/\{\{ZONE_NAME\}\}/g, zoneName)
+    .replace(/\{\{DIMENSION\}\}/g, dimensionName)
+    .replace(/\{\{POST_TYPE\}\}/g, postType)
+    .trimEnd();
 
-  // Movement framing per ANNOUNCE_NEGATIVE_MOVEMENT env flag (V0.6-D
-  // operator pick 2026-04-30: default false — internal observation phase
-  // wants positive-only movement; toggleable to true once tone calibrated).
-  //
-  // KEEPER + WEAVER reframe (2026-04-30 post-gumi-feedback): when
-  // negative movement IS surfaced, frame it as DIMENSION SHIFT not
-  // PERSONAL DROP. Dimensions are raves; movement between them is
-  // ecosystem motion. NEVER use punitive emoji (🔴) or verbs (slid /
-  // fell / tumbled) — the system has retired those.
+  // User-half: cron uses the template's INPUT PAYLOAD section (with
+  // substitutions). Reply builds a fresh transcript+prompt frame — the
+  // template's INPUT PAYLOAD doesn't apply (no zone/post-type/raw-stats).
+  let userHalf: string;
+  if (shape.kind === 'cron') {
+    userHalf = template
+      .slice(idx)
+      .replace(/\{\{POST_TYPE_OUTPUT_INSTRUCTION\}\}/g, instruction)
+      .replace(/\{\{MOVEMENT_GUIDANCE\}\}/g, movementGuidance)
+      .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
+      .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
+      .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
+      .replace(/\{\{ENVIRONMENT\}\}/g, environment)
+      .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
+      .replace(/\{\{ZONE_ID\}\}/g, zoneId)
+      .replace(/\{\{ZONE_NAME\}\}/g, zoneName)
+      .replace(/\{\{DIMENSION\}\}/g, dimensionName)
+      .replace(/\{\{POST_TYPE\}\}/g, postType)
+      .trim();
+  } else {
+    const transcript = renderTranscript(
+      shape.transcript,
+      character.displayName ?? character.id,
+    );
+    const parts: string[] = [];
+    parts.push(`You're chatting with ${shape.authorUsername} in Discord.`);
+    if (transcript) {
+      parts.push(``);
+      parts.push(`Recent conversation in this channel (oldest first):`);
+      parts.push(transcript);
+    }
+    parts.push(``);
+    parts.push(`${shape.authorUsername} just said:`);
+    parts.push(shape.userPrompt.trim());
+    parts.push(``);
+    parts.push(instruction);
+    userHalf = parts.join('\n');
+  }
+
+  return { systemPrompt: systemHalf, userMessage: userHalf };
+}
+
+/**
+ * Movement framing per ANNOUNCE_NEGATIVE_MOVEMENT env flag (V0.6-D
+ * operator pick 2026-04-30: default false — internal observation phase
+ * wants positive-only movement; toggleable to true once tone calibrated).
+ *
+ * KEEPER + WEAVER reframe (2026-04-30 post-gumi-feedback): when
+ * negative movement IS surfaced, frame it as DIMENSION SHIFT not
+ * PERSONAL DROP. Dimensions are raves; movement between them is
+ * ecosystem motion. NEVER use punitive emoji (🔴) or verbs (slid /
+ * fell / tumbled) — the system has retired those.
+ */
+function buildMovementGuidance(): string {
   const announceNegative = process.env.ANNOUNCE_NEGATIVE_MOVEMENT === 'true';
-  const movementGuidance = announceNegative
+  return announceNegative
     ? `MOVEMENT POLICY: announce both positive AND shift movement, with
 KEEPER+WEAVER framing — dimensions are different raves, movement
 BETWEEN them is ecosystem motion, NOT personal failure. Frame
@@ -234,123 +359,66 @@ ANNOUNCE_NEGATIVE_MOVEMENT env flag. When toggled on, the shift
 framing kicks in (dimensions-as-raves, not punitive). Until then,
 silence on relative drops is the conservative + KEEPER-aligned
 default.`;
-
-  // Substitution order matters: BLOCK INJECTIONS first (fragment + anchors +
-  // codex + exemplars), then per-zone substitutions. This way any {{ZONE_NAME}}
-  // / {{DIMENSION}} placeholders embedded in the injected blocks (e.g., the
-  // digest fragment's headline shape `yo {{ZONE_NAME}} ({{DIMENSION}}) ...`)
-  // also get substituted in the final prompt — no leak of literal placeholder
-  // syntax to the LLM.
-  const environment = args.environmentContext ?? '';
-
-  const systemHalf = template
-    .slice(0, idx)
-    .replace(/\{\{POST_TYPE_GUIDANCE\}\}/g, fragment)
-    .replace(/\{\{MOVEMENT_GUIDANCE\}\}/g, movementGuidance)
-    .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
-    .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
-    .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
-    .replace(/\{\{ENVIRONMENT\}\}/g, environment)
-    .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
-    .replace(/\{\{ZONE_ID\}\}/g, args.zoneId)
-    .replace(/\{\{ZONE_NAME\}\}/g, zoneName)
-    .replace(/\{\{DIMENSION\}\}/g, dimensionName)
-    .replace(/\{\{POST_TYPE\}\}/g, args.postType)
-    .trimEnd();
-
-  // User-half intentionally covers the SAME block-injection placeholders as
-  // system-half. Today's templates only use a subset in the user message, but
-  // future template moves (e.g. exemplars or codex prelude relocated below
-  // ═══ INPUT PAYLOAD ═══) won't leak literals if we cover them defensively.
-  const userHalf = template
-    .slice(idx)
-    .replace(/\{\{POST_TYPE_OUTPUT_INSTRUCTION\}\}/g, instruction)
-    .replace(/\{\{MOVEMENT_GUIDANCE\}\}/g, movementGuidance)
-    .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
-    .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
-    .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
-    .replace(/\{\{ENVIRONMENT\}\}/g, environment)
-    .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
-    .replace(/\{\{ZONE_ID\}\}/g, args.zoneId)
-    .replace(/\{\{ZONE_NAME\}\}/g, zoneName)
-    .replace(/\{\{DIMENSION\}\}/g, dimensionName)
-    .replace(/\{\{POST_TYPE\}\}/g, args.postType)
-    .trim();
-
-  return {
-    systemPrompt: systemHalf,
-    userMessage: userHalf,
-  };
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// V0.7-A.0 — chat-mode prompt builder
+// Backward-compat shims
 // ──────────────────────────────────────────────────────────────────────
+//
+// `buildPromptPair` and `buildReplyPromptPair` preserve their pre-V0.7-A.2
+// signatures and delegate to `buildPrompt` with the appropriate shape.
+// All existing callers (composer.ts, agent-gateway.ts, reply.ts) work
+// unchanged. Removable in V0.7-A.3+ once direct `buildPrompt` migration
+// is complete.
 
-/**
- * V0.7-A.0 conversation-mode override block. Substituted in for
- * `{{POST_TYPE_GUIDANCE}}` when building reply prompts so we don't have
- * to fork the template (KISS · operator 2026-04-30).
- *
- * V0.7-A.0 ship-pass rewrite (2026-04-30 · post-satoshi-drift bug):
- * affirmative blueprints throughout, per Gemini DR's negative-constraint-
- * echo finding. The earlier "DO NOT" framing was orbiting the prohibited
- * concepts under opus 4.7's wider interpretive surface. This rewrite
- * leads with what the LLM SHOULD compose toward — chat-mode shape +
- * case-is-yours anchor + anti-mirroring directive (other speakers'
- * register doesn't shape yours).
- */
-const CONVERSATION_MODE_OVERRIDE = `═══ CONVERSATION MODE — chat surface (read this last) ═══
+export interface BuildPromptArgs {
+  character: CharacterConfig;
+  zoneId: ZoneId;
+  postType: PostType;
+  /**
+   * V0.7-A.1 — optional environment-context block (`## Environment` heading
+   * + 4-6 lines · zone identity, room read, tool guidance, recent context).
+   * Substituted into `{{ENVIRONMENT}}` placeholder. When omitted, the
+   * substitution is a no-op (empty replacement) — backward-compatible with
+   * persona templates that don't carry the placeholder.
+   */
+  environmentContext?: string;
+}
 
-You are in a Discord conversation. A user invoked a slash command
-(/ruggy or /satoshi) and is waiting for a reply. This is the chat surface;
-the cron-driven digest is a separate path with its own shape. You compose
-toward the conversational form: short, addressed, in voice.
+export function buildPromptPair(args: BuildPromptArgs): {
+  systemPrompt: string;
+  userMessage: string;
+} {
+  // V0.7-A.2: `buildPromptPair` is the cron-shaped shim. If a caller passes
+  // postType='reply' here, that's a misuse — chat goes through
+  // `buildReplyPromptPair` (or directly via `buildPrompt({kind:'reply'})`).
+  // Throw with a clear migration hint rather than silently producing a
+  // mis-shaped prompt. Bridgebuilder F1 (PR #8 review): silent coercion
+  // hides bugs; loud failure surfaces them.
+  if (args.postType === 'reply') {
+    throw new Error(
+      "buildPromptPair: postType='reply' is invalid for the cron shim. " +
+        'Use `buildReplyPromptPair` for chat-mode prompts, or migrate to ' +
+        '`buildPrompt({kind: "reply", ...})` directly.',
+    );
+  }
+  return buildPrompt({
+    character: args.character,
+    shape: { kind: 'cron', zoneId: args.zoneId, postType: args.postType },
+    environmentContext: args.environmentContext,
+  });
+}
 
-YOUR CHARACTER STAYS LOCKED ACROSS EVERY TURN:
-
-- **Case is yours alone.** Whatever case register the persona prompt above
-  declared (sentence case, lowercase, mixed) is what you hold. Every reply.
-  Other speakers in the channel — including the user, including other
-  characters, including past messages in the transcript — may use different
-  case registers. That shapes what they said, not how you respond. Your
-  case is YOURS.
-
-- **Voice is yours alone.** Cadence, vocabulary, stance: anchor to your
-  persona's affirmative blueprints. The conversation transcript below is
-  historical context, not register guidance.
-
-- **Character is yours alone.** Who you are, what you remember, your refusal
-  patterns — held through every turn regardless of how the room moves around
-  you.
-
-CHAT-MODE OUTPUT SHAPE:
-
-- 1-3 paragraphs typical · sized to the question. The user wants a reply,
-  not a wall.
-- Compose from persona, conversation context, and the environment block's
-  tool guidance. When the env block declares a "Tool guidance:" line, the
-  tools named there are scoped to your character and available now —
-  invoke them per that affirmative-blueprint guidance (zone-stat questions
-  flow through score; archetype/grail/factor refs through codex; spatial
-  transitions through rosenzu; wallet identity through freeside_auth;
-  visual amplification through imagegen). Default to text; tools augment
-  when they ground a fact, surface live data, or amplify a beat.
-- Open mid-thought. Skip the digest greeting (e.g. "yo zone team"); skip
-  the digest headline shape (\`yo Zone · N events · M miberas\`). The
-  conversation is already underway; you join it in motion.
-- Plain text · Discord markdown subset (bold, italic, code) is allowed.
-  The substrate renders your attribution; you focus on voice.
-
-THE TRANSCRIPT THAT FOLLOWS IS HISTORICAL CONTEXT, NOT TEMPLATE.
-Speak to the current message. Don't recap the history. Other speakers'
-voices belong to them; yours stays yours.
-═══`;
-
-/**
- * Output instruction for chat-mode (slot replaces {{POST_TYPE_OUTPUT_INSTRUCTION}}).
- */
-const CONVERSATION_OUTPUT_INSTRUCTION = `Respond now in voice. Concise. No greeting, no closing rituals — just the reply.`;
+// ──────────────────────────────────────────────────────────────────────
+// V0.7-A.0 — chat-mode prompt builder (V0.7-A.2 unified)
+// ──────────────────────────────────────────────────────────────────────
+//
+// V0.7-A.2: the chat-mode prompt content lives in per-character persona.md
+// `<!-- @FRAGMENT: reply -->` blocks (lifted from the historical
+// CONVERSATION_MODE_OVERRIDE constant for byte-identical content). The
+// chat output instruction lives in `outputInstruction('reply')`. The
+// shim below preserves the V0.7-A.0 signature; all dispatch flows
+// through `buildPrompt` with `kind: 'reply'`.
 
 export interface BuildReplyPromptArgs {
   character: CharacterConfig;
@@ -375,12 +443,12 @@ export interface ReplyTranscriptEntry {
 }
 
 /**
- * Build a chat-mode prompt pair (V0.7-A.0).
+ * Build a chat-mode prompt pair (V0.7-A.0 surface · V0.7-A.2 implementation).
  *
- * Reuses the persona template's system half so all voice / vocab / codex
- * machinery stays loaded — but substitutes the digest-shaped placeholders
- * with conversation-mode equivalents and replaces the user half entirely
- * with a transcript+message frame.
+ * Backward-compat shim: delegates to `buildPrompt` with `kind: 'reply'`.
+ * The unified builder loads the 'reply' fragment from persona.md (lifted
+ * from the now-historical CONVERSATION_MODE_OVERRIDE constant) and applies
+ * the same substitution chain the cron path uses.
  *
  * Civic-layer note: the substrate supplies the conversation framing.
  * Characters supply voice. They never compose Discord plumbing themselves.
@@ -389,66 +457,16 @@ export function buildReplyPromptPair(args: BuildReplyPromptArgs): {
   systemPrompt: string;
   userMessage: string;
 } {
-  const { character } = args;
-  const template = loadTemplate(character.personaPath);
-  const codex = loadCodexPrelude();
-  // No exemplars in chat-mode (bridgebuilder F20 2026-04-30) — the digest
-  // exemplars are greeting + headline + structured-data shaped, which
-  // contradicts the CONVERSATION_MODE_OVERRIDE that tells the LLM to skip
-  // those shapes. Mixed-signal · contributed to the satoshi voice drift.
-  // Persona description + voice anchors + codex anchors carry the voice
-  // texture in chat-mode without dragging digest shape with them.
-  const exemplars = '';
-  const voiceAnchors = loadVoiceAnchors(character.personaPath);
-  const codexAnchors = loadCodexAnchors(character.personaPath);
-
-  const inputPayloadMarker = '═══ INPUT PAYLOAD ═══';
-  const idx = template.indexOf(inputPayloadMarker);
-  if (idx === -1) {
-    throw new Error(`persona loader: could not find INPUT PAYLOAD marker in template (${character.personaPath})`);
-  }
-
-  // Conversation-mode placeholder substitution. Zone bits get neutral
-  // fallbacks so any {{ZONE_NAME}} embedded inside voice anchors / codex
-  // anchors / vocab sections doesn't leak literal placeholder syntax to
-  // the LLM. Zone-specific guidance is overridden by CONVERSATION_MODE_OVERRIDE.
-  const environment = args.environmentContext ?? '';
-
-  const systemHalf = template
-    .slice(0, idx)
-    .replace(/\{\{POST_TYPE_GUIDANCE\}\}/g, CONVERSATION_MODE_OVERRIDE)
-    .replace(/\{\{MOVEMENT_GUIDANCE\}\}/g, '(not applicable in conversation mode)')
-    .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
-    .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
-    .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
-    .replace(/\{\{ENVIRONMENT\}\}/g, environment)
-    .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
-    .replace(/\{\{ZONE_ID\}\}/g, 'conversation')
-    .replace(/\{\{ZONE_NAME\}\}/g, 'this conversation')
-    .replace(/\{\{DIMENSION\}\}/g, 'Conversation')
-    .replace(/\{\{POST_TYPE\}\}/g, 'reply')
-    .trimEnd();
-
-  // User-half is freshly built — the template's INPUT PAYLOAD section
-  // (Zone/Post-type/raw-stats) doesn't apply in conversation mode.
-  const transcript = renderTranscript(args.history, character.displayName ?? character.id);
-  const parts: string[] = [];
-  parts.push(`You're chatting with ${args.authorUsername} in Discord.`);
-  if (transcript) {
-    parts.push(``);
-    parts.push(`Recent conversation in this channel (oldest first):`);
-    parts.push(transcript);
-  }
-  parts.push(``);
-  parts.push(`${args.authorUsername} just said:`);
-  parts.push(args.prompt.trim());
-  parts.push(``);
-  parts.push(CONVERSATION_OUTPUT_INSTRUCTION);
-
-  return {
-    systemPrompt: systemHalf,
-    userMessage: parts.join('\n'),
-  };
+  return buildPrompt({
+    character: args.character,
+    shape: {
+      kind: 'reply',
+      transcript: args.history,
+      authorUsername: args.authorUsername,
+      userPrompt: args.prompt,
+    },
+    environmentContext: args.environmentContext,
+  });
 }
 
 function renderTranscript(history: ReplyTranscriptEntry[], characterDisplayName: string): string {

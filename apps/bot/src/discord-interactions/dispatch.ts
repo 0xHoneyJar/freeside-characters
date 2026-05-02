@@ -38,8 +38,10 @@ import {
   type SlashCommandHandler,
 } from '@freeside-characters/persona-engine';
 import { invokeStability } from '@freeside-characters/persona-engine/orchestrator/imagegen';
+import type { ToolUseEvent } from '@freeside-characters/persona-engine';
 import { resolveSlashCommands, resolveSlashCommandTarget, selectedCharacterIds } from '../character-loader.ts';
 import { getZoneForChannel } from '../lib/channel-zone-map.ts';
+import { toolVerb } from './tool-verb.ts';
 import {
   InteractionResponseType,
   InteractionType,
@@ -237,6 +239,46 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     const zone = getZoneForChannel(config, channelId);
     const otherCharactersHere = selectedCharacterIds().filter((id) => id !== character.id);
 
+    // V0.7-A.1 progressive UX (pattern: ruggy-v2 onToolUse): when the
+    // orchestrator surfaces a tool_use block mid-stream, PATCH the deferred
+    // interaction message with a status line ("🔧 pulling zone digest…").
+    // The dispatcher's existing flow handles the final delivery: ephemeral=true
+    // PATCHes again with the response; ephemeral=false delivers via Pattern B
+    // webhook and then DELETEs the deferred placeholder. So progressive
+    // status is naturally replaced by the final artifact in either case.
+    //
+    // Fire-and-forget: PATCH errors are logged but don't block the round-trip.
+    // We coalesce by tool ID (SDK re-emits guard) AND by minimum interval
+    // (bridgebuilder F4 PR #8 — rapid tool chains spamming PATCHes).
+    // 500ms gate skips middle updates in rapid bursts; the LAST tool in
+    // a burst still gets a PATCH because composeReply's resolution always
+    // PATCHes the final reply (or webhook + DELETE), so the skipped
+    // intermediate is replaced naturally.
+    const seenToolIds = new Set<string>();
+    const MIN_TOOL_PATCH_INTERVAL_MS = 500;
+    let lastToolPatchMs = 0;
+    const onToolUse = (event: ToolUseEvent): void => {
+      if (seenToolIds.has(event.id)) return;
+      seenToolIds.add(event.id);
+      const status = toolVerb(event.name);
+      console.log(
+        `interactions: ${character.id}/chat tool_use · ${event.name} · status="${status}"`,
+      );
+      const now = Date.now();
+      if (now - lastToolPatchMs < MIN_TOOL_PATCH_INTERVAL_MS) {
+        // Recent PATCH within the gate — skip this update; the next
+        // distinct tool (or the final reply) will take its place.
+        return;
+      }
+      lastToolPatchMs = now;
+      patchOriginal(interaction, ephemeral, status).catch((err) => {
+        console.warn(
+          `interactions: ${character.id}/chat onToolUse PATCH failed (best-effort):`,
+          err,
+        );
+      });
+    };
+
     // Wrap composeReply in a 14m30s timeout so we never PATCH against an
     // expired interaction token (404 → silent freeze in Discord UI).
     const result = await Promise.race([
@@ -247,6 +289,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
         channelId,
         zone,
         otherCharactersHere,
+        onToolUse,
         authorId: invoker.id,
         authorUsername: invoker.username,
       }),

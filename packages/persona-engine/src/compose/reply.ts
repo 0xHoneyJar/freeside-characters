@@ -37,7 +37,7 @@ import {
   buildEnvironmentContext,
   type RecentMessage,
 } from './environment.ts';
-import { runOrchestratorQuery } from '../orchestrator/index.ts';
+import { runOrchestratorQuery, type ToolUseEvent } from '../orchestrator/index.ts';
 import {
   appendToLedger,
   getLedgerSnapshot,
@@ -69,6 +69,13 @@ export interface ReplyComposeArgs {
   authorId: string;
   /** Discord username (or display name) of the invoker. */
   authorUsername: string;
+  /**
+   * V0.7-A.1: optional callback fired when the LLM emits a `tool_use` block
+   * during chat-mode orchestrator round-trips. The dispatcher uses this to
+   * PATCH the deferred Discord message with progress ("🔧 pulling X…").
+   * No-op when the chat path resolves to naive (no tools available).
+   */
+  onToolUse?: (event: ToolUseEvent) => void;
   options?: {
     /** How many recent ledger entries to feed the prompt. Default 10. */
     historyDepth?: number;
@@ -133,6 +140,7 @@ export async function composeReply(
     systemPrompt,
     userMessage,
     zone: args.zone,
+    onToolUse: args.onToolUse,
   })) ?? '';
 
   if (!replyText || replyText.trim().length === 0) {
@@ -185,6 +193,8 @@ interface ChatInvokeArgs {
   userMessage: string;
   /** Optional resolved zone — passed through to orchestrator for telemetry. */
   zone?: ZoneId;
+  /** V0.7-A.1: tool_use stream callback (orchestrator path only). */
+  onToolUse?: (event: ToolUseEvent) => void;
 }
 
 /**
@@ -215,9 +225,11 @@ async function routeChatLLM(config: Config, req: ChatInvokeArgs): Promise<string
       userMessage: req.userMessage,
       zone: req.zone,
       postType: 'chat',
+      onToolUse: req.onToolUse,
     });
     return result.text;
   }
+  // Naive path has no tools wired — onToolUse is a no-op for this branch.
   return invokeChat(config, req);
 }
 

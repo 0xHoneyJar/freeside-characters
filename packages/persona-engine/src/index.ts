@@ -59,6 +59,19 @@ export { exemplarStats } from './persona/exemplar-loader.ts';
 export { composeReply, splitForDiscord } from './compose/reply.ts';
 export type { ReplyComposeArgs, ReplyComposeResult } from './compose/reply.ts';
 
+// Unified compose entrypoint (V0.7-A.2 — single dispatcher for cron + chat)
+export { compose } from './compose/index.ts';
+export type {
+  ComposeArgs,
+  ComposeEnvironment,
+  ComposeResult,
+  Invocation,
+} from './compose/index.ts';
+
+// Orchestrator tool-use streaming (V0.7-A.1 · chat dispatcher uses this
+// to surface tool calls progressively in Discord — see ruggy-v2 pattern).
+export type { ToolUseEvent } from './orchestrator/index.ts';
+
 // Bedrock image generation
 export * from './compose/bedrock-image.ts';
 
