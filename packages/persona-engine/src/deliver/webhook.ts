@@ -29,7 +29,7 @@
  *   - V0.6-D adds a token-bucket queue per webhook.
  */
 
-import { ChannelType } from 'discord.js';
+import { AttachmentBuilder, ChannelType } from 'discord.js';
 import type { Client, Webhook, TextChannel, NewsChannel } from 'discord.js';
 import type { CharacterConfig } from '../types.ts';
 import type { DigestPayload } from './embed.ts';
@@ -143,6 +143,56 @@ export async function sendChatReplyViaWebhook(
     username,
     avatarURL,
     content,
+    allowedMentions: { parse: [] },
+  });
+
+  return { posted: true, messageId: message.id };
+}
+
+/**
+ * V0.11.3: send an imagegen reply via the channel webhook with the
+ * generated image attached. Mirrors `sendChatReplyViaWebhook` but adds
+ * a multipart file part so Discord renders the image inline.
+ *
+ * Background: V0.7-A.1's imagegen scaffold returned a synthetic
+ * `attachment://...` URL but never actually attached the bytes. The
+ * V0.11.x dev-guild test (issue #14) caught the gap — Bedrock Stability
+ * delivered real bytes (`placeholder=false`); the webhook send only
+ * posted the meaningless URL as text content. Discord can't resolve
+ * `attachment://` without a multipart file part.
+ *
+ * The fix: take the image bytes (decoded from base64), build a
+ * discord.js `AttachmentBuilder`, and pass via `files` in `webhook.send`.
+ * Discord renders PNG/JPG/GIF attachments inline below the text content.
+ *
+ * Pattern B identity preservation holds — per-character `username` +
+ * `avatarURL` overrides apply the same as for chat replies.
+ */
+export async function sendImageReplyViaWebhook(
+  webhook: Webhook,
+  character: CharacterConfig,
+  args: {
+    /** Caption text shown above the image (model + seed metadata, etc). */
+    content: string;
+    /** Raw image bytes (e.g., decoded from Bedrock's base64 payload). */
+    imageBytes: Buffer;
+    /** Filename Discord shows on the attachment (e.g., "image-12345.png"). */
+    filename: string;
+  },
+): Promise<{ posted: true; messageId: string }> {
+  const username =
+    character.webhookUsername ?? character.displayName ?? character.id;
+  const avatarURL = character.webhookAvatarUrl;
+
+  const attachment = new AttachmentBuilder(args.imageBytes, {
+    name: args.filename,
+  });
+
+  const message = await webhook.send({
+    username,
+    avatarURL,
+    content: args.content,
+    files: [attachment],
     allowedMentions: { parse: [] },
   });
 

@@ -31,6 +31,7 @@ import {
   getOrCreateChannelWebhook,
   invalidateWebhookCache,
   sendChatReplyViaWebhook,
+  sendImageReplyViaWebhook,
   splitForDiscord,
   type CharacterConfig,
   type Config,
@@ -429,9 +430,85 @@ async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
     };
     appendToLedger(channelId, characterEntry);
 
+    // V0.11.3 (issue #14): when Bedrock returns real image bytes, deliver
+    // them as an actual webhook attachment so Discord renders the image.
+    // Pre-fix: the "image" was just an `attachment://...` pseudo-URL in
+    // text content, which Discord can't resolve without a multipart file
+    // part. Now we attach the bytes via discord.js AttachmentBuilder.
+    //
+    // Placeholder mode (Eileen's PR not landed yet) keeps the legacy
+    // text-with-URL path because there are no bytes to attach.
+    const hasImageBytes = !result.placeholder && result.imageBase64 && result.filename;
     if (ephemeral) {
+      // Ephemeral imagegen via interaction PATCH doesn't support file
+      // attachments today. Falls back to text-with-URL; image won't render
+      // for ephemeral=true in scaffold mode either. Out-of-scope follow-up.
       await deliverViaInteraction(interaction, character, chunks, true);
+    } else if (hasImageBytes) {
+      try {
+        const client = await getBotClient(config);
+        if (!client) throw new Error('imagegen attachment path: bot client unavailable');
+        const webhook = await getOrCreateChannelWebhook(client, channelId);
+
+        // V0.11.3 (codex review): pre-decode size + base64 sanity check.
+        // If `Buffer.from(..., 'base64')` produces 0 bytes (malformed input),
+        // throw EARLY so the catch surfaces an in-character error rather
+        // than letting Discord reject and falling to the broken-URL path.
+        const imageBytes = Buffer.from(result.imageBase64!, 'base64');
+        if (imageBytes.byteLength === 0) {
+          throw new Error('image-decode-failed: base64 decoded to zero bytes');
+        }
+        // Discord webhook attachment limit: 8 MB on free tier (25 MB Nitro).
+        // We ship at 8 MB conservatively — Bedrock Stability ultra outputs
+        // are typically 1-3 MB, so this is a safety floor not a normal cap.
+        const DISCORD_WEBHOOK_ATTACHMENT_LIMIT = 8 * 1024 * 1024;
+        if (imageBytes.byteLength > DISCORD_WEBHOOK_ATTACHMENT_LIMIT) {
+          throw new Error(
+            `image-too-large: ${imageBytes.byteLength} bytes > ${DISCORD_WEBHOOK_ATTACHMENT_LIMIT}`,
+          );
+        }
+
+        const caption = formatImagegenCaption(character, result, prompt, invoker.username);
+        await sendImageReplyViaWebhook(webhook, character, {
+          content: caption,
+          imageBytes,
+          filename: result.filename!,
+        });
+        // Clean up the deferred "thinking" placeholder (Pattern B convention).
+        void deleteOriginal(interaction).catch((err) => {
+          console.warn(
+            `interactions: ${character.id}/imagegen deleteOriginal best-effort failed:`,
+            err,
+          );
+        });
+      } catch (webhookErr) {
+        // V0.11.3 (codex review): the prior catch fell back to delivering
+        // `chunks` (which contains the `attachment://...` pseudo-URL as
+        // text) — that's the broken-looking message we're trying to fix.
+        // Surface an in-character error instead. The image bytes weren't
+        // delivered; Discord shouldn't see a fake URL.
+        const errMsg = String(webhookErr);
+        const errKind = errMsg.includes('image-too-large')
+          ? 'image-too-large'
+          : 'image-delivery-failed';
+        console.warn(
+          `interactions: ${character.id}/imagegen attachment delivery failed · kind=${errKind} ·`,
+          webhookErr,
+        );
+        invalidateWebhookCache(channelId);
+        try {
+          await patchOriginal(interaction, ephemeral, formatErrorReply(character, errKind));
+        } catch (patchErr) {
+          console.error(
+            `interactions: ${character.id}/imagegen error PATCH also failed:`,
+            patchErr,
+          );
+        }
+      }
     } else {
+      // Placeholder mode (no real bytes): fall back to text-only via the
+      // existing chat-reply webhook path. Operator sees the scaffold notice
+      // + synthetic placehold.co URL until Eileen's Stability invoke lands.
       try {
         await deliverViaWebhook(
           interaction,
@@ -455,8 +532,8 @@ async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
     console.log(
       `interactions: ${character.id}/imagegen delivered · ` +
         `channel=${channelId} model=${result.model} seed=${result.seed} ` +
-        `placeholder=${result.placeholder} total_ms=${Date.now() - t0} ` +
-        `via=${ephemeral ? 'patch' : 'webhook'}`,
+        `placeholder=${result.placeholder} attached=${hasImageBytes} ` +
+        `total_ms=${Date.now() - t0} via=${ephemeral ? 'patch' : 'webhook'}`,
     );
   } catch (err) {
     console.error(
@@ -491,6 +568,27 @@ function formatImagegenReply(
     );
   }
   return `${result.url}\n_${displayName} · model=${result.model} · seed=${result.seed}_`;
+}
+
+/**
+ * V0.11.3 (issue #14): caption shown above the attached image. Discord
+ * renders the file inline below the content; the caption carries
+ * metadata (model + seed) and the user's prompt as a quote so others
+ * in the channel see the request that produced the image.
+ *
+ * No URL in the caption — Discord shows the attachment natively, and
+ * leaking a substrate-side URL into the visible message would confuse
+ * the reader (the URL is now meaningless metadata, not a link).
+ */
+function formatImagegenCaption(
+  character: CharacterConfig,
+  result: { model: string; seed: number },
+  prompt: string,
+  authorUsername: string,
+): string {
+  const displayName = character.displayName ?? character.id;
+  const quote = `> @${authorUsername}: ${truncate(prompt, 200)}\n`;
+  return `${quote}_${displayName} · model=${result.model} · seed=${result.seed}_`;
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -629,7 +727,10 @@ function formatReply(
   return { chunks };
 }
 
-function formatErrorReply(character: CharacterConfig, kind: 'timeout' | 'empty' | 'error'): string {
+function formatErrorReply(
+  character: CharacterConfig,
+  kind: 'timeout' | 'empty' | 'error' | 'image-too-large' | 'image-delivery-failed',
+): string {
   const displayName = character.displayName ?? character.id;
   switch (kind) {
     case 'timeout':
@@ -638,6 +739,10 @@ function formatErrorReply(character: CharacterConfig, kind: 'timeout' | 'empty' 
       return `**${displayName}**\n\ncables got crossed — nothing came back. try again?`;
     case 'error':
       return `**${displayName}**\n\nsomething broke. try again?`;
+    case 'image-too-large':
+      return `**${displayName}**\n\nthe image came back bigger than discord lets a webhook deliver. try a different prompt or aspect ratio?`;
+    case 'image-delivery-failed':
+      return `**${displayName}**\n\nthe image generated but delivery hiccuped. try again — same seed should reproduce.`;
   }
 }
 

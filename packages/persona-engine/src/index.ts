@@ -45,6 +45,7 @@ export { getBotClient, shutdownClient } from './deliver/client.ts';
 export {
   getOrCreateChannelWebhook,
   sendChatReplyViaWebhook,
+  sendImageReplyViaWebhook,
   invalidateWebhookCache,
 } from './deliver/webhook.ts';
 
