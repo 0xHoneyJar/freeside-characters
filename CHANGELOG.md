@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.2] — 2026-05-01 — accumulate assistant text · fallback when result empty
+
+<details open>
+<summary>v0.11.1 worked · new failure mode</summary>
+
+### Fixed
+
+- **orchestrator**: accumulate assistant text · fallback when result empty (#12)
+
+_Source: PR #12_
+
+
 ## [0.9.0] — 2026-05-01 — environment substrate (Phases B-E · cycle-001)
 
 
