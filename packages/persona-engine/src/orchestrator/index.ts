@@ -86,7 +86,13 @@ function buildMcpServers(config: Config): Record<string, McpServerConfig> {
     servers.score = {
       type: 'http',
       url: `${config.SCORE_API_URL}/mcp`,
-      headers: { 'X-MCP-Key': config.MCP_KEY },
+      headers: {
+        'X-MCP-Key': config.MCP_KEY,
+        // SCORE_BEARER is the gateway gate; harmless when score is reached
+        // direct (upstream ignores Authorization). Set both env vars to
+        // route via mcp.0xhoneyjar.xyz/score.
+        ...(config.SCORE_BEARER ? { Authorization: `Bearer ${config.SCORE_BEARER}` } : {}),
+      },
     };
   }
 

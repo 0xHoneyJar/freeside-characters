@@ -14,9 +14,17 @@ const ConfigSchema = z.object({
   LLM_PROVIDER: z.enum(['stub', 'anthropic', 'freeside', 'bedrock', 'auto']).default('auto'),
 
   // ─── score-mcp (zerker — production data path) ────────────────────────
+  // Direct path (V0.5-): SCORE_API_URL=https://score-api-production.up.railway.app, MCP_KEY set, SCORE_BEARER unset.
+  // Gateway path (V0.7+): SCORE_API_URL=https://mcp.0xhoneyjar.xyz/score, MCP_KEY + SCORE_BEARER both set.
+  // The gateway is registry-shaped: it declares each upstream's auth via the federation manifest;
+  // callers compose the request from the declaration. SCORE_BEARER passes the gateway gate;
+  // X-MCP-Key (sourced from MCP_KEY) satisfies the upstream's announced auth.
   SCORE_API_URL: z.string().url().default('https://score-api-production.up.railway.app'),
   SCORE_API_KEY: z.string().optional(),
   MCP_KEY: z.string().optional(),
+  /** Bearer for the freeside-mcp-gateway gate. Matches the gateway's
+   *  `TENANT_SCORE_API_KEY` env. Unset = direct route (no gateway gate). */
+  SCORE_BEARER: z.string().optional(),
 
   // ─── codex-mcp (gumi — mibera-codex lookup, public, no auth) ──────────
   /**

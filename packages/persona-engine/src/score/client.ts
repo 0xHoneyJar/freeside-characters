@@ -50,13 +50,20 @@ function parseSseEnvelope<T>(body: string): McpJsonRpcEnvelope<T> {
   return JSON.parse(json) as McpJsonRpcEnvelope<T>;
 }
 
-async function mcpInit(url: string, key: string): Promise<McpInitResult> {
+function authHeaders(key: string, bearer?: string): Record<string, string> {
+  return {
+    'X-MCP-Key': key,
+    ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+  };
+}
+
+async function mcpInit(url: string, key: string, bearer?: string): Promise<McpInitResult> {
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
-      'X-MCP-Key': key,
+      ...authHeaders(key, bearer),
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -88,7 +95,7 @@ async function mcpInit(url: string, key: string): Promise<McpInitResult> {
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
-      'X-MCP-Key': key,
+      ...authHeaders(key, bearer),
       'Mcp-Session-Id': sessionId,
     },
     body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
@@ -103,13 +110,14 @@ async function mcpToolCall<T>(
   sessionId: string,
   toolName: string,
   toolArgs: Record<string, unknown>,
+  bearer?: string,
 ): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
-      'X-MCP-Key': key,
+      ...authHeaders(key, bearer),
       'Mcp-Session-Id': sessionId,
     },
     body: JSON.stringify({
@@ -147,11 +155,16 @@ export async function fetchZoneDigest(config: Config, zone: ZoneId): Promise<Zon
   }
 
   const url = `${config.SCORE_API_URL}/mcp`;
-  const { sessionId } = await mcpInit(url, config.MCP_KEY);
-  return mcpToolCall<ZoneDigest>(url, config.MCP_KEY, sessionId, 'get_zone_digest', {
-    zone,
-    window: 'weekly',
-  });
+  const bearer = config.SCORE_BEARER;
+  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer);
+  return mcpToolCall<ZoneDigest>(
+    url,
+    config.MCP_KEY,
+    sessionId,
+    'get_zone_digest',
+    { zone, window: 'weekly' },
+    bearer,
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────
