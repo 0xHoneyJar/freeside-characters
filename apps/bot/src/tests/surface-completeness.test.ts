@@ -215,27 +215,65 @@ describe("chat-mode matrix · shouldUseOrchestrator", () => {
 // Provider resolution sanity (auto-resolution rules per reply.ts)
 // ═════════════════════════════════════════════════════════════════════
 
-describe("resolveChatProvider · auto rules", () => {
-  test("auto + ANTHROPIC_API_KEY present → anthropic", () => {
+describe("resolveChatProvider · auto rules (V0.12 bedrock-first)", () => {
+  // V0.12 (operator 2026-05-01): bedrock wins when AWS env present, even
+  // if ANTHROPIC_API_KEY is also set. Production removed ANTHROPIC_API_KEY
+  // so bedrock won by elimination; this rule codifies the preference order.
+
+  test("auto + AWS bedrock env + anthropic key → bedrock (cost-bearing default)", () => {
     const config = fullEnvConfig({
       LLM_PROVIDER: "auto",
+      AWS_BEARER_TOKEN_BEDROCK: "test-bearer",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+    });
+    expect(resolveChatProvider(config)).toBe("bedrock");
+  });
+
+  test("auto + AWS bedrock env, no anthropic key → bedrock", () => {
+    const config = fullEnvConfig({
+      LLM_PROVIDER: "auto",
+      AWS_BEARER_TOKEN_BEDROCK: "test-bearer",
+      ANTHROPIC_API_KEY: undefined,
+    });
+    expect(resolveChatProvider(config)).toBe("bedrock");
+  });
+
+  test("auto + BEDROCK_API_KEY (legacy alias) + no anthropic → bedrock", () => {
+    const config = fullEnvConfig({
+      LLM_PROVIDER: "auto",
+      AWS_BEARER_TOKEN_BEDROCK: undefined,
+      BEDROCK_API_KEY: "legacy-key",
+      ANTHROPIC_API_KEY: undefined,
+    });
+    expect(resolveChatProvider(config)).toBe("bedrock");
+  });
+
+  test("auto + ANTHROPIC_API_KEY only (dev fallback path) → anthropic", () => {
+    const config = fullEnvConfig({
+      LLM_PROVIDER: "auto",
+      AWS_BEARER_TOKEN_BEDROCK: undefined,
+      BEDROCK_API_KEY: undefined,
       ANTHROPIC_API_KEY: "sk-ant-test",
     });
     expect(resolveChatProvider(config)).toBe("anthropic");
   });
 
-  test("auto + STUB_MODE=true (no anthropic key) → stub", () => {
+  test("auto + STUB_MODE=true (no anthropic key, no AWS env) → stub", () => {
     const config = fullEnvConfig({
       LLM_PROVIDER: "auto",
       STUB_MODE: true,
+      AWS_BEARER_TOKEN_BEDROCK: undefined,
+      BEDROCK_API_KEY: undefined,
       ANTHROPIC_API_KEY: undefined,
     });
     expect(resolveChatProvider(config)).toBe("stub");
   });
 
-  test("auto + only freeside key → freeside", () => {
+  test("auto + only freeside key (no AWS, no anthropic, no stub) → freeside", () => {
     const config = fullEnvConfig({
       LLM_PROVIDER: "auto",
+      AWS_BEARER_TOKEN_BEDROCK: undefined,
+      BEDROCK_API_KEY: undefined,
       ANTHROPIC_API_KEY: undefined,
       STUB_MODE: false,
       FREESIDE_API_KEY: "fs-test",

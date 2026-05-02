@@ -1,5 +1,6 @@
 /**
- * LLM gateway — explicit provider routing (V0.4 → V0.5-A).
+ * LLM gateway — explicit provider routing (V0.4 → V0.5-A · auto-rule
+ * flipped V0.12 to bedrock-first per operator 2026-05-01).
  *
  * Per codex-rescue F1: stub-vs-real selection should be EXPLICIT, not
  * inferred from key presence. LLM_PROVIDER env makes intent legible:
@@ -11,8 +12,15 @@
  *                              ANTHROPIC_API_KEY; throws if missing.
  *   LLM_PROVIDER=freeside    → freeside agent-gateway. Requires
  *                              FREESIDE_API_KEY; throws if missing.
- *   LLM_PROVIDER=auto        → V0.3 back-compat: anthropic key wins,
- *                              else stub if STUB_MODE, else freeside.
+ *   LLM_PROVIDER=bedrock     → AWS Bedrock direct (this digest path uses
+ *                              the converse REST API; chat path routes
+ *                              bedrock through the Agent SDK with full
+ *                              tool support). Requires AWS bearer token.
+ *   LLM_PROVIDER=auto        → bedrock-first when AWS env present
+ *                              (cost-bearing default · ES bedrock account)
+ *                              → anthropic (dev/local fallback)
+ *                              → stub (STUB_MODE=true)
+ *                              → freeside.
  *                              Logs the resolved provider on first call.
  *
  * V0.5-A migration: the `anthropic` path moved from a manual fetch to
@@ -20,6 +28,16 @@
  * single-turn query, no tool calls, with the digest JSON pre-fetched
  * into the user message. V0.5-B activates Arneson + Rosenzu via the
  * SDK's mcpServers + skills primitives.
+ *
+ * V0.12 auto-rule flip (operator-named 2026-05-01 · cost-bearing default):
+ * production removed ANTHROPIC_API_KEY so auto resolves to bedrock by
+ * elimination. This change codifies the order: when AWS Bedrock env is
+ * present (bearer token OR API key), bedrock wins regardless of whether
+ * ANTHROPIC_API_KEY is also set. ANTHROPIC_API_KEY remains an explicit
+ * opt-in for dev/local-testing — set LLM_PROVIDER=anthropic explicitly,
+ * or unset bedrock env in dev. The orchestrator path
+ * (resolveOrchestratorBackend) already used this preference order; this
+ * brings the digest path's auto-resolver in line.
  */
 
 import type { Config } from '../config.ts';
@@ -49,7 +67,12 @@ export type ResolvedProvider = 'stub' | 'anthropic' | 'freeside' | 'bedrock';
 
 let loggedAutoOnce = false;
 
-function resolveProvider(config: Config): ResolvedProvider {
+/**
+ * Resolve the digest-path provider. Exported (V0.12) so the auto-rule
+ * matrix can be unit-tested directly — see
+ * `apps/bot/src/tests/provider-resolution.test.ts`.
+ */
+export function resolveProvider(config: Config): ResolvedProvider {
   switch (config.LLM_PROVIDER) {
     case 'stub':
       return 'stub';
@@ -71,20 +94,29 @@ throw new Error(
       }
       return 'bedrock';
     case 'auto': {
-      // V0.3 back-compat: anthropic > stub > freeside
-      const resolved: ResolvedProvider = config.ANTHROPIC_API_KEY
-        ? 'anthropic'
-        : config.STUB_MODE
-          ? 'stub'
-          : config.FREESIDE_API_KEY
-            ? 'freeside'
-            : (() => {
-                throw new Error(
-                  'LLM_PROVIDER=auto: no provider available — set STUB_MODE=true, ANTHROPIC_API_KEY, or FREESIDE_API_KEY',
-                );
-              })();
+      // V0.12: bedrock-first when AWS env present (cost-bearing default ·
+      // operator-named 2026-05-01) → anthropic (dev fallback) → stub →
+      // freeside. ANTHROPIC_API_KEY remains an explicit opt-in for dev:
+      // either set LLM_PROVIDER=anthropic, or unset AWS_BEARER_TOKEN_BEDROCK
+      // / BEDROCK_API_KEY in the dev env so the auto-resolver falls through.
+      const bedrockEnv = config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY;
+      const resolved: ResolvedProvider = bedrockEnv
+        ? 'bedrock'
+        : config.ANTHROPIC_API_KEY
+          ? 'anthropic'
+          : config.STUB_MODE
+            ? 'stub'
+            : config.FREESIDE_API_KEY
+              ? 'freeside'
+              : (() => {
+                  throw new Error(
+                    'LLM_PROVIDER=auto: no provider available — set bedrock (AWS_BEARER_TOKEN_BEDROCK), STUB_MODE=true, ANTHROPIC_API_KEY, or FREESIDE_API_KEY',
+                  );
+                })();
       if (!loggedAutoOnce) {
-        console.log(`llm: LLM_PROVIDER=auto resolved to '${resolved}' (set explicitly to silence this notice)`);
+        console.log(
+          `llm: ${resolved}-direct (LLM_PROVIDER=auto resolved · set explicitly to silence this notice)`,
+        );
         loggedAutoOnce = true;
       }
       return resolved;

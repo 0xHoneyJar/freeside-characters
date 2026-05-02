@@ -297,11 +297,19 @@ export function resolveChatProvider(config: Config): ChatProvider {
       }
       return 'bedrock';
     case 'auto':
+      // V0.12: bedrock-first when AWS env present (cost-bearing default ·
+      // operator-named 2026-05-01) → anthropic (dev fallback) → stub →
+      // freeside. Mirrors agent-gateway.ts:resolveProvider so digest path
+      // and chat path agree on which provider auto resolves to. The
+      // orchestrator's resolveOrchestratorBackend already preferred
+      // bedrock here; this brings the chat-mode telemetry resolver in line.
+      if (config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY) return 'bedrock';
       if (config.ANTHROPIC_API_KEY) return 'anthropic';
       if (config.STUB_MODE) return 'stub';
       if (config.FREESIDE_API_KEY) return 'freeside';
-      if (config.BEDROCK_API_KEY) return 'bedrock';
-      throw new Error('LLM_PROVIDER=auto: no chat provider available');
+      throw new Error(
+        'LLM_PROVIDER=auto: no chat provider available — set AWS_BEARER_TOKEN_BEDROCK, ANTHROPIC_API_KEY, STUB_MODE=true, or FREESIDE_API_KEY',
+      );
   }
 }
 

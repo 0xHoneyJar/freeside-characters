@@ -64,8 +64,56 @@ export type { ReplyComposeArgs, ReplyComposeResult } from './compose/reply.ts';
 export { shouldUseOrchestrator, resolveChatProvider } from './compose/reply.ts';
 export type { ChatProvider } from './compose/reply.ts';
 
+// Digest-path provider resolution (V0.12 · exported so the bedrock-first
+// auto-rule matrix can be unit-tested — see provider-resolution.test.ts).
+export { resolveProvider } from './compose/agent-gateway.ts';
+export type { ResolvedProvider } from './compose/agent-gateway.ts';
+
 // Orchestrator MCP-server registration (V0.7-A.4 surface-completeness)
 export { buildMcpServers, buildAllowedTools } from './orchestrator/index.ts';
+
+// Expression layer (V0.12 · session 04 — character voice during loading,
+// errors, and performed silence). Substrate routes; character expression
+// fills. Per multi-axis-daemon-architecture §axis-3 capability-equipping.
+export {
+  DEFAULT_TOOL_MOOD_MAP,
+  getMoodsForTool,
+  pickRandomMood,
+} from './expression/tool-mood-map.ts';
+export type { ToolMoodMapping } from './expression/tool-mood-map.ts';
+export { composeToolUseStatusForCharacter } from './expression/loading-status.ts';
+export {
+  DEFAULT_ERROR_REGISTRY,
+  getErrorTemplate,
+  composeErrorReply,
+} from './expression/error-register.ts';
+export type {
+  ErrorClass,
+  ErrorRegistry,
+  CharacterErrorTemplates,
+} from './expression/error-register.ts';
+export {
+  DEFAULT_SILENCE_REGISTRY,
+  FLAT_WINDOW_EVENT_THRESHOLD,
+  isFlatWindow,
+  pickSilenceTemplate,
+} from './expression/silence-register.ts';
+export type { SilenceRegistry } from './expression/silence-register.ts';
+
+// Emoji registry primitives (V0.12 — surfaced for tests and direct
+// inspection; the loading-status composer wraps these for the dispatch
+// path's hot-path use).
+export {
+  pickByMoods as pickEmojiByMoods,
+  findByName as findEmojiByName,
+  renderEmoji,
+  ALL_MOODS as ALL_EMOJI_MOODS,
+} from './orchestrator/emojis/registry.ts';
+export type {
+  EmojiEntry,
+  EmojiKind,
+  EmojiMood,
+} from './orchestrator/emojis/registry.ts';
 
 // MCP server contracts (V0.7-A.4 — Effect.Schema source of truth · used
 // by surface-completeness + persona-tool-drift tests)

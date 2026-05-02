@@ -7,10 +7,17 @@ const ConfigSchema = z.object({
 
   // ─── explicit LLM provider (V0.4 — codex-rescue F1: replace implicit
   // key-presence inference; fail loud if intent is ambiguous) ────────────
-  /** stub | anthropic | freeside | bedrock | auto (auto = back-compat:
-   *  anthropic key wins → stub → freeside, matching V0.3 behavior).
-   *  Bedrock is opt-in only; auto does NOT fall back to bedrock by design.
-   *  Defaults to 'auto' for back-compat; recommend explicit value in production. */
+  /** stub | anthropic | freeside | bedrock | auto.
+   *
+   *  V0.12 auto-rule (operator-named 2026-05-01 · cost-bearing default):
+   *  bedrock-first when AWS env present (AWS_BEARER_TOKEN_BEDROCK or
+   *  BEDROCK_API_KEY) → anthropic (dev/local fallback when ANTHROPIC_API_KEY
+   *  is set) → stub (STUB_MODE=true) → freeside. ANTHROPIC_API_KEY remains
+   *  an explicit opt-in for dev — set `LLM_PROVIDER=anthropic`, or unset
+   *  the AWS bedrock env vars in your dev shell.
+   *
+   *  Defaults to 'auto'; recommend an explicit value in production for
+   *  legibility (silences the boot-log notice). */
   LLM_PROVIDER: z.enum(['stub', 'anthropic', 'freeside', 'bedrock', 'auto']).default('auto'),
 
   // ─── score-mcp (zerker — production data path) ────────────────────────

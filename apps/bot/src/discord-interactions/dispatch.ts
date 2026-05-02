@@ -26,7 +26,9 @@
 
 import {
   appendToLedger,
+  composeErrorReply,
   composeReply,
+  composeToolUseStatusForCharacter,
   getBotClient,
   getOrCreateChannelWebhook,
   invalidateWebhookCache,
@@ -35,6 +37,7 @@ import {
   splitForDiscord,
   type CharacterConfig,
   type Config,
+  type ErrorClass,
   type LedgerEntry,
   type SlashCommandHandler,
 } from '@freeside-characters/persona-engine';
@@ -42,7 +45,6 @@ import { invokeStability } from '@freeside-characters/persona-engine/orchestrato
 import type { ToolUseEvent } from '@freeside-characters/persona-engine';
 import { resolveSlashCommands, resolveSlashCommandTarget, selectedCharacterIds } from '../character-loader.ts';
 import { getZoneForChannel } from '../lib/channel-zone-map.ts';
-import { toolVerb } from './tool-verb.ts';
 import {
   InteractionResponseType,
   InteractionType,
@@ -240,10 +242,20 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     const zone = getZoneForChannel(config, channelId);
     const otherCharactersHere = selectedCharacterIds().filter((id) => id !== character.id);
 
-    // V0.7-A.1 progressive UX (pattern: ruggy-v2 onToolUse): when the
+    // V0.12 expression layer (kickoff-2026-05-01 §4.2): when the
     // orchestrator surfaces a tool_use block mid-stream, PATCH the deferred
-    // interaction message with a status line ("🔧 pulling zone digest…").
-    // The dispatcher's existing flow handles the final delivery: ephemeral=true
+    // message with CHARACTER expression — animated emoji from the
+    // character's catalog (ruggy) or in-voice plain-text register (satoshi).
+    // The substrate routes via tool-mood-map; the character supplies the
+    // catalog. Per multi-axis-daemon-architecture §axis-3, the loading
+    // state IS the body-part firing in real time — make it visible.
+    //
+    // Pre-V0.12 used `toolVerb()` for a generic 🔧+text marker. That marker
+    // was substrate-voice during a moment that should be character-voice
+    // (category error per civic-layer). Unmapped tools now resolve to null
+    // (substrate-shaped quiet) — preferable to substrate-shaped noise.
+    //
+    // The dispatcher's existing flow handles final delivery: ephemeral=true
     // PATCHes again with the response; ephemeral=false delivers via Pattern B
     // webhook and then DELETEs the deferred placeholder. So progressive
     // status is naturally replaced by the final artifact in either case.
@@ -257,16 +269,29 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     // intermediate is replaced naturally.
     const seenToolIds = new Set<string>();
     const seenToolNames: string[] = [];
-    const MIN_TOOL_PATCH_INTERVAL_MS = 500;
+    // V0.12 (kickoff §4.5 · KANSEI timing pass): bumped from 500ms to
+    // 800ms per YANAGI cadence — the wait should disappear into character
+    // presence, not call attention to itself as a jittery indicator.
+    // Floor of 800ms gives each emoji-patch room to register visually
+    // before the next; ceiling guidance in docs/EXPRESSION-TIMING.md.
+    const MIN_TOOL_PATCH_INTERVAL_MS = 800;
     let lastToolPatchMs = 0;
     const onToolUse = (event: ToolUseEvent): void => {
       if (seenToolIds.has(event.id)) return;
       seenToolIds.add(event.id);
       seenToolNames.push(event.name);
-      const status = toolVerb(event.name);
+
+      // Resolve the moment to character expression. Returns null when the
+      // substrate should stay quiet (unmapped tool, or intentional silence
+      // for self-referential / V1-deferred tools like emojis/imagegen).
+      const status = composeToolUseStatusForCharacter(character, event.name);
       console.log(
-        `interactions: ${character.id}/chat tool_use · ${event.name} · status="${status}"`,
+        `interactions: ${character.id}/chat tool_use · ${event.name} · status=${
+          status === null ? 'null(skip)' : `"${status}"`
+        }`,
       );
+      if (status === null) return;
+
       const now = Date.now();
       if (now - lastToolPatchMs < MIN_TOOL_PATCH_INTERVAL_MS) {
         // Recent PATCH within the gate — skip this update; the next
@@ -730,23 +755,19 @@ function formatReply(
   return { chunks };
 }
 
+/**
+ * Format the in-character error reply. V0.12 (kickoff §4.3) routes
+ * through the substrate-side error register so ruggy and satoshi each
+ * speak from their locked register at every error class. Bold-prefix
+ * attribution stays here because it disambiguates shell-bot identity
+ * for interaction PATCHes (per Gemini DR 2026-04-30).
+ */
 function formatErrorReply(
   character: CharacterConfig,
-  kind: 'timeout' | 'empty' | 'error' | 'image-too-large' | 'image-delivery-failed',
+  kind: ErrorClass,
 ): string {
   const displayName = character.displayName ?? character.id;
-  switch (kind) {
-    case 'timeout':
-      return `**${displayName}**\n\nthat took longer than i had time for. mind trying again?`;
-    case 'empty':
-      return `**${displayName}**\n\ncables got crossed — nothing came back. try again?`;
-    case 'error':
-      return `**${displayName}**\n\nsomething broke. try again?`;
-    case 'image-too-large':
-      return `**${displayName}**\n\nthe image came back bigger than discord lets a webhook deliver. try a different prompt or aspect ratio?`;
-    case 'image-delivery-failed':
-      return `**${displayName}**\n\nthe image generated but delivery hiccuped. try again — same seed should reproduce.`;
-  }
+  return composeErrorReply(character.id, displayName, kind);
 }
 
 // ──────────────────────────────────────────────────────────────────────
