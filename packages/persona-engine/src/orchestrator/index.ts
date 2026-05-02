@@ -205,15 +205,88 @@ export function buildAllowedTools(
 }
 
 /**
+ * Resolve the SDK backend for the orchestrator path. The Anthropic Agent
+ * SDK supports anthropic.com (firstParty) AND Bedrock as backends via
+ * the `CLAUDE_CODE_USE_BEDROCK=1` env var. We pick based on
+ * `LLM_PROVIDER` so a single deployment can route Claude (Opus 4.7) via
+ * either path. Stub/freeside aren't SDK-eligible — they fall through
+ * to the naive `invokeChat` shim in compose/reply.ts.
+ *
+ * Per Loa PR #662 (jani · 2026-04-30): Bedrock model identifiers use
+ * inference profile IDs (`us.anthropic.claude-opus-4-7`), NOT the bare
+ * `anthropic.claude-opus-4-7` form (which returns HTTP 400). Default
+ * follows that convention.
+ */
+type SdkBackend = 'anthropic' | 'bedrock';
+
+function resolveOrchestratorBackend(config: Config): SdkBackend {
+  switch (config.LLM_PROVIDER) {
+    case 'bedrock':
+      return 'bedrock';
+    case 'anthropic':
+      return 'anthropic';
+    case 'auto':
+      // Operator-aware default: bedrock takes precedence when its bearer
+      // token is present (V0.8.0 satoshi setup + Loa PR #662 stack).
+      // Fall back to anthropic key. If neither, throw at the runtime
+      // check below.
+      if (config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY) return 'bedrock';
+      if (config.ANTHROPIC_API_KEY) return 'anthropic';
+      return 'anthropic'; // unreachable in practice; runtime guard catches
+    case 'stub':
+    case 'freeside':
+      // Not SDK-eligible. Caller should route through invokeChat instead;
+      // we throw here to surface the misuse.
+      throw new Error(
+        `orchestrator: LLM_PROVIDER='${config.LLM_PROVIDER}' is not SDK-eligible. ` +
+          `Use the invokeChat shim in compose/reply.ts for stub/freeside paths.`,
+      );
+    default: {
+      // Bridgebuilder F1 (PR #11) · exhaustiveness guard. If LLM_PROVIDER
+      // ever widens (e.g., adds 'vertex' or 'foundry') without a matching
+      // case, this assertion fails at compile time so the issue is loud.
+      const _exhaustive: never = config.LLM_PROVIDER;
+      throw new Error(
+        `orchestrator: unhandled LLM_PROVIDER='${_exhaustive}'. ` +
+          `Add a case to resolveOrchestratorBackend.`,
+      );
+    }
+  }
+}
+
+/**
+ * Inference profile / model alias for the active backend. Anthropic SDK
+ * resolves these as model IDs against the chosen backend. We default to
+ * Opus 4.7 in both shapes — Bedrock takes the inference profile form,
+ * anthropic.com takes the bare alias.
+ */
+function resolveSdkModel(config: Config, backend: SdkBackend): string {
+  if (backend === 'bedrock') {
+    return (
+      config.BEDROCK_TEXT_MODEL_ID ?? 'us.anthropic.claude-opus-4-7'
+    );
+  }
+  return config.ANTHROPIC_MODEL;
+}
+
+/**
  * Build the env passed to the SDK subprocess.
  *
  * When ruggy runs inside another Claude Code session (e.g. during dev),
  * inheriting `CLAUDECODE=1` + `CLAUDE_CODE_ENTRYPOINT` etc. flips the
  * SDK into bridge-mode auth, which then fails ("Invalid API key"). We
- * scrub those vars so the SDK uses direct Anthropic API auth via
- * `ANTHROPIC_API_KEY` in production and dev alike.
+ * scrub those vars FIRST to ensure we control the auth path.
+ *
+ * Then we set the active backend explicitly:
+ *   - anthropic: ANTHROPIC_API_KEY (direct firstParty auth)
+ *   - bedrock:   CLAUDE_CODE_USE_BEDROCK=1 + AWS_BEARER_TOKEN_BEDROCK
+ *               + AWS_REGION (Bearer-token flow per Loa PR #662)
+ *
+ * AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN are
+ * preserved if present (SigV4 fallback for environments without bearer
+ * token; the SDK auto-detects).
  */
-function buildSdkEnv(config: Config): Record<string, string | undefined> {
+function buildSdkEnv(config: Config, backend: SdkBackend): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (k.startsWith('CLAUDE_CODE_') || k === 'CLAUDECODE' || k === 'CLAUDE_PLUGIN_DATA') {
@@ -221,7 +294,29 @@ function buildSdkEnv(config: Config): Record<string, string | undefined> {
     }
     env[k] = v;
   }
-  env.ANTHROPIC_API_KEY = config.ANTHROPIC_API_KEY!;
+
+  if (backend === 'bedrock') {
+    // Activate Bedrock backend. The SDK reads CLAUDE_CODE_USE_BEDROCK
+    // to route through Bedrock instead of api.anthropic.com.
+    env.CLAUDE_CODE_USE_BEDROCK = '1';
+    env.AWS_REGION = config.BEDROCK_TEXT_REGION || config.AWS_REGION;
+    if (config.AWS_BEARER_TOKEN_BEDROCK) {
+      env.AWS_BEARER_TOKEN_BEDROCK = config.AWS_BEARER_TOKEN_BEDROCK;
+    }
+    if (config.BEDROCK_API_KEY && !env.AWS_BEARER_TOKEN_BEDROCK) {
+      // Fallback alias — operator may have set BEDROCK_API_KEY (V0.8.0
+      // shape) instead of AWS_BEARER_TOKEN_BEDROCK (Loa PR #662 shape).
+      env.AWS_BEARER_TOKEN_BEDROCK = config.BEDROCK_API_KEY;
+    }
+    // Explicitly DELETE ANTHROPIC_API_KEY from the subprocess env so the
+    // SDK doesn't accidentally route firstParty when bedrock is intended.
+    // Bridgebuilder F3 (PR #11): setting to `undefined` is unreliable —
+    // Node's child_process may inherit from parent. `delete` is the safe
+    // pattern for env-var removal.
+    delete env.ANTHROPIC_API_KEY;
+  } else {
+    env.ANTHROPIC_API_KEY = config.ANTHROPIC_API_KEY!;
+  }
   return env;
 }
 
@@ -229,9 +324,28 @@ export async function runOrchestratorQuery(
   config: Config,
   req: OrchestratorRequest,
 ): Promise<OrchestratorResponse> {
-  if (!config.ANTHROPIC_API_KEY) {
+  const backend = resolveOrchestratorBackend(config);
+
+  // Per-backend preflight: anthropic needs ANTHROPIC_API_KEY; bedrock
+  // needs AWS bearer token (or AWS creds for SigV4 fallback). Surface
+  // the missing-credential failure mode loudly rather than silently
+  // routing through with bad auth.
+  if (backend === 'anthropic' && !config.ANTHROPIC_API_KEY) {
     throw new Error(
-      'orchestrator: ANTHROPIC_API_KEY required for SDK path. Set it or switch LLM_PROVIDER to stub/freeside.',
+      'orchestrator: ANTHROPIC_API_KEY required for LLM_PROVIDER=anthropic. ' +
+        'Set ANTHROPIC_API_KEY, switch LLM_PROVIDER to bedrock, or use stub/freeside.',
+    );
+  }
+  if (
+    backend === 'bedrock' &&
+    !config.AWS_BEARER_TOKEN_BEDROCK &&
+    !config.BEDROCK_API_KEY &&
+    !process.env.AWS_ACCESS_KEY_ID
+  ) {
+    throw new Error(
+      'orchestrator: Bedrock backend requires AWS_BEARER_TOKEN_BEDROCK ' +
+        '(per Loa PR #662) OR AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY (SigV4 fallback). ' +
+        'None set — set credentials or switch LLM_PROVIDER.',
     );
   }
 
@@ -258,7 +372,7 @@ export async function runOrchestratorQuery(
 
   const options: Options = {
     systemPrompt: req.systemPrompt,
-    model: config.ANTHROPIC_MODEL,
+    model: resolveSdkModel(config, backend),
     mcpServers,
     allowedTools,
     permissionMode: 'dontAsk',
@@ -279,7 +393,7 @@ export async function runOrchestratorQuery(
     // overkill for cron-driven cadence; medium is ~15s/zone. drop to
     // 'low' if voice holds and we want closer to V0.4.5 latency.
     effort: 'medium',
-    env: buildSdkEnv(config),
+    env: buildSdkEnv(config, backend),
     stderr: (data) => {
       if (config.LOG_LEVEL === 'debug') {
         console.error(`[sdk] ${data.trimEnd()}`);

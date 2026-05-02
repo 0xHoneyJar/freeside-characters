@@ -151,16 +151,19 @@ type ChatMode = 'auto' | 'orchestrator' | 'naive';
 function expectedRoute(chatMode: ChatMode, provider: Provider): 'orchestrator' | 'naive' {
   if (chatMode === 'naive') return 'naive';
   if (chatMode === 'orchestrator') return 'orchestrator';
-  // auto: orchestrator when anthropic, naive otherwise
-  return provider === 'anthropic' ? 'orchestrator' : 'naive';
+  // V0.11.1: auto routes to orchestrator for SDK-eligible providers
+  // (anthropic OR bedrock); naive for stub/freeside.
+  return provider === 'anthropic' || provider === 'bedrock' ? 'orchestrator' : 'naive';
 }
 
 console.log('');
 console.log('CHAT_MODE routing matrix (auto · orchestrator · naive × providers):');
 
 const cases: Array<{ mode: ChatMode; provider: Provider; expected: 'orchestrator' | 'naive' }> = [
+  // V0.11.1: bedrock is now SDK-eligible (Bedrock-routed orchestrator).
+  // anthropic + bedrock both → orchestrator under auto mode.
   { mode: 'auto', provider: 'anthropic', expected: 'orchestrator' },
-  { mode: 'auto', provider: 'bedrock', expected: 'naive' },
+  { mode: 'auto', provider: 'bedrock', expected: 'orchestrator' },
   { mode: 'auto', provider: 'freeside', expected: 'naive' },
   { mode: 'auto', provider: 'stub', expected: 'naive' },
   { mode: 'orchestrator', provider: 'anthropic', expected: 'orchestrator' },
