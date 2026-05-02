@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.0] — 2026-05-01 — environment substrate (Phases B-E · cycle-001)
+
+
+Cycle-001 (V0.7-A.1 environment substrate) — closes the operator's "ChatGPT-natural tool use" gap. Three layers compose:
+
+- **Substrate awareness** (Phases B–C): channel↔zone reverse map + environment context builder + rosenzu's moment-half (place + moment lens via `read_room` tool)
+- **Tooled chat** (Phase D · MEDIUM-risk): chat-mode replies now flow through orchestrator with per-character MCP scope when conditions allow; CHAT_MODE env flag for revert
+
+### Added
+
+- **V0.7-A.1**: environment substrate (Phases B-E · cycle-001) (#6)
+- **loa**: mount loa framework on freeside-characters
+
+_Source: PR #6_
+
+
 ## [0.6.0-C reconciliation] — 2026-04-30
 
 ### Cabal-rotation retirement + satoshi/ruggy voice rewrite per gumi corrections

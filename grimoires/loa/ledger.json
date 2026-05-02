@@ -6,7 +6,7 @@
     {
       "id": "cycle-001",
       "label": "V0.7-A.1 environment substrate",
-      "status": "active",
+      "status": "archived",
       "created_at": "2026-05-02T01:18:32Z",
       "prd": "grimoires/loa/specs/build-environment-substrate-v07a1.md",
       "sdd": "grimoires/loa/specs/build-environment-substrate-v07a1.md",
@@ -64,9 +64,13 @@
           "epic_bead": "bd-3i7",
           "spec_phase": "F",
           "optional": true,
-          "gates": ["operator_approval", "dev_guild_test_channel_provisioned"]
+          "gates": [
+            "operator_approval",
+            "dev_guild_test_channel_provisioned"
+          ]
         }
-      ]
+      ],
+      "archived_at": "2026-05-02T02:31:15Z"
     }
   ]
 }
