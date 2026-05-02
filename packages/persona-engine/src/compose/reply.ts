@@ -202,15 +202,22 @@ interface ChatInvokeArgs {
  * character's per-character MCP scope) or the naive `invokeChat()` path.
  *
  *   CHAT_MODE=naive          — always naive
- *   CHAT_MODE=orchestrator   — always orchestrator (errors if non-anthropic)
- *   CHAT_MODE=auto (default) — orchestrator when provider is anthropic;
- *                              naive otherwise
+ *   CHAT_MODE=orchestrator   — always orchestrator (errors if not SDK-eligible)
+ *   CHAT_MODE=auto (default) — orchestrator when provider is SDK-eligible
+ *                              (anthropic OR bedrock); naive for stub/freeside
+ *
+ * V0.11.1: bedrock is now SDK-eligible. The orchestrator's `buildSdkEnv`
+ * sets CLAUDE_CODE_USE_BEDROCK=1 + AWS bearer token when LLM_PROVIDER=bedrock,
+ * and the Anthropic Agent SDK routes through Bedrock with full tool support
+ * via inference profile model IDs (per Loa PR #662). This unblocks chat-mode
+ * tool calling for the operator's Bedrock-backed Opus 4.7 deployment.
  */
 function shouldUseOrchestrator(config: Config): boolean {
   if (config.CHAT_MODE === 'naive') return false;
   if (config.CHAT_MODE === 'orchestrator') return true;
-  // auto: orchestrator only if anthropic is the resolved provider.
-  return resolveChatProvider(config) === 'anthropic';
+  // auto: orchestrator when provider is SDK-eligible (anthropic OR bedrock).
+  const provider = resolveChatProvider(config);
+  return provider === 'anthropic' || provider === 'bedrock';
 }
 
 /**
