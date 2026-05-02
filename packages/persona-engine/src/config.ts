@@ -96,6 +96,25 @@ const ConfigSchema = z.object({
    *  tradeoff calls for sonnet/haiku. */
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-7'),
 
+  /**
+   * V0.7-A.1 Phase D — chat-mode tool surface routing.
+   *
+   *   `auto` (default)   — Use orchestrator path when LLM_PROVIDER resolves
+   *                        to anthropic (full per-character MCP scope at
+   *                        chat time). Fall back to naive `invokeChat()`
+   *                        for stub/freeside/bedrock providers.
+   *   `orchestrator`     — Force orchestrator path. Errors at runtime if
+   *                        the resolved provider isn't anthropic.
+   *   `naive`            — Force the V0.7-A.0 single-turn path (no MCPs,
+   *                        no tools). Revert hatch when chat-mode tool use
+   *                        regresses voice fidelity or otherwise misbehaves.
+   *
+   * The orchestrator path is what closes the operator's "ChatGPT-natural
+   * tool use" gap (per kickoff 2026-05-01). The naive path is the V0.7-A.0
+   * floor — works on every provider, no tools.
+   */
+  CHAT_MODE: z.enum(['auto', 'orchestrator', 'naive']).default('auto'),
+
   // ─── discord delivery — bot client OR webhook fallback ────────────────
   DISCORD_BOT_TOKEN: z.string().optional(),
   DISCORD_WEBHOOK_URL: z.string().url().optional().or(z.literal('')),

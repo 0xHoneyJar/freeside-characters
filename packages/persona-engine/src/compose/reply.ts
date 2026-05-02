@@ -1,9 +1,9 @@
 /**
- * Reply composer (V0.7-A.0) — slash-command chat-mode pipeline.
+ * Reply composer (V0.7-A.0 + V0.7-A.1 Phase D) — slash-command chat-mode pipeline.
  *
  * Mirror of `composeForCharacter` for conversational replies. The substrate
- * supplies plumbing (ledger snapshot, prompt build, LLM call, chunk split);
- * the character supplies voice via persona.md.
+ * supplies plumbing (ledger snapshot, env context, prompt build, LLM call,
+ * chunk split); the character supplies voice via persona.md.
  *
  * Civic-layer note: this is a SUBSTRATE-level composer. It speaks Discord
  * shape (chunks, character limits) and persona-engine shape (config,
@@ -11,16 +11,33 @@
  * result through `apps/bot/src/discord-interactions/dispatch.ts`.
  *
  * V0.7-A.0 invariants honored:
- *   - No tool calls (mcpServers = {}, allowedTools = [], maxTurns: 1).
  *   - No memory primitive — ledger is in-process per channel only.
  *   - No persistent state — restart loses ledger by design.
  *   - Voice fidelity preserved via persona template + chat-mode override.
+ *
+ * V0.7-A.1 Phase D — chat-mode tool surface (closes the operator's
+ * "ChatGPT-natural tool use" gap):
+ *   - With `CHAT_MODE=orchestrator|auto` and LLM_PROVIDER=anthropic:
+ *     route through `runOrchestratorQuery` with the character's declared
+ *     `mcps` scope. Per-character MCP isolation: ruggy gets score+codex+
+ *     emojis+rosenzu+freeside_auth; satoshi gets codex+imagegen.
+ *   - With `CHAT_MODE=naive` OR a non-anthropic provider: keep the V0.7-A.0
+ *     `invokeChat()` single-turn path (no MCPs, no tools).
+ *   - The environment-context block (`compose/environment.ts`) is built
+ *     and substituted into the prompt pair regardless of routing — same
+ *     `## Environment` grounding lands either way.
  */
 
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
+import type { ZoneId } from '../score/types.ts';
 import { buildReplyPromptPair } from '../persona/loader.ts';
+import {
+  buildEnvironmentContext,
+  type RecentMessage,
+} from './environment.ts';
+import { runOrchestratorQuery } from '../orchestrator/index.ts';
 import {
   appendToLedger,
   getLedgerSnapshot,
@@ -34,6 +51,20 @@ export interface ReplyComposeArgs {
   prompt: string;
   /** Discord channel id where the slash was invoked. */
   channelId: string;
+  /**
+   * V0.7-A.1: codex zone resolved by the caller (apps/bot dispatcher
+   * resolves channelId→zone via `getZoneForChannel`). Undefined when the
+   * channel is outside the four codex-mapped zones (DM, etc.) — the
+   * environment block falls back to the "outside the codex-mapped zones"
+   * line and skips the room-read line.
+   */
+  zone?: ZoneId;
+  /**
+   * V0.7-A.1: other characters loaded into the same Discord shell process
+   * (caller's CHARACTERS env split, minus self). Surfaces as the "Other
+   * characters present" line when non-empty.
+   */
+  otherCharactersHere?: string[];
   /** Discord user id of the invoker (stored in ledger for transcript). */
   authorId: string;
   /** Discord username (or display name) of the invoker. */
@@ -68,6 +99,21 @@ export async function composeReply(
   const historyDepth = args.options?.historyDepth ?? DEFAULT_HISTORY_DEPTH;
   const history = getLedgerSnapshot(args.channelId, historyDepth);
 
+  // V0.7-A.1 Phase D: build the environment-context block from the resolved
+  // zone + ledger snapshot. Empty string when nothing useful to say (no
+  // zone + no tool guidance + no presence) — substitution is a no-op.
+  const recentMessages: RecentMessage[] = history.map((h) => ({
+    authorUsername: h.authorUsername,
+    content: h.content,
+    timestampMs: h.timestamp ? Date.parse(h.timestamp) : undefined,
+  }));
+  const environmentContext = buildEnvironmentContext({
+    character: args.character,
+    zone: args.zone,
+    recentMessages,
+    otherCharactersHere: args.otherCharactersHere,
+  });
+
   const { systemPrompt, userMessage } = buildReplyPromptPair({
     character: args.character,
     prompt: args.prompt,
@@ -77,13 +123,17 @@ export async function composeReply(
       authorUsername: h.authorUsername,
       content: h.content,
     })),
+    environmentContext,
   });
 
-  const replyText = await invokeChat(args.config, {
+  // Routing decision: orchestrator (full MCP scope) vs naive (V0.7-A.0
+  // single-turn). Decided per call by `CHAT_MODE` + provider resolution.
+  const replyText = (await routeChatLLM(args.config, {
     character: args.character,
     systemPrompt,
     userMessage,
-  });
+    zone: args.zone,
+  })) ?? '';
 
   if (!replyText || replyText.trim().length === 0) {
     return null;
@@ -126,13 +176,49 @@ export async function composeReply(
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Chat-mode LLM invocation (single-turn, no MCPs, no tools)
+// Chat-mode LLM routing (V0.7-A.1 Phase D)
 // ──────────────────────────────────────────────────────────────────────
 
 interface ChatInvokeArgs {
   character: CharacterConfig;
   systemPrompt: string;
   userMessage: string;
+  /** Optional resolved zone — passed through to orchestrator for telemetry. */
+  zone?: ZoneId;
+}
+
+/**
+ * Decide whether chat-mode flows through the orchestrator (with the
+ * character's per-character MCP scope) or the naive `invokeChat()` path.
+ *
+ *   CHAT_MODE=naive          — always naive
+ *   CHAT_MODE=orchestrator   — always orchestrator (errors if non-anthropic)
+ *   CHAT_MODE=auto (default) — orchestrator when provider is anthropic;
+ *                              naive otherwise
+ */
+function shouldUseOrchestrator(config: Config): boolean {
+  if (config.CHAT_MODE === 'naive') return false;
+  if (config.CHAT_MODE === 'orchestrator') return true;
+  // auto: orchestrator only if anthropic is the resolved provider.
+  return resolveChatProvider(config) === 'anthropic';
+}
+
+/**
+ * Top-level chat-mode router. Branches between orchestrator (full per-
+ * character MCP scope, multi-turn) and naive (single-turn, no tools).
+ */
+async function routeChatLLM(config: Config, req: ChatInvokeArgs): Promise<string> {
+  if (shouldUseOrchestrator(config)) {
+    const result = await runOrchestratorQuery(config, {
+      character: req.character,
+      systemPrompt: req.systemPrompt,
+      userMessage: req.userMessage,
+      zone: req.zone,
+      postType: 'chat',
+    });
+    return result.text;
+  }
+  return invokeChat(config, req);
 }
 
 async function invokeChat(config: Config, req: ChatInvokeArgs): Promise<string> {

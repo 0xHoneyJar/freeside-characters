@@ -41,12 +41,25 @@ import { isImagegenConfigured } from './imagegen/bedrock-client.ts';
 // preserved at ./cabal/gygax.ts as a building block for a future /cabal
 // command (post-design audience reception tester). No longer imported here.
 
+/**
+ * V0.7-A.1 Phase D: chat-mode requests share the same SDK surface as
+ * digest. The orchestrator doesn't read `zone` or `postType` (the prompt
+ * pair already carries everything the LLM sees), but they're useful caller
+ * metadata for telemetry and per-character MCP scoping. Both fields are
+ * optional now so chat-mode callers without a resolved zone (DM, non-zone
+ * channel) can pass through.
+ */
+export type OrchestratorPostType = PostType | 'chat';
+
 export interface OrchestratorRequest {
   character: CharacterConfig;
   systemPrompt: string;
   userMessage: string;
-  zone: ZoneId;
-  postType: PostType;
+  /** Required for digest path (caller's zone-of-fire). Optional for chat
+   *  path — undefined when invoked from a DM or non-codex-mapped channel. */
+  zone?: ZoneId;
+  /** Required for digest (caller's PostType). Optional for chat ('chat'). */
+  postType?: OrchestratorPostType;
 }
 
 export interface OrchestratorResponse {

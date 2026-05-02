@@ -38,7 +38,8 @@ import {
   type SlashCommandHandler,
 } from '@freeside-characters/persona-engine';
 import { invokeStability } from '@freeside-characters/persona-engine/orchestrator/imagegen';
-import { resolveSlashCommands, resolveSlashCommandTarget } from '../character-loader.ts';
+import { resolveSlashCommands, resolveSlashCommandTarget, selectedCharacterIds } from '../character-loader.ts';
+import { getZoneForChannel } from '../lib/channel-zone-map.ts';
 import {
   InteractionResponseType,
   InteractionType,
@@ -229,6 +230,13 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
   );
 
   try {
+    // V0.7-A.1 Phase D: resolve channelId → zone before invoking the
+    // composer so the substrate's environment-context block can ground the
+    // LLM in WHERE it is. Zone is undefined for DMs and non-codex-mapped
+    // channels — composeReply degrades gracefully.
+    const zone = getZoneForChannel(config, channelId);
+    const otherCharactersHere = selectedCharacterIds().filter((id) => id !== character.id);
+
     // Wrap composeReply in a 14m30s timeout so we never PATCH against an
     // expired interaction token (404 → silent freeze in Discord UI).
     const result = await Promise.race([
@@ -237,6 +245,8 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
         character,
         prompt,
         channelId,
+        zone,
+        otherCharactersHere,
         authorId: invoker.id,
         authorUsername: invoker.username,
       }),

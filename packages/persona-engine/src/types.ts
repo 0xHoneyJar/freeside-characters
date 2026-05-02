@@ -105,9 +105,11 @@ export interface CharacterConfig {
    *   satoshi = ['codex', 'imagegen']
    *             // mibera-agent · cross-realms · no score lookups
    *
-   * Affects ONLY the digest path (runOrchestratorQuery). Chat-mode
-   * replies (composeReply) bypass MCPs entirely by design and are
-   * unaffected by this field.
+   * V0.7-A.1 Phase D: also affects chat-mode (composeReply) when
+   * `CHAT_MODE=orchestrator` or `CHAT_MODE=auto + LLM_PROVIDER=anthropic`.
+   * Chat-mode used to bypass MCPs entirely (V0.7-A.0); now per-character
+   * scope flows through the orchestrator on the chat path too. Naive
+   * fallback (`CHAT_MODE=naive` or non-anthropic provider) is unaffected.
    */
   mcps?: string[];
 
