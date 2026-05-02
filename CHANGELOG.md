@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0] — 2026-05-01 — chat-route + tool_uses + MCP-registration telemetry · session-09 DIG
+
+<details open>
+<summary>session-09 deep DIG · the diagnosis tree</summary>
+
+### Added
+
+- **observability**: chat-route + tool_uses + MCP-registration telemetry · session-09 DIG (#10)
+
+_Source: PR #10_
+
+
 ## [0.9.0] — 2026-05-01 — environment substrate (Phases B-E · cycle-001)
 
 
