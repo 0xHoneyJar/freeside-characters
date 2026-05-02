@@ -89,7 +89,7 @@ export interface OrchestratorRequest {
 export interface OrchestratorResponse {
   text: string;
   meta?: Record<string, unknown>;
-  /** Tool calls observed during the run (most recent first never — append order). */
+  /** Tool calls observed during the run, in stream order (oldest first). */
   toolUses?: ToolUseEvent[];
 }
 

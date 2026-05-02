@@ -389,16 +389,22 @@ export function buildPromptPair(args: BuildPromptArgs): {
   systemPrompt: string;
   userMessage: string;
 } {
-  // V0.7-A.2: `buildPromptPair` is a shim — it accepts any PostType value
-  // for backward compat. If a caller passes 'reply', that's a misuse
-  // (chat goes through buildReplyPromptPair); we coerce to 'digest' as a
-  // safety fallback rather than throwing. Type discipline is the right
-  // long-term fix (CronPostType narrowing); deferred to V0.7-A.3.
-  const cronPostType: Exclude<PostType, 'reply'> =
-    args.postType === 'reply' ? 'digest' : args.postType;
+  // V0.7-A.2: `buildPromptPair` is the cron-shaped shim. If a caller passes
+  // postType='reply' here, that's a misuse — chat goes through
+  // `buildReplyPromptPair` (or directly via `buildPrompt({kind:'reply'})`).
+  // Throw with a clear migration hint rather than silently producing a
+  // mis-shaped prompt. Bridgebuilder F1 (PR #8 review): silent coercion
+  // hides bugs; loud failure surfaces them.
+  if (args.postType === 'reply') {
+    throw new Error(
+      "buildPromptPair: postType='reply' is invalid for the cron shim. " +
+        'Use `buildReplyPromptPair` for chat-mode prompts, or migrate to ' +
+        '`buildPrompt({kind: "reply", ...})` directly.',
+    );
+  }
   return buildPrompt({
     character: args.character,
-    shape: { kind: 'cron', zoneId: args.zoneId, postType: cronPostType },
+    shape: { kind: 'cron', zoneId: args.zoneId, postType: args.postType },
     environmentContext: args.environmentContext,
   });
 }

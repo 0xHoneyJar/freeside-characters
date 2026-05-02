@@ -174,11 +174,11 @@ export function postTypeFitsData(postType: PostType, digest: ZoneDigest): boolea
       return popInFits(digest);
     case 'reply':
       // V0.7-A.2: 'reply' is on-demand (slash-command), not cron-driven.
-      // It doesn't consume a ZoneDigest — caller error if it reaches here.
-      // Return true so existing cron-only callers don't accidentally skip
-      // a reply that arrived via mis-typing; the actual reply path
-      // doesn't call this function.
-      return true;
+      // It doesn't consume a ZoneDigest. If a cron scheduler asks "does
+      // this fit?" with postType='reply', that's misclassification — the
+      // schedule shouldn't broadcast a reply-shaped prompt to a zone.
+      // Bridgebuilder F2 (PR #8 review): fail-closed beats fail-open here.
+      return false;
   }
 }
 

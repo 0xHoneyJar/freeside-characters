@@ -31,9 +31,20 @@ import { composeReply } from './reply.ts';
 
 /**
  * Discriminated invocation union — what kind of utterance this is. Each
- * variant carries the metadata its downstream primitive needs (zone +
- * postType for cron; channel + ephemeral for slash-reply; future
- * variants for V0.7-A.3+ message-create / DM / etc.).
+ * variant carries the metadata its downstream primitive needs.
+ *
+ * Note (per bridgebuilder F5 · PR #8 review): the three `cron-*` variants
+ * currently dispatch to the same primitive (`composeZonePost`). The
+ * distinction is RESERVED for future divergence — telemetry slicing,
+ * cron-specific delivery routing, per-cadence retry policies, etc. Until
+ * that lands, callers should pick the variant that semantically matches
+ * the cadence (digest/pop-in/weaver) so consumers can act on it later
+ * without changing the call sites.
+ *
+ * Variant-specific REQUIRED fields live on the variant itself, not in
+ * `ComposeArgs` — TypeScript enforces correctness at the call site
+ * (bridgebuilder F8): cron variants carry `zone` + `postType`; slash-reply
+ * carries `channelId` + `ephemeral` + `prompt` + `invoker`.
  */
 export type Invocation =
   | {
@@ -55,6 +66,10 @@ export type Invocation =
       type: 'slash-reply';
       channelId: string;
       ephemeral: boolean;
+      /** The user's prompt text (the slash-command `prompt:` option). */
+      prompt: string;
+      /** Discord invoker — used for ledger entries on the reply path. */
+      invoker: { id: string; username: string };
     };
 
 export interface ComposeEnvironment {
@@ -73,14 +88,6 @@ export interface ComposeArgs {
   config: Config;
   character: CharacterConfig;
   environment: ComposeEnvironment;
-  /**
-   * The "user message" payload. For cron paths this is unused (the
-   * downstream primitive fetches its own ZoneDigest); for slash-reply
-   * this is the user's prompt text.
-   */
-  prompt?: string;
-  /** Slash-reply caller metadata — used for ledger entries. */
-  invoker?: { id: string; username: string };
   options?: {
     /** Slash-reply: how many recent ledger entries to feed the prompt. */
     historyDepth?: number;
@@ -134,20 +141,18 @@ export async function compose(args: ComposeArgs): Promise<ComposeResult> {
       return { kind: 'cron', result };
     }
     case 'slash-reply': {
-      if (!args.prompt || !args.invoker) {
-        throw new Error(
-          'compose: slash-reply invocation requires `prompt` and `invoker` fields',
-        );
-      }
+      // V0.7-A.2 (bridgebuilder F8): prompt + invoker live on the
+      // Invocation variant — TypeScript enforces them at the call site
+      // rather than runtime-throwing if they're missing.
       const result = await composeReply({
         config: args.config,
         character: args.character,
-        prompt: args.prompt,
+        prompt: invocation.prompt,
         channelId: invocation.channelId,
         zone: args.environment.zone,
         otherCharactersHere: args.environment.otherCharactersHere,
-        authorId: args.invoker.id,
-        authorUsername: args.invoker.username,
+        authorId: invocation.invoker.id,
+        authorUsername: invocation.invoker.username,
         onToolUse: args.onToolUse,
         options: {
           historyDepth: args.options?.historyDepth,

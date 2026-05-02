@@ -248,9 +248,15 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     // status is naturally replaced by the final artifact in either case.
     //
     // Fire-and-forget: PATCH errors are logged but don't block the round-trip.
-    // We coalesce by tool ID so multiple identical PATCHes within one tool's
-    // lifecycle (rare but possible if the SDK re-emits) don't stack.
+    // We coalesce by tool ID (SDK re-emits guard) AND by minimum interval
+    // (bridgebuilder F4 PR #8 — rapid tool chains spamming PATCHes).
+    // 500ms gate skips middle updates in rapid bursts; the LAST tool in
+    // a burst still gets a PATCH because composeReply's resolution always
+    // PATCHes the final reply (or webhook + DELETE), so the skipped
+    // intermediate is replaced naturally.
     const seenToolIds = new Set<string>();
+    const MIN_TOOL_PATCH_INTERVAL_MS = 500;
+    let lastToolPatchMs = 0;
     const onToolUse = (event: ToolUseEvent): void => {
       if (seenToolIds.has(event.id)) return;
       seenToolIds.add(event.id);
@@ -258,6 +264,13 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
       console.log(
         `interactions: ${character.id}/chat tool_use · ${event.name} · status="${status}"`,
       );
+      const now = Date.now();
+      if (now - lastToolPatchMs < MIN_TOOL_PATCH_INTERVAL_MS) {
+        // Recent PATCH within the gate — skip this update; the next
+        // distinct tool (or the final reply) will take its place.
+        return;
+      }
+      lastToolPatchMs = now;
       patchOriginal(interaction, ephemeral, status).catch((err) => {
         console.warn(
           `interactions: ${character.id}/chat onToolUse PATCH failed (best-effort):`,
