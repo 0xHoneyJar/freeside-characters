@@ -1,4 +1,8 @@
+@.claude/loa/CLAUDE.loa.md
+
 # freeside-characters
+
+> Loa framework loads first via the `@` import above; project-specific guidance below takes precedence per Loa's user-overrides convention.
 
 Participation-agent umbrella for the Honey Jar ecosystem. Substrate
 (`packages/persona-engine`) handles cron, MCP orchestration, Discord
