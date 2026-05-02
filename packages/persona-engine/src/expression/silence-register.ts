@@ -68,10 +68,23 @@ const TEMPLATES_RAW: Record<string, string[]> = {
 /**
  * Decoded + validated default registry. Module-load decoding surfaces
  * any future schema/data drift loud, before the composer touches it.
+ *
+ * Per F3 (PR #19 bridgebuilder review): the contextual error prefix names
+ * THIS module in the bot-startup failure path. The shape Schema enforces
+ * (`Record<characterId, NonEmptyArray<string>>`) means an empty array on
+ * a character row will throw at module load — the legible error tells
+ * operators "every character row needs ≥1 template."
  */
-export const DEFAULT_SILENCE_REGISTRY: SilenceRegistry = Schema.decodeUnknownSync(
-  SilenceRegistrySchema,
-)(TEMPLATES_RAW);
+export const DEFAULT_SILENCE_REGISTRY: SilenceRegistry = (() => {
+  try {
+    return Schema.decodeUnknownSync(SilenceRegistrySchema)(TEMPLATES_RAW);
+  } catch (err) {
+    throw new Error(
+      `silence-register: invalid TEMPLATES_RAW shape — every character row must have ≥1 non-empty template — ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+})();
 
 // ─── Flat-window detection (deterministic) ──────────────────────────
 
@@ -91,11 +104,18 @@ export const FLAT_WINDOW_EVENT_THRESHOLD = 100;
  * Liberal "AND" — even one signal (a single climber, a single spotlight,
  * a high event count) prevents the flat-window classification. Substrate
  * stays out of the composer's way unless ALL three signals are absent.
+ *
+ * Defensive null-handling on `rank_changes` per F6 (PR #19 bridgebuilder
+ * review): the score-mcp schema makes the field required across v1/v2
+ * shapes today, but a missing/malformed payload from a future schema
+ * version (or a partial fixture) shouldn't crash the compose path —
+ * "no rank_changes shape" reads as "no climbers signal" which is the
+ * flat-leaning classification.
  */
 export function isFlatWindow(rawStats: RawStats): boolean {
   const events = getWindowEventCount(rawStats);
   if (events >= FLAT_WINDOW_EVENT_THRESHOLD) return false;
-  if (rawStats.rank_changes.climbed.length > 0) return false;
+  if ((rawStats.rank_changes?.climbed?.length ?? 0) > 0) return false;
   if (rawStats.spotlight !== null) return false;
   return true;
 }

@@ -26,10 +26,12 @@ import type { EmojiMood } from "./registry.ts";
 
 const KIND_LITERALS = ["mibera", "ruggy"] as const;
 
-/** Const tuple for Schema.Literal — kept here as the local source of
- * truth for the mood vocabulary. Parity with `EmojiMood` (registry.ts)
- * is enforced by the type assertion below. */
-const MOOD_LITERALS = [
+/** Const tuple for Schema.Literal — single source of truth for the mood
+ * vocabulary across the substrate. Exported (V0.12) so the expression
+ * layer's tool-mood-map.ts can build its `Schema.Literal(...EMOJI_MOOD_LITERALS)`
+ * against the same tuple instead of redeclaring 27 strings. Parity with
+ * `EmojiMood` (registry.ts) is enforced by the type assertion below. */
+export const EMOJI_MOOD_LITERALS = [
   "cute",
   "shocked",
   "love",
@@ -60,12 +62,12 @@ const MOOD_LITERALS = [
 ] as const;
 
 // Compile-time parity: every EmojiMood from registry.ts must appear in
-// MOOD_LITERALS, and every MOOD_LITERALS entry must satisfy EmojiMood.
+// EMOJI_MOOD_LITERALS, and every EMOJI_MOOD_LITERALS entry must satisfy EmojiMood.
 // Either-direction drift fails compilation.
-type _MoodParityForward = (typeof MOOD_LITERALS)[number] extends EmojiMood
+type _MoodParityForward = (typeof EMOJI_MOOD_LITERALS)[number] extends EmojiMood
   ? true
   : never;
-type _MoodParityReverse = EmojiMood extends (typeof MOOD_LITERALS)[number]
+type _MoodParityReverse = EmojiMood extends (typeof EMOJI_MOOD_LITERALS)[number]
   ? true
   : never;
 const _moodParityForward: _MoodParityForward = true;
@@ -76,12 +78,12 @@ void _moodParityReverse;
 export const KindSchema = Schema.Literal(...KIND_LITERALS).annotations({
   description: "mibera or ruggy emoji namespace",
 });
-export const MoodSchema = Schema.Literal(...MOOD_LITERALS).annotations({
+export const MoodSchema = Schema.Literal(...EMOJI_MOOD_LITERALS).annotations({
   description: "register tag for matching expressive intent",
 });
 
 const KindZod = z.enum(KIND_LITERALS);
-const MoodZod = z.enum(MOOD_LITERALS);
+const MoodZod = z.enum(EMOJI_MOOD_LITERALS);
 
 // ─── Shared output projection (renderEmoji + entry view) ──────────────
 

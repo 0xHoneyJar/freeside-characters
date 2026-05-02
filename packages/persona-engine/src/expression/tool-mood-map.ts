@@ -26,6 +26,7 @@
 
 import { Schema } from "effect";
 import type { EmojiMood } from "../orchestrator/emojis/registry.ts";
+import { EMOJI_MOOD_LITERALS } from "../orchestrator/emojis/schema.ts";
 
 // ─── Schema ──────────────────────────────────────────────────────────
 
@@ -45,37 +46,11 @@ const ToolMoodMappingSchema = Schema.Struct({
   prefix: Schema.String.annotations({
     description: "tool-name prefix (e.g. 'mcp__score__') — matched as String.startsWith()",
   }),
-  moods: Schema.Array(
-    Schema.Literal(
-      "cute",
-      "shocked",
-      "love",
-      "celebrate",
-      "snark",
-      "cry",
-      "confused",
-      "angry",
-      "cool",
-      "dazed",
-      "shy",
-      "wave",
-      "peace",
-      "hands-up",
-      "flex",
-      "mining",
-      "dapper",
-      "honey",
-      "psychedelic",
-      "concerned",
-      "shrug",
-      "pls",
-      "nope",
-      "eyes",
-      "noted",
-      "rave",
-      "meme",
-    ),
-  ).annotations({
+  // Per F4 (PR #19 bridgebuilder review): the mood vocabulary is owned
+  // by `orchestrator/emojis/schema.ts`. Importing the const tuple makes
+  // this module's schema a structural consumer of that source — adding/
+  // removing a registry mood updates this validator in lockstep.
+  moods: Schema.Array(Schema.Literal(...EMOJI_MOOD_LITERALS)).annotations({
     description: "register moods to pick from · empty array = skip patch",
   }),
   rationale: Schema.String.annotations({
@@ -136,9 +111,24 @@ const DEFAULT_MAP_RAW: readonly ToolMoodMapping[] = [
 /**
  * Decoded + validated default map. Decoding at module load surfaces any
  * future schema/data drift loud, before the dispatch path touches it.
+ *
+ * Per F3 (PR #19 bridgebuilder review): wrapping the decode with a
+ * contextual prefix gives operators a legible bot-startup error when a
+ * future contributor breaks the static config. Effect's default
+ * decode-error message names the field shape; the prefix names the
+ * module so the operator knows where to look.
  */
 export const DEFAULT_TOOL_MOOD_MAP: readonly ToolMoodMapping[] = DEFAULT_MAP_RAW.map(
-  (entry) => Schema.decodeUnknownSync(ToolMoodMappingSchema)(entry),
+  (entry, idx) => {
+    try {
+      return Schema.decodeUnknownSync(ToolMoodMappingSchema)(entry);
+    } catch (err) {
+      throw new Error(
+        `tool-mood-map: invalid DEFAULT_MAP_RAW entry at index ${idx} (prefix="${entry.prefix}") — ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
+    }
+  },
 );
 
 // ─── Hot-path lookup ─────────────────────────────────────────────────

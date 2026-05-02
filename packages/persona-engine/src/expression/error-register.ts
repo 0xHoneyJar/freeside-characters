@@ -101,10 +101,22 @@ const TEMPLATES_RAW: Record<string, Record<ErrorClass, string>> = {
 /**
  * Decoded + validated default registry. Decoding at module load surfaces
  * any future schema/data drift loud, before the dispatch path touches it.
+ *
+ * Per F3 (PR #19 bridgebuilder review): the contextual error prefix makes
+ * a bot-startup failure name THIS module so operators know which static
+ * config tripped — Effect's default message names field shape but not
+ * authoring location.
  */
-export const DEFAULT_ERROR_REGISTRY: ErrorRegistry = Schema.decodeUnknownSync(
-  ErrorRegistrySchema,
-)(TEMPLATES_RAW);
+export const DEFAULT_ERROR_REGISTRY: ErrorRegistry = (() => {
+  try {
+    return Schema.decodeUnknownSync(ErrorRegistrySchema)(TEMPLATES_RAW);
+  } catch (err) {
+    throw new Error(
+      `error-register: invalid TEMPLATES_RAW shape — every character row must be a non-empty record of {[ErrorClass]: non-empty string} — ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+})();
 
 // ─── Hot-path lookup ─────────────────────────────────────────────────
 
