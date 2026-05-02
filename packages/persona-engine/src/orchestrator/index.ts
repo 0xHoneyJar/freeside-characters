@@ -241,6 +241,16 @@ function resolveOrchestratorBackend(config: Config): SdkBackend {
         `orchestrator: LLM_PROVIDER='${config.LLM_PROVIDER}' is not SDK-eligible. ` +
           `Use the invokeChat shim in compose/reply.ts for stub/freeside paths.`,
       );
+    default: {
+      // Bridgebuilder F1 (PR #11) · exhaustiveness guard. If LLM_PROVIDER
+      // ever widens (e.g., adds 'vertex' or 'foundry') without a matching
+      // case, this assertion fails at compile time so the issue is loud.
+      const _exhaustive: never = config.LLM_PROVIDER;
+      throw new Error(
+        `orchestrator: unhandled LLM_PROVIDER='${_exhaustive}'. ` +
+          `Add a case to resolveOrchestratorBackend.`,
+      );
+    }
   }
 }
 
@@ -298,9 +308,12 @@ function buildSdkEnv(config: Config, backend: SdkBackend): Record<string, string
       // shape) instead of AWS_BEARER_TOKEN_BEDROCK (Loa PR #662 shape).
       env.AWS_BEARER_TOKEN_BEDROCK = config.BEDROCK_API_KEY;
     }
-    // Explicitly UNSET ANTHROPIC_API_KEY in the subprocess so the SDK
-    // doesn't accidentally route firstParty when bedrock is intended.
-    env.ANTHROPIC_API_KEY = undefined;
+    // Explicitly DELETE ANTHROPIC_API_KEY from the subprocess env so the
+    // SDK doesn't accidentally route firstParty when bedrock is intended.
+    // Bridgebuilder F3 (PR #11): setting to `undefined` is unreliable —
+    // Node's child_process may inherit from parent. `delete` is the safe
+    // pattern for env-var removal.
+    delete env.ANTHROPIC_API_KEY;
   } else {
     env.ANTHROPIC_API_KEY = config.ANTHROPIC_API_KEY!;
   }
