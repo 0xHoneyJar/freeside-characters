@@ -216,9 +216,27 @@ function shouldUseOrchestrator(config: Config): boolean {
 /**
  * Top-level chat-mode router. Branches between orchestrator (full per-
  * character MCP scope, multi-turn) and naive (single-turn, no tools).
+ *
+ * V0.10.2: chat-route telemetry per session-09 codex-rescue recommendation
+ * (`grimoires/loa/specs/kickoff-tool-call-faking-investigation-2026-05-02.md`).
+ * One log line per chat surfaces (a) which path we resolved to, (b) the
+ * provider resolution, (c) the character's `mcps` scope. If `useOrchestrator`
+ * is `false` in production, the LLM is faking tool calls because the SDK has
+ * no tools wired (naive path). That confirms H2 (provider routing) — the
+ * top-priority hypothesis post codex review.
  */
 async function routeChatLLM(config: Config, req: ChatInvokeArgs): Promise<string> {
-  if (shouldUseOrchestrator(config)) {
+  const useOrchestrator = shouldUseOrchestrator(config);
+  console.warn('[chat-route]', {
+    character: req.character.id,
+    chatMode: config.CHAT_MODE,
+    llmProvider: config.LLM_PROVIDER,
+    resolvedProvider: resolveChatProvider(config),
+    useOrchestrator,
+    mcps: req.character.mcps,
+  });
+
+  if (useOrchestrator) {
     const result = await runOrchestratorQuery(config, {
       character: req.character,
       systemPrompt: req.systemPrompt,

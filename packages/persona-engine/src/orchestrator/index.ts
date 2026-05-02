@@ -161,6 +161,13 @@ function buildMcpServers(config: Config): Record<string, McpServerConfig> {
     servers.imagegen = createImagegenServer(config);
   }
 
+  // V0.10.2 telemetry (session-09 codex-rescue recommendation): surface
+  // which MCP servers actually registered so operators can correlate
+  // chat-route logs with available tools. If `score` or `codex` is missing
+  // here despite character.mcps requesting them, the env vars (MCP_KEY,
+  // CODEX_MCP_URL) are unset in production — H4 from the kickoff brief.
+  const registeredNames = Object.keys(servers).sort();
+  console.log(`orchestrator: registered MCP servers=[${registeredNames.join(',')}]`);
   return servers;
 }
 

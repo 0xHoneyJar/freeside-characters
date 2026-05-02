@@ -85,15 +85,17 @@ The 'dontAsk' mode explicitly denies if not pre-approved. The `allowedTools: 'mc
 
 ## Hypothesis space (with prior probability per evidence)
 
-| H | hypothesis | prior | discriminator |
-|---|---|---|---|
-| H1 | `permissionMode: 'dontAsk'` is denying MCP tool calls because `allowedTools` glob patterns don't pre-approve MCP-namespaced tools at the SDK layer | **0.55** | apply ruggy-v2's `allowDangerouslySkipPermissions: true` pattern; if `tool_uses[]` populates post-deploy, H1 confirmed |
-| H2 | Operator deployment has `LLM_PROVIDER=auto` resolving to bedrock (V0.8.0 satoshi-bedrock work) → `CHAT_MODE=auto` falls through to NAIVE path → no tools wired (bridgebuilder F11 prediction from PR #8) | **0.25** | check operator's deployment env; force `LLM_PROVIDER=anthropic` + `CHAT_MODE=orchestrator`; if tools fire, H2 confirmed |
-| H3 | Persona's "REWRITE ARCHITECTURE" / "COMPOSE ARCHITECTURE" section with explicit JSON tool examples is so concrete that the LLM mirrors the format as text REGARDLESS of SDK wiring (the v0.10.1 scope-note didn't fully suppress) | **0.10** | move architecture section INSIDE per-PostType cron fragments (not in global system prompt); if chat path no longer sees the JSON examples, JSON faking should stop |
-| H4 | MCP server registration is broken at boot — `buildMcpServers(config)` returns empty for ruggy's mcps despite env vars set | **0.05** | add boot-time MCP server registration logging; verify ruggy's allowedTools includes expected tool patterns |
-| H5 | The SDK's `query()` is being invoked correctly but failing silently (auth error, network error) and the orchestrator's loop completes without firing any assistant.tool_use blocks | **0.05** | add stderr logging at debug level; check trajectory for SDK error subtypes |
+> **Updated post codex-rescue review (2026-05-02 09:55)**: codex flipped the priors. SDK options (H1) are likely correct — `sdk.d.ts:1185` says `allowedTools` are "auto-allowed without prompting" and `sdk.d.ts:1471` says `'dontAsk'` means "deny if not pre-approved." So `dontAsk + allowedTools` IS the intended pre-approval combination. Provider routing (H2) is now the most likely culprit per codex's evidence-grounded analysis.
 
-H1 + H2 are not mutually exclusive. Both could be true.
+| H | hypothesis | prior (initial) | prior (post-codex) | discriminator |
+|---|---|---|---|---|
+| **H2** | **Operator deployment resolves provider to non-anthropic** (LLM_PROVIDER=auto + Bedrock key set, OR explicit bedrock); `CHAT_MODE=auto` falls through to NAIVE path → no tools wired; LLM mirrors persona JSON examples as text (bridgebuilder F11 prediction from PR #8 fulfilled) | 0.25 | **0.55** | add chat-route log at `compose/reply.ts:220` showing resolved provider + useOrchestrator decision; if `useOrchestrator=false` in production, H2 confirmed |
+| H3 | Persona's "REWRITE ARCHITECTURE" JSON examples are concrete enough that LLM mirrors them as text regardless of SDK wiring (v0.10.1 scope-note didn't fully suppress) | 0.10 | **0.25** | only diagnose AFTER H2 ruled out · in naive mode, persona contamination is the SECOND-ORDER cause (no SDK override to prevent mirroring); fix is a cleaner persona structure |
+| H1 | `permissionMode: 'dontAsk'` denies MCP tool calls because glob patterns don't pre-approve | 0.55 | **0.10** | codex review: SDK semantics state `dontAsk + allowedTools` IS the intended pre-approval. Glob runtime behavior is unverified but secondary. Only test if H2 ruled out and orchestrator IS active. |
+| H4 | MCP server registration broken at boot | 0.05 | **0.05** | add boot-time logging of registered server names |
+| H5 | SDK silent failure (auth/network/config) | 0.05 | **0.05** | check stderr at debug level for SDK error subtypes |
+
+H2 + H3 likely co-occur: if naive path is active, persona JSON contamination is what we observe. Fixing H2 (force orchestrator path) should incidentally suppress H3 because the SDK actually has tools wired.
 
 ---
 
@@ -125,36 +127,45 @@ H1 + H2 are not mutually exclusive. Both could be true.
 
 ---
 
-## Proposed fix (Alexander craft lens · prompt-as-material parallel · code-as-material here)
+## Proposed fix (post-codex pivot · TELEMETRY FIRST)
 
-### The minimum-viable fix (H1)
+Per codex-rescue: ship the diagnostic FIRST, fix-second. Don't shotgun changes; surface the actual decision path so the next dev-guild test reveals which hypothesis is true.
+
+### Step 1: telemetry (this commit · v0.10.2)
 
 ```ts
-// packages/persona-engine/src/orchestrator/index.ts:252-281
-const options: Options = {
-  systemPrompt: req.systemPrompt,
-  model: config.ANTHROPIC_MODEL,
-  mcpServers,
-  allowedTools,
-- permissionMode: 'dontAsk',
-+ // V0.10.2: ruggy-v2 pattern · allowDangerouslySkipPermissions: true
-+ // bypasses the permission system entirely. 'dontAsk' was DENYING our MCP
-+ // tool calls because allowedTools glob patterns don't pre-approve at the
-+ // SDK layer (per sdk.d.ts:1805). ruggy-v2 has shipped this pattern in
-+ // production for 6+ months without issue.
-+ allowDangerouslySkipPermissions: true,
-  settingSources: ['project'],
-- tools: [],
-+ // tools: [] removed · ruggy-v2 doesn't pass this; default tool set is
-+ // intentional for skill-loading via settingSources.
-  maxTurns: 12,
-  effort: 'medium',
-  env: buildSdkEnv(config),
-  ...
-};
+// packages/persona-engine/src/compose/reply.ts:220 (immediately before route decision)
+console.warn('[chat-route]', {
+  character: req.character.id,
+  chatMode: config.CHAT_MODE,
+  llmProvider: config.LLM_PROVIDER,
+  resolvedProvider: resolveChatProvider(config),
+  useOrchestrator: shouldUseOrchestrator(config),
+  mcps: req.character.mcps,
+});
+
+// apps/bot/src/discord-interactions/dispatch.ts (post-composeReply success)
+console.log(
+  `interactions: ${character.id}/chat tool_uses=${result.toolUses?.length ?? 0} ` +
+    `names=[${result.toolUses?.map(t => t.name).join(',') ?? ''}] ` +
+    `text_len=${result.content.length} channel=${channelId}`,
+);
+
+// packages/persona-engine/src/orchestrator/index.ts (in buildMcpServers, post-registration)
+const registeredNames = Object.keys(servers);
+console.log(`orchestrator: registered MCP servers=[${registeredNames.join(',')}]`);
 ```
 
-### Telemetry to confirm H1 OR redirect to H2/H3
+### Step 2: fix path depending on telemetry verdict (next commit)
+
+| dev-guild trajectory | hypothesis | next action |
+|---|---|---|
+| `[chat-route] useOrchestrator=false resolvedProvider=bedrock` | **H2** confirmed | Operator-deployment-config: set `LLM_PROVIDER=anthropic` OR `CHAT_MODE=orchestrator` in production env. Code-side: surface a startup warning when chat falls to naive while persona shows tool examples. |
+| `useOrchestrator=true` + `tool_uses=0` + JSON in reply | **H1** or **H3** or **H5** | Try ruggy-v2 SDK options pattern (allowDangerouslySkipPermissions: true) — if that fixes, H1. If still broken, persona structural fix (H3) — wrap REWRITE ARCHITECTURE in cron-only fragment. |
+| `useOrchestrator=true` + `tool_uses=1+` + JSON STILL in reply | impossible per orchestrator code; would mean SDK is returning concatenated text | Investigate SDK message stream handling |
+| `registered MCP servers=[]` (or missing score) | **H4** confirmed | MCP env vars missing in production deployment |
+
+### Verification path
 
 ```ts
 // In dispatch.ts after composeReply resolves

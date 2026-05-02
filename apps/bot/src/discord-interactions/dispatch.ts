@@ -255,11 +255,13 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     // PATCHes the final reply (or webhook + DELETE), so the skipped
     // intermediate is replaced naturally.
     const seenToolIds = new Set<string>();
+    const seenToolNames: string[] = [];
     const MIN_TOOL_PATCH_INTERVAL_MS = 500;
     let lastToolPatchMs = 0;
     const onToolUse = (event: ToolUseEvent): void => {
       if (seenToolIds.has(event.id)) return;
       seenToolIds.add(event.id);
+      seenToolNames.push(event.name);
       const status = toolVerb(event.name);
       console.log(
         `interactions: ${character.id}/chat tool_use · ${event.name} · status="${status}"`,
@@ -311,6 +313,18 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
       await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'empty'));
       return;
     }
+
+    // V0.10.2 telemetry (session-09 codex-rescue): post-compose log
+    // surfaces tool_uses count + names per chat reply. Pairs with
+    // [chat-route] log to confirm orchestrator path actually fired tools.
+    // Together they distinguish H1 (SDK denying) vs H2 (naive path
+    // active) vs H3 (persona contamination) vs H4 (server registration).
+    console.log(
+      `interactions: ${character.id}/chat tool_uses=${seenToolIds.size} ` +
+        `names=[${seenToolNames.join(',')}] ` +
+        `text_len=${result.content.length} ` +
+        `channel=${channelId}`,
+    );
 
     // Delivery routing:
     //   - ephemeral=true   → interaction PATCH (webhooks can't be ephemeral ·
