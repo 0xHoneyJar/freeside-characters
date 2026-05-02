@@ -104,7 +104,7 @@ export interface OrchestratorResponse {
  *   `mcp__rosenzu__furnish_kansei` + `mcp__rosenzu__get_current_district`
  *   before scene-gen.
  */
-function buildMcpServers(config: Config): Record<string, McpServerConfig> {
+export function buildMcpServers(config: Config): Record<string, McpServerConfig> {
   const servers: Record<string, McpServerConfig> = {
     rosenzu: rosenzuServer,
     freeside_auth: freesideAuthServer,

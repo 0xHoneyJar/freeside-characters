@@ -212,7 +212,7 @@ interface ChatInvokeArgs {
  * via inference profile model IDs (per Loa PR #662). This unblocks chat-mode
  * tool calling for the operator's Bedrock-backed Opus 4.7 deployment.
  */
-function shouldUseOrchestrator(config: Config): boolean {
+export function shouldUseOrchestrator(config: Config): boolean {
   if (config.CHAT_MODE === 'naive') return false;
   if (config.CHAT_MODE === 'orchestrator') return true;
   // auto: orchestrator when provider is SDK-eligible (anthropic OR bedrock).
@@ -275,9 +275,9 @@ async function invokeChat(config: Config, req: ChatInvokeArgs): Promise<string> 
   }
 }
 
-type ChatProvider = 'stub' | 'anthropic' | 'freeside' | 'bedrock';
+export type ChatProvider = 'stub' | 'anthropic' | 'freeside' | 'bedrock';
 
-function resolveChatProvider(config: Config): ChatProvider {
+export function resolveChatProvider(config: Config): ChatProvider {
   switch (config.LLM_PROVIDER) {
     case 'stub':
       return 'stub';

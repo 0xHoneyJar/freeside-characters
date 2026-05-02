@@ -60,6 +60,18 @@ export { exemplarStats } from './persona/exemplar-loader.ts';
 export { composeReply, splitForDiscord } from './compose/reply.ts';
 export type { ReplyComposeArgs, ReplyComposeResult } from './compose/reply.ts';
 
+// Chat-mode routing helpers (V0.7-A.4 surface-completeness test surface)
+export { shouldUseOrchestrator, resolveChatProvider } from './compose/reply.ts';
+export type { ChatProvider } from './compose/reply.ts';
+
+// Orchestrator MCP-server registration (V0.7-A.4 surface-completeness)
+export { buildMcpServers, buildAllowedTools } from './orchestrator/index.ts';
+
+// MCP server contracts (V0.7-A.4 — Effect.Schema source of truth · used
+// by surface-completeness + persona-tool-drift tests)
+export { emojisServerContract } from './orchestrator/emojis/schema.ts';
+export type { McpToolContract, McpServerContract } from './orchestrator/_schema/index.ts';
+
 // Unified compose entrypoint (V0.7-A.2 — single dispatcher for cron + chat)
 export { compose } from './compose/index.ts';
 export type {

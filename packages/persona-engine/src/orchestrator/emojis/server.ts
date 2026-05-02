@@ -1,23 +1,33 @@
 /**
- * Emojis — in-bot SDK MCP server (V0.5-D, refined 2026-04-29).
+ * Emojis — in-bot SDK MCP server (V0.7-A.4 contract refactor).
  *
- * Lets ruggy use the THJ guild's mibera + ruggy custom emojis. The LLM
- * can list / search / pick + render the discord-syntax string ready
+ * Lets characters use the THJ guild's mibera + ruggy custom emojis. The
+ * LLM can list / search / pick + render the discord-syntax string ready
  * to drop into prose.
  *
- * Variance: pick_by_mood SHUFFLES results so the model doesn't always
- * grab the same first entry. random_pick gives one random emoji
- * matching loose criteria — for when the LLM wants to express something
- * but doesn't want to deliberate.
+ * V0.7-A.4 (kickoff seed §4.2 worked example):
+ *   - Tool name + description + input shape derive from `./schema.ts`
+ *     contracts (single source of truth · Effect.Schema canonical).
+ *   - SDK Zod registration uses the parity-checked Zod shapes from
+ *     schema.ts (compile-time enforced equivalence with Effect schema).
+ *   - Handler bodies stay here — they touch runtime state
+ *     (recent-used cache, registry filtering, render helpers) that has
+ *     no place in a contract module.
+ *   - The exported `emojisServer` is the SDK instance; the exported
+ *     `emojisServerContract` (schema.ts) is the manifest used by the
+ *     surface-completeness + persona-tool-drift tests.
+ *
+ * Variance: pick_by_mood + random_pick still random-pick from candidate
+ * pools so the model doesn't deliberate on a "best fit" — variance IS
+ * the point. The contract describes shape; the handler describes feel.
  *
  * Use rule (from persona): emojis are EXPRESSION, not decoration.
- * - 0-1 custom emoji per post is the default
- * - DON'T repeat the same emoji across consecutive posts in a channel
- * - Use the ACTUAL Discord name (registry has real names from THJ guild)
+ *   - 0-1 custom emoji per post is the default
+ *   - DON'T repeat the same emoji across consecutive posts in a channel
+ *   - Use the ACTUAL Discord name (registry has real names from THJ guild)
  */
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
-import { z } from 'zod';
 import { readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
@@ -26,10 +36,24 @@ import {
   pickByMood,
   findByName,
   renderEmoji,
-  shuffle,
   type EmojiKind,
   type EmojiMood,
 } from './registry.ts';
+import {
+  listMoodsContract,
+  pickByMoodContract,
+  randomPickContract,
+  markUsedContract,
+  renderByNameContract,
+  listAllContract,
+  listMoodsInputZod,
+  pickByMoodInputZod,
+  randomPickInputZod,
+  markUsedInputZod,
+  renderByNameInputZod,
+  listAllInputZod,
+} from './schema.ts';
+export { emojisServerContract } from './schema.ts';
 
 // ─── recent-used cache ───────────────────────────────────────────────
 // Append-only log of emoji uses per scope (e.g. zone). Survives across
@@ -91,9 +115,6 @@ function ok(value: unknown) {
   };
 }
 
-const KindSchema = z.enum(['mibera', 'ruggy']);
-const MoodSchema = z.enum(ALL_MOODS as [EmojiMood, ...EmojiMood[]]);
-
 function entryToView(e: ReturnType<typeof findByName> & {}) {
   return {
     name: e.name,
@@ -106,133 +127,131 @@ function entryToView(e: ReturnType<typeof findByName> & {}) {
   };
 }
 
+// ─── handlers ────────────────────────────────────────────────────────
+// Exported as a named map so the boundary contract test (§4.3a) can
+// invoke them directly without booting the SDK loop. The SDK tool()
+// registrations below thread the same functions; single source of truth
+// for both runtime and tests.
+//
+// Each handler takes the DECODED tool input (parsed by SDK Zod) and
+// returns the SDK envelope `{ content: [{ type: 'text', text }] }`.
+// Tests JSON.parse the text payload and validate against the output
+// schema declared in `./schema.ts`.
+
+async function handleListMoods() {
+  return ok({ moods: ALL_MOODS });
+}
+
+async function handlePickByMood(args: {
+  mood: EmojiMood;
+  kind?: EmojiKind;
+  scope?: string;
+  exclude_names?: string[];
+}) {
+  const { mood, kind, scope, exclude_names } = args;
+  const autoExclude = recentNames(scope);
+  const manualExclude = new Set(exclude_names ?? []);
+  const matches = pickByMood(mood, kind).filter(
+    (e) => !autoExclude.has(e.name) && !manualExclude.has(e.name),
+  );
+  if (matches.length === 0) {
+    return ok({
+      found: false,
+      mood,
+      kind: kind ?? 'any',
+      scope: scope ?? null,
+      recent_excluded: [...autoExclude],
+      hint: 'No emoji matches the filters; try a different mood or use random_pick',
+    });
+  }
+  const pick = matches[Math.floor(Math.random() * matches.length)]!;
+  return ok({
+    found: true,
+    mood,
+    scope: scope ?? null,
+    recent_excluded: [...autoExclude],
+    pool_size: matches.length,
+    ...entryToView(pick),
+  });
+}
+
+async function handleRandomPick(args: {
+  kind?: EmojiKind;
+  moods?: EmojiMood[];
+  scope?: string;
+  exclude_names?: string[];
+}) {
+  const { kind, moods, scope, exclude_names } = args;
+  const autoExclude = recentNames(scope);
+  const manualExclude = new Set(exclude_names ?? []);
+  const moodSet = moods ? new Set(moods) : null;
+  const pool = EMOJIS.filter(
+    (e) =>
+      !autoExclude.has(e.name) &&
+      !manualExclude.has(e.name) &&
+      (kind ? e.kind === kind : true) &&
+      (moodSet ? e.moods.some((m) => moodSet.has(m)) : true),
+  );
+  if (pool.length === 0) {
+    return ok({
+      found: false,
+      hint: 'No emoji matches the filters',
+      recent_excluded: [...autoExclude],
+    });
+  }
+  const pick = pool[Math.floor(Math.random() * pool.length)]!;
+  return ok({ found: true, scope: scope ?? null, ...entryToView(pick) });
+}
+
+async function handleMarkUsed(args: { name: string; scope: string }) {
+  const { name, scope } = args;
+  const entry = findByName(name);
+  if (!entry) {
+    return ok({ recorded: false, hint: 'Unknown emoji name; did not record' });
+  }
+  appendRecent(scope, name);
+  return ok({ recorded: true, scope, name });
+}
+
+async function handleRenderByName(args: { name: string }) {
+  const { name } = args;
+  const entry = findByName(name);
+  if (!entry) {
+    return ok({
+      found: false,
+      name,
+      hint: 'Unknown emoji name. Call list_moods + pick_by_mood OR random_pick to discover available emojis. Do NOT guess names.',
+    });
+  }
+  return ok({ found: true, ...entryToView(entry) });
+}
+
+async function handleListAll(args: { kind?: EmojiKind }) {
+  const filtered = args.kind ? EMOJIS.filter((e) => e.kind === args.kind) : EMOJIS;
+  return ok({
+    count: filtered.length,
+    emojis: filtered.map(entryToView),
+  });
+}
+
+export const emojisHandlers = {
+  list_moods: handleListMoods,
+  pick_by_mood: handlePickByMood,
+  random_pick: handleRandomPick,
+  mark_used: handleMarkUsed,
+  render_by_name: handleRenderByName,
+  list_all: handleListAll,
+} as const;
+
 export const emojisServer = createSdkMcpServer({
   name: 'emojis',
-  version: '0.2.0',
+  version: '0.3.0',
   tools: [
-    tool(
-      'list_moods',
-      'Lists all available emoji mood tags. Use this first to see what moods are available, then call pick_by_mood to get the actual emojis.',
-      {},
-      async () => {
-        return ok({ moods: ALL_MOODS });
-      },
-    ),
-
-    tool(
-      'pick_by_mood',
-      'Returns ONE random emoji matching a mood. Pass `mood` and optionally narrow by `kind`. Pass `scope` (typically zone name) — server auto-excludes emojis recently used in that scope. Use the returned `render` string verbatim.\n\nIMPORTANT: this returns ONE random pick, not a list. Trust the pick — do not call repeatedly looking for a "better fit". The variance IS the point.\n\nIf you want to browse all candidates instead, call `list_all` with a kind filter.',
-      {
-        mood: MoodSchema.describe('Mood tag to filter by'),
-        kind: KindSchema.optional().describe('Optionally narrow to mibera or ruggy emojis only'),
-        scope: z.string().optional().describe('Scope identifier (typically zone name) for recent-used filtering'),
-        exclude_names: z.array(z.string()).optional().describe('Names to ALSO exclude beyond the auto-recent filter'),
-      },
-      async ({ mood, kind, scope, exclude_names }) => {
-        const autoExclude = recentNames(scope);
-        const manualExclude = new Set(exclude_names ?? []);
-        const matches = pickByMood(mood as EmojiMood, kind as EmojiKind | undefined).filter(
-          (e) => !autoExclude.has(e.name) && !manualExclude.has(e.name),
-        );
-        if (matches.length === 0) {
-          return ok({
-            found: false,
-            mood,
-            kind: kind ?? 'any',
-            scope: scope ?? null,
-            recent_excluded: [...autoExclude],
-            hint: 'No emoji matches the filters; try a different mood or use random_pick',
-          });
-        }
-        const pick = matches[Math.floor(Math.random() * matches.length)]!;
-        return ok({
-          found: true,
-          mood,
-          scope: scope ?? null,
-          recent_excluded: [...autoExclude],
-          pool_size: matches.length,
-          ...entryToView(pick),
-        });
-      },
-    ),
-
-    tool(
-      'random_pick',
-      'Returns ONE random emoji from the catalog. AUTO-EXCLUDES emojis recently used in `scope` (typically zone name). Use this when you want expression but no specific mood — rotates the catalog naturally.',
-      {
-        kind: KindSchema.optional(),
-        moods: z.array(MoodSchema).optional().describe('Optional mood filter — pick from these moods only'),
-        scope: z.string().optional().describe('Scope identifier (typically zone name) for recent-used filtering'),
-        exclude_names: z.array(z.string()).optional(),
-      },
-      async ({ kind, moods, scope, exclude_names }) => {
-        const autoExclude = recentNames(scope);
-        const manualExclude = new Set(exclude_names ?? []);
-        const moodSet = moods ? new Set(moods) : null;
-        const pool = EMOJIS.filter(
-          (e) =>
-            !autoExclude.has(e.name) &&
-            !manualExclude.has(e.name) &&
-            (kind ? e.kind === kind : true) &&
-            (moodSet ? e.moods.some((m) => moodSet.has(m)) : true),
-        );
-        if (pool.length === 0) {
-          return ok({ found: false, hint: 'No emoji matches the filters', recent_excluded: [...autoExclude] });
-        }
-        const pick = pool[Math.floor(Math.random() * pool.length)]!;
-        return ok({ found: true, scope: scope ?? null, ...entryToView(pick) });
-      },
-    ),
-
-    tool(
-      'mark_used',
-      'Records that an emoji was just used in a scope (e.g. zone name). Persists to a recent-used cache so future pick_by_mood / random_pick calls skip it. Call this AFTER you decide which emoji to use in your post — once per emoji you actually emit.',
-      {
-        name: z.string().describe('The emoji name you just used'),
-        scope: z.string().describe('Scope (typically zone name) — should match the scope used in pick calls'),
-      },
-      async ({ name, scope }) => {
-        const entry = findByName(name);
-        if (!entry) {
-          return ok({ recorded: false, hint: 'Unknown emoji name; did not record' });
-        }
-        appendRecent(scope, name);
-        return ok({ recorded: true, scope, name });
-      },
-    ),
-
-    tool(
-      'render_by_name',
-      'Renders a custom emoji to its discord-syntax string for inclusion in prose. Useful when you already know the name from a previous call. Names are the ACTUAL Discord guild emoji names (e.g. "ruggy_dab", "spiraling", "ackshually") — do not invent.',
-      {
-        name: z.string().describe('Real Discord emoji name (e.g. "ruggy_cheers", "spiraling")'),
-      },
-      async ({ name }) => {
-        const entry = findByName(name);
-        if (!entry) {
-          return ok({
-            found: false,
-            name,
-            hint: 'Unknown emoji name. Call list_moods + pick_by_mood OR random_pick to discover available emojis. Do NOT guess names.',
-          });
-        }
-        return ok({ found: true, ...entryToView(entry) });
-      },
-    ),
-
-    tool(
-      'list_all',
-      'Returns the FULL catalog (43 emojis). Heavy — prefer pick_by_mood / random_pick for most cases. Use only when you want to see everything available at once.',
-      {
-        kind: KindSchema.optional(),
-      },
-      async ({ kind }) => {
-        const filtered = kind ? EMOJIS.filter((e) => e.kind === kind) : EMOJIS;
-        return ok({
-          count: filtered.length,
-          emojis: filtered.map(entryToView),
-        });
-      },
-    ),
+    tool(listMoodsContract.name, listMoodsContract.description, listMoodsInputZod, handleListMoods),
+    tool(pickByMoodContract.name, pickByMoodContract.description, pickByMoodInputZod, handlePickByMood),
+    tool(randomPickContract.name, randomPickContract.description, randomPickInputZod, handleRandomPick),
+    tool(markUsedContract.name, markUsedContract.description, markUsedInputZod, handleMarkUsed),
+    tool(renderByNameContract.name, renderByNameContract.description, renderByNameInputZod, handleRenderByName),
+    tool(listAllContract.name, listAllContract.description, listAllInputZod, handleListAll),
   ],
 });
