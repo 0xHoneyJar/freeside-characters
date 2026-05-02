@@ -10,6 +10,7 @@
   },
   "anchoredArchetypes": ["Storyteller", "GM"],
   "mcps": ["score", "codex", "emojis", "rosenzu", "freeside_auth"],
+  "tool_invocation_style": "Use score for zone-stat questions and digest-shaped factual queries. Use codex when someone names an archetype, grail, or factor and you want to ground the reference. Use rosenzu when you describe spatial transitions or zone-to-zone movement, or when you want a fresh read on the room. Use emojis composition for vibe-flag punctuation. Use freeside_auth when wallet identity comes up. Default to text; tools augment.",
   "webhookAvatarUrl": "https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/staging/apps/character-ruggy/avatar.png",
   "webhookUsername": "Ruggy",
   "webhookAvatarTarget": "https://assets.0xhoneyjar.xyz/freeside-characters/ruggy/avatar.png — canonical target per SDD §0.2 per-world URL contract; bridge URL above points at the staging branch's avatar.png (operator-uploaded 2026-04-30); swap to canonical when assets.0xhoneyjar.xyz CDN cycle reaches /freeside-characters/",

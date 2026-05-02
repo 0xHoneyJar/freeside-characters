@@ -110,6 +110,29 @@ export interface CharacterConfig {
    * unaffected by this field.
    */
   mcps?: string[];
+
+  /**
+   * V0.7-A.1: per-character tool-invocation guidance. Affirmative-blueprint
+   * prose describing how this character's persona prefers to use the tools
+   * declared in `mcps`. Substituted into the environment-context block at
+   * compose time; the LLM reads it as posture (not fence) for natural
+   * tool selection per ChatGPT-style invocation.
+   *
+   * Operator-authored. Affirmative blueprints exclusively (vault doctrine
+   * `[[negative-constraint-echo]]`): describes what TO do, never what NOT
+   * to. Per-tool one-line max. Default closer: "Default to text; tools
+   * augment." (or character-flavored equivalent).
+   *
+   * Examples:
+   *   ruggy   = "Use score for zone-stat questions ... Default to text; tools augment."
+   *   satoshi = "Use codex when a grail reference ... The dense-block register holds; imagegen is the punctuation."
+   *
+   * Daemon-stage (V0.7+) lift: this field becomes per-token L3 metadata
+   * on the daemon-NFT for per-mint refraction. The L2 base must remain
+   * a clean integration seam — keep the field discrete here, not buried
+   * in persona.md prose.
+   */
+  tool_invocation_style?: string;
 }
 
 /**

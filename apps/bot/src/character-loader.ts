@@ -43,6 +43,10 @@ interface CharacterJson {
   /** V0.7-A.1: per-character MCP scope (digest path only). Omit for
    *  bot-wide MCP access (V0.6 parity). */
   mcps?: string[];
+  /** V0.7-A.1: operator-authored tool-invocation guidance — affirmative
+   *  blueprints, no fences. Substituted into the environment-context
+   *  block at compose time. Optional; omit for no guidance line. */
+  tool_invocation_style?: string;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -81,6 +85,7 @@ export function loadCharacter(id: string): CharacterConfig {
     anchoredArchetypes: json.anchoredArchetypes as CharacterConfig['anchoredArchetypes'],
     slash_commands: json.slash_commands,
     mcps: json.mcps,
+    tool_invocation_style: json.tool_invocation_style,
   };
 }
 

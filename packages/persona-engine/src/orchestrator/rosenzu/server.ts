@@ -5,12 +5,20 @@
  * MCP server via `createSdkMcpServer`. No separate Railway/ECS deploy —
  * runs in the bot's own process, called by the SDK's agent loop.
  *
- * 5 tools (V0.5-B):
- *   - get_current_district     — lynch primitive + archetype for zone
- *   - audit_spatial_threshold  — checks intent-zone matches landed-zone
- *   - fetch_landmarks          — orientation cues for zone
- *   - furnish_kansei           — per-fire sensory anchors (variance)
- *   - threshold                — departure → door → arrival between zones
+ * 6 tools (V0.7-A.1 — place + moment lens):
+ *   place (Lynch spatial · V0.5-B):
+ *     - get_current_district     — lynch primitive + archetype for zone
+ *     - audit_spatial_threshold  — checks intent-zone matches landed-zone
+ *     - fetch_landmarks          — orientation cues for zone
+ *     - furnish_kansei           — per-fire sensory anchors (variance)
+ *     - threshold                — departure → door → arrival between zones
+ *   moment (Lynch temporal/social · V0.7-A.1):
+ *     - read_room                — temperature + social density + tonal weight
+ *
+ * `read_room` derives the moment-shape of a zone-mapped channel right now
+ * from substrate-assembled inputs (recent message count, summary, presence,
+ * minutes-since-last-post). Pair with `get_current_district` for full
+ * place + moment grounding before composing any reply.
  *
  * V0.5-C will add: persistent regular-recognition tool that rosenzu
  * surfaces (separate from /memories — rosenzu reads, /memories writes).
@@ -21,6 +29,9 @@ import { z } from 'zod';
 import {
   ZONE_SPATIAL,
   ALL_ZONES,
+  composeTonalWeight,
+  deriveSocialDensity,
+  deriveTemperature,
   furnishKansei,
   type SpatialZoneId,
 } from './lynch-primitives.ts';
@@ -149,6 +160,48 @@ export const rosenzuServer = createSdkMcpServer({
             arriving_feel: toProfile.base_kansei.feel,
             first_landmark: toProfile.landmarks[0] ?? null,
           },
+        });
+      },
+    ),
+
+    tool(
+      'read_room',
+      'Reads the temporal/social state of a zone-mapped channel right now. Returns activity temperature (cold/cool/warm/hot), social density (solo/paired/small-cluster/crowd), tonal weight against the zone KANSEI baseline, presence list, and a brief vibe hint. Pair with get_current_district (place) for full place+moment grounding before composing any reply. The substrate pre-fetches a starting frame at compose time; call this mid-turn if you want a fresh read after a context shift.',
+      {
+        zone: ZoneSchema,
+        recent_message_count: z.number().min(0).max(50).default(20),
+        recent_message_summary: z
+          .string()
+          .optional()
+          .describe('substrate-assembled one-line summary of recent messages, if any'),
+        presence: z
+          .array(z.string())
+          .optional()
+          .describe('user/character handles currently active in the channel'),
+        minutes_since_last_post: z.number().optional(),
+      },
+      async ({
+        zone,
+        recent_message_count,
+        recent_message_summary,
+        presence,
+        minutes_since_last_post,
+      }) => {
+        const profile = ZONE_SPATIAL[zone as SpatialZoneId];
+        const temperature = deriveTemperature(recent_message_count, minutes_since_last_post);
+        const social_density = deriveSocialDensity(presence?.length ?? 0);
+        const tonal_weight = composeTonalWeight(profile.base_kansei, temperature);
+
+        return ok({
+          zone,
+          temperature,
+          social_density,
+          tonal_weight,
+          presence: presence ?? [],
+          recent_vibe_hint: recent_message_summary
+            ? `${profile.archetype} register · ${recent_message_summary.slice(0, 120)}`
+            : null,
+          grounding: `${profile.archetype} · ${profile.era} · currently ${temperature}`,
         });
       },
     ),

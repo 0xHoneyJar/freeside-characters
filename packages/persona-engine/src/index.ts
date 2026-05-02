@@ -73,3 +73,23 @@ export type { LedgerEntry } from './conversation/ledger.ts';
 // Score helpers — bot's CLI uses ZONE_FLAVOR for log emoji + counts
 export { ZONE_FLAVOR, getWindowEventCount, getWindowWalletCount } from './score/types.ts';
 export { getCodexLineCount } from './score/codex-context.ts';
+
+// Environment context (V0.7-A.1 Phase C — substrate awareness block)
+export {
+  buildEnvironmentContext,
+  summarizeRecent,
+  minutesSince,
+  uniq,
+} from './compose/environment.ts';
+export type { RecentMessage, BuildEnvironmentContextArgs } from './compose/environment.ts';
+
+// Rosenzu derivation helpers (V0.7-A.1 — temporal/social moment-half)
+export {
+  deriveTemperature,
+  deriveSocialDensity,
+  composeTonalWeight,
+} from './orchestrator/rosenzu/lynch-primitives.ts';
+export type {
+  RoomTemperature,
+  RoomSocialDensity,
+} from './orchestrator/rosenzu/lynch-primitives.ts';

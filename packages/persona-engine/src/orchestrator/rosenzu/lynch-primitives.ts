@@ -542,6 +542,98 @@ export function furnishKansei(
   };
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// V0.7-A.1 — temporal/social derivation (rosenzu's "moment" half)
+// ──────────────────────────────────────────────────────────────────────
+//
+// Place-half (above) is Lynch spatial. Moment-half (below) is temperature
+// + social density + tonal weight derived from substrate-assembled inputs.
+// Both halves compose into the canonical place+moment lens (`read_room`
+// rosenzu tool · environment.ts inline pre-fetch).
+//
+// Thresholds are V1 heuristics — operator-tunable in follow-up cycles
+// once real channel-activity data lands.
+
+/** Activity temperature buckets — coarsened from message-count + recency. */
+export type RoomTemperature = 'cold' | 'cool' | 'warm' | 'hot';
+
+/** Social density buckets — coarsened from concurrent-presence count. */
+export type RoomSocialDensity = 'solo' | 'paired' | 'small-cluster' | 'crowd';
+
+/**
+ * Derive activity temperature from recent message volume + recency.
+ *
+ * Heuristic (V1):
+ *   hot   = busy AND just-posted (>=15 messages, <=2 minutes since last)
+ *   warm  = active AND recent    (>=8 messages, <=10 minutes since last)
+ *   cool  = some activity OR posted within last 30 min
+ *   cold  = stale + sparse
+ *
+ * `minutesSinceLastPost` undefined → treat as infinity (no recent activity
+ * known). Spec line 412 fixture: `deriveTemperature(20, 1) === 'hot'`.
+ */
+export function deriveTemperature(
+  recentMessageCount: number,
+  minutesSinceLastPost?: number,
+): RoomTemperature {
+  const minutes = minutesSinceLastPost ?? Number.POSITIVE_INFINITY;
+  if (recentMessageCount >= 15 && minutes <= 2) return 'hot';
+  if (recentMessageCount >= 8 && minutes <= 10) return 'warm';
+  if (recentMessageCount >= 3 || minutes <= 30) return 'cool';
+  return 'cold';
+}
+
+/**
+ * Derive social density from concurrent-presence count.
+ *
+ * Heuristic (V1):
+ *   solo           = 0-1 presence  (the agent alone, or solo human)
+ *   paired         = 2-3
+ *   small-cluster  = 4-7
+ *   crowd          = 8+
+ *
+ * Spec line 412 fixture: `deriveSocialDensity(5) === 'small-cluster'`.
+ */
+export function deriveSocialDensity(presenceCount: number): RoomSocialDensity {
+  if (presenceCount <= 1) return 'solo';
+  if (presenceCount <= 3) return 'paired';
+  if (presenceCount <= 7) return 'small-cluster';
+  return 'crowd';
+}
+
+/**
+ * Compose a tonal-weighted KANSEI vector — the zone baseline + a
+ * temperature-driven warmth delta. Returned vector mirrors the input shape;
+ * callers can read `feel` for a one-line atmospheric summary that includes
+ * the room temperature ("…room hot", "…room cold").
+ *
+ * Warmth delta:
+ *   hot   → +0.20  (warmth clamped to [0, 1])
+ *   warm  → +0.10
+ *   cool  → -0.05
+ *   cold  → -0.15
+ *
+ * Invariant: `composeTonalWeight(base, 'hot').warmth >= composeTonalWeight(base, 'cold').warmth`
+ * for any `base.warmth` in [0, 1] (delta gap = 0.35 - clamp adjustments).
+ */
+export function composeTonalWeight(
+  baseKansei: KansaiVector,
+  temperature: RoomTemperature,
+): KansaiVector {
+  const warmthDelta = {
+    hot: 0.2,
+    warm: 0.1,
+    cool: -0.05,
+    cold: -0.15,
+  }[temperature];
+  const newWarmth = Math.max(0, Math.min(1, baseKansei.warmth + warmthDelta));
+  return {
+    ...baseKansei,
+    warmth: newWarmth,
+    feel: `${baseKansei.feel} · room ${temperature}`,
+  };
+}
+
 /** Postable zones — the 4 with live Discord channels. */
 export const ALL_ZONES: ZoneId[] = ['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab'];
 

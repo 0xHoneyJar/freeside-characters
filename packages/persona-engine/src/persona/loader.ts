@@ -166,6 +166,14 @@ export interface BuildPromptArgs {
   character: CharacterConfig;
   zoneId: ZoneId;
   postType: PostType;
+  /**
+   * V0.7-A.1 — optional environment-context block (`## Environment` heading
+   * + 4-6 lines · zone identity, room read, tool guidance, recent context).
+   * Substituted into `{{ENVIRONMENT}}` placeholder. When omitted, the
+   * substitution is a no-op (empty replacement) — backward-compatible with
+   * persona templates that don't carry the placeholder.
+   */
+  environmentContext?: string;
 }
 
 export function buildPromptPair(args: BuildPromptArgs): {
@@ -233,6 +241,8 @@ default.`;
   // digest fragment's headline shape `yo {{ZONE_NAME}} ({{DIMENSION}}) ...`)
   // also get substituted in the final prompt — no leak of literal placeholder
   // syntax to the LLM.
+  const environment = args.environmentContext ?? '';
+
   const systemHalf = template
     .slice(0, idx)
     .replace(/\{\{POST_TYPE_GUIDANCE\}\}/g, fragment)
@@ -240,6 +250,7 @@ default.`;
     .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
     .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
     .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
+    .replace(/\{\{ENVIRONMENT\}\}/g, environment)
     .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
     .replace(/\{\{ZONE_ID\}\}/g, args.zoneId)
     .replace(/\{\{ZONE_NAME\}\}/g, zoneName)
@@ -258,6 +269,7 @@ default.`;
     .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
     .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
     .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
+    .replace(/\{\{ENVIRONMENT\}\}/g, environment)
     .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
     .replace(/\{\{ZONE_ID\}\}/g, args.zoneId)
     .replace(/\{\{ZONE_NAME\}\}/g, zoneName)
@@ -343,6 +355,12 @@ export interface BuildReplyPromptArgs {
   authorUsername: string;
   /** Recent ledger entries (already snapshotted by caller). */
   history: ReplyTranscriptEntry[];
+  /**
+   * V0.7-A.1 — optional environment-context block (built by
+   * `compose/environment.ts`). Substituted into `{{ENVIRONMENT}}`
+   * placeholder. Backward-compatible no-op when absent.
+   */
+  environmentContext?: string;
 }
 
 export interface ReplyTranscriptEntry {
@@ -389,6 +407,8 @@ export function buildReplyPromptPair(args: BuildReplyPromptArgs): {
   // fallbacks so any {{ZONE_NAME}} embedded inside voice anchors / codex
   // anchors / vocab sections doesn't leak literal placeholder syntax to
   // the LLM. Zone-specific guidance is overridden by CONVERSATION_MODE_OVERRIDE.
+  const environment = args.environmentContext ?? '';
+
   const systemHalf = template
     .slice(0, idx)
     .replace(/\{\{POST_TYPE_GUIDANCE\}\}/g, CONVERSATION_MODE_OVERRIDE)
@@ -396,6 +416,7 @@ export function buildReplyPromptPair(args: BuildReplyPromptArgs): {
     .replace(/\{\{VOICE_ANCHORS\}\}/g, voiceAnchors)
     .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
     .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
+    .replace(/\{\{ENVIRONMENT\}\}/g, environment)
     .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
     .replace(/\{\{ZONE_ID\}\}/g, 'conversation')
     .replace(/\{\{ZONE_NAME\}\}/g, 'this conversation')
