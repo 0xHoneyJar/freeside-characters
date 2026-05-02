@@ -402,21 +402,28 @@ export async function runOrchestratorQuery(
   };
 
   let text = '';
+  let accumulatedAssistantText = '';
   let usage: Record<string, unknown> | undefined;
   const toolUses: ToolUseEvent[] = [];
 
   // V0.7-A.1 streaming refactor (pattern: ruggy-v2/src/agent.ts):
   // We previously skipped every event except `result.success`, which made
-  // mid-flight tool_use blocks invisible. Now we extract tool_use from
-  // `assistant` messages so the dispatcher can surface them to Discord
-  // (and trajectory logs see what the LLM actually invoked vs narrated).
-  // Final synthesized text still comes from `result.success.result` —
-  // pre-tool-call narration accumulated mid-stream is intentionally not
-  // returned to the caller (the SDK handles synthesis after tool round-trip).
+  // mid-flight tool_use blocks invisible. Now we extract tool_use AND text
+  // from `assistant` messages so the dispatcher can surface tools to Discord
+  // AND we have a fallback when `result.success.result` comes back empty
+  // (observed on Bedrock-routed responses post-V0.11.1: SDK reports success
+  // but the result field is empty even though the LLM produced text in
+  // assistant turns · ruggy-v2 has shipped this fallback pattern for months).
   for await (const message of query({ prompt: req.userMessage, options })) {
     if (message.type === 'assistant') {
       for (const block of message.message.content) {
-        if (block.type === 'tool_use') {
+        if (block.type === 'text') {
+          // V0.11.2: accumulate text from each assistant turn (ruggy-v2 pattern).
+          // The final synthesis turn lands here even when the SDK doesn't
+          // populate `result.success.result` — Bedrock-routed responses
+          // sometimes leave the result field empty.
+          accumulatedAssistantText += block.text;
+        } else if (block.type === 'tool_use') {
           const event: ToolUseEvent = {
             name: block.name,
             id: block.id,
@@ -437,7 +444,7 @@ export async function runOrchestratorQuery(
     if (message.type !== 'result') continue;
 
     if (message.subtype === 'success') {
-      text = message.result;
+      text = message.result || '';
       usage = {
         duration_ms: message.duration_ms,
         duration_api_ms: message.duration_api_ms,
@@ -456,8 +463,26 @@ export async function runOrchestratorQuery(
     );
   }
 
+  // V0.11.2: fallback chain. If the SDK's `result.success.result` came
+  // back empty (observed on Bedrock-routed multi-tool responses), use the
+  // text accumulated from assistant turns — that's where the LLM's actual
+  // output lives. Only throw when BOTH paths produced nothing.
+  if (!text && accumulatedAssistantText) {
+    console.warn(
+      `orchestrator: result.success.result was empty; falling back to ` +
+        `accumulated assistant text (${accumulatedAssistantText.length} chars · ` +
+        `${toolUses.length} tool_uses)`,
+    );
+    text = accumulatedAssistantText;
+  }
+
   if (!text) {
-    throw new Error('orchestrator: SDK query completed without an assistant text response');
+    throw new Error(
+      'orchestrator: SDK query completed without an assistant text response. ' +
+        `tool_uses=${toolUses.length} accumulated_text_length=0. ` +
+        'Likely causes: maxTurns hit before synthesis · model returned no text · ' +
+        'Bedrock auth/model-ID mismatch.',
+    );
   }
 
   return { text, meta: usage, toolUses };
