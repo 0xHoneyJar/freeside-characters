@@ -1,0 +1,12 @@
+Sprint 2: Environment Context Builder + Rosenzu read_room (Phase C)
+Cycle: cycle-001 (V0.7-A.1 environment substrate)
+Implementation Commit: f2f7b87
+Reviewed: 2026-05-02 (engineer-feedback.md — All good with 5 documented concerns; key forward-carry: Sprint 3 must verify channel-zone resolution in dispatcher)
+Audited: 2026-05-02 (auditor-sprint-feedback.md — APPROVED, no findings; signature deviation noted as SECURITY-POSITIVE)
+Completed: 2026-05-02T01:59:00Z
+
+ACs (9/9): all ✓ Met (AC-2.5 met with documented signature deviation)
+Beads: bd-266 epic + 8 task beads closed, security-approved label
+Spec Reference: grimoires/loa/specs/build-environment-substrate-v07a1.md (Phase C)
+
+Architectural deviation: buildEnvironmentContext takes resolved `zone: ZoneId | undefined` instead of spec-shown `channelId + config`. Logged to NOTES.md Decision Log 2026-05-02.

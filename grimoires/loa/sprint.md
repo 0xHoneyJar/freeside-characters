@@ -118,34 +118,34 @@ Build the awareness substrate: extend rosenzu with the temporal/social `read_roo
 > From spec lines 50-52: "rosenzu adds a 6th tool — `read_room` ... that derives the temporal/social read from substrate-assembled inputs. **Place** (district + landmarks + KANSEI baseline) **+ Moment** (temperature + density + tonal weight + vibe hint) is the rosenzu-canonical pair."
 
 ### Deliverables
-- [ ] Rosenzu `read_room` tool registered + 3 derivation helpers (`deriveTemperature`, `deriveSocialDensity`, `composeTonalWeight`)
-- [ ] `packages/persona-engine/src/compose/environment.ts` exports `buildEnvironmentContext()` async builder
-- [ ] `packages/persona-engine/src/persona/loader.ts` substitutes `{{ENVIRONMENT}}` placeholder in both digest and reply prompt-pair builders
-- [ ] Both `apps/character-{ruggy,satoshi}/character.json` carry optional `tool_invocation_style` field (operator-authored prose per spec lines 244-254)
-- [ ] Snapshot test produces stable environment-block output for fixed input
-- [ ] Existing 5 rosenzu tools bytes-untouched (`read_room` is purely additive)
+- [x] Rosenzu `read_room` tool registered + 3 derivation helpers (`deriveTemperature`, `deriveSocialDensity`, `composeTonalWeight`)
+- [x] `packages/persona-engine/src/compose/environment.ts` exports `buildEnvironmentContext()` async builder
+- [x] `packages/persona-engine/src/persona/loader.ts` substitutes `{{ENVIRONMENT}}` placeholder in both digest and reply prompt-pair builders
+- [x] Both `apps/character-{ruggy,satoshi}/character.json` carry optional `tool_invocation_style` field (operator-authored prose per spec lines 244-254)
+- [x] Snapshot test produces stable environment-block output for fixed input
+- [x] Existing 5 rosenzu tools bytes-untouched (`read_room` is purely additive)
 
 ### Acceptance Criteria
-- [ ] `deriveTemperature(20, 1) === 'hot'` and full unit-smoke matrix per spec line 412
-- [ ] `deriveSocialDensity(5) === 'small-cluster'`
-- [ ] `composeTonalWeight(base, 'hot')` returns warmer KANSEI delta than `composeTonalWeight(base, 'cold')`
-- [ ] `rosenzu.read_room` callable via mock-agent: returns `{temperature, social_density, tonal_weight, presence, recent_vibe_hint, grounding}` (all fields present)
-- [ ] `buildEnvironmentContext({character: ruggy, channelId: STONEHENGE_ID, config})` returns block containing zone emoji + `Room read:` line + ruggy's `tool_invocation_style`
-- [ ] Unknown `channelId` fallback: graceful "outside the codex-mapped zones" with NO room-read line (rosenzu only called when zone resolves)
-- [ ] Persona templates substitute `{{ENVIRONMENT}}` correctly; if template lacks the placeholder, no-op (empty replacement)
-- [ ] Environment block ≤300 tokens (target) / ≤500 tokens (hard cap) per spec line 511
-- [ ] `bun run typecheck` clean
+- [x] `deriveTemperature(20, 1) === 'hot'` and full unit-smoke matrix per spec line 412
+- [x] `deriveSocialDensity(5) === 'small-cluster'`
+- [x] `composeTonalWeight(base, 'hot')` returns warmer KANSEI delta than `composeTonalWeight(base, 'cold')`
+- [x] `rosenzu.read_room` callable via mock-agent: returns `{temperature, social_density, tonal_weight, presence, recent_vibe_hint, grounding}` (all fields present)
+- [x] `buildEnvironmentContext({character: ruggy, channelId: STONEHENGE_ID, config})` returns block containing zone emoji + `Room read:` line + ruggy's `tool_invocation_style` (signature deviation: takes resolved `zone` instead of `channelId + config` — see NOTES.md decision log 2026-05-02)
+- [x] Unknown `channelId` fallback: graceful "outside the codex-mapped zones" with NO room-read line (rosenzu only called when zone resolves)
+- [x] Persona templates substitute `{{ENVIRONMENT}}` correctly; if template lacks the placeholder, no-op (empty replacement)
+- [x] Environment block ≤300 tokens (target) / ≤500 tokens (hard cap) per spec line 511
+- [x] `bun run typecheck` clean
 
 ### Technical Tasks
 
-- [ ] Task 2.1: Add `deriveTemperature(messageCount, minutesSinceLastPost)`, `deriveSocialDensity(presenceCount)`, `composeTonalWeight(baseKansei, temperature)` to `packages/persona-engine/src/orchestrator/rosenzu/lynch-primitives.ts` with unit-smoke fixture per spec line 412 → **[G-3]**
-- [ ] Task 2.2: Register 6th rosenzu tool `read_room` in `packages/persona-engine/src/orchestrator/rosenzu/server.ts` per spec lines 329-357 (Zod schema, ok-result envelope, returns place+moment payload) → **[G-3]**
-- [ ] Task 2.3: Create `packages/persona-engine/src/compose/environment.ts` exporting `buildEnvironmentContext()` per spec lines 366-405; pre-call `rosenzu.read_room` inline when zone resolves; assemble structured `## Environment` block (heading + 4-6 lines, scannable) → **[G-1, G-3]**
-- [ ] Task 2.4: Add `summarizeRecent()`, `minutesSince()`, `uniq` filter helpers to `environment.ts` (or shared util) — small pure helpers used to assemble `read_room` args from `recentMessages` and presence list → **[G-3]**
-- [ ] Task 2.5: Extend `packages/persona-engine/src/persona/loader.ts` substitution table — add `{{ENVIRONMENT}}` placeholder positioned between `{{CODEX_PRELUDE}}` and `{{VOICE_ANCHORS}}` in BOTH `buildPromptPair()` (digest) and `buildReplyPromptPair()` (chat). Default to empty-string substitution for backward compat → **[G-1, G-4]**
-- [ ] Task 2.6: Add optional `tool_invocation_style: string` field to `CharacterConfig` Zod schema in `packages/persona-engine/src/types.ts`; populate `apps/character-ruggy/character.json` and `apps/character-satoshi/character.json` per spec lines 244-254 (affirmative-blueprint prose, no fences) → **[G-4]**
-- [ ] Task 2.7: Add snapshot test for `buildEnvironmentContext` — fixed-input fixture (ruggy, stonehenge channelId, stub config, 5 recent messages, 1 other character) produces deterministic output; commit snapshot → **[G-1, G-3]**
-- [ ] Task 2.8: Verify rosenzu's existing 5 tools (`get_current_district`, `audit_spatial_threshold`, `fetch_landmarks`, `furnish_kansei`, `threshold`) bytes-untouched via `git diff packages/persona-engine/src/orchestrator/rosenzu/` — all changes must be additive → **[G-3]**
+- [x] Task 2.1: Add `deriveTemperature(messageCount, minutesSinceLastPost)`, `deriveSocialDensity(presenceCount)`, `composeTonalWeight(baseKansei, temperature)` to `packages/persona-engine/src/orchestrator/rosenzu/lynch-primitives.ts` with unit-smoke fixture per spec line 412 → **[G-3]**
+- [x] Task 2.2: Register 6th rosenzu tool `read_room` in `packages/persona-engine/src/orchestrator/rosenzu/server.ts` per spec lines 329-357 (Zod schema, ok-result envelope, returns place+moment payload) → **[G-3]**
+- [x] Task 2.3: Create `packages/persona-engine/src/compose/environment.ts` exporting `buildEnvironmentContext()` per spec lines 366-405; pre-call `rosenzu.read_room` inline when zone resolves; assemble structured `## Environment` block (heading + 4-6 lines, scannable) → **[G-1, G-3]**
+- [x] Task 2.4: Add `summarizeRecent()`, `minutesSince()`, `uniq` filter helpers to `environment.ts` (or shared util) — small pure helpers used to assemble `read_room` args from `recentMessages` and presence list → **[G-3]**
+- [x] Task 2.5: Extend `packages/persona-engine/src/persona/loader.ts` substitution table — add `{{ENVIRONMENT}}` placeholder positioned between `{{CODEX_PRELUDE}}` and `{{VOICE_ANCHORS}}` in BOTH `buildPromptPair()` (digest) and `buildReplyPromptPair()` (chat). Default to empty-string substitution for backward compat → **[G-1, G-4]**
+- [x] Task 2.6: Add optional `tool_invocation_style: string` field to `CharacterConfig` Zod schema in `packages/persona-engine/src/types.ts`; populate `apps/character-ruggy/character.json` and `apps/character-satoshi/character.json` per spec lines 244-254 (affirmative-blueprint prose, no fences) → **[G-4]**
+- [x] Task 2.7: Add snapshot test for `buildEnvironmentContext` — fixed-input fixture (ruggy, stonehenge channelId, stub config, 5 recent messages, 1 other character) produces deterministic output; commit snapshot → **[G-1, G-3]**
+- [x] Task 2.8: Verify rosenzu's existing 5 tools (`get_current_district`, `audit_spatial_threshold`, `fetch_landmarks`, `furnish_kansei`, `threshold`) bytes-untouched via `git diff packages/persona-engine/src/orchestrator/rosenzu/` — all changes must be additive → **[G-3]**
 
 ### Dependencies
 - Sprint 1: `getZoneForChannel()` and `getCodexAnchorForZone()` from `apps/bot/src/lib/channel-zone-map.ts`
