@@ -407,28 +407,22 @@ export function pickFirstGrailFromEnvelope(
   if (toolName === 'mcp__codex__search_codex') {
     if (!Array.isArray(parsed)) return null;
     if (parsed.length === 0) return null;
-    let imageBearing = 0;
     for (const hit of parsed) {
       const candidate = coerceCandidate(hit);
       if (candidate && (candidate.image || candidate.image_url)) {
         return candidate;
       }
-      if (
-        typeof hit === 'object' &&
-        hit !== null &&
-        ((hit as Record<string, unknown>).image !== undefined ||
-          (hit as Record<string, unknown>).image_url !== undefined)
-      ) {
-        imageBearing += 1;
-      }
     }
-    // Telemetry: search returned hits but none had image field — operators
-    // can diagnose envelope-shape regressions or non-grail-only result sets.
-    if (imageBearing === 0) {
-      console.warn(
-        `[embed-with-image] search_codex returned ${parsed.length} hits but none had image field`,
-      );
-    }
+    // Telemetry: search returned hits but none had image-bearing candidates —
+    // operators can diagnose envelope-shape regressions or non-grail-only
+    // result sets. Reached after loop = no image-bearing hit found (early
+    // return inside loop on first hit). V0.7-A.3 polish F8 (2026-05-02):
+    // dead `imageBearing` counter removed — it was only ever incremented
+    // for hits that had image fields BUT failed coerceCandidate, and the
+    // post-loop emit gated on it being zero, which was always true here.
+    console.warn(
+      `[embed-with-image] search_codex returned ${parsed.length} hits but none had image field`,
+    );
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
