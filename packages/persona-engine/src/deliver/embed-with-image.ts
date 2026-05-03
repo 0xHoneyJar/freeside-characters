@@ -225,7 +225,13 @@ async function fetchAttachment(
   // (GRAIL_CACHE_ENABLED=false) skips the cache entirely so operators
   // can revert to V0.7-A.3 behavior without code redeploy if STAMETS DIG
   // post-deploy shows CDN isn't a meaningful contributor.
-  if (isCacheEnabled()) {
+  //
+  // F10 follow-up (2026-05-02): hoisted to single read at function entry
+  // so we don't pay the env lookup twice (once for cache read, once for
+  // cache write) — also future-proof if isCacheEnabled ever moves to a
+  // more expensive computation than process.env access.
+  const cacheEnabled = isCacheEnabled();
+  if (cacheEnabled) {
     const cached = getGrailBytes(url);
     if (cached) {
       return {
@@ -279,8 +285,11 @@ async function fetchAttachment(
     // V0.7-A.4: organic re-warming. Live fetch hit the network; store
     // the bytes in cache so subsequent calls hit the fast path. Skips when
     // the kill-switch is off (consistent with the read path) so disabling
-    // the cache also halts further population — clean revert path.
-    if (isCacheEnabled()) {
+    // the cache also halts further population — clean revert path. Uses
+    // the hoisted `cacheEnabled` (F10 follow-up) so we don't re-read the
+    // env between the cache check and cache write — within a single
+    // fetchAttachment call the kill-switch state is consistent.
+    if (cacheEnabled) {
       setGrailBytes(url, data);
     }
 

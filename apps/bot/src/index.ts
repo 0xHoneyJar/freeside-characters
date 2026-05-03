@@ -107,8 +107,14 @@ async function main(): Promise<void> {
   if (isGrailCacheEnabled()) {
     try {
       const cacheResult = await initGrailCache();
+      const total = cacheResult.fetched + cacheResult.failed;
+      // F6 follow-up (2026-05-02): the boot log prints `N/M cached` where
+      // M is the V1 subset size (7), not the canonical-43 universe.
+      // Operators reading the log should know V1 conservatively prefetches
+      // only the 7 verified grails; V1.5 dynamic discovery will expand
+      // to the full canonical 43 when `list_archetypes` is wired.
       console.log(
-        `grail-cache:    init ${cacheResult.fetched}/${cacheResult.fetched + cacheResult.failed} ` +
+        `grail-cache:    init ${cacheResult.fetched}/${total} (V1 subset) ` +
           `cached in ${cacheResult.durationMs}ms` +
           (cacheResult.failed > 0 ? ` (${cacheResult.failed} failed · live-fetch fallback)` : ''),
       );

@@ -417,16 +417,38 @@ describe('composeWithImage · V0.7-A.4 cache-first fast path', () => {
     expect(result.cacheHits).toBe(1); // Only the first was a cache hit.
   });
 
-  test('cache hit returns text-only when content + files counts disagree (sanity)', async () => {
-    // Defensive: the cacheHits counter should never exceed files.length.
+  test('partial cache + partial 404: cacheHits counts only successes (F5 follow-up)', async () => {
+    // F5 follow-up (2026-05-02): rewritten from a tautological 1<=1 sanity
+    // assertion to exercise the actual invariant — when one candidate hits
+    // cache and another candidate's URL 404s, cacheHits must equal exactly
+    // the number of successful cache-served attachments (NOT the number of
+    // input candidates). The 404 candidate drops out of `files` entirely
+    // (per Promise.all + filter null logic), so cacheHits stays at 1.
     setGrailBytes(CACHED_URL, Buffer.from(CACHED_BYTES));
-    globalThis.fetch = mockFetchOk();
+    const failedUrl = 'https://assets.0xhoneyjar.xyz/Mibera/grails/fail-404.png';
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      fetchCallCount++;
+      if (String(input) === failedUrl) {
+        return new Response('not found', { status: 404 });
+      }
+      // Cached URL should never reach fetch; if it does, the test must fail.
+      throw new Error(`unexpected fetch for cached url: ${String(input)}`);
+    }) as unknown as typeof globalThis.fetch;
+
     const result = await composeWithImage(
       'reply.',
-      [{ ref: '@g876', image: CACHED_URL }],
+      [
+        { ref: '@g876', image: CACHED_URL },
+        { ref: '@g999', image: failedUrl },
+      ],
+      { maxAttachments: 2 },
     );
-    expect(result.files!.length).toBe(1);
-    expect(result.cacheHits!).toBeLessThanOrEqual(result.files!.length);
+    expect(fetchCallCount).toBe(1); // Only the failed URL hit fetch.
+    expect(result.files).toBeDefined();
+    expect(result.files!.length).toBe(1); // The 404 dropped.
+    expect(result.cacheHits).toBe(1); // Cached URL counted; failure didn't.
+    expect(result.attachedUrls).toEqual([CACHED_URL]);
   });
 
   test('cacheHits absent when text-only (graceful degrade path)', async () => {

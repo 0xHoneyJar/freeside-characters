@@ -1,10 +1,12 @@
 /**
  * Grail bytes cache (V0.7-A.4 · spec §4.2).
  *
- * In-memory, process-lifetime cache for the canonical-43 grail PNGs the codex
- * MCP returns from `lookup_grail` / `lookup_mibera` / `search_codex`. Closes
- * the cold-latency budget operator-named 2026-05-02 PT (~28s on first call ·
- * spec §2.5 budget exceeded ~2x):
+ * In-memory, process-lifetime cache for the grail PNGs the codex MCP
+ * returns from `lookup_grail` / `lookup_mibera` / `search_codex`. V1 ships
+ * a hardcoded 7-grail subset of the canonical 43 (see CANONICAL_GRAIL_URLS
+ * for the V1 set + V1.5 expansion plan). Closes the cold-latency budget
+ * operator-named 2026-05-02 PT (~28s on first call · spec §2.5 budget
+ * exceeded ~2x):
  *
  *   first call (V0.7-A.3):  Bedrock cold + qmd cold + CDN cold = ~28s
  *   first call (V0.7-A.4):  Bedrock cold + qmd cold + Map lookup = ~10-15s
@@ -29,9 +31,10 @@
  *   8. No retry-storm — boot prefetch is single-attempt per URL,
  *      bounded concurrency.
  *
- * URL discovery (V1): hardcoded canonical-grail URL list embedded inline
- * (CANONICAL_GRAIL_URLS). Symmetric to grail-ref-guard's hardcoded V1 set.
- * V1.5 will hydrate from `mcp__codex__list_archetypes` at startup.
+ * URL discovery (V1): hardcoded URL list embedded inline
+ * (CANONICAL_GRAIL_URLS · 7 entries, subset of canonical 43). Symmetric
+ * to grail-ref-guard's hardcoded V1 set. V1.5 will hydrate from
+ * `mcp__codex__list_archetypes` at startup.
  *
  * Kill-switch: `GRAIL_CACHE_ENABLED=false` disables both the boot prefetch
  * and the cache-hit fast path in `embed-with-image.ts` — system falls back
@@ -54,30 +57,60 @@ const cache = new Map<string, CacheEntry>();
 /** 24h TTL before cache entry is considered stale. Per spec §2 invariant 4. */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Per-entry size cap for boot prefetch (F3 follow-up · 2026-05-02).
+ * Mirrors the live-fetch path's MAX_ATTACHMENT_BYTES guard in
+ * `embed-with-image.ts`: any boot fetch >5MB is dropped before landing in
+ * cache. The hardcoded V1 URL list is on the trusted CDN so this is a
+ * defense-in-depth bound, not a primary defense — when V1.5 swaps in
+ * dynamic discovery via `mcp__codex__list_archetypes`, the cap becomes
+ * load-bearing because the URL list will originate from substrate-mutable
+ * input. Stays below the 8MB live-fetch cap because boot is a budget
+ * window (~10s for 7 URLs) and a single oversize entry would skew the
+ * memory residency claim.
+ */
+const MAX_PREFETCH_BYTES = 5 * 1024 * 1024;
+
 /** Guard against multiple boot prefetches racing each other (e.g. dev-mode
- *  HMR or test reentrance). Single Promise resolves once the first init
- *  completes; subsequent callers await the same Promise. */
+ *  HMR or test reentrance). Holds the in-flight Promise; cleared once the
+ *  prefetch resolves so a subsequent explicit call (e.g. operator-driven
+ *  re-warm after CDN recovery) can re-run. F1 follow-up (2026-05-02): the
+ *  prior implementation never cleared this, so a startup that ran while
+ *  the CDN was unreachable left the cache cold for the entire process
+ *  lifetime — spec §2 invariant 7 only saves us via runtime cache-miss
+ *  organic re-warming, but explicit re-init was silently a no-op. Now
+ *  cleared on resolution so callers can retry; tests still benefit from
+ *  the dedup window while the in-flight Promise is unresolved. */
 let initInFlight: Promise<InitResult> | null = null;
 
 /**
- * Canonical-43 grail URLs hardcoded for V1 boot prefetch (spec §4.2). Source:
- * `grail-ref-guard.ts` CANONICAL_GRAIL_IDS + extension to the canonical 43
- * by category (zodiac+element+planet+luminary+primordial+ancestor+concept+
- * community+special).
+ * V1 boot prefetch URL list — 7 grails (spec §4.2 · F6 follow-up 2026-05-02).
+ *
+ * The canonical grail universe is 43 entries (zodiac+element+planet+luminary
+ * +primordial+ancestor+concept+community+special); V1 conservatively ships
+ * only the 7 IDs that `grail-ref-guard.ts` recognizes canonically AND that
+ * have empirical CDN-path verification from prior V0.7-A.3 dogfood
+ * captures. Boot logs will show `N/7 cached` — operators reading the log
+ * should know this is the V1 subset, not the full universe.
  *
  * Slug convention: lowercase, hyphenated. Pattern verified against
- * `assets.0xhoneyjar.xyz` CDN paths from V0.7-A.3 dogfood (e.g.
- * `/Mibera/grails/black-hole.png`, `/Mibera/grails/hermes.PNG`).
+ * `assets.0xhoneyjar.xyz` CDN paths (e.g. `/Mibera/grails/black-hole.png`,
+ * `/Mibera/grails/hermes.PNG`).
  *
- * V1 conservative: ships only the 7 IDs that grail-ref-guard recognizes
- * canonically + has empirical CDN verification from prior cycles. The
- * remaining canonical grails (~36) will be added as their slugs are
+ * F4 follow-up (2026-05-02): URL strings here MUST byte-equal whatever
+ * the codex MCP returns at runtime — Map lookup is case-sensitive on the
+ * full URL. If the codex MCP starts canonicalizing differently (lowercase
+ * extensions, query-string addition for cache-busting, etc.), the cache
+ * silently misses and falls through to live-fetch. V1 accepts this risk
+ * because the URL pattern is stable from the prior cycle's empirical
+ * verification; V1.5 dynamic discovery via `list_archetypes` will read
+ * the canonical URL straight from the substrate (eliminating drift).
+ *
+ * The remaining canonical grails (~36) will be added as their slugs are
  * verified in V1.5 alongside the dynamic-fetch replacement (per
  * `mcp__codex__list_archetypes` substrate hookup deferred per spec §7).
- *
- * V1.5 will replace this list with a startup-time fetch from codex MCP
- * `list_archetypes` filtered to grail category. The hardcoded list is
- * a load-bearing fallback when the codex MCP is unreachable at boot.
+ * The hardcoded list is a load-bearing fallback when the codex MCP is
+ * unreachable at boot.
  */
 const CANONICAL_GRAIL_URLS: ReadonlyArray<string> = [
   // 876  Black Hole (concept) — V0.7-A.3 SC1 reference
@@ -170,7 +203,7 @@ export async function initGrailCache(
 
     // Chunk URLs into concurrency-sized batches and Promise.all each batch.
     // Simpler than a streaming worker pool; bounded enough for the V1 set
-    // of ~7 (and acceptable when V1.5 expands to canonical 43).
+    // of 7 (and acceptable when V1.5 expands to the full canonical 43).
     for (let i = 0; i < urls.length; i += concurrency) {
       const batch = urls.slice(i, i + concurrency);
       const results = await Promise.all(
@@ -186,7 +219,16 @@ export async function initGrailCache(
     return { fetched, failed, durationMs };
   })();
 
-  return initInFlight;
+  try {
+    return await initInFlight;
+  } finally {
+    // F1 follow-up: clear guard once resolved so a subsequent explicit call
+    // can re-attempt. Concurrent callers during the in-flight window still
+    // share the original Promise (the await above resolved them all from
+    // the same instance); only post-resolution callers see the cleared
+    // slot and start a fresh prefetch.
+    initInFlight = null;
+  }
 }
 
 /**
@@ -210,11 +252,38 @@ async function prefetchOne(url: string, timeoutMs: number): Promise<boolean> {
       );
       return false;
     }
+
+    // F3 follow-up (2026-05-02): size cap mirroring live-fetch path.
+    // Pre-fetch Content-Length cheap header check; some CDNs omit it so
+    // post-arrayBuffer secondary check covers chunked responses. Boot
+    // memory budget claim of ~43MB total (canonical 43) assumes per-entry
+    // <~1MB; cap at 5MB as defense-in-depth — a single oversize entry
+    // would skew the residency assumption and risk OOM at V1.5 scale.
+    const contentLengthHeader = res.headers.get('content-length');
+    if (contentLengthHeader !== null) {
+      const declared = Number.parseInt(contentLengthHeader, 10);
+      if (Number.isFinite(declared) && declared > MAX_PREFETCH_BYTES) {
+        console.warn(
+          `[grail-cache] prefetch oversize (content-length ${declared} > ` +
+            `${MAX_PREFETCH_BYTES}) url=${url}`,
+        );
+        return false;
+      }
+    }
+
     const data = Buffer.from(await res.arrayBuffer());
     if (data.byteLength === 0) {
       console.warn(`[grail-cache] prefetch empty body url=${url}`);
       return false;
     }
+    if (data.byteLength > MAX_PREFETCH_BYTES) {
+      console.warn(
+        `[grail-cache] prefetch oversize (post-fetch byteLength ` +
+          `${data.byteLength} > ${MAX_PREFETCH_BYTES}) url=${url}`,
+      );
+      return false;
+    }
+
     setGrailBytes(url, data);
     return true;
   } catch (err) {

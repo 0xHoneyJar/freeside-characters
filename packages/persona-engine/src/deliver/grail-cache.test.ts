@@ -166,6 +166,47 @@ describe('initGrailCache · failures are non-blocking', () => {
     expect(result.failed).toBe(1);
     expect(_grailCacheSizeForTests()).toBe(0);
   });
+
+  test('F3 follow-up: oversize Content-Length response counts as failed', async () => {
+    // F3 follow-up (2026-05-02): boot prefetch now caps per-entry at 5MB
+    // (defense-in-depth · mirrors live-fetch path). Pre-fix the prefetch
+    // would store any size verbatim, breaking memory residency claims at
+    // V1.5 scale. Post-fix oversize Content-Length is rejected before
+    // arrayBuffer.
+    globalThis.fetch = mock(async () => {
+      return new Response(PNG_MAGIC as unknown as BodyInit, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/png',
+          'Content-Length': String(6 * 1024 * 1024), // 6MB > 5MB cap
+        },
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+    const result = await initGrailCache({ urls: [TEST_URL] });
+
+    expect(result.fetched).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(_grailCacheSizeForTests()).toBe(0);
+  });
+
+  test('F3 follow-up: oversize body without Content-Length rejected (belt-and-braces)', async () => {
+    // Some CDNs omit Content-Length on chunked transfers; the post-arrayBuffer
+    // byteLength check catches that case.
+    const oversize = new Uint8Array(6 * 1024 * 1024); // 6MB, all zeros
+    globalThis.fetch = mock(async () => {
+      return new Response(oversize as unknown as BodyInit, {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' }, // no Content-Length
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+    const result = await initGrailCache({ urls: [TEST_URL] });
+
+    expect(result.fetched).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(_grailCacheSizeForTests()).toBe(0);
+  });
 });
 
 describe('initGrailCache · concurrent dedup', () => {
@@ -189,6 +230,33 @@ describe('initGrailCache · concurrent dedup', () => {
     // Both callers see the same result object.
     expect(r1).toBe(r2);
     expect(r1.fetched).toBe(2);
+  });
+
+  test('F1 follow-up: explicit re-init after resolution actually re-runs', async () => {
+    // F1 follow-up (2026-05-02): the prior implementation never cleared
+    // initInFlight after resolve, so a startup that ran while CDN was
+    // unreachable left the cache cold for the entire process lifetime
+    // (explicit re-init was silently a no-op). Now cleared on resolution.
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response(PNG_MAGIC as unknown as BodyInit, { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+
+    // First init resolves.
+    const r1 = await initGrailCache({ urls: [TEST_URL] });
+    expect(r1.fetched).toBe(1);
+    expect(fetchCallCount).toBe(1);
+
+    // Second explicit init AFTER first resolved must actually re-fetch
+    // (the dedup window is in-flight only). Pre-fix this would short-circuit
+    // and return the stale Promise; post-fix the count goes to 2.
+    const r2 = await initGrailCache({ urls: [TEST_URL] });
+    expect(r2.fetched).toBe(1);
+    expect(fetchCallCount).toBe(2); // Re-fetched.
+    // Distinct result objects (each call ran independently after the first
+    // resolved) — confirms the dedup window closed.
+    expect(r1).not.toBe(r2);
   });
 });
 
