@@ -80,6 +80,16 @@ export {
 } from './deliver/grail-ref-guard.ts';
 export type { GrailRefValidation } from './deliver/grail-ref-guard.ts';
 
+// V0.7-A.3 HOTFIX B2a — composer-side strip of attached image URLs from
+// reply text. Defense-in-depth pair with persona instruction (B2b in
+// apps/character-{ruggy,satoshi}/persona.md). Discord automod still
+// deletes messages with inline `assets.0xhoneyjar.xyz` even when bytes
+// are attached → strip the URL from voice prose.
+export {
+  stripAttachedImageUrls,
+  extractAttachedUrls,
+} from './deliver/strip-image-urls.ts';
+
 // Chat-mode routing helpers (V0.7-A.4 surface-completeness test surface)
 export { shouldUseOrchestrator, resolveChatProvider } from './compose/reply.ts';
 export type { ChatProvider } from './compose/reply.ts';
