@@ -111,8 +111,14 @@ const DEFAULT_FETCH_TIMEOUT_MS = 5000;
  */
 const ALLOWED_SCHEMES = new Set(['https:']);
 const ALLOWED_IMAGE_HOSTS = new Set(['assets.0xhoneyjar.xyz']);
-/** 8MB — well under Discord's 25MB single-attachment cap; per spec §2 invariant 6. */
-const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+/** 12MB — well under Discord's 25MB single-attachment cap; per spec §2 invariant 6.
+ *  V0.7-A.4 patch (2026-05-03): bumped 8MB → 12MB after PROD log evidence
+ *  (cycle-A · STAMETS DIG) showed `greek.png` 9.0MB rejected at 8MB cap →
+ *  `attached=0` even when LLM correctly resolved a grail. Measured grail set
+ *  ranges 5-9MB; 12MB covers worst case with headroom for Cycle B variant
+ *  rollout. Discord per-attachment limit is 25MB free / 100MB Nitro · 12MB
+ *  is comfortably under. Mirrored in grail-cache.ts MAX_PREFETCH_BYTES. */
+const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 
 /**
  * Allowlist gate for image URLs sourced from external tool results.

@@ -94,7 +94,9 @@ describe('composeWithImage · happy path', () => {
         {
           ref: '@g4488',
           name: 'Satoshi-as-Hermes',
-          image_url: 'https://assets.0xhoneyjar.xyz/Mibera/grails/hermes.PNG',
+          // V0.7-A.4 patch (2026-05-03): was hermes.PNG (403); flipped to
+          // mercury.png to mirror CANONICAL_GRAIL_URLS source change.
+          image_url: 'https://assets.0xhoneyjar.xyz/Mibera/grails/mercury.png',
         },
       ],
     );
@@ -104,7 +106,7 @@ describe('composeWithImage · happy path', () => {
     expect(result.files![0]!.name).toBe('g4488.png');
     // F10 polish: attachedUrls reflects image_url alt-key URL too
     expect(result.attachedUrls).toEqual([
-      'https://assets.0xhoneyjar.xyz/Mibera/grails/hermes.PNG',
+      'https://assets.0xhoneyjar.xyz/Mibera/grails/mercury.png',
     ]);
   });
 });
@@ -289,12 +291,15 @@ describe('composeWithImage · F5 SSRF graceful degrade', () => {
 
 describe('composeWithImage · F6 size cap', () => {
   test('content-length above cap returns text-only', async () => {
+    // V0.7-A.4 patch (2026-05-03): cap bumped 8MB → 12MB to accept measured
+    // 9MB grails (`greek.png` PROD evidence · STAMETS DIG). Test size bumped
+    // to 13MB to still exercise the rejection path.
     globalThis.fetch = mock(async () => {
       return new Response(PNG_MAGIC as unknown as BodyInit, {
         status: 200,
         headers: {
           'Content-Type': 'image/png',
-          'Content-Length': String(9 * 1024 * 1024), // 9MB > 8MB cap
+          'Content-Length': String(13 * 1024 * 1024), // 13MB > 12MB cap
         },
       });
     }) as unknown as typeof globalThis.fetch;
@@ -308,9 +313,10 @@ describe('composeWithImage · F6 size cap', () => {
   });
 
   test('post-fetch byteLength above cap returns text-only (no Content-Length)', async () => {
-    // Server omits Content-Length but ships >8MB body. The post-arrayBuffer
+    // Server omits Content-Length but ships >12MB body. The post-arrayBuffer
     // belt-and-braces check should trip and degrade.
-    const oversize = new Uint8Array(9 * 1024 * 1024); // 9MB, all zeros
+    // V0.7-A.4 patch (2026-05-03): bumped to 13MB to clear the new 12MB cap.
+    const oversize = new Uint8Array(13 * 1024 * 1024); // 13MB, all zeros
     globalThis.fetch = mock(async () => {
       return new Response(oversize as unknown as BodyInit, {
         status: 200,
@@ -324,6 +330,38 @@ describe('composeWithImage · F6 size cap', () => {
     );
     expect(result.content).toBe('reply.');
     expect(result.files).toBeUndefined();
+  });
+
+  test('V0.7-A.4 patch: 9MB image accepted under new 12MB cap (PROD regression)', async () => {
+    // V0.7-A.4 patch (2026-05-03 · cycle-A · STAMETS DIG): PROD log evidence
+    // showed `greek.png` 9.0MB rejected at the prior 8MB cap →
+    // `[embed-with-image] rejected oversize image (content-length 9003216 >
+    // 8388608)` → `attached=0` even when the LLM correctly resolved a grail.
+    // The 12MB cap MUST accept this case. Pre-fix this test would have failed
+    // (rejected as oversize); post-fix it passes — proves the cap is sized
+    // for the actual substrate.
+    const ninemb = new Uint8Array(9 * 1024 * 1024); // 9MB, mimics greek.png
+    globalThis.fetch = mock(async () => {
+      return new Response(ninemb as unknown as BodyInit, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/png',
+          'Content-Length': String(9 * 1024 * 1024),
+        },
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+    const result = await composeWithImage(
+      'reply.',
+      [{ ref: '@g876', image: 'https://assets.0xhoneyjar.xyz/Mibera/grails/greek.png' }],
+    );
+    expect(result.content).toBe('reply.');
+    expect(result.files).toBeDefined();
+    expect(result.files!.length).toBe(1);
+    expect(result.files![0]!.data.byteLength).toBe(9 * 1024 * 1024);
+    expect(result.attachedUrls).toEqual([
+      'https://assets.0xhoneyjar.xyz/Mibera/grails/greek.png',
+    ]);
   });
 });
 

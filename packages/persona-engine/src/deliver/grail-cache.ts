@@ -58,18 +58,20 @@ const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Per-entry size cap for boot prefetch (F3 follow-up · 2026-05-02).
+ * Per-entry size cap for boot prefetch (F3 follow-up · 2026-05-02 ·
+ * V0.7-A.4 patch 2026-05-03).
  * Mirrors the live-fetch path's MAX_ATTACHMENT_BYTES guard in
- * `embed-with-image.ts`: any boot fetch >5MB is dropped before landing in
+ * `embed-with-image.ts`: any boot fetch >12MB is dropped before landing in
  * cache. The hardcoded V1 URL list is on the trusted CDN so this is a
  * defense-in-depth bound, not a primary defense — when V1.5 swaps in
  * dynamic discovery via `mcp__codex__list_archetypes`, the cap becomes
  * load-bearing because the URL list will originate from substrate-mutable
- * input. Stays below the 8MB live-fetch cap because boot is a budget
- * window (~10s for 7 URLs) and a single oversize entry would skew the
- * memory residency claim.
+ * input. V0.7-A.4 PROD log evidence (cycle-A · STAMETS DIG): measured grail
+ * set 5-9MB · prior 5MB cap rejected 6/7 grails at boot · bumped to 12MB
+ * to cover worst case + headroom. Stays at parity with live-fetch
+ * MAX_ATTACHMENT_BYTES.
  */
-const MAX_PREFETCH_BYTES = 5 * 1024 * 1024;
+const MAX_PREFETCH_BYTES = 12 * 1024 * 1024;
 
 /** Guard against multiple boot prefetches racing each other (e.g. dev-mode
  *  HMR or test reentrance). Holds the in-flight Promise; cleared once the
@@ -116,7 +118,9 @@ const CANONICAL_GRAIL_URLS: ReadonlyArray<string> = [
   // 876  Black Hole (concept) — V0.7-A.3 SC1 reference
   'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.png',
   // 4488 Satoshi-as-Hermes (ancestor) — V0.7-A.3 SC2 reference
-  'https://assets.0xhoneyjar.xyz/Mibera/grails/hermes.PNG',
+  // V0.7-A.4 patch: hermes.PNG was 403; mercury.png (Roman name for Hermes)
+  // verified 200 · Cycle B URL canonicalization will replace this
+  'https://assets.0xhoneyjar.xyz/Mibera/grails/mercury.png',
   // 235  Scorpio (zodiac) — V0.7-A.3 §11 transformation regression
   'https://assets.0xhoneyjar.xyz/Mibera/grails/scorpio.png',
   // 6458 Fire (element) — V0.7-A.3 §11 transformation regression

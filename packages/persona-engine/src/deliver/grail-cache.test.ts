@@ -168,17 +168,19 @@ describe('initGrailCache · failures are non-blocking', () => {
   });
 
   test('F3 follow-up: oversize Content-Length response counts as failed', async () => {
-    // F3 follow-up (2026-05-02): boot prefetch now caps per-entry at 5MB
-    // (defense-in-depth · mirrors live-fetch path). Pre-fix the prefetch
-    // would store any size verbatim, breaking memory residency claims at
-    // V1.5 scale. Post-fix oversize Content-Length is rejected before
-    // arrayBuffer.
+    // F3 follow-up (2026-05-02): boot prefetch caps per-entry (defense-in-depth ·
+    // mirrors live-fetch path). Pre-fix the prefetch would store any size
+    // verbatim, breaking memory residency claims at V1.5 scale. Post-fix
+    // oversize Content-Length is rejected before arrayBuffer.
+    // V0.7-A.4 patch (2026-05-03): cap bumped 5MB → 12MB to cover measured
+    // 5-9MB grail set (PROD log evidence · STAMETS DIG). Test sizes bumped
+    // to still exercise the rejection path under the new cap.
     globalThis.fetch = mock(async () => {
       return new Response(PNG_MAGIC as unknown as BodyInit, {
         status: 200,
         headers: {
           'Content-Type': 'image/png',
-          'Content-Length': String(6 * 1024 * 1024), // 6MB > 5MB cap
+          'Content-Length': String(13 * 1024 * 1024), // 13MB > 12MB cap
         },
       });
     }) as unknown as typeof globalThis.fetch;
@@ -193,7 +195,8 @@ describe('initGrailCache · failures are non-blocking', () => {
   test('F3 follow-up: oversize body without Content-Length rejected (belt-and-braces)', async () => {
     // Some CDNs omit Content-Length on chunked transfers; the post-arrayBuffer
     // byteLength check catches that case.
-    const oversize = new Uint8Array(6 * 1024 * 1024); // 6MB, all zeros
+    // V0.7-A.4 patch (2026-05-03): bumped to 13MB to clear the new 12MB cap.
+    const oversize = new Uint8Array(13 * 1024 * 1024); // 13MB, all zeros
     globalThis.fetch = mock(async () => {
       return new Response(oversize as unknown as BodyInit, {
         status: 200,
@@ -206,6 +209,59 @@ describe('initGrailCache · failures are non-blocking', () => {
     expect(result.fetched).toBe(0);
     expect(result.failed).toBe(1);
     expect(_grailCacheSizeForTests()).toBe(0);
+  });
+
+  test('V0.7-A.4 patch: 9MB grail accepted under new 12MB cap (PROD regression)', async () => {
+    // V0.7-A.4 patch (2026-05-03 · cycle-A · STAMETS DIG): PROD log evidence
+    // showed 6/7 grails rejected at the prior 5MB cap because measured grail
+    // PNGs are 5-9MB. The 12MB cap MUST accept the worst-measured case
+    // (`greek.png` 9.0MB) AND a representative grail (`black-hole.png` 6.4MB).
+    // Pre-fix this test would have failed (rejected as oversize); post-fix it
+    // passes — proves the cap is sized for the actual substrate.
+    const ninemb = new Uint8Array(9 * 1024 * 1024); // 9MB, mimics greek.png
+    globalThis.fetch = mock(async () => {
+      return new Response(ninemb as unknown as BodyInit, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/png',
+          'Content-Length': String(9 * 1024 * 1024),
+        },
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+    const result = await initGrailCache({ urls: [TEST_URL] });
+
+    expect(result.fetched).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(_grailCacheSizeForTests()).toBe(1);
+    expect(getGrailBytes(TEST_URL)?.byteLength).toBe(9 * 1024 * 1024);
+  });
+});
+
+describe('CANONICAL_GRAIL_URLS · V0.7-A.4 patch (hermes 403 → mercury fix)', () => {
+  test('mercury.png is in the canonical V1 list (Roman name for Hermes · #4488)', () => {
+    // V0.7-A.4 patch (2026-05-03): hermes.PNG returned 403 from S3 in PROD
+    // (file genuinely doesn't exist). Replaced with mercury.png (Roman name
+    // for the same archetype, grail #4488 Satoshi-as-Hermes) — verified 200
+    // at 6.8MB. Cycle B URL canonicalization will replace this hardcoded
+    // patch with substrate-discovered URLs.
+    const urls = _canonicalGrailUrlsForTests();
+    expect(
+      urls.includes('https://assets.0xhoneyjar.xyz/Mibera/grails/mercury.png'),
+    ).toBe(true);
+  });
+
+  test('hermes.PNG is NOT in the canonical V1 list (was 403 in PROD)', () => {
+    // Asserts the broken URL stays out — guards against an accidental revert
+    // of the V0.7-A.4 patch. If a future contributor re-adds hermes.PNG, this
+    // test will catch it before another PROD prefetch failure.
+    const urls = _canonicalGrailUrlsForTests();
+    expect(
+      urls.includes('https://assets.0xhoneyjar.xyz/Mibera/grails/hermes.PNG'),
+    ).toBe(false);
+    expect(
+      urls.includes('https://assets.0xhoneyjar.xyz/Mibera/grails/hermes.png'),
+    ).toBe(false);
   });
 });
 
