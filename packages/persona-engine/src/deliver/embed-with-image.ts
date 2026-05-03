@@ -20,7 +20,21 @@
  *
  * Uses global `fetch` (Bun/Node 22+ ship undici-based fetch globally) +
  * AbortSignal.timeout for the timeout — no new dep added.
+ *
+ * V0.7-A.4 (cycle-003 · 2026-05-02): cache-first fast path. On cache HIT
+ * the live fetch is skipped entirely (microsecond Map lookup vs ~1-3s CDN
+ * cold) — closes the cold-budget gap operator-named in V0.7-A.3 dogfood.
+ * On MISS, live fetch runs as before AND its result populates the cache
+ * via `setGrailBytes` so subsequent calls hit. Kill-switch via
+ * `GRAIL_CACHE_ENABLED=false` reverts to V0.7-A.3 behavior without
+ * redeploy. See `grail-cache.ts` for the cache substrate.
  */
+
+import {
+  getGrailBytes,
+  isCacheEnabled,
+  setGrailBytes,
+} from './grail-cache.ts';
 
 export interface CodexGrailResult {
   /** `@g<id>` ref or similar (e.g. `@g876`). */
@@ -59,6 +73,15 @@ export interface EnrichedPayload {
    * to internal slice/filter behavior).
    */
   attachedUrls?: string[];
+  /**
+   * V0.7-A.4 (cycle-003): how many of the attached files were served from
+   * grail-cache vs live-fetched. Always present when `files` is present (0
+   * means all attachments were live fetches; equals `files.length` means
+   * full warm path). Powers the `cache_hits=N` field in dispatch.ts's
+   * `[cold-budget]` telemetry log so operators can see cache effectiveness
+   * without sampling the cache module directly.
+   */
+  cacheHits?: number;
 }
 
 export interface ComposeWithImageOptions {
@@ -152,17 +175,27 @@ export async function composeWithImage(
   }
   const files = successes.map(({ file }) => file);
   const attachedUrls = successes.map(({ sourceUrl }) => sourceUrl);
-  return { content: replyText, files, attachedUrls };
+  const cacheHits = successes.reduce(
+    (sum, { cacheHit }) => sum + (cacheHit ? 1 : 0),
+    0,
+  );
+  return { content: replyText, files, attachedUrls, cacheHits };
 }
 
 /**
  * Internal pairing of a successfully-fetched EnrichedFile with the source
  * URL that produced it. Lets composeWithImage publish the authoritative
  * attached-URL list alongside the file list (F10 polish).
+ *
+ * V0.7-A.4: `cacheHit` distinguishes cache-served bytes from live-fetch
+ * bytes so composeWithImage can surface a per-call cache_hits counter
+ * for the cold-budget telemetry log line in dispatch.ts.
  */
 interface FetchedAttachment {
   file: EnrichedFile;
   sourceUrl: string;
+  /** True when bytes came from grail-cache; false when fetched live. */
+  cacheHit: boolean;
 }
 
 async function fetchAttachment(
@@ -185,6 +218,33 @@ async function fetchAttachment(
 
   const slug = (candidate.ref ?? 'grail').replace(/^@/, '').trim() || 'grail';
   const ext = inferExtension(url);
+
+  // V0.7-A.4 cache-first fast path. Cache lookup is microseconds; live
+  // CDN fetch is 1-3s cold. The SSRF allowlist already passed above so
+  // the URL is trusted; cache returns bytes verbatim. Kill-switch
+  // (GRAIL_CACHE_ENABLED=false) skips the cache entirely so operators
+  // can revert to V0.7-A.3 behavior without code redeploy if STAMETS DIG
+  // post-deploy shows CDN isn't a meaningful contributor.
+  //
+  // F10 follow-up (2026-05-02): hoisted to single read at function entry
+  // so we don't pay the env lookup twice (once for cache read, once for
+  // cache write) — also future-proof if isCacheEnabled ever moves to a
+  // more expensive computation than process.env access.
+  const cacheEnabled = isCacheEnabled();
+  if (cacheEnabled) {
+    const cached = getGrailBytes(url);
+    if (cached) {
+      return {
+        file: {
+          name: `${slug}.${ext}`,
+          data: cached,
+          contentType: extToContentType(ext),
+        },
+        sourceUrl: url,
+        cacheHit: true,
+      };
+    }
+  }
 
   try {
     // F5 SSRF guard pt 2: `redirect: 'error'` makes undici throw on any 3xx
@@ -222,6 +282,17 @@ async function fetchAttachment(
       return null;
     }
 
+    // V0.7-A.4: organic re-warming. Live fetch hit the network; store
+    // the bytes in cache so subsequent calls hit the fast path. Skips when
+    // the kill-switch is off (consistent with the read path) so disabling
+    // the cache also halts further population — clean revert path. Uses
+    // the hoisted `cacheEnabled` (F10 follow-up) so we don't re-read the
+    // env between the cache check and cache write — within a single
+    // fetchAttachment call the kill-switch state is consistent.
+    if (cacheEnabled) {
+      setGrailBytes(url, data);
+    }
+
     return {
       file: {
         name: `${slug}.${ext}`,
@@ -229,6 +300,7 @@ async function fetchAttachment(
         contentType: extToContentType(ext),
       },
       sourceUrl: url,
+      cacheHit: false,
     };
   } catch {
     return null;

@@ -13,6 +13,10 @@
 
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { composeWithImage, isAllowedImageUrl } from './embed-with-image.ts';
+import {
+  setGrailBytes,
+  _resetGrailCacheForTests,
+} from './grail-cache.ts';
 
 const PNG_MAGIC = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -41,10 +45,17 @@ function mockFetchThrow(): typeof globalThis.fetch {
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
+  // V0.7-A.4: every test starts with an empty cache so prior live-fetch
+  // tests (which now organically populate the cache via setGrailBytes)
+  // can't shadow a subsequent mock-fetch assertion. The cache module is
+  // process-scoped, so without this reset bun-test ordering effects would
+  // leak through.
+  _resetGrailCacheForTests();
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  _resetGrailCacheForTests();
 });
 
 describe('composeWithImage · happy path', () => {
@@ -313,5 +324,185 @@ describe('composeWithImage · F6 size cap', () => {
     );
     expect(result.content).toBe('reply.');
     expect(result.files).toBeUndefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// V0.7-A.4 (cycle-003) — grail-cache integration
+// ──────────────────────────────────────────────────────────────────────
+
+describe('composeWithImage · V0.7-A.4 cache-first fast path', () => {
+  const CACHED_URL = 'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.png';
+  const CACHED_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xde, 0xad, 0xbe, 0xef]);
+
+  test('cache hit returns cached bytes WITHOUT invoking fetch', async () => {
+    // Pre-populate cache with sentinel bytes.
+    setGrailBytes(CACHED_URL, Buffer.from(CACHED_BYTES));
+
+    // Wire a fetch mock that throws — if the cache fast path works, fetch
+    // never runs so the throw never fires.
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      throw new Error('fetch should NOT be called when cache hit');
+    }) as unknown as typeof globalThis.fetch;
+
+    const result = await composeWithImage(
+      'voice text.',
+      [{ ref: '@g876', name: 'Black Hole', image: CACHED_URL }],
+    );
+
+    expect(fetchCallCount).toBe(0);
+    expect(result.files).toBeDefined();
+    expect(result.files!.length).toBe(1);
+    // Bytes returned to caller match what was cached.
+    expect(Buffer.from(result.files![0]!.data).equals(Buffer.from(CACHED_BYTES))).toBe(true);
+    // V0.7-A.4: cache_hits telemetry surfaces to caller for [cold-budget] log.
+    expect(result.cacheHits).toBe(1);
+    expect(result.attachedUrls).toEqual([CACHED_URL]);
+  });
+
+  test('cache miss falls through to live fetch · stores bytes for next call', async () => {
+    let fetchCallCount = 0;
+    const livePngMagic = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response(livePngMagic as unknown as BodyInit, {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' },
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+    // First call: cache miss → live fetch fires.
+    const result1 = await composeWithImage(
+      'voice.',
+      [{ ref: '@g876', image: CACHED_URL }],
+    );
+    expect(fetchCallCount).toBe(1);
+    expect(result1.files).toBeDefined();
+    expect(result1.files!.length).toBe(1);
+    expect(result1.cacheHits).toBe(0); // First call is live fetch, not cache.
+
+    // Second call same URL: cache hit (live fetch populated it).
+    const result2 = await composeWithImage(
+      'voice again.',
+      [{ ref: '@g876', image: CACHED_URL }],
+    );
+    expect(fetchCallCount).toBe(1); // No additional fetch on second call.
+    expect(result2.files).toBeDefined();
+    expect(result2.cacheHits).toBe(1);
+  });
+
+  test('mixed cache + live: counts hits separately', async () => {
+    setGrailBytes(CACHED_URL, Buffer.from(CACHED_BYTES));
+    const otherUrl = 'https://assets.0xhoneyjar.xyz/Mibera/grails/scorpio.png';
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response(CACHED_BYTES as unknown as BodyInit, { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+
+    const result = await composeWithImage(
+      'pair.',
+      [
+        { ref: '@g876', image: CACHED_URL },
+        { ref: '@g235', image: otherUrl },
+      ],
+      { maxAttachments: 2 },
+    );
+    // First candidate hits cache (no fetch); second does live fetch.
+    expect(fetchCallCount).toBe(1);
+    expect(result.files).toBeDefined();
+    expect(result.files!.length).toBe(2);
+    expect(result.cacheHits).toBe(1); // Only the first was a cache hit.
+  });
+
+  test('partial cache + partial 404: cacheHits counts only successes (F5 follow-up)', async () => {
+    // F5 follow-up (2026-05-02): rewritten from a tautological 1<=1 sanity
+    // assertion to exercise the actual invariant — when one candidate hits
+    // cache and another candidate's URL 404s, cacheHits must equal exactly
+    // the number of successful cache-served attachments (NOT the number of
+    // input candidates). The 404 candidate drops out of `files` entirely
+    // (per Promise.all + filter null logic), so cacheHits stays at 1.
+    setGrailBytes(CACHED_URL, Buffer.from(CACHED_BYTES));
+    const failedUrl = 'https://assets.0xhoneyjar.xyz/Mibera/grails/fail-404.png';
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      fetchCallCount++;
+      if (String(input) === failedUrl) {
+        return new Response('not found', { status: 404 });
+      }
+      // Cached URL should never reach fetch; if it does, the test must fail.
+      throw new Error(`unexpected fetch for cached url: ${String(input)}`);
+    }) as unknown as typeof globalThis.fetch;
+
+    const result = await composeWithImage(
+      'reply.',
+      [
+        { ref: '@g876', image: CACHED_URL },
+        { ref: '@g999', image: failedUrl },
+      ],
+      { maxAttachments: 2 },
+    );
+    expect(fetchCallCount).toBe(1); // Only the failed URL hit fetch.
+    expect(result.files).toBeDefined();
+    expect(result.files!.length).toBe(1); // The 404 dropped.
+    expect(result.cacheHits).toBe(1); // Cached URL counted; failure didn't.
+    expect(result.attachedUrls).toEqual([CACHED_URL]);
+  });
+
+  test('cacheHits absent when text-only (graceful degrade path)', async () => {
+    globalThis.fetch = mockFetchFail(404);
+    const result = await composeWithImage(
+      'reply.',
+      [{ ref: '@g876', image: 'https://assets.0xhoneyjar.xyz/never-cached.png' }],
+    );
+    expect(result.files).toBeUndefined();
+    // Per the EnrichedPayload shape, cacheHits is absent when files is absent.
+    expect(result.cacheHits).toBeUndefined();
+  });
+});
+
+describe('composeWithImage · V0.7-A.4 cache kill-switch', () => {
+  let originalEnv: string | undefined;
+
+  beforeEach(() => {
+    originalEnv = process.env.GRAIL_CACHE_ENABLED;
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.GRAIL_CACHE_ENABLED;
+    } else {
+      process.env.GRAIL_CACHE_ENABLED = originalEnv;
+    }
+  });
+
+  test('GRAIL_CACHE_ENABLED=false skips cache lookup AND skips cache write', async () => {
+    process.env.GRAIL_CACHE_ENABLED = 'false';
+    const url = 'https://assets.0xhoneyjar.xyz/Mibera/grails/test-killswitch.png';
+    // Pre-populate cache with sentinel bytes that are DIFFERENT from what
+    // the fetch mock returns. If kill-switch works, the live fetch wins
+    // (cache lookup skipped) AND the cache stays untouched (no write).
+    setGrailBytes(url, Buffer.from([0xff, 0xff, 0xff]));
+
+    let fetchCallCount = 0;
+    const liveBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response(liveBytes as unknown as BodyInit, { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+
+    const result = await composeWithImage(
+      'reply.',
+      [{ ref: '@g876', image: url }],
+    );
+
+    // Kill-switch ON → live fetch fires (cache skipped).
+    expect(fetchCallCount).toBe(1);
+    expect(result.files).toBeDefined();
+    expect(result.cacheHits).toBe(0);
+    // Bytes are the live fetch result, not the pre-populated sentinel.
+    expect(Buffer.from(result.files![0]!.data).equals(Buffer.from(liveBytes))).toBe(true);
   });
 });

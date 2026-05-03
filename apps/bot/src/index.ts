@@ -30,6 +30,8 @@ import {
   ZONE_FLAVOR,
   getWindowEventCount,
   getCodexLineCount,
+  initGrailCache,
+  isGrailCacheEnabled,
   type FireRequest,
   type CharacterConfig,
 } from '@freeside-characters/persona-engine';
@@ -87,6 +89,43 @@ async function main(): Promise<void> {
       console.error('discord bot client failed to connect:', err);
       process.exit(1);
     }
+  }
+
+  // V0.7-A.4 (cycle-003): warm the grail bytes cache before the
+  // interactions handler accepts traffic. Closes the ~28s cold-latency
+  // gap operator-named in V0.7-A.3 dogfood (~21:08 PT 2026-05-02 ·
+  // "feels a bit slow"). Boot delay acceptable per spec §2 invariant 5
+  // — bounded by `concurrency` (default 5) × `timeoutMs` (default 5s)
+  // × ceil(URLs / concurrency) ≤ ~10s for the V1 7-grail set; ~50s
+  // worst-case for the V1.5 canonical 43.
+  //
+  // Failures during prefetch are logged but DON'T fail the bot — the
+  // runtime cache-miss path (composeWithImage live-fetch fallback) handles
+  // any URL that didn't warm. Operators can disable the cache entirely
+  // via `GRAIL_CACHE_ENABLED=false` if STAMETS DIG telemetry shows CDN
+  // isn't a meaningful contributor to cold latency post-deploy.
+  if (isGrailCacheEnabled()) {
+    try {
+      const cacheResult = await initGrailCache();
+      const total = cacheResult.fetched + cacheResult.failed;
+      // F6 follow-up (2026-05-02): the boot log prints `N/M cached` where
+      // M is the V1 subset size (7), not the canonical-43 universe.
+      // Operators reading the log should know V1 conservatively prefetches
+      // only the 7 verified grails; V1.5 dynamic discovery will expand
+      // to the full canonical 43 when `list_archetypes` is wired.
+      console.log(
+        `grail-cache:    init ${cacheResult.fetched}/${total} (V1 subset) ` +
+          `cached in ${cacheResult.durationMs}ms` +
+          (cacheResult.failed > 0 ? ` (${cacheResult.failed} failed · live-fetch fallback)` : ''),
+      );
+    } catch (err) {
+      // initGrailCache itself catches per-URL failures, so this is the
+      // unexpected-throw path (programming error). Log + continue — the
+      // bot still works without warm cache (V0.7-A.3 live-fetch behavior).
+      console.warn('grail-cache: init threw unexpectedly · falling back to live-fetch:', err);
+    }
+  } else {
+    console.log('grail-cache:    DISABLED (GRAIL_CACHE_ENABLED=false · live-fetch every call)');
   }
 
   console.log('────────────────────────────────────────────────────────────────\n');

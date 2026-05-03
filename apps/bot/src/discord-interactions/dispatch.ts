@@ -411,6 +411,35 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
         `ledger=${result.contextUsed.ledgerSize} ` +
         `via=${ephemeral ? 'patch' : 'webhook'}`,
     );
+
+    // V0.7-A.4 (cycle-003): cold-budget telemetry. STAMETS DIG (spec §4.0)
+    // gates whether the cache is meaningful — operators measure post-deploy
+    // by triggering a cold + warm pair and reading these log lines. The
+    // `cache_hits=N` field separates fast-path attachments (Map lookup) from
+    // live-fetched ones (CDN cold). When all attachments hit cache and
+    // compose_ms is still high, the bottleneck is upstream (Bedrock cold
+    // OR codex MCP qmd); when cache_hits=0 and compose_ms is high, the
+    // cache isn't warm AND CDN matters — both substrates point at fixes
+    // beyond V0.7-A.4 scope.
+    //
+    // Sub-budgets (compose_ms is the wall-clock total composeReply spent):
+    //   - tool_uses=N · names=[...]         → MCP RTT visible in qmd indices
+    //   - tool_results=N attached=N         → composer attach effectiveness
+    //   - cache_hits=N                      → V0.7-A.4 cache effectiveness
+    //   - text_len=N                        → LLM output volume proxy
+    // Aggregated as a single log line so CloudWatch/Vector parsing stays
+    // line-oriented (no JSON envelope cost on the hot path).
+    const cacheHits = result.payload.cacheHits ?? 0;
+    console.log(
+      `[cold-budget] character=${character.id} ` +
+        `compose_ms=${result.contextUsed.durationMs} ` +
+        `total_ms=${Date.now() - t0} ` +
+        `tool_uses=${seenToolIds.size} ` +
+        `tool_results=${result.toolResults.length} ` +
+        `attached=${attachedFiles.length} ` +
+        `cache_hits=${cacheHits} ` +
+        `text_len=${result.content.length}`,
+    );
   } catch (err) {
     console.error(
       `interactions: ${character.id}/chat dispatch failed · channel=${channelId}`,

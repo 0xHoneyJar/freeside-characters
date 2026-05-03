@@ -72,6 +72,19 @@ export type {
   ComposeWithImageOptions,
 } from './deliver/embed-with-image.ts';
 
+// V0.7-A.4 (cycle-003): grail bytes cache surface for boot-time prefetch +
+// kill-switch readout. apps/bot calls initGrailCache() early in main() so
+// the canonical-43 grails are warm before the first slash invocation; the
+// composer reads the cache via getGrailBytes (internal, not re-exported).
+export {
+  initGrailCache,
+  isCacheEnabled as isGrailCacheEnabled,
+} from './deliver/grail-cache.ts';
+export type {
+  InitOptions as GrailCacheInitOptions,
+  InitResult as GrailCacheInitResult,
+} from './deliver/grail-cache.ts';
+
 // V0.7-A.3 anti-hallucination guard (spec §11.2 — V1 telemetry-only post
 // bridgebuilder F4 2026-05-02; user-visible footer removed).
 export {
