@@ -49,6 +49,16 @@ export interface EnrichedPayload {
   content: string;
   /** Optional attachments — undefined when no candidates fetched cleanly. */
   files?: EnrichedFile[];
+  /**
+   * V0.7-A.3 polish (F10 · 2026-05-02):
+   * URLs corresponding to successfully-fetched + attached `files`, in the
+   * same order. Present only when `files` is present. Lets callers strip
+   * the EXACT URLs we attached from voice text (B2a hotfix path) without
+   * having to re-derive from the input candidate list (which would assume
+   * file ordering matches input ordering — true today but couples caller
+   * to internal slice/filter behavior).
+   */
+  attachedUrls?: string[];
 }
 
 export interface ComposeWithImageOptions {
@@ -129,18 +139,36 @@ export async function composeWithImage(
   const fetched = await Promise.all(
     candidates.map((c) => fetchAttachment(c, timeoutMs)),
   );
-  const files = fetched.filter((f): f is EnrichedFile => f !== null);
-
-  if (files.length === 0) {
+  // F10 polish (2026-05-02): pair each successful fetch with its source URL
+  // so callers (composeReplyWithEnrichment) can strip attached URLs from
+  // voice text without having to re-derive ordering from the input list.
+  // Failed fetches drop out cleanly — the surviving entries are the actual
+  // attached set in the order discord.js receives them.
+  const successes = fetched.filter(
+    (f): f is FetchedAttachment => f !== null,
+  );
+  if (successes.length === 0) {
     return { content: replyText };
   }
-  return { content: replyText, files };
+  const files = successes.map(({ file }) => file);
+  const attachedUrls = successes.map(({ sourceUrl }) => sourceUrl);
+  return { content: replyText, files, attachedUrls };
+}
+
+/**
+ * Internal pairing of a successfully-fetched EnrichedFile with the source
+ * URL that produced it. Lets composeWithImage publish the authoritative
+ * attached-URL list alongside the file list (F10 polish).
+ */
+interface FetchedAttachment {
+  file: EnrichedFile;
+  sourceUrl: string;
 }
 
 async function fetchAttachment(
   candidate: CodexGrailResult,
   timeoutMs: number,
-): Promise<EnrichedFile | null> {
+): Promise<FetchedAttachment | null> {
   const url = candidate.image ?? candidate.image_url;
   if (!url) return null;
 
@@ -195,9 +223,12 @@ async function fetchAttachment(
     }
 
     return {
-      name: `${slug}.${ext}`,
-      data,
-      contentType: extToContentType(ext),
+      file: {
+        name: `${slug}.${ext}`,
+        data,
+        contentType: extToContentType(ext),
+      },
+      sourceUrl: url,
     };
   } catch {
     return null;
@@ -205,6 +236,10 @@ async function fetchAttachment(
 }
 
 function inferExtension(url: string): string {
+  // Bridgebuilder F6 (LOW · 2026-05-02): codex returns canonical paths
+  // with no query-string suffix. The `split('?')` + `split('#')` are
+  // defensive belt-and-braces in case future grail substrates introduce
+  // signed-URL params or fragment anchors. Tunable; not a blocker.
   const tail = url.split('?')[0]?.split('#')[0] ?? '';
   const dot = tail.lastIndexOf('.');
   if (dot < 0) return 'png';

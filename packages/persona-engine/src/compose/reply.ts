@@ -51,10 +51,7 @@ import {
   inspectGrailRefs,
   type GrailRefValidation,
 } from '../deliver/grail-ref-guard.ts';
-import {
-  stripAttachedImageUrls,
-  extractAttachedUrls,
-} from '../deliver/strip-image-urls.ts';
+import { stripAttachedImageUrls } from '../deliver/strip-image-urls.ts';
 import {
   appendToLedger,
   getLedgerSnapshot,
@@ -289,20 +286,20 @@ export async function composeReplyWithEnrichment(
   // run had attached=1 but Discord automod still deleted the message
   // because the URL was inline in voice text. Bytes-on-the-wire is the
   // contract; URL inline defeats the env-aware design.
+  //
+  // F10 polish (2026-05-02): single source of truth — strip BEFORE building
+  // the final payload using composeWithImage's authoritative attachedUrls
+  // (derived from successful fetches only, not from input candidates). This
+  // eliminates the prior `payload.content = stripped` mutation + dropped
+  // the `extractAttachedUrls(...).slice(...)` workaround whose ordering
+  // assumption (input order = attached order) was the F4 invariant smell.
   const grailCandidates = extractGrailCandidates(captured);
-  const payload = await composeWithImage(inspected.text, grailCandidates);
+  const initialPayload = await composeWithImage(inspected.text, grailCandidates);
+  const attachedUrls = initialPayload.attachedUrls ?? [];
 
   let finalContent = inspected.text;
   let finalChunks = result.chunks;
-  if (payload.files && payload.files.length > 0) {
-    // Strip ONLY URLs we actually attached — derived from the same
-    // candidates that fed composeWithImage. URLs not in the attached set
-    // (e.g. references the LLM made to other grail images we did NOT
-    // attach) are preserved as-is.
-    const attachedUrls = extractAttachedUrls(grailCandidates).slice(
-      0,
-      payload.files.length,
-    );
+  if (attachedUrls.length > 0) {
     const stripped = stripAttachedImageUrls(inspected.text, attachedUrls);
     if (stripped !== inspected.text) {
       console.warn(
@@ -312,11 +309,11 @@ export async function composeReplyWithEnrichment(
       finalContent = stripped;
       // Re-chunk the stripped text — boundaries shift when text mutates.
       finalChunks = splitForDiscord(stripped, DISCORD_CHAR_LIMIT);
-      // Update payload.content too — webhook layer reads this for the
-      // text portion of the multipart payload.
-      payload.content = stripped;
     }
   }
+  // Single source of truth: payload.content always matches finalContent.
+  // No mutation of composeWithImage's returned object.
+  const payload = { ...initialPayload, content: finalContent };
 
   return {
     ...result,
@@ -410,28 +407,22 @@ export function pickFirstGrailFromEnvelope(
   if (toolName === 'mcp__codex__search_codex') {
     if (!Array.isArray(parsed)) return null;
     if (parsed.length === 0) return null;
-    let imageBearing = 0;
     for (const hit of parsed) {
       const candidate = coerceCandidate(hit);
       if (candidate && (candidate.image || candidate.image_url)) {
         return candidate;
       }
-      if (
-        typeof hit === 'object' &&
-        hit !== null &&
-        ((hit as Record<string, unknown>).image !== undefined ||
-          (hit as Record<string, unknown>).image_url !== undefined)
-      ) {
-        imageBearing += 1;
-      }
     }
-    // Telemetry: search returned hits but none had image field — operators
-    // can diagnose envelope-shape regressions or non-grail-only result sets.
-    if (imageBearing === 0) {
-      console.warn(
-        `[embed-with-image] search_codex returned ${parsed.length} hits but none had image field`,
-      );
-    }
+    // Telemetry: search returned hits but none had image-bearing candidates —
+    // operators can diagnose envelope-shape regressions or non-grail-only
+    // result sets. Reached after loop = no image-bearing hit found (early
+    // return inside loop on first hit). V0.7-A.3 polish F8 (2026-05-02):
+    // dead `imageBearing` counter removed — it was only ever incremented
+    // for hits that had image fields BUT failed coerceCandidate, and the
+    // post-loop emit gated on it being zero, which was always true here.
+    console.warn(
+      `[embed-with-image] search_codex returned ${parsed.length} hits but none had image field`,
+    );
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;

@@ -68,6 +68,10 @@ describe('composeWithImage · happy path', () => {
     expect(result.files![0]!.name).toBe('g876.png');
     expect(result.files![0]!.contentType).toBe('image/png');
     expect(result.files![0]!.data.byteLength).toBeGreaterThan(0);
+    // F10 polish: attachedUrls present + matches the source URL of the file
+    expect(result.attachedUrls).toEqual([
+      'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.png',
+    ]);
   });
 
   test('image_url field works as alt key', async () => {
@@ -87,6 +91,10 @@ describe('composeWithImage · happy path', () => {
     expect(result.files).toBeDefined();
     expect(result.files!.length).toBe(1);
     expect(result.files![0]!.name).toBe('g4488.png');
+    // F10 polish: attachedUrls reflects image_url alt-key URL too
+    expect(result.attachedUrls).toEqual([
+      'https://assets.0xhoneyjar.xyz/Mibera/grails/hermes.PNG',
+    ]);
   });
 });
 
@@ -101,6 +109,8 @@ describe('composeWithImage · graceful degrade', () => {
 
     expect(result.content).toBe('reply text.');
     expect(result.files).toBeUndefined();
+    // F10 polish: no attached files → no attachedUrls (text-only payload).
+    expect(result.attachedUrls).toBeUndefined();
   });
 
   test('network throw returns text-only payload', async () => {
@@ -173,6 +183,12 @@ describe('composeWithImage · maxAttachments clamp', () => {
 
     expect(result.files).toBeDefined();
     expect(result.files!.length).toBe(2);
+    // F10 polish: attachedUrls aligns 1:1 with files in the same order.
+    // The first two candidates win the maxAttachments=2 slice.
+    expect(result.attachedUrls).toEqual([
+      'https://assets.0xhoneyjar.xyz/hermes.png',
+      'https://assets.0xhoneyjar.xyz/black-hole.png',
+    ]);
   });
 });
 

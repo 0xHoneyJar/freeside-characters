@@ -58,17 +58,32 @@ describe('stripAttachedImageUrls · markdown image', () => {
   });
 });
 
-describe('stripAttachedImageUrls · markdown link', () => {
-  test('markdown link with text removed entirely', () => {
+describe('stripAttachedImageUrls · markdown link (V0.7-A.3 polish F3)', () => {
+  test('markdown link with text PRESERVES link text as plain prose', () => {
+    // F3 fix: link text is part of voice prose ("the void" is the noun
+    // phrase the LLM wrote into the sentence). Earlier behavior dropped
+    // it entirely, leaving "is the dark grail" — broken sentence.
     const text = `[the void](${URL_BLACK_HOLE}) is the dark grail.`;
     const result = stripAttachedImageUrls(text, [URL_BLACK_HOLE]);
-    expect(result).toBe('is the dark grail.');
+    expect(result).toBe('the void is the dark grail.');
   });
 
-  test('markdown link inside sentence removed', () => {
+  test('markdown link inside sentence preserves link text inline', () => {
     const text = `that's [Black Hole](${URL_BLACK_HOLE}) right there.`;
     const result = stripAttachedImageUrls(text, [URL_BLACK_HOLE]);
-    expect(result).toBe(`that's right there.`);
+    expect(result).toBe(`that's Black Hole right there.`);
+  });
+
+  test('image-then-link nested in same paragraph: image gone, link text preserved', () => {
+    // Edge case: LLM emits both forms in same paragraph. Image alt is
+    // invisible (drop entirely). Link text is visible (preserve as prose).
+    const text = `![](${URL_HERMES})\n[the way](${URL_BLACK_HOLE})`;
+    const result = stripAttachedImageUrls(text, [URL_HERMES, URL_BLACK_HOLE]);
+    // Image removed → leading newline trimmed. Link text "the way" survives.
+    expect(result).toContain('the way');
+    expect(result).not.toContain(URL_HERMES);
+    expect(result).not.toContain(URL_BLACK_HOLE);
+    expect(result).not.toContain('![');
   });
 });
 

@@ -41,6 +41,17 @@ function escapeRegex(s: string): string {
  * Only removes URLs that appear in `attachedUrls` — URLs not in the list
  * are preserved (a non-attached link is not redundant, so leave it). This
  * is the contract: strip what we attached, leave everything else.
+ *
+ * Form-specific behavior (V0.7-A.3 polish F3 · 2026-05-02):
+ *   - markdown image `![alt](url)` → removed entirely (alt text is invisible
+ *     to the reader, only the image renders; dropping the whole construct
+ *     keeps the prose clean)
+ *   - markdown link `[text](url)` → URL stripped, link text PRESERVED as
+ *     plain text (the visible noun phrase is part of the voice prose; e.g.
+ *     "the void" in `[the void](https://.../black-hole.png) is the dark grail`
+ *     should leave "the void is the dark grail" — earlier behavior dropped
+ *     the noun, breaking sentence grammar)
+ *   - plain URL → removed (no visible context to preserve)
  */
 export function stripAttachedImageUrls(
   text: string,
@@ -55,18 +66,22 @@ export function stripAttachedImageUrls(
     const escaped = escapeRegex(url);
 
     // 1. Markdown image: ![alt text](url) — remove entire `![...](url)`.
+    //    Alt text is invisible to the reader (image renders instead), so
+    //    dropping the whole construct keeps the prose clean.
+    //    MUST run before the link regex below — the leading `!` would
+    //    otherwise be matched by the link regex's `[` start, leaving an
+    //    orphan `!` in the output.
     out = out.replace(
       new RegExp(`!\\[[^\\]]*\\]\\(${escaped}\\)`, 'g'),
       '',
     );
 
-    // 2. Markdown link: [text](url) — remove entire `[...](url)`. The
-    //    image is attached separately so the link is redundant. Keeping
-    //    only the link text would imply the URL exists somewhere; safer
-    //    to drop the whole construct.
+    // 2. Markdown link: [text](url) — strip URL but PRESERVE link text as
+    //    plain prose. The visible text is part of the voice; dropping it
+    //    removes a noun phrase the LLM wrote into the sentence (F3 fix).
     out = out.replace(
-      new RegExp(`\\[[^\\]]*\\]\\(${escaped}\\)`, 'g'),
-      '',
+      new RegExp(`\\[([^\\]]*)\\]\\(${escaped}\\)`, 'g'),
+      '$1',
     );
 
     // 3. Plain URL paste — remove the bare URL string.
@@ -79,6 +94,13 @@ export function stripAttachedImageUrls(
   //   - 3+ consecutive newlines collapsed to 2 (paragraph spacing)
   //   - trailing whitespace per line
   //   - trim final result
+  //
+  // Bridgebuilder F5 (LOW · 2026-05-02): the punctuation regex below is
+  // global-by-design — it normalizes whitespace inconsistency in LLM
+  // prose (extra spaces before `.,;:!?` arise from URL removal AND from
+  // the LLM occasionally inserting them). Benign normalization. Tunable;
+  // not a blocker. Deferred: per-character punctuation register would
+  // need to live in compose/expression layer, not the strip helper.
   out = out.replace(/\s+([.,;:!?])/g, '$1'); // close punctuation gap
   out = out.replace(/[ \t]+$/gm, ''); // trim trailing whitespace per line
   out = out.replace(/\n{3,}/g, '\n\n'); // collapse paragraph breaks
