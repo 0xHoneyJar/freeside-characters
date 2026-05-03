@@ -129,20 +129,34 @@ export async function sendViaWebhook(
  * Pattern B identity preservation for slash command replies: the user sees
  * the character's avatar + username as the speaker, not the shell-bot
  * identity. Aligns chat replies with digest writes per Eileen's vault canon.
+ *
+ * V0.7-A.3: optional `files` carries grail-image attachments composed by
+ * `composeWithImage` (env-aware bytes-on-the-wire pattern). Each file is
+ * wrapped in a discord.js `AttachmentBuilder` and passed via webhook.send's
+ * `files` channel — bypasses Discord automod URL blocklists that filter
+ * `assets.0xhoneyjar.xyz` and similar. Mirror of imagegen V0.11.3's
+ * `sendImageReplyViaWebhook` shape; the chat surface gets the same
+ * primitive without forking call sites.
  */
 export async function sendChatReplyViaWebhook(
   webhook: Webhook,
   character: CharacterConfig,
   content: string,
+  files?: Array<{ name: string; data: Buffer; contentType?: string }>,
 ): Promise<{ posted: true; messageId: string }> {
   const username =
     character.webhookUsername ?? character.displayName ?? character.id;
   const avatarURL = character.webhookAvatarUrl;
 
+  const attachments = files?.map(
+    (f) => new AttachmentBuilder(f.data, { name: f.name }),
+  );
+
   const message = await webhook.send({
     username,
     avatarURL,
     content,
+    ...(attachments && attachments.length > 0 ? { files: attachments } : {}),
     allowedMentions: { parse: [] },
   });
 

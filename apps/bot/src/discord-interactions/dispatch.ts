@@ -27,7 +27,7 @@
 import {
   appendToLedger,
   composeErrorReply,
-  composeReply,
+  composeReplyWithEnrichment,
   composeToolUseStatusForCharacter,
   getBotClient,
   getOrCreateChannelWebhook,
@@ -37,6 +37,7 @@ import {
   splitForDiscord,
   type CharacterConfig,
   type Config,
+  type EnrichedFile,
   type ErrorClass,
   type LedgerEntry,
   type SlashCommandHandler,
@@ -307,10 +308,16 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
       });
     };
 
-    // Wrap composeReply in a 14m30s timeout so we never PATCH against an
-    // expired interaction token (404 → silent freeze in Discord UI).
+    // V0.7-A.3: switched from composeReply → composeReplyWithEnrichment
+    // (additive sibling per spec §4.1 option C). The wrapper captures
+    // codex grail tool results from the SDK loop and runs composeWithImage
+    // to fetch image bytes for env-aware webhook attachment. Existing
+    // composeReply contract unchanged; this is opt-in at the call site.
+    //
+    // Wrap in a 14m30s timeout so we never PATCH against an expired
+    // interaction token (404 → silent freeze in Discord UI).
     const result = await Promise.race([
-      composeReply({
+      composeReplyWithEnrichment({
         config,
         character,
         prompt,
@@ -345,9 +352,16 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     // [chat-route] log to confirm orchestrator path actually fired tools.
     // Together they distinguish H1 (SDK denying) vs H2 (naive path
     // active) vs H3 (persona contamination) vs H4 (server registration).
+    //
+    // V0.7-A.3 telemetry adds: tool_results count + grail attachment count
+    // (after composeWithImage runs) so operators can see whether codex
+    // results landed AND whether the env-aware composer attached bytes.
+    const attachedFiles = result.payload.files ?? [];
     console.log(
       `interactions: ${character.id}/chat tool_uses=${seenToolIds.size} ` +
         `names=[${seenToolNames.join(',')}] ` +
+        `tool_results=${result.toolResults.length} ` +
+        `attached=${attachedFiles.length} ` +
         `text_len=${result.content.length} ` +
         `channel=${channelId}`,
     );
@@ -355,9 +369,15 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     // Delivery routing:
     //   - ephemeral=true   → interaction PATCH (webhooks can't be ephemeral ·
     //                        invoker chose this · accepts shell identity)
+    //                        V1: ephemeral path drops attachments; the
+    //                        underlying interaction PATCH endpoint doesn't
+    //                        carry multipart files in this dispatcher today
+    //                        (mirrors imagegen ephemeral fallback).
     //   - ephemeral=false  → Pattern B webhook (per-character avatar + username)
     //                        with the user's prompt quote-prepended for channel
-    //                        context · PATCH fallback if webhook delivery fails
+    //                        context · grail image bytes attached to first chunk
+    //                        when payload.files is populated · PATCH fallback
+    //                        if webhook delivery fails (without attachment).
     if (ephemeral) {
       await deliverViaInteraction(interaction, character, result.chunks, true);
     } else {
@@ -370,6 +390,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
           result.chunks,
           prompt,
           invoker.username,
+          attachedFiles,
         );
       } catch (webhookErr) {
         console.warn(
@@ -384,6 +405,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     console.log(
       `interactions: ${character.id}/chat delivered · ` +
         `channel=${channelId} chunks=${result.chunks.length} ` +
+        `attached=${attachedFiles.length} ` +
         `compose_ms=${result.contextUsed.durationMs} ` +
         `total_ms=${Date.now() - t0} ` +
         `ledger=${result.contextUsed.ledgerSize} ` +
@@ -644,6 +666,7 @@ async function deliverViaWebhook(
   chunks: string[],
   prompt: string,
   authorUsername: string,
+  files?: EnrichedFile[],
 ): Promise<void> {
   const client = await getBotClient(config);
   if (!client) {
@@ -661,9 +684,13 @@ async function deliverViaWebhook(
       ? [firstWithQuote, ...chunks.slice(1)]
       : [...splitForDiscord(firstWithQuote, DISCORD_CHAR_LIMIT), ...chunks.slice(1)];
 
+  // V0.7-A.3: attach env-aware grail image bytes to the FIRST chunk only —
+  // image follows voice text per ALEXANDER craft lens (spec §5). Subsequent
+  // chunks render bare so multi-chunk replies don't fragment attention.
   for (let i = 0; i < allChunks.length; i++) {
     if (i > 0) await sleep(FOLLOW_UP_THROTTLE_MS);
-    await sendChatReplyViaWebhook(webhook, character, allChunks[i]!);
+    const attachOnThisChunk = i === 0 && files && files.length > 0 ? files : undefined;
+    await sendChatReplyViaWebhook(webhook, character, allChunks[i]!, attachOnThisChunk);
     if (i === 0) {
       // Delete the deferred "thinking..." placeholder once the first
       // webhook chunk is up. Best-effort — if it fails (e.g., expired

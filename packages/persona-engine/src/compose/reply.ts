@@ -37,7 +37,16 @@ import {
   buildEnvironmentContext,
   type RecentMessage,
 } from './environment.ts';
-import { runOrchestratorQuery, type ToolUseEvent } from '../orchestrator/index.ts';
+import {
+  runOrchestratorQuery,
+  type ToolResultEvent,
+  type ToolUseEvent,
+} from '../orchestrator/index.ts';
+import {
+  composeWithImage,
+  type CodexGrailResult,
+  type EnrichedPayload,
+} from '../deliver/embed-with-image.ts';
 import {
   appendToLedger,
   getLedgerSnapshot,
@@ -76,6 +85,13 @@ export interface ReplyComposeArgs {
    * No-op when the chat path resolves to naive (no tools available).
    */
   onToolUse?: (event: ToolUseEvent) => void;
+  /**
+   * V0.7-A.3: optional callback fired when a `tool_result` block arrives
+   * from the SDK loop. Used by `composeReplyWithEnrichment` to capture
+   * codex grail envelopes for env-aware image attachment composition.
+   * No-op when the chat path resolves to naive (no tools fire).
+   */
+  onToolResult?: (event: ToolResultEvent) => void;
   options?: {
     /** How many recent ledger entries to feed the prompt. Default 10. */
     historyDepth?: number;
@@ -141,6 +157,7 @@ export async function composeReply(
     userMessage,
     zone: args.zone,
     onToolUse: args.onToolUse,
+    onToolResult: args.onToolResult,
   })) ?? '';
 
   if (!replyText || replyText.trim().length === 0) {
@@ -184,6 +201,129 @@ export async function composeReply(
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// V0.7-A.3 — env-aware enrichment (additive surface, option C per spec §4.1)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Tool names whose result envelopes may carry grail image URLs that the
+ * env-aware composer should attach (V1: codex grail tools only — mibera
+ * + archetype + fracture deferred to V1.5 per spec §6 BARTH cut).
+ */
+const CODEX_IMAGE_TOOL_NAMES = new Set([
+  'mcp__codex__lookup_grail',
+  'mcp__codex__lookup_mibera',
+  'mcp__codex__search_codex',
+]);
+
+export interface EnrichedReplyResult extends ReplyComposeResult {
+  /** Webhook payload with text + optional image attachments. */
+  payload: EnrichedPayload;
+  /** Tool results captured during the run (in stream order). */
+  toolResults: ToolResultEvent[];
+}
+
+/**
+ * V0.7-A.3 sibling composer (additive surface — preserves `composeReply`
+ * contract per spec §4.1 option C). Wraps `composeReply` + collects tool
+ * results from the SDK loop, then runs `composeWithImage` to build a
+ * webhook-ready payload with optional grail image attachments.
+ *
+ * Returns null when `composeReply` does — empty/no-result is the same
+ * shape upstream.
+ *
+ * Existing callers (digest, weaver, callout) continue calling `composeReply`
+ * unchanged. New callers (chat dispatch.ts) opt-in to enrichment by calling
+ * this entry point.
+ */
+export async function composeReplyWithEnrichment(
+  args: ReplyComposeArgs,
+): Promise<EnrichedReplyResult | null> {
+  const captured: ToolResultEvent[] = [];
+  // Compose with a hooked onToolResult — tool envelopes flow into `captured`
+  // alongside whatever the caller's own onToolResult does (chained, not replaced).
+  const result = await composeReply({
+    ...args,
+    onToolResult: (event) => {
+      captured.push(event);
+      args.onToolResult?.(event);
+    },
+  });
+  if (!result) return null;
+
+  const grailCandidates = extractGrailCandidates(captured);
+  const payload = await composeWithImage(result.content, grailCandidates);
+
+  return { ...result, payload, toolResults: captured };
+}
+
+/**
+ * Filter captured tool results to grail-image candidates the env-aware
+ * composer can attach. Drops:
+ *   - non-codex tool results
+ *   - error envelopes (is_error true)
+ *   - results that don't parse as JSON
+ *   - results without an image / image_url field
+ *
+ * For `search_codex`, only the top-1 candidate is considered (per spec §2.2:
+ * "search_codex when grail is top-1 has image"). Each parsed envelope is
+ * shape-coerced to the {ref, name, image, image_url} subset that
+ * composeWithImage expects.
+ */
+function extractGrailCandidates(events: ToolResultEvent[]): CodexGrailResult[] {
+  const out: CodexGrailResult[] = [];
+  for (const event of events) {
+    if (!CODEX_IMAGE_TOOL_NAMES.has(event.name)) continue;
+    if (event.isError) continue;
+    if (event.parsed === undefined || event.parsed === null) continue;
+
+    const candidate = pickFirstGrailFromEnvelope(event.name, event.parsed);
+    if (candidate) out.push(candidate);
+  }
+  return out;
+}
+
+function pickFirstGrailFromEnvelope(
+  toolName: string,
+  parsed: unknown,
+): CodexGrailResult | null {
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  // search_codex envelope: { results: [{ ref, name, image }, ...] } —
+  // take top-1 only per spec §2.2.
+  if (toolName === 'mcp__codex__search_codex') {
+    const obj = parsed as { results?: unknown };
+    const results = Array.isArray(obj.results) ? obj.results : null;
+    if (!results || results.length === 0) return null;
+    return coerceCandidate(results[0]);
+  }
+  // lookup_grail / lookup_mibera envelope: flat object with image field, OR
+  // { result: {...} } / { grail: {...} } / { mibera: {...} } shape variants.
+  // Try both — flat first, then nested.
+  const flat = coerceCandidate(parsed);
+  if (flat?.image || flat?.image_url) return flat;
+
+  const obj = parsed as Record<string, unknown>;
+  for (const key of ['result', 'grail', 'mibera', 'data']) {
+    const nested = coerceCandidate(obj[key]);
+    if (nested?.image || nested?.image_url) return nested;
+  }
+  return null;
+}
+
+function coerceCandidate(raw: unknown): CodexGrailResult | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const o = raw as Record<string, unknown>;
+  const candidate: CodexGrailResult = {};
+  if (typeof o.ref === 'string') candidate.ref = o.ref;
+  if (typeof o.name === 'string') candidate.name = o.name;
+  if (typeof o.image === 'string') candidate.image = o.image;
+  if (typeof o.image_url === 'string') candidate.image_url = o.image_url;
+  if (typeof o.description === 'string') candidate.description = o.description;
+  // Keep only when at least one image field surfaced — otherwise candidate is moot.
+  if (!candidate.image && !candidate.image_url) return null;
+  return candidate;
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Chat-mode LLM routing (V0.7-A.1 Phase D)
 // ──────────────────────────────────────────────────────────────────────
 
@@ -195,6 +335,8 @@ interface ChatInvokeArgs {
   zone?: ZoneId;
   /** V0.7-A.1: tool_use stream callback (orchestrator path only). */
   onToolUse?: (event: ToolUseEvent) => void;
+  /** V0.7-A.3: tool_result stream callback (orchestrator path only). */
+  onToolResult?: (event: ToolResultEvent) => void;
 }
 
 /**
@@ -251,10 +393,11 @@ async function routeChatLLM(config: Config, req: ChatInvokeArgs): Promise<string
       zone: req.zone,
       postType: 'chat',
       onToolUse: req.onToolUse,
+      onToolResult: req.onToolResult,
     });
     return result.text;
   }
-  // Naive path has no tools wired — onToolUse is a no-op for this branch.
+  // Naive path has no tools wired — onToolUse + onToolResult are no-ops here.
   return invokeChat(config, req);
 }
 

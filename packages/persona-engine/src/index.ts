@@ -60,6 +60,18 @@ export { exemplarStats } from './persona/exemplar-loader.ts';
 export { composeReply, splitForDiscord } from './compose/reply.ts';
 export type { ReplyComposeArgs, ReplyComposeResult } from './compose/reply.ts';
 
+// V0.7-A.3 env-aware enrichment (additive sibling per spec §4.1 option C).
+// composeReply contract unchanged; new callers opt-in via this entry point.
+export { composeReplyWithEnrichment } from './compose/reply.ts';
+export type { EnrichedReplyResult } from './compose/reply.ts';
+export { composeWithImage } from './deliver/embed-with-image.ts';
+export type {
+  CodexGrailResult,
+  EnrichedFile,
+  EnrichedPayload,
+  ComposeWithImageOptions,
+} from './deliver/embed-with-image.ts';
+
 // Chat-mode routing helpers (V0.7-A.4 surface-completeness test surface)
 export { shouldUseOrchestrator, resolveChatProvider } from './compose/reply.ts';
 export type { ChatProvider } from './compose/reply.ts';
@@ -131,7 +143,9 @@ export type {
 
 // Orchestrator tool-use streaming (V0.7-A.1 · chat dispatcher uses this
 // to surface tool calls progressively in Discord — see ruggy-v2 pattern).
-export type { ToolUseEvent } from './orchestrator/index.ts';
+// V0.7-A.3: tool-result streaming added for env-aware composer (codex
+// grail envelope → composeWithImage attachment payload).
+export type { ToolUseEvent, ToolResultEvent } from './orchestrator/index.ts';
 
 // Bedrock image generation
 export * from './compose/bedrock-image.ts';

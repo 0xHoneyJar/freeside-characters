@@ -67,6 +67,30 @@ export interface ToolUseEvent {
   input: unknown;
 }
 
+/**
+ * Tool-result event paired with a prior `ToolUseEvent` by `toolUseId`
+ * (V0.7-A.3). Surfaces what the tool returned to the SDK loop so the
+ * dispatcher can build env-aware composer payloads (e.g., grail image
+ * attachments via `composeWithImage`).
+ *
+ * Result content is the raw string the tool returned (typically a
+ * JSON-stringified payload from MCP `{ content: [{ type: 'text', text }] }`).
+ * Best-effort `parsed` field carries the JSON-parsed shape when parsing
+ * succeeds — opaque type because tool envelopes vary per MCP server.
+ */
+export interface ToolResultEvent {
+  /** Matches a prior `ToolUseEvent.id`. */
+  toolUseId: string;
+  /** Tool name (denormalized from the matching ToolUseEvent for caller convenience). */
+  name: string;
+  /** Raw text content the tool returned, joined when content was multi-part. */
+  rawText: string;
+  /** Best-effort JSON.parse of `rawText`; undefined when not parseable. */
+  parsed?: unknown;
+  /** Tool reported an error envelope (per Anthropic SDK `is_error`). */
+  isError?: boolean;
+}
+
 export interface OrchestratorRequest {
   character: CharacterConfig;
   systemPrompt: string;
@@ -84,6 +108,13 @@ export interface OrchestratorRequest {
    * multiple events.
    */
   onToolUse?: (event: ToolUseEvent) => void;
+  /**
+   * V0.7-A.3: optional callback fired when a `tool_result` block arrives
+   * (i.e., the SDK invoked the tool and the response landed). Pairs with
+   * `onToolUse` by `toolUseId`. Used by the chat dispatcher to capture
+   * codex grail envelopes for `composeWithImage` env-aware delivery.
+   */
+  onToolResult?: (event: ToolResultEvent) => void;
 }
 
 export interface OrchestratorResponse {
@@ -91,6 +122,8 @@ export interface OrchestratorResponse {
   meta?: Record<string, unknown>;
   /** Tool calls observed during the run, in stream order (oldest first). */
   toolUses?: ToolUseEvent[];
+  /** Tool results observed during the run, in stream order (oldest first). */
+  toolResults?: ToolResultEvent[];
 }
 
 /**
@@ -405,6 +438,10 @@ export async function runOrchestratorQuery(
   let accumulatedAssistantText = '';
   let usage: Record<string, unknown> | undefined;
   const toolUses: ToolUseEvent[] = [];
+  const toolResults: ToolResultEvent[] = [];
+  // Index toolUses by id so we can correlate names back when tool_result
+  // blocks arrive on subsequent `user` messages.
+  const toolUseById = new Map<string, ToolUseEvent>();
 
   // V0.7-A.1 streaming refactor (pattern: ruggy-v2/src/agent.ts):
   // We previously skipped every event except `result.success`, which made
@@ -414,6 +451,12 @@ export async function runOrchestratorQuery(
   // (observed on Bedrock-routed responses post-V0.11.1: SDK reports success
   // but the result field is empty even though the LLM produced text in
   // assistant turns · ruggy-v2 has shipped this fallback pattern for months).
+  //
+  // V0.7-A.3: ALSO extract tool_result blocks from `user` messages so the
+  // chat dispatcher can build env-aware composer payloads (codex grail
+  // envelopes → composeWithImage attachments). The SDK emits a `user`
+  // message after each tool round-trip carrying ToolResultBlockParam blocks
+  // — same loop, different message type.
   for await (const message of query({ prompt: req.userMessage, options })) {
     if (message.type === 'assistant') {
       for (const block of message.message.content) {
@@ -430,12 +473,43 @@ export async function runOrchestratorQuery(
             input: block.input,
           };
           toolUses.push(event);
+          toolUseById.set(event.id, event);
           // Best-effort callback — caller errors don't break the SDK loop.
           try {
             req.onToolUse?.(event);
           } catch (err) {
             console.error(`orchestrator: onToolUse callback threw — ${err}`);
           }
+        }
+      }
+      continue;
+    }
+
+    if (message.type === 'user') {
+      const content = message.message.content;
+      if (!Array.isArray(content)) continue;
+      for (const block of content) {
+        if (typeof block !== 'object' || block === null) continue;
+        const maybeBlock = block as { type?: string; tool_use_id?: string; content?: unknown; is_error?: boolean };
+        if (maybeBlock.type !== 'tool_result' || !maybeBlock.tool_use_id) continue;
+        const matched = toolUseById.get(maybeBlock.tool_use_id);
+        const rawText = extractToolResultText(maybeBlock.content);
+        const event: ToolResultEvent = {
+          toolUseId: maybeBlock.tool_use_id,
+          name: matched?.name ?? 'unknown',
+          rawText,
+          isError: maybeBlock.is_error,
+        };
+        try {
+          event.parsed = JSON.parse(rawText);
+        } catch {
+          // leave parsed undefined — not all tools return JSON
+        }
+        toolResults.push(event);
+        try {
+          req.onToolResult?.(event);
+        } catch (err) {
+          console.error(`orchestrator: onToolResult callback threw — ${err}`);
         }
       }
       continue;
@@ -452,6 +526,7 @@ export async function runOrchestratorQuery(
         total_cost_usd: message.total_cost_usd,
         tool_uses: toolUses.length,
         tool_names: toolUses.map((t) => t.name),
+        tool_results: toolResults.length,
         ...message.usage,
       };
       break;
@@ -485,5 +560,31 @@ export async function runOrchestratorQuery(
     );
   }
 
-  return { text, meta: usage, toolUses };
+  return { text, meta: usage, toolUses, toolResults };
+}
+
+/**
+ * Flatten a `ToolResultBlockParam.content` into a single string. The
+ * content shape is `string | Array<TextBlockParam | ImageBlockParam | ...>`
+ * per Anthropic SDK; for MCP tools that return JSON envelopes, the typical
+ * shape is `[{ type: 'text', text: '<json>' }]`. Multi-part content is
+ * joined with newlines so JSON.parse can still succeed when only one part
+ * is JSON.
+ */
+function extractToolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  const parts: string[] = [];
+  for (const part of content) {
+    if (typeof part === 'string') {
+      parts.push(part);
+      continue;
+    }
+    if (typeof part !== 'object' || part === null) continue;
+    const maybe = part as { type?: string; text?: string };
+    if (maybe.type === 'text' && typeof maybe.text === 'string') {
+      parts.push(maybe.text);
+    }
+  }
+  return parts.join('\n');
 }
