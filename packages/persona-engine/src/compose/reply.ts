@@ -334,10 +334,14 @@ function collectRefsFromValue(value: unknown, out: Set<string>): void {
  *   - results that don't parse as JSON
  *   - results without an image / image_url field
  *
- * For `search_codex`, only the top-1 candidate is considered (per spec §2.2:
- * "search_codex when grail is top-1 has image"). Each parsed envelope is
- * shape-coerced to the {ref, name, image, image_url} subset that
- * composeWithImage expects.
+ * For `search_codex`, the parsed envelope is `SearchHit[]` (top-level array
+ * per the codex MCP server contract — verified against
+ * /tmp/codex-probe/src/lookups/search.ts:204 + server.ts handler). All hits
+ * are scanned in order and the first with an `image` field wins (V0.7-A.3
+ * hotfix B1 — bridgebuilder F9 deferred lands here). The top-1 hit may be
+ * a non-grail entry (core-lore, etc.) so top-1-only would silently drop
+ * grails. Each parsed envelope is shape-coerced to the
+ * {ref, name, image, image_url} subset that composeWithImage expects.
  */
 function extractGrailCandidates(events: ToolResultEvent[]): CodexGrailResult[] {
   const out: CodexGrailResult[] = [];
@@ -352,19 +356,49 @@ function extractGrailCandidates(events: ToolResultEvent[]): CodexGrailResult[] {
   return out;
 }
 
-function pickFirstGrailFromEnvelope(
+/**
+ * Exported for tests (V0.7-A.3 hotfix B1 envelope-shape coverage). Internal
+ * helper otherwise — callers should use `composeReplyWithEnrichment`.
+ */
+export function pickFirstGrailFromEnvelope(
   toolName: string,
   parsed: unknown,
 ): CodexGrailResult | null {
-  if (typeof parsed !== 'object' || parsed === null) return null;
-  // search_codex envelope: { results: [{ ref, name, image }, ...] } —
-  // take top-1 only per spec §2.2.
+  // search_codex envelope: SearchHit[] (top-level array) — verified against
+  // /tmp/codex-probe/src/lookups/search.ts:204 + server.ts handler. The
+  // earlier `{ results: [...] }` assumption was wrong; the real shape is
+  // a JSON-stringified array of SearchHit. Also: scan ALL hits (not just
+  // top-1) because the top hit may be a non-grail entry (core-lore, etc.)
+  // even when a later hit is a grail with an image field. Bridgebuilder
+  // F9 deferred-finding lands here as part of the V0.7-A.3 hotfix B1.
   if (toolName === 'mcp__codex__search_codex') {
-    const obj = parsed as { results?: unknown };
-    const results = Array.isArray(obj.results) ? obj.results : null;
-    if (!results || results.length === 0) return null;
-    return coerceCandidate(results[0]);
+    if (!Array.isArray(parsed)) return null;
+    if (parsed.length === 0) return null;
+    let imageBearing = 0;
+    for (const hit of parsed) {
+      const candidate = coerceCandidate(hit);
+      if (candidate && (candidate.image || candidate.image_url)) {
+        return candidate;
+      }
+      if (
+        typeof hit === 'object' &&
+        hit !== null &&
+        ((hit as Record<string, unknown>).image !== undefined ||
+          (hit as Record<string, unknown>).image_url !== undefined)
+      ) {
+        imageBearing += 1;
+      }
+    }
+    // Telemetry: search returned hits but none had image field — operators
+    // can diagnose envelope-shape regressions or non-grail-only result sets.
+    if (imageBearing === 0) {
+      console.warn(
+        `[embed-with-image] search_codex returned ${parsed.length} hits but none had image field`,
+      );
+    }
+    return null;
   }
+  if (typeof parsed !== 'object' || parsed === null) return null;
   // lookup_grail / lookup_mibera envelope: flat object with image field, OR
   // { result: {...} } / { grail: {...} } / { mibera: {...} } shape variants.
   // Try both — flat first, then nested.
