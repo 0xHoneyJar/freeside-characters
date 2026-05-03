@@ -35,6 +35,34 @@ Two delivery paths share the substrate:
 - **Write side (V0.6)** — cron fires per zone (weekly digest, pop-in, weaver). Pattern B identity via per-channel webhook.
 - **Read side (V0.7-A.0)** — slash command → interactions HTTP endpoint → chat-mode reply with the user's prompt quote-prepended.
 
+## One shell, many speakers (codified · cycle 001 phase 4)
+
+The substrate (`packages/persona-engine/`) is shared. Characters (`apps/character-<id>/`) supply only voice + lore + register-locks. Characters share boot-time, prompt-composition, anti-spam, ledger, MCP wiring, Discord interaction handling. They diverge ONLY at the markdown/JSON profile layer.
+
+### The umbrella rule
+
+A new character earns its place inside this repo when:
+- it's a Discord-side persona consuming the same delivery substrate (interactions HTTP, Pattern B webhook identity, anti-spam invariant)
+- its voice + lore can be authored as `apps/character-<id>/{persona/, lore/, registers/}` markdown + JSON
+- its runtime needs (LLM provider, prompt composition, Discord behaviors) DON'T diverge from the substrate's contract
+
+Adding a character is then: a new `apps/character-<id>/` directory + a CHARACTERS env var entry. No new repo needed. See [`docs/CHARACTER-AUTHORING.md`](docs/CHARACTER-AUTHORING.md).
+
+### When a character would split out (rare exit conditions)
+
+A character earns its own repo (`construct-<character>` or `freeside-<character>`-shaped) ONLY if:
+- its **runtime needs diverge** from the substrate (non-Discord delivery surface · custom LLM ensemble that doesn't fit the umbrella's provider abstraction · real-time voice/audio path)
+- its **lifecycle drifts** from the umbrella's cadence (independent versioning · separate auth model · divergent deployment topology)
+- the umbrella **starts working against it** rather than for it (per Eileen's civic-layer doctrine — see [`docs/CIVIC-LAYER.md`](docs/CIVIC-LAYER.md))
+
+Until those conditions fire, characters stay inside this repo. The umbrella is the default; the split is the exception.
+
+### Status (2026-05-02)
+
+Today: ruggy + satoshi share the umbrella. Both consume the same persona-engine. Both use Pattern B webhook identity. Both honor the anti-spam invariant. Adding a third character (e.g., a future Honey Road NPC) follows the umbrella rule — no split warranted.
+
+Codified during ecosystem-health cycle 001 (TEND mode · phase 4 clarification gap ③).
+
 ## Slash command flow
 
 ```mermaid
