@@ -240,6 +240,224 @@ async function resolveWallet(walletInput: string): Promise<ResolvedWallet> {
   }
 }
 
+// ─── reverse resolvers (CMP-boundary 2026-05-04 · close handle/mibera→wallet gap) ──
+// Operator surfaced 2026-05-04 EOD: persona PR #30 unblocks get_wallet_scorecard
+// via wallet input · but operators ask "what's xabbu's score" or "MIBERA-00123 OG"
+// — both require REVERSE resolution (handle/mibera-id → wallet) before scorecard
+// can be called. score-mibera advertises MIBERA-XXXXXX support but returns
+// `mibera_not_resolvable` (V07A4 memory: "midi_profiles lives in midi-interface
+// DB which is not currently accessible from score-mibera"). freeside_auth IS
+// in-bot · already holds the midi_profiles connection · these resolvers are
+// single-table SELECTs. Composes with PR #30 chain-shape: persona already says
+// "chain freeside_auth → get_wallet_scorecard" — this PR makes the chain start
+// from handle OR mibera-id (not just wallet).
+
+interface ResolvedReverse {
+  found: boolean;
+  /** Original input · handle string OR mibera_id · echoed for trace clarity. */
+  query: string;
+  /** Resolved wallet (lowercase normalized) when found · null otherwise. */
+  wallet: string | null;
+  /** Match column · 'display_name' · 'discord_username' · 'mibera_id' · null when not found. */
+  matched_via:
+    | 'display_name'
+    | 'discord_username'
+    | 'mibera_id'
+    | 'unknown'
+    | 'db_unavailable';
+  /** Brief op-readable hint for prose · e.g. "drop the wallet directly" when not found. */
+  hint?: string;
+}
+
+async function resolveHandleToWallet(handleInput: string): Promise<ResolvedReverse> {
+  const handle = handleInput.trim();
+  if (!handle) {
+    return {
+      found: false,
+      query: handleInput,
+      wallet: null,
+      matched_via: 'unknown',
+      hint: 'empty handle — provide a non-empty display_name or discord_username',
+    };
+  }
+
+  const p = getPool();
+  if (!p) {
+    return {
+      found: false,
+      query: handle,
+      wallet: null,
+      matched_via: 'db_unavailable',
+      hint: 'midi_profiles unreachable — drop the wallet 0x... directly',
+    };
+  }
+
+  let client: PoolClient | null = null;
+  try {
+    client = await p.connect();
+    // Match against display_name OR discord_username (operator-set vs Discord-canon).
+    // Case-insensitive on both sides — operators write handles however they remember.
+    // LIMIT 2 so we can detect ambiguity (multiple profiles with same handle).
+    const rows = await client.query<{ wallet_address: string; matched_col: string }>(
+      `SELECT wallet_address,
+              CASE
+                WHEN LOWER(display_name) = LOWER($1) THEN 'display_name'
+                WHEN LOWER(discord_username) = LOWER($1) THEN 'discord_username'
+                ELSE 'unknown'
+              END AS matched_col
+       FROM midi_profiles
+       WHERE LOWER(display_name) = LOWER($1)
+          OR LOWER(discord_username) = LOWER($1)
+       LIMIT 2`,
+      [handle],
+    );
+
+    if (rows.rows.length === 0) {
+      return {
+        found: false,
+        query: handle,
+        wallet: null,
+        matched_via: 'unknown',
+        hint: `no profile matched '${handle}' — verify spelling or drop the wallet 0x... directly`,
+      };
+    }
+
+    if (rows.rows.length > 1) {
+      return {
+        found: false,
+        query: handle,
+        wallet: null,
+        matched_via: 'unknown',
+        hint: `ambiguous: '${handle}' matches multiple profiles — drop the wallet 0x... to disambiguate`,
+      };
+    }
+
+    const row = rows.rows[0]!;
+    // Bridgebuilder PR #31 pass-2 MED `null-wallet-address-not-handled`:
+    // midi_profiles may have rows where a profile is registered but no
+    // wallet was set yet · null/empty wallet_address would throw on
+    // .toLowerCase() and surface as misleading 'query failed' / db_unavailable.
+    if (!row.wallet_address) {
+      return {
+        found: false,
+        query: handle,
+        wallet: null,
+        matched_via: 'unknown',
+        hint: `profile matched '${handle}' but has no wallet on file — operator may need to drop a wallet 0x... directly`,
+      };
+    }
+    return {
+      found: true,
+      query: handle,
+      // Bridgebuilder PR #31 pass-1 MED `wallet-not-normalized`: contract
+      // advertised lowercase-normalized wallet · column may store checksummed/
+      // mixed case · lowercase here so downstream get_wallet_scorecard sees
+      // normalized.
+      wallet: row.wallet_address.toLowerCase(),
+      matched_via: row.matched_col as ResolvedReverse['matched_via'],
+    };
+  } catch (err) {
+    console.error('[freeside_auth] resolve_handle_to_wallet error', err);
+    return {
+      found: false,
+      query: handle,
+      wallet: null,
+      matched_via: 'db_unavailable',
+      hint: 'midi_profiles query failed — drop the wallet 0x... directly',
+    };
+  } finally {
+    client?.release();
+  }
+}
+
+async function resolveMiberaIdToWallet(miberaInput: string): Promise<ResolvedReverse> {
+  const miberaId = miberaInput.trim();
+  if (!miberaId) {
+    return {
+      found: false,
+      query: miberaInput,
+      wallet: null,
+      matched_via: 'unknown',
+      hint: 'empty mibera_id — provide MIBERA-XXXXXX or numeric form',
+    };
+  }
+
+  const p = getPool();
+  if (!p) {
+    return {
+      found: false,
+      query: miberaId,
+      wallet: null,
+      matched_via: 'db_unavailable',
+      hint: 'midi_profiles unreachable — drop the owner wallet 0x... directly',
+    };
+  }
+
+  let client: PoolClient | null = null;
+  try {
+    client = await p.connect();
+    // Case-insensitive match against mibera_id column.
+    const rows = await client.query<{ wallet_address: string }>(
+      `SELECT wallet_address
+       FROM midi_profiles
+       WHERE LOWER(mibera_id) = LOWER($1)
+       LIMIT 2`,
+      [miberaId],
+    );
+
+    if (rows.rows.length === 0) {
+      return {
+        found: false,
+        query: miberaId,
+        wallet: null,
+        matched_via: 'unknown',
+        hint: `no profile matched mibera_id '${miberaId}' — verify format (MIBERA-XXXXXX) or drop the owner wallet directly`,
+      };
+    }
+
+    if (rows.rows.length > 1) {
+      return {
+        found: false,
+        query: miberaId,
+        wallet: null,
+        matched_via: 'unknown',
+        hint: `ambiguous: mibera_id '${miberaId}' matches multiple profiles — drop the wallet to disambiguate`,
+      };
+    }
+
+    const walletAddress = rows.rows[0]!.wallet_address;
+    // Bridgebuilder PR #31 pass-2 MED `null-wallet-address-not-handled`:
+    // same null-guard shape as resolve_handle_to_wallet.
+    if (!walletAddress) {
+      return {
+        found: false,
+        query: miberaId,
+        wallet: null,
+        matched_via: 'unknown',
+        hint: `mibera_id '${miberaId}' matched a profile but has no owner wallet on file — operator may need to drop the wallet 0x... directly`,
+      };
+    }
+    return {
+      found: true,
+      query: miberaId,
+      // Bridgebuilder PR #31 pass-1 MED `wallet-not-normalized`.
+      wallet: walletAddress.toLowerCase(),
+      matched_via: 'mibera_id',
+    };
+  } catch (err) {
+    console.error('[freeside_auth] resolve_mibera_id_to_wallet error', err);
+    return {
+      found: false,
+      query: miberaId,
+      wallet: null,
+      matched_via: 'db_unavailable',
+      hint: 'midi_profiles query failed — drop the owner wallet directly',
+    };
+  } finally {
+    client?.release();
+  }
+}
+
 function ok(value: unknown) {
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
@@ -275,8 +493,40 @@ export const freesideAuthServer = createSdkMcpServer({
         return ok(results);
       },
     ),
+
+    tool(
+      'resolve_handle_to_wallet',
+      'REVERSE resolver — handle (display_name OR discord_username) → wallet address. Use when an operator asks about a NAMED user ("xabbu", "@nomadbera") and you need the wallet to chain into get_wallet_scorecard or other wallet-keyed lookups. Returns `found: false` with a `hint` field if the handle is unknown, ambiguous (matches multiple profiles), or DB unavailable. Case-insensitive match on both display_name and discord_username columns.',
+      {
+        handle: z
+          .string()
+          .describe(
+            'Display name or Discord username (case-insensitive · trimmed). Without @ prefix typically.',
+          ),
+      },
+      async ({ handle }) => {
+        const result = await resolveHandleToWallet(handle);
+        return ok(result);
+      },
+    ),
+
+    tool(
+      'resolve_mibera_id_to_wallet',
+      'REVERSE resolver — Mibera ID (MIBERA-XXXXXX or alternate forms) → owner wallet address. Use when an operator references a Mibera by ID and you need the owner wallet to chain into get_wallet_scorecard. Bridges the gap that score-mibera explicitly cannot cross (score-api returns `mibera_not_resolvable` because midi_profiles lives in midi-interface DB · this resolver IS in-bot with that DB connection). Returns `found: false` + `hint` when unknown/ambiguous/db-unavailable.',
+      {
+        mibera_id: z
+          .string()
+          .describe(
+            'Mibera ID — typically MIBERA-XXXXXX (case-insensitive). Trimmed before lookup.',
+          ),
+      },
+      async ({ mibera_id }) => {
+        const result = await resolveMiberaIdToWallet(mibera_id);
+        return ok(result);
+      },
+    ),
   ],
 });
 
 // Exported for tests / inspection
-export { resolveWallet };
+export { resolveWallet, resolveHandleToWallet, resolveMiberaIdToWallet };
