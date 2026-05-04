@@ -42,6 +42,7 @@ import {
 } from './discord-interactions/server.ts';
 import { setQuestRuntime } from './discord-interactions/dispatch.ts';
 import { buildMemoryDevQuestRuntime } from './quest-runtime-bootstrap.ts';
+import { publishCommands } from './lib/publish-commands.ts';
 
 const banner = `─── freeside-characters bot · v0.6.0-A ────────────────────────`;
 
@@ -170,6 +171,51 @@ async function main(): Promise<void> {
     }
   } else {
     console.log('grail-cache:    DISABLED (GRAIL_CACHE_ENABLED=false · live-fetch every call)');
+  }
+
+  // === AUTO-PUBLISH SLASH COMMANDS · on every bot start ============
+  // When the bot deploys (Railway env change · git push · etc), commands
+  // auto-sync with Discord. Each environment's bot syncs to its own guild
+  // via DISCORD_GUILD_ID. Disable with AUTO_PUBLISH_COMMANDS=false.
+  //
+  // Idempotent: Discord PUT /applications/{id}/guilds/{guild}/commands
+  // replaces the full set · no dupes · no leak.
+  //
+  // Failure mode: registration error logs but does NOT block bot startup.
+  // Bot still serves existing (cached) commands until next successful sync.
+  //
+  // Authorized 2026-05-04 PM via /autonomous · operator framing:
+  // "Can you make it so that merge code autopushes to discord?"
+  // =================================================================
+  const autoPublish = (process.env.AUTO_PUBLISH_COMMANDS ?? 'true').trim().toLowerCase();
+  if (autoPublish !== 'false' && autoPublish !== '0' && autoPublish !== 'no') {
+    try {
+      const botToken = process.env.DISCORD_BOT_TOKEN;
+      const applicationId = process.env.DISCORD_APPLICATION_ID;
+      const guildId = process.env.DISCORD_GUILD_ID;
+
+      if (!botToken) {
+        console.warn('auto-publish:   DISCORD_BOT_TOKEN not set · skipping command sync');
+      } else {
+        const result = await publishCommands({
+          botToken,
+          applicationId,
+          guildId,
+          characters,
+        });
+        console.log(
+          `auto-publish:   synced ${result.registered} commands · ` +
+            `${result.scope}=${result.guildId ?? '(global)'} · ` +
+            `[${result.commands.map((c) => `/${c.name}`).join(' ')}]`,
+        );
+      }
+    } catch (err) {
+      // Don't block bot startup on registration failure. Log and continue —
+      // bot still serves the previously cached command set until next sync.
+      console.error('auto-publish:   command sync failed (bot continues with cached commands):', err);
+    }
+  } else {
+    console.log('auto-publish:   disabled via AUTO_PUBLISH_COMMANDS · skipping');
   }
 
   console.log('────────────────────────────────────────────────────────────────\n');
