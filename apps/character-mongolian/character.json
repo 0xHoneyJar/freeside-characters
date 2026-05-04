@@ -20,17 +20,17 @@
   "stage": "character",
   "stageNotes": "V0.1 draft. First mibera-as-npc instance. Mongolian Grail #507 (Ancestor category). NPC quest character with judgment capability — new pattern not present in ruggy/satoshi.",
   "quest_substrate": {
-    "_doc": "cycle-Q · sprint-3 · Q3.6 · architect lock A6 SHELL ONLY · Track A (Gumi) authors body content via construct-mibera-codex#76. Substrate ships this block; Gumi populates rubric_pointer.cell_id, mention_allowed channel ids, slash_allowed channel ids, and persona-yaml cadence prose post-handoff.",
+    "_doc": "cycle-Q · sprint-3 · Q3.6 · architect lock A6 SHELL ONLY · Track A (Gumi) authors voice_cadence body content via construct-mibera-codex#76. Substrate scaffolds rubric_pointer.cell_id (catalog anchor) + submission_style + friction-delay defaults. Operator populates mention_allowed_channels + slash_allowed_channels with dev-guild channel IDs. Voice cadence stays TODO_TRACK_A until curator authoring lands.",
     "enabled": true,
     "rubric_pointer": {
       "type": "codex_ref",
       "construct_slug": "construct-mongolian",
-      "cell_id": "TODO_TRACK_A"
+      "cell_id": "stub-v1-munkh-quest"
     },
-    "mention_allowed_channels": "TODO_TRACK_A",
-    "slash_allowed_channels": "TODO_TRACK_A",
-    "submission_style_override": "TODO_TRACK_A",
-    "positive_friction_delay_ms_override": "TODO_TRACK_A",
+    "mention_allowed_channels": "TODO_OPERATOR_DEV_GUILD",
+    "slash_allowed_channels": "TODO_OPERATOR_DEV_GUILD",
+    "submission_style_override": "inline-thread",
+    "positive_friction_delay_ms_override": 12000,
     "voice_cadence": {
       "_doc": "Per-character override of phaseToNarrative transform (CMP T4). All keys optional. Substrate ships fallback cadence; persona.yaml supplies the curator-voiced cadence prose. Track A authors at construct-mibera-codex#76.",
       "accepted": "TODO_TRACK_A",

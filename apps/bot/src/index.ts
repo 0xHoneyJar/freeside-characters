@@ -40,6 +40,8 @@ import {
   startInteractionServer,
   type InteractionServerHandle,
 } from './discord-interactions/server.ts';
+import { setQuestRuntime } from './discord-interactions/dispatch.ts';
+import { buildMemoryDevQuestRuntime } from './quest-runtime-bootstrap.ts';
 
 const banner = `─── freeside-characters bot · v0.6.0-A ────────────────────────`;
 
@@ -77,6 +79,48 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error('persona/codex load failed:', err);
     process.exit(1);
+  }
+
+  // === QUEST_RUNTIME · feature-flag selection · 3-mode ============
+  // Operator-authorized 2026-05-04 PM: testing in production server is OK.
+  // Runtime selection composes orthogonally to staging/production:
+  //
+  //   QUEST_RUNTIME=disabled    backward-compat · noQuestRuntime · /quest = ephemeral
+  //   QUEST_RUNTIME=memory      in-process state · QA dogfood · works in prod or staging
+  //   QUEST_RUNTIME=production  real Pg pools + world-manifest source · operator-wired
+  //
+  // staging/production environment separation is a DIFFERENT axis (Railway
+  // service environment · bot binary · DISCORD_GUILD_ID values). Memory mode
+  // is environment-agnostic — works wherever the bot is deployed.
+  // =================================================================
+  //
+  // QUEST_GUILD_ID overrides if quest substrate runs in a different guild
+  // than the chat character substrate. Default: fall back to DISCORD_GUILD_ID
+  // (the canonical guild env var · already set on Railway production).
+  const questRuntimeMode = (process.env.QUEST_RUNTIME ?? 'disabled').trim();
+  if (questRuntimeMode === 'memory') {
+    const guildId = process.env.QUEST_GUILD_ID ?? process.env.DISCORD_GUILD_ID;
+    const runtime = buildMemoryDevQuestRuntime({
+      guildId,
+      characters,
+    });
+    setQuestRuntime(runtime);
+    const runtimeContext = `mode=memory world=mongolian guild=${guildId ?? 'unset'}`;
+    console.log(
+      `quest-runtime:  memory · world=${'mongolian'} · guild=${guildId ?? '(unset · /quest will return polite no-path reply)'} · ${runtimeContext}`,
+    );
+  } else if (questRuntimeMode === 'production') {
+    // OPERATOR-AUTHORED: production runtime requires a real world-manifest
+    // source + per-world Pg pools (mibera-db / apdao-db / cubquest-db).
+    // Out of scope for the QA bootstrap. Operator wires this when Q2.9
+    // DB migration lands + world-manifest source is published.
+    throw new Error(
+      'QUEST_RUNTIME=production not yet wired · use QUEST_RUNTIME=memory for QA',
+    );
+  } else {
+    console.log(
+      `quest-runtime:  disabled · /quest returns ephemeral (set QUEST_RUNTIME=memory for QA)`,
+    );
   }
 
   if (config.DISCORD_BOT_TOKEN) {
