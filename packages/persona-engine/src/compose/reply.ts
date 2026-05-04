@@ -52,7 +52,7 @@ import {
   type GrailRefValidation,
 } from '../deliver/grail-ref-guard.ts';
 import { stripAttachedImageUrls } from '../deliver/strip-image-urls.ts';
-import { EMOJIS, findByName, renderEmoji } from '../orchestrator/emojis/registry.ts';
+import { EMOJIS, findById, findByName, renderEmoji } from '../orchestrator/emojis/registry.ts';
 import {
   appendToLedger,
   getLedgerSnapshot,
@@ -459,10 +459,24 @@ const KNOWN_EMOJI_PREFIXES: ReadonlySet<string> = new Set(
 );
 
 export function translateEmojiShortcodes(text: string): string {
+  // Issue #35 (2026-05-04): repair bare `<:ID>` and `<a:ID>` tokens. The LLM
+  // (or upstream MCP tool result) sometimes emits the ID-only form without
+  // the `:name:` segment — Discord renders that as plain text since the
+  // canonical shape is `<:NAME:ID>`. Look up by ID and re-emit the correct
+  // shape; pass through if the snowflake isn't in the registry (covers
+  // `<:randomNumber>` non-emoji false positives).
+  const idNormalized = text.replace(/<a?:(\d{17,20})>/g, (match, id: string) => {
+    const entry = findById(id);
+    return entry ? renderEmoji(entry) : match;
+  });
+
   // Bridgebuilder PR #32 pass-1 LOW `F1-whitespace-artifact`: consume one
   // preceding space when dropping a hallucinated shortcode so we don't leak
   // double-spaces / trailing whitespace into Discord output.
-  return text.replace(/( ?):([a-zA-Z][a-zA-Z0-9_]*):/g, (match, leadingSpace: string, name: string) => {
+  // Issue #35 lookbehind: skip `:name:` patterns that sit inside an
+  // already-valid `<:name:id>` or `<a:name:id>` token (otherwise pass-2
+  // would corrupt valid shortcodes pass-1 just emitted).
+  return idNormalized.replace(/( ?)(?<!<a?):([a-zA-Z][a-zA-Z0-9_]*):/g, (match, leadingSpace: string, name: string) => {
     const entry = findByName(name);
     if (entry) {
       // Hit · render Discord format · keep the leading space.
