@@ -311,18 +311,60 @@ export async function composeReplyWithEnrichment(
       finalChunks = splitForDiscord(stripped, DISCORD_CHAR_LIMIT);
     }
   }
-  // Single source of truth: payload.content always matches finalContent.
+  // CMP-boundary 2026-05-04 (vault doctrine `[[chat-medium-presentation-boundary]]`
+  // finding 2): translate backend `@g<id>` annotation into NFT-style display
+  // `Mibera #<id>` BEFORE the user-visible chunks lock in. The `@g` shape is
+  // load-bearing for the upstream grail-ref-guard (hallucination detection)
+  // but operator-felt friction: "I prefer if there's a translation layer that
+  // actually translates it to kind of normal speak ... actual NFT number
+  // cleanly and the name of the collection" (2026-05-04 /smol session).
+  // Substrate refs persist UNCHANGED in `grailRefValidation` + telemetry —
+  // only `content` + `chunks` get the chat-medium translation.
+  const displayContent = translateGrailRefsForChat(finalContent);
+  const displayChunks =
+    displayContent === finalContent
+      ? finalChunks
+      : splitForDiscord(displayContent, DISCORD_CHAR_LIMIT);
+
+  // Single source of truth: payload.content always matches displayContent.
   // No mutation of composeWithImage's returned object.
-  const payload = { ...initialPayload, content: finalContent };
+  const payload = { ...initialPayload, content: displayContent };
 
   return {
     ...result,
-    content: finalContent,
-    chunks: finalChunks,
+    content: displayContent,
+    chunks: displayChunks,
     payload,
     toolResults: captured,
     grailRefValidation: inspected.validation,
   };
+}
+
+/**
+ * Translate backend `@g<id>` grail refs into chat-medium NFT-style display.
+ *
+ * CMP-boundary 2026-05-04 finding 2 (vault doctrine
+ * `[[chat-medium-presentation-boundary]]`): the `@g<id>` shape is the
+ * canonical backend annotation that `grail-ref-guard.ts` validates against
+ * the canonical-43 set. It must persist in voice-text input so the guard's
+ * hallucination detection stays load-bearing. But the user-visible chat
+ * presentation should read as `Mibera #<id>` — operator-friendly NFT-style
+ * naming per operator framing 2026-05-04: "actual NFT number cleanly and
+ * the name of the collection, obviously within brackets or within the code
+ * area."
+ *
+ * Implementation: simple regex substitution. Preserves any surrounding
+ * backticks / parentheses the LLM emits — the wrapping characters stay,
+ * only the inner ref shape changes (e.g. `(\`@g876\`)` → `(\`Mibera #876\`)`).
+ *
+ * Future enrichment (V1.5 / cycle B asset-pipeline composition): swap
+ * `Mibera #<id>` for `<NAME> · Mibera #<id>` by joining against codex MCP
+ * cache (e.g. "Black Hole · Mibera #876"). Deferred per operator
+ * "richer T2 = NICE-TO-HAVE · DEFER" framing — adds latency + codex MCP
+ * coupling for diminishing-returns enrichment.
+ */
+export function translateGrailRefsForChat(text: string): string {
+  return text.replace(/@g(\d+)/g, 'Mibera #$1');
 }
 
 /**
