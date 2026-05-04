@@ -16,13 +16,14 @@ FROM oven/bun:1.3-alpine AS base
 WORKDIR /app
 
 # ─── workspace metadata first — keeps layer cache hot when source ─────
-# changes but deps don't. V0.6 monorepo has 5 workspaces:
+# changes but deps don't. V0.6 monorepo has 6 workspaces:
 #   apps/bot · apps/character-ruggy · apps/character-satoshi
-#   packages/persona-engine · packages/protocol
+#   apps/character-mongolian · packages/persona-engine · packages/protocol
 COPY package.json bun.lock ./
 COPY apps/bot/package.json ./apps/bot/
 COPY apps/character-ruggy/package.json ./apps/character-ruggy/
 COPY apps/character-satoshi/package.json ./apps/character-satoshi/
+COPY apps/character-mongolian/package.json ./apps/character-mongolian/
 COPY packages/persona-engine/package.json ./packages/persona-engine/
 COPY packages/protocol/package.json ./packages/protocol/
 
@@ -44,6 +45,7 @@ COPY apps/bot ./apps/bot
 # selects which to load.
 COPY apps/character-ruggy ./apps/character-ruggy
 COPY apps/character-satoshi ./apps/character-satoshi
+COPY apps/character-mongolian ./apps/character-mongolian
 
 # tsconfig for Bun's TS resolution
 COPY tsconfig.json ./
