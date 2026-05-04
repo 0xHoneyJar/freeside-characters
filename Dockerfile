@@ -39,7 +39,7 @@ COPY packages ./packages
 # BuildKit cache mount preserves `~/.bun/install/cache` across rebuilds
 # so source-only changes don't re-download the SDK bundle (addresses
 # the deps-cache-invalidation trade-off documented in PR #38 review).
-RUN --mount=type=cache,target=/root/.bun/install/cache \
+RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile --production
 
 ENV NODE_ENV=production
