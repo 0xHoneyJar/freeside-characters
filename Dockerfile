@@ -36,11 +36,16 @@ COPY packages ./packages
 # claude-agent-sdk pulls a Claude Code bundle (~25MB) — runtime
 # requirement for the persona-engine SDK subprocess (e.g.
 # apps/bot/.claude/skills/arneson loaded via SDK settingSources).
-# BuildKit cache mount preserves `~/.bun/install/cache` across rebuilds
-# so source-only changes don't re-download the SDK bundle (addresses
-# the deps-cache-invalidation trade-off documented in PR #38 review).
-RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile --production
+#
+# Note: a `--mount=type=cache,id=bun-cache,...` was tried in PRs #38/#39
+# to preserve `~/.bun/install/cache` across rebuilds, but Railway's
+# BuildKit parser requires a Railway-specific cacheKey prefix on the
+# `id` argument (undocumented format · errors with "missing the cacheKey
+# prefix from its id"). Dropped the cache mount entirely until the
+# Railway-correct syntax is clarified — bun install is fast enough on
+# cold builds for the current monorepo size that the cache optimization
+# is non-essential.
+RUN bun install --frozen-lockfile --production
 
 ENV NODE_ENV=production
 
