@@ -94,6 +94,62 @@ describe('translateEmojiShortcodes · non-custom shortcodes left alone', () => {
   });
 });
 
+describe('translateEmojiShortcodes · bare <:ID> repair (issue #35)', () => {
+  // Operator dogfood 2026-05-04 9:39 AM PT · ruggy webhook in El Capitan thread
+  // emitted `<:1138775429482819645>` (one colon · ID-only · missing :name:).
+  // Discord's canonical form is `<:NAME:ID>` so the malformed token rendered
+  // as raw text. Pass-1 of translateEmojiShortcodes now repairs ID-only tokens
+  // by registry lookup; valid tokens emitted by pass-1 must NOT be re-corrupted
+  // by pass-2's :name: regex (negative lookbehind handles this).
+
+  test('bare <:ID> for static emoji is repaired to <:name:id>', () => {
+    // ruggy ID 1138775429482819645 · the exact operator-dogfood case
+    const out = translateEmojiShortcodes('text <:1138775429482819645> tail');
+    expect(out).toBe('text <:ruggy:1138775429482819645> tail');
+  });
+
+  test('bare <a:ID> for animated emoji is repaired to <a:name:id>', () => {
+    // ruggy_dab ID 1142035114008772608 · animated:true
+    const out = translateEmojiShortcodes('we ate <a:1142035114008772608>');
+    expect(out).toBe('we ate <a:ruggy_dab:1142035114008772608>');
+  });
+
+  test('already-valid <:name:id> is preserved (lookbehind prevents re-corruption)', () => {
+    const valid = '<:ruggy:1138775429482819645>';
+    expect(translateEmojiShortcodes(valid)).toBe(valid);
+  });
+
+  test('already-valid <a:name:id> is preserved (lookbehind prevents re-corruption)', () => {
+    const valid = '<a:ruggy_dab:1142035114008772608>';
+    expect(translateEmojiShortcodes(valid)).toBe(valid);
+  });
+
+  test('unknown snowflake <:ID> falls through unchanged (not every <:NUM> is emoji)', () => {
+    // 17-20 digit number not in registry · could be a Discord channel/user
+    // mention quirk or other shape · do not corrupt.
+    const out = translateEmojiShortcodes('mystery <:9999999999999999999>');
+    expect(out).toBe('mystery <:9999999999999999999>');
+  });
+
+  test('multiple bare IDs in same text all repair', () => {
+    const out = translateEmojiShortcodes(
+      '<:1138775429482819645> then <a:1142035114008772608>',
+    );
+    expect(out).toBe(
+      '<:ruggy:1138775429482819645> then <a:ruggy_dab:1142035114008772608>',
+    );
+  });
+
+  test('mix of bare <:ID> and :name: forms both translate', () => {
+    const out = translateEmojiShortcodes(
+      '<:1138775429482819645> :ruggy_dab: done',
+    );
+    expect(out).toBe(
+      '<:ruggy:1138775429482819645> <a:ruggy_dab:1142035114008772608> done',
+    );
+  });
+});
+
 describe('translateEmojiShortcodes · edge cases', () => {
   test('empty string returns empty', () => {
     expect(translateEmojiShortcodes('')).toBe('');
