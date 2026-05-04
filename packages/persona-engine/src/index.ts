@@ -129,6 +129,7 @@ export {
   DEFAULT_ERROR_REGISTRY,
   getErrorTemplate,
   composeErrorReply,
+  composeErrorBody,
 } from './expression/error-register.ts';
 export type {
   ErrorClass,

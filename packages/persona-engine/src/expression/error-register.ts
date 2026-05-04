@@ -148,6 +148,14 @@ export function getErrorTemplate(
  *
  * `displayName` is the character's preferred attribution surface (falls
  * back to character.id at the call site).
+ *
+ * @deprecated 2026-05-04 — operator directive: when the bot (loa) speaks
+ * via interaction PATCH, it should NOT say the character's name (the
+ * Discord interaction header already shows "user used /character"). Use
+ * `composeErrorBody` for both webhook-delivered errors (Pattern B with
+ * character avatar/username override) and PATCH-fallback errors (bare
+ * body, no name prefix). Retained for any callers that haven't migrated
+ * yet — flag for cleanup once dispatch.ts migration confirmed.
  */
 export function composeErrorReply(
   characterId: string,
@@ -157,4 +165,29 @@ export function composeErrorReply(
   const body =
     getErrorTemplate(characterId, errorClass) ?? "something broke. try again?";
   return `**${displayName}**\n\n${body}`;
+}
+
+/**
+ * Compose just the error body (no character-name prefix). Use this for:
+ *
+ *   1. Webhook-delivered errors (Pattern B) — webhook avatar+username
+ *      handle attribution; bold-prefix would be redundant noise.
+ *   2. Interaction PATCH-fallback errors when the operator wants the bot
+ *      to speak without "puppeting" the character name (per operator
+ *      directive 2026-05-04: "if loa talks then don't have it say the
+ *      name"). The Discord interaction header already shows
+ *      "<user> used /<character>" so the user knows which character was
+ *      invoked even when the response is rendered as the shell-bot
+ *      identity (loa).
+ *
+ * Returns the substrate-quiet generic if no template registered for
+ * (characterId, errorClass).
+ */
+export function composeErrorBody(
+  characterId: string,
+  errorClass: ErrorClass,
+): string {
+  return (
+    getErrorTemplate(characterId, errorClass) ?? "something broke. try again?"
+  );
 }
