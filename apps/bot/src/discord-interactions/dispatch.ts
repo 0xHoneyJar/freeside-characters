@@ -45,6 +45,12 @@ import {
 import { invokeStability } from '@freeside-characters/persona-engine/orchestrator/imagegen';
 import type { ToolUseEvent } from '@freeside-characters/persona-engine';
 import { resolveSlashCommands, resolveSlashCommandTarget, selectedCharacterIds } from '../character-loader.ts';
+import {
+  handleQuestInteraction,
+  isQuestInteraction,
+  noQuestRuntime,
+  type QuestRuntime,
+} from './quest-dispatch.ts';
 import { getZoneForChannel } from '../lib/channel-zone-map.ts';
 import {
   InteractionResponseType,
@@ -105,12 +111,36 @@ function recordPatchOutcome(channelId: string, status: number): void {
  * effects: when the command is valid, kicks off `doReplyAsync` to PATCH
  * the deferred message later.
  */
+/**
+ * Module-level quest runtime — operators wire this via setQuestRuntime() at
+ * boot. Defaults to the no-op runtime (quests are off until configured).
+ *
+ * cycle-Q · sprint-3 · Q3.5: per SDD §5.5 the bot consumer owns the runtime
+ * composition (catalog source · world-manifest source · Pg pools · player
+ * resolver). The interceptor reads from this module-level binding so the
+ * surgical change to dispatch.ts is a 3-line block (per architect lock note).
+ */
+let activeQuestRuntime: QuestRuntime = noQuestRuntime;
+
+export function setQuestRuntime(runtime: QuestRuntime): void {
+  activeQuestRuntime = runtime;
+}
+
+export function getActiveQuestRuntime(): QuestRuntime {
+  return activeQuestRuntime;
+}
+
 export async function dispatchSlashCommand(
   interaction: DiscordInteraction,
   config: Config,
   characters: CharacterConfig[],
 ): Promise<DiscordInteractionResponse> {
-  if (interaction.type !== InteractionType.APPLICATION_COMMAND) {
+  // cycle-Q · sprint-3 · Q3.5 — early-detect quest substrate interactions
+  // (slash + button + modal_submit). The actual interception lands AFTER
+  // the anti-spam guard below so quest commands inherit the same protection.
+  const isQuest = isQuestInteraction(interaction);
+
+  if (!isQuest && interaction.type !== InteractionType.APPLICATION_COMMAND) {
     return ephemeralReply(`unsupported interaction type ${interaction.type}`);
   }
 
@@ -142,6 +172,16 @@ export async function dispatchSlashCommand(
     return ephemeralReply(
       'this channel is temporarily unavailable for character replies. try again after the next restart.',
     );
+  }
+
+  // ─── cycle-Q · sprint-3 · Q3.5 — quest substrate interception ──────
+  // After anti-spam + circuit-breaker pre-checks, route quest_*
+  // interactions (slash + button + modal_submit) to
+  // @0xhoneyjar/quests-discord-renderer dispatchQuestInteraction.
+  // Per-character resolution below is bypassed (quest is a system command,
+  // not character-bound).
+  if (isQuest) {
+    return handleQuestInteraction(interaction, activeQuestRuntime);
   }
 
 // —— Resolve target command + handler ————————————————————————
