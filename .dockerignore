@@ -8,16 +8,17 @@ docs
 README.md
 *.md
 
-# Local dev artifacts
-.env
-.env.*
-!.env.example
-*.log
-.DS_Store
+# Local dev artifacts — depth-aware patterns since Dockerfile uses
+# wholesale `COPY apps` / `COPY packages` (.dockerignore is the security
+# boundary for accidental secret/cruft inclusion in the image).
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+**/.DS_Store
 
 # Deps + build outputs (rebuilt in image)
-node_modules
-apps/bot/node_modules
+**/node_modules
 **/dist
 **/.bun
 **/.turbo
