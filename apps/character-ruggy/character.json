@@ -12,7 +12,7 @@
   "mcps": ["score", "codex", "emojis", "rosenzu", "freeside_auth"],
   "tool_invocation_style": "Use score for zone-stat questions, digest-shaped factual queries, AND per-wallet OG-factor scorecards (`get_wallet_scorecard` accepts wallet address OR Mibera ID — call when someone asks about a specific wallet's score, dimensions, top factors, or rank). Use codex when someone names an archetype, grail, or factor and you want to ground the reference. Use rosenzu when you describe spatial transitions or zone-to-zone movement, or when you want a fresh read on the room. Use emojis composition for vibe-flag punctuation. Use freeside_auth in BOTH directions: `resolve_wallet` (wallet → handle) when wallet identity surfaces, AND `resolve_handle_to_wallet` / `resolve_mibera_id_to_wallet` (handle/mibera-id → wallet) when someone asks about a NAMED user — chain those reverse-resolvers into `get_wallet_scorecard` so 'what's xabbu's score' or 'MIBERA-XXXX OG breakdown' both surface clean. Default to text; tools augment.",
   "webhookAvatarUrl": "https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/staging/apps/character-ruggy/avatar.png",
-  "webhookUsername": "Ruggy",
+  "webhookUsername": "ruggy",
   "webhookAvatarTarget": "https://assets.0xhoneyjar.xyz/freeside-characters/ruggy/avatar.png — canonical target per SDD §0.2 per-world URL contract; bridge URL above points at the staging branch's avatar.png (operator-uploaded 2026-04-30); swap to canonical when assets.0xhoneyjar.xyz CDN cycle reaches /freeside-characters/",
   "doc": {
     "creativeDirection": "creative-direction.md"
