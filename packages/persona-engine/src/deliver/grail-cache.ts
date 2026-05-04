@@ -115,24 +115,33 @@ let initInFlight: Promise<InitResult> | null = null;
  * unreachable at boot.
  */
 const CANONICAL_GRAIL_URLS: ReadonlyArray<string> = [
+  // CMP-boundary 2026-05-04: flipped .png → .webp · per [[chat-medium-presentation-boundary]]
+  // doctrine finding 4. WebP variants exist at canonical paths · ~50× smaller.
+  // Sizes: black-hole 121KB · satoshi-as-hermes 361KB · scorpio 212KB · fire 83KB ·
+  // past 121KB · pluto 64KB · aquarius 229KB → ~1.2MB total cache (was ~50MB+ as PNGs).
+  // Discord renders WebP natively · zero visual change · resolves V07A4 cap-mistune
+  // tail concerns. MAX_BYTES_PER_ENTRY stays at 12MB so future PNG-format additions
+  // still work. Cycle B asset-pipeline AssetService.fetchOptimal({acceptFormats:['webp','png']})
+  // is the architectural-grade replacement for this hardcoded preference.
+  //
   // 876  Black Hole (concept) — V0.7-A.3 SC1 reference
-  'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.png',
+  'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.webp',
   // 4488 Satoshi-as-Hermes (ancestor) — V0.7-A.3 SC2 reference
   // hotfix 2026-05-03: Cycle A initially used mercury.png (wrong file ·
   // mercury is a PROPERTY of #4488, not the filename). Canonical per
   // apps/character-satoshi/persona.md:7,11 + codex-anchors.md is
-  // satoshi-as-hermes.png. Cycle B URL canonicalization replaces this.
-  'https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.png',
+  // satoshi-as-hermes. Cycle B URL canonicalization replaces this.
+  'https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.webp',
   // 235  Scorpio (zodiac) — V0.7-A.3 §11 transformation regression
-  'https://assets.0xhoneyjar.xyz/Mibera/grails/scorpio.png',
+  'https://assets.0xhoneyjar.xyz/Mibera/grails/scorpio.webp',
   // 6458 Fire (element) — V0.7-A.3 §11 transformation regression
-  'https://assets.0xhoneyjar.xyz/Mibera/grails/fire.png',
+  'https://assets.0xhoneyjar.xyz/Mibera/grails/fire.webp',
   // 4221 Past (concept) — V0.7-A.3 SC3 cite
-  'https://assets.0xhoneyjar.xyz/Mibera/grails/past.png',
+  'https://assets.0xhoneyjar.xyz/Mibera/grails/past.webp',
   // 1606 Pluto (planet) — V0.7-A.3 SC2 cite
-  'https://assets.0xhoneyjar.xyz/Mibera/grails/pluto.png',
+  'https://assets.0xhoneyjar.xyz/Mibera/grails/pluto.webp',
   // 6805 Aquarius (zodiac) — V0.7-A.3 SC2 cite
-  'https://assets.0xhoneyjar.xyz/Mibera/grails/aquarius.png',
+  'https://assets.0xhoneyjar.xyz/Mibera/grails/aquarius.webp',
 ];
 
 /** Boot-prefetch options. Defaults match spec §4.2 reference impl. */

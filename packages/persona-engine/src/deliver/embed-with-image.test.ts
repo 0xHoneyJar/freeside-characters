@@ -68,7 +68,7 @@ describe('composeWithImage · happy path', () => {
         {
           ref: '@g876',
           name: 'Black Hole',
-          image: 'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.png',
+          image: 'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.webp',
         },
       ],
     );
@@ -76,12 +76,12 @@ describe('composeWithImage · happy path', () => {
     expect(result.content).toBe('voice text here.');
     expect(result.files).toBeDefined();
     expect(result.files!.length).toBe(1);
-    expect(result.files![0]!.name).toBe('g876.png');
-    expect(result.files![0]!.contentType).toBe('image/png');
+    expect(result.files![0]!.name).toBe('g876.webp');
+    expect(result.files![0]!.contentType).toBe('image/webp');
     expect(result.files![0]!.data.byteLength).toBeGreaterThan(0);
     // F10 polish: attachedUrls present + matches the source URL of the file
     expect(result.attachedUrls).toEqual([
-      'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.png',
+      'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.webp',
     ]);
   });
 
@@ -97,17 +97,17 @@ describe('composeWithImage · happy path', () => {
           // V0.7-A.4 patch (2026-05-03): was hermes.PNG (403); hotfix flipped
           // to canonical satoshi-as-hermes.png per persona.md + codex-anchors
           // (mercury was wrong file · property of #4488 not the filename).
-          image_url: 'https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.png',
+          image_url: 'https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.webp',
         },
       ],
     );
 
     expect(result.files).toBeDefined();
     expect(result.files!.length).toBe(1);
-    expect(result.files![0]!.name).toBe('g4488.png');
+    expect(result.files![0]!.name).toBe('g4488.webp');
     // F10 polish: attachedUrls reflects image_url alt-key URL too
     expect(result.attachedUrls).toEqual([
-      'https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.png',
+      'https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.webp',
     ]);
   });
 });
@@ -371,7 +371,7 @@ describe('composeWithImage · F6 size cap', () => {
 // ──────────────────────────────────────────────────────────────────────
 
 describe('composeWithImage · V0.7-A.4 cache-first fast path', () => {
-  const CACHED_URL = 'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.png';
+  const CACHED_URL = 'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.webp';
   const CACHED_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xde, 0xad, 0xbe, 0xef]);
 
   test('cache hit returns cached bytes WITHOUT invoking fetch', async () => {
