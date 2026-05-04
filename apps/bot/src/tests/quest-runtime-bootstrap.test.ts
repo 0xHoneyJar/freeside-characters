@@ -11,7 +11,7 @@
  *   - resolvePlayer extracts user.id correctly from interaction.member.user
  *     and returns null when no Discord user is present (per anon-default
  *     PRD D4 with anon-only stub)
- *   - worldManifests scope to QUEST_DEV_GUILD_ID exactly when provided
+ *   - worldManifests scope to guildId exactly when provided
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -37,7 +37,7 @@ const stubCharacters: readonly CharacterConfig[] = [
 describe('cycle-Q · quest-runtime-bootstrap · buildMemoryDevQuestRuntime shape', () => {
   test('returns a fully-shaped QuestRuntime', () => {
     const r = buildMemoryDevQuestRuntime({
-      devGuildId: '111111111111111111',
+      guildId: '111111111111111111',
       characters: stubCharacters,
     });
     expect(Array.isArray(r.worldManifests)).toBe(true);
@@ -48,9 +48,9 @@ describe('cycle-Q · quest-runtime-bootstrap · buildMemoryDevQuestRuntime shape
     expect(typeof r.resolvePlayer).toBe('function');
   });
 
-  test('worldManifests scope to devGuildId exactly when provided', () => {
+  test('worldManifests scope to guildId exactly when provided', () => {
     const r = buildMemoryDevQuestRuntime({
-      devGuildId: '999888777666555444',
+      guildId: '999888777666555444',
       characters: stubCharacters,
     });
     expect(r.worldManifests).toHaveLength(1);
@@ -58,7 +58,7 @@ describe('cycle-Q · quest-runtime-bootstrap · buildMemoryDevQuestRuntime shape
     expect(r.worldManifests[0]?.guild_ids).toEqual(['999888777666555444']);
   });
 
-  test('worldManifests have no guild_ids when devGuildId omitted', () => {
+  test('worldManifests have no guild_ids when guildId omitted', () => {
     const r = buildMemoryDevQuestRuntime({ characters: stubCharacters });
     expect(r.worldManifests).toHaveLength(1);
     expect(r.worldManifests[0]?.guild_ids).toEqual([]);

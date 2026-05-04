@@ -86,13 +86,15 @@ const buildStubQuest = (): Quest =>
 
 export interface MemoryDevQuestRuntimeOptions {
   /**
-   * Discord guild ID the dev/QA server uses. The stub world manifest
-   * declares this as the only `guild_ids` entry so resolveWorldForGuild
-   * matches it. If undefined or empty string, the stub world manifest
-   * declares NO guild_ids · the resolver returns null for every guild
-   * · /quest returns the polite "no quest path yet" reply.
+   * Discord guild ID the bot runs in. The stub world manifest declares
+   * this as the only `guild_ids` entry so resolveWorldForGuild matches it.
+   * Applies whether testing on staging or production guild ·
+   * operator-acknowledged prod-test posture 2026-05-04. If undefined or
+   * empty string, the stub world manifest declares NO guild_ids · the
+   * resolver returns null for every guild · /quest returns the polite
+   * "no quest path yet" reply.
    */
-  readonly devGuildId?: string;
+  readonly guildId?: string;
   /**
    * Loaded characters (from character-loader). Used to construct the
    * CharacterRegistry · resolveDisplayName maps NpcId → displayName.
@@ -159,10 +161,10 @@ const buildResolvePlayer = (): ((
 // ---------------------------------------------------------------------------
 
 const buildWorldManifests = (
-  devGuildId: string | undefined,
+  guildId: string | undefined,
 ): readonly WorldManifestQuestSubset[] => {
   const guild_ids =
-    devGuildId && devGuildId.trim().length > 0 ? [devGuildId] : [];
+    guildId && guildId.trim().length > 0 ? [guildId] : [];
   return [
     {
       slug: STUB_WORLD_SLUG,
@@ -198,11 +200,16 @@ const emptyVoiceProfile: CuratorVoiceProfile = {};
 // ---------------------------------------------------------------------------
 
 /**
- * Build a memory-mode QuestRuntime suitable for Discord dev-guild QA.
+ * Build a memory-mode QuestRuntime suitable for Discord guild QA.
+ *
+ * The "Dev" in the name refers to the runtime *mode* (memory-dev-mode) ·
+ * NOT the deployment environment. Memory-mode runs cleanly in staging
+ * OR production guilds — operator-acknowledged prod-test posture
+ * 2026-05-04.
  *
  * Backed by:
  *   - in-memory catalog with one stub quest (`munkh-introduction-v1`)
- *   - one stub world manifest scoped to `devGuildId` (if provided)
+ *   - one stub world manifest scoped to `guildId` (if provided)
  *   - memory QuestStatePort (no Pg) · state lives in-process · resets on bot restart
  *   - anon-only player identity (per PRD D4 anon-allowed default)
  *   - empty voice profile · substrate cadence fallback
@@ -213,7 +220,7 @@ export const buildMemoryDevQuestRuntime = (
   opts: MemoryDevQuestRuntimeOptions,
 ): QuestRuntime => {
   return {
-    worldManifests: buildWorldManifests(opts.devGuildId),
+    worldManifests: buildWorldManifests(opts.guildId),
     catalog: buildMemoryCatalog(),
     characters: buildCharacterRegistry(opts.characters),
     voice: emptyVoiceProfile,

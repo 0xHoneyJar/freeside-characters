@@ -81,23 +81,33 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // cycle-Q post-merge: env-gated quest runtime selection. Default disabled
-  // preserves backward-compat (V0.7-A.4 parity · /quest returns ephemeral
-  // "no quest path yet" via noQuestRuntime).
+  // === QUEST_RUNTIME · feature-flag selection · 3-mode ============
+  // Operator-authorized 2026-05-04 PM: testing in production server is OK.
+  // Runtime selection composes orthogonally to staging/production:
   //
-  //   QUEST_RUNTIME=disabled    (default · noQuestRuntime · pre-cycle-Q parity)
-  //   QUEST_RUNTIME=memory      memory adapter · in-process state · QA dogfood
-  //   QUEST_RUNTIME=production  operator-authored · NOT wired here · throws
+  //   QUEST_RUNTIME=disabled    backward-compat · noQuestRuntime · /quest = ephemeral
+  //   QUEST_RUNTIME=memory      in-process state · QA dogfood · works in prod or staging
+  //   QUEST_RUNTIME=production  real Pg pools + world-manifest source · operator-wired
+  //
+  // staging/production environment separation is a DIFFERENT axis (Railway
+  // service environment · bot binary · DISCORD_GUILD_ID values). Memory mode
+  // is environment-agnostic — works wherever the bot is deployed.
+  // =================================================================
+  //
+  // QUEST_GUILD_ID overrides if quest substrate runs in a different guild
+  // than the chat character substrate. Default: fall back to DISCORD_GUILD_ID
+  // (the canonical guild env var · already set on Railway production).
   const questRuntimeMode = (process.env.QUEST_RUNTIME ?? 'disabled').trim();
   if (questRuntimeMode === 'memory') {
-    const devGuildId = process.env.QUEST_DEV_GUILD_ID;
+    const guildId = process.env.QUEST_GUILD_ID ?? process.env.DISCORD_GUILD_ID;
     const runtime = buildMemoryDevQuestRuntime({
-      devGuildId,
+      guildId,
       characters,
     });
     setQuestRuntime(runtime);
+    const runtimeContext = `mode=memory world=mongolian guild=${guildId ?? 'unset'}`;
     console.log(
-      `quest-runtime:  memory · world=${'mongolian'} · dev_guild=${devGuildId ?? '(unset · /quest will return polite no-path reply)'}`,
+      `quest-runtime:  memory · world=${'mongolian'} · guild=${guildId ?? '(unset · /quest will return polite no-path reply)'} · ${runtimeContext}`,
     );
   } else if (questRuntimeMode === 'production') {
     // OPERATOR-AUTHORED: production runtime requires a real world-manifest
