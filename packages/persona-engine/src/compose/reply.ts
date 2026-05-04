@@ -444,10 +444,18 @@ export function translateGrailRefsForChat(text: string): string {
  * `ruggy_` prefix) gets dropped.
  */
 const KNOWN_EMOJI_PREFIXES: ReadonlySet<string> = new Set(
-  EMOJIS.map((e) => {
-    const match = e.name.match(/^([a-z]+_)/);
-    return match ? match[1]! : null;
-  }).filter((p): p is string => p !== null),
+  EMOJIS.flatMap((e) => {
+    const name = e.name.toLowerCase();
+    // Underscore-shape (e.g. `ruggy_aaa` → `ruggy_`)
+    const underscoreMatch = name.match(/^([a-z0-9]+_)/);
+    if (underscoreMatch) return [underscoreMatch[1]!];
+    // Bridgebuilder PR #32 pass-3 MED `F1-prefix-derivation`: single-word
+    // entries (e.g. `mibera`, `yetinaut`) contribute `<name>_` as a potential
+    // hallucination prefix · so `:mibera_xyz:` drops even when no `mibera_*`
+    // entry exists yet. Bound by registered names · still data-driven.
+    if (/^[a-z][a-z0-9]*$/.test(name)) return [`${name}_`];
+    return [];
+  }),
 );
 
 export function translateEmojiShortcodes(text: string): string {
@@ -463,8 +471,15 @@ export function translateEmojiShortcodes(text: string): string {
     // Miss + matches a known custom-emoji prefix from registry →
     // custom-emoji-shaped hallucination · drop (also drop the preceding
     // space if one was matched · no whitespace artifact).
+    const lower = name.toLowerCase();
     for (const prefix of KNOWN_EMOJI_PREFIXES) {
-      if (name.toLowerCase().startsWith(prefix)) {
+      if (lower.startsWith(prefix)) {
+        // Bridgebuilder PR #32 pass-3 MED `F5-silent-drop-no-observability`:
+        // emit a debug log per dropped hallucination so operators can see
+        // when LLM emoji drift recurs (signal for persona drift OR registry
+        // gap worth filling). Cardinality bounded by LLM creativity ·
+        // single console.warn line per drop · low log volume in normal use.
+        console.warn(`[emoji-translate] dropped hallucinated shortcode :${name}: (matched prefix '${prefix}' but no registry entry)`);
         return '';
       }
     }
