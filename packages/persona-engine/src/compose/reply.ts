@@ -293,7 +293,25 @@ export async function composeReplyWithEnrichment(
   // eliminates the prior `payload.content = stripped` mutation + dropped
   // the `extractAttachedUrls(...).slice(...)` workaround whose ordering
   // assumption (input order = attached order) was the F4 invariant smell.
-  const grailCandidates = extractGrailCandidates(captured);
+  // CMP-boundary 2026-05-04 finding 3 (vault doctrine
+  // `[[chat-medium-presentation-boundary]]`): order candidates by their
+  // first citation in the voice text BEFORE composeWithImage attaches.
+  // Default maxAttachments=1 means slot[0] wins · ordering matters.
+  //
+  // Operator dogfood `/satoshi prompt:"the dark grail"` (2026-05-03 6:14PM PT)
+  // surfaced the bug: voice cited Black Hole (@g876) but Fire image attached
+  // because search_codex returned [Fire, Black Hole] · candidates[0] was Fire.
+  // search_codex result order is RELEVANCE-ranked (Fire 0.88 lost to Black Hole
+  // 0.92 by 0.04) but voice authoritatively cited Black Hole — image must
+  // match voice citation, not search relevance.
+  //
+  // V0.7-A.5 SDD §4.2 specifies this helper for the multi-attach cycle ·
+  // extracted standalone here as a CMP-boundary micro-fix · multi-attach
+  // (maxAttachments>1) stays parked in V0.7-A.5 cycle.
+  const grailCandidates = orderAttachmentsByCitation(
+    inspected.text,
+    extractGrailCandidates(captured),
+  );
   const initialPayload = await composeWithImage(inspected.text, grailCandidates);
   const attachedUrls = initialPayload.attachedUrls ?? [];
 
@@ -365,6 +383,54 @@ export async function composeReplyWithEnrichment(
  */
 export function translateGrailRefsForChat(text: string): string {
   return text.replace(/@g(\d+)/g, 'Mibera #$1');
+}
+
+/**
+ * Order grail candidates by their first-citation position in voice text.
+ *
+ * CMP-boundary 2026-05-04 finding 3 (vault doctrine
+ * `[[chat-medium-presentation-boundary]]`): with default maxAttachments=1,
+ * `composeWithImage` attaches `candidates[0]`. If that order doesn't match
+ * the voice text's citation order, the user sees image-text mismatch.
+ *
+ * Operator dogfood `/satoshi prompt:"the dark grail"` (2026-05-03 6:14PM PT)
+ * surfaced this: search_codex returned [Fire 0.88, Black Hole 0.92] but
+ * voice authoritatively cited Black Hole. composeWithImage attached Fire
+ * (candidates[0] by search relevance) — wrong image for the cited grail.
+ *
+ * V0.7-A.5 SDD §4.2 specifies this helper for the multi-attach cycle ·
+ * extracted standalone here as a CMP-boundary micro-fix · multi-attach
+ * (maxAttachments>1) stays parked in V0.7-A.5 cycle scope.
+ *
+ * Algorithm:
+ *   1. For each candidate with a `ref` field of shape `@g<id>`, find first
+ *      occurrence position of that ref in `text`.
+ *   2. Sort candidates by citation position (earliest first).
+ *   3. Candidates with no `ref` OR whose ref is uncited go to the END,
+ *      preserving relative input order (stable sort).
+ *
+ * Returns a NEW array · does not mutate input.
+ */
+export function orderAttachmentsByCitation(
+  text: string,
+  candidates: CodexGrailResult[],
+): CodexGrailResult[] {
+  // Build position map per candidate. Position = index of first match in
+  // text, or Infinity if uncited (sorts to end). Stable sort preserves
+  // relative order among uncited (and cited-at-same-position) entries.
+  const positions = candidates.map((c, idx) => {
+    const ref = c.ref;
+    if (typeof ref !== 'string' || ref.length === 0) {
+      return { c, pos: Number.POSITIVE_INFINITY, idx };
+    }
+    const found = text.indexOf(ref);
+    return { c, pos: found < 0 ? Number.POSITIVE_INFINITY : found, idx };
+  });
+  positions.sort((a, b) => {
+    if (a.pos !== b.pos) return a.pos - b.pos;
+    return a.idx - b.idx; // stable: preserve input order on ties
+  });
+  return positions.map((p) => p.c);
 }
 
 /**
