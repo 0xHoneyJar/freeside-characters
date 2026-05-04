@@ -25,6 +25,10 @@ WORKDIR /app
 # so adding `apps/character-{slug}/` is auto-discovered by bun and
 # auto-included in the image. Single surface for character roster:
 # the CHARACTERS env at runtime. The Dockerfile is character-agnostic.
+#
+# Security note: `.dockerignore` is the security boundary for these
+# wholesale copies — depth-aware patterns there exclude .env files,
+# node_modules, logs, IDE caches, etc from the build context.
 COPY package.json bun.lock tsconfig.json ./
 COPY apps ./apps
 COPY packages ./packages
@@ -32,7 +36,11 @@ COPY packages ./packages
 # claude-agent-sdk pulls a Claude Code bundle (~25MB) — runtime
 # requirement for the persona-engine SDK subprocess (e.g.
 # apps/bot/.claude/skills/arneson loaded via SDK settingSources).
-RUN bun install --frozen-lockfile --production
+# BuildKit cache mount preserves `~/.bun/install/cache` across rebuilds
+# so source-only changes don't re-download the SDK bundle (addresses
+# the deps-cache-invalidation trade-off documented in PR #38 review).
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile --production
 
 ENV NODE_ENV=production
 
