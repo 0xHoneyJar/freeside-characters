@@ -94,11 +94,12 @@ describe('composeWithImage · happy path', () => {
         {
           ref: '@g4488',
           name: 'Satoshi-as-Hermes',
-          // V0.7-A.4 patch (2026-05-03): was hermes.PNG (403); hotfix flipped
-          // to canonical satoshi-as-hermes.png per persona.md + codex-anchors
-          // (mercury was wrong file · property of #4488 not the filename).
-          // CMP-boundary 2026-05-04: subsequently flipped .png → .webp
-          // ([[chat-medium-presentation-boundary]] doctrine finding 4 · ~50× smaller).
+          // Canonical satoshi-as-hermes.webp per persona.md + codex-anchors.
+          // History: hermes.PNG returned 403 (V0.7-A.4 cycle-A); 2026-05-03
+          // hotfix flipped to satoshi-as-hermes.png (mercury was wrong file —
+          // property of #4488, not the filename); 2026-05-04 CMP-boundary
+          // flipped .png → .webp ([[chat-medium-presentation-boundary]]
+          // doctrine finding 4 · ~50× smaller).
           image_url: 'https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.webp',
         },
       ],
