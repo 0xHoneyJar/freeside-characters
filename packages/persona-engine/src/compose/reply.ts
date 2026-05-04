@@ -428,15 +428,28 @@ export function translateGrailRefsForChat(text: string): string {
  * match Discord's emoji name grammar.
  */
 export function translateEmojiShortcodes(text: string): string {
-  return text.replace(/:([a-zA-Z][a-zA-Z0-9_]*):/g, (match, name: string) => {
+  // Bridgebuilder PR #32 pass-1 MED `F2-prefix-list-hardcoded`: shifted from
+  // hardcoded `ruggy_`/`mibera_` allowlist to underscore-heuristic so new
+  // personas (purupuru-yetinaut · honeyport-bee · future) inherit hallucination-
+  // drop without code change. Custom emoji names conventionally include
+  // underscore (`ruggy_smoke` · `mibera_kiii`); single-word shortcodes
+  // (`:hello:`, `:colon:`, ascii art) lack underscore and pass through.
+  //
+  // Bridgebuilder PR #32 pass-1 LOW `F1-whitespace-artifact`: consume one
+  // preceding space when dropping a hallucinated shortcode so we don't leak
+  // double-spaces / trailing whitespace into Discord output.
+  return text.replace(/( ?):([a-zA-Z][a-zA-Z0-9_]*):/g, (match, leadingSpace: string, name: string) => {
     const entry = findByName(name);
-    if (entry) return renderEmoji(entry);
-    // Hallucination guard: drop unknown CUSTOM-prefix shortcodes silently.
-    // Non-custom shortcodes (text with colons that aren't emoji-shaped)
-    // pass through untouched.
-    if (name.startsWith('ruggy_') || name.startsWith('mibera_')) {
+    if (entry) {
+      // Hit · render Discord format · keep the leading space.
+      return `${leadingSpace}${renderEmoji(entry)}`;
+    }
+    // Miss + underscore in name → custom-emoji-shaped hallucination · drop
+    // (also drop the preceding space if one was matched · no whitespace artifact).
+    if (name.includes('_')) {
       return '';
     }
+    // Miss + no underscore → not custom-emoji-shaped · pass through unchanged.
     return match;
   });
 }

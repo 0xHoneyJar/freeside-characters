@@ -45,12 +45,12 @@ describe('translateEmojiShortcodes · the operator-dogfood hallucination case', 
     // Pre-fix: rendered as plain ":ruggy_salute:" text in Discord.
     // Post-fix: silently dropped so the hallucination doesn't leak.
     const out = translateEmojiShortcodes('dude\'s on the map :ruggy_salute:');
-    expect(out).toBe('dude\'s on the map ');
+    expect(out).toBe('dude\'s on the map');
   });
 
   test('hallucinated mibera_sparkle (NOT in registry) is silently dropped', () => {
     const out = translateEmojiShortcodes('honey moment :mibera_sparkle: yes');
-    expect(out).toBe('honey moment  yes');
+    expect(out).toBe('honey moment yes');
   });
 });
 
@@ -73,11 +73,12 @@ describe('translateEmojiShortcodes · non-custom shortcodes left alone', () => {
     expect(translateEmojiShortcodes(text)).toBe(text);
   });
 
-  test('shortcode-like but uppercase first letter not handled (Discord convention is lowercase)', () => {
-    // Custom emoji names are conventionally lowercase · uppercase wouldn't match
-    // findByName · but our regex still matches alphabetic. Hits findByName miss
-    // and is NOT custom-prefix so passes through.
-    expect(translateEmojiShortcodes(':Ruggy_smoke:')).toBe(':Ruggy_smoke:');
+  test('shortcode-like with uppercase first letter (Ruggy_smoke) treated as hallucination · dropped', () => {
+    // Custom emoji names are conventionally lowercase. Uppercase variant
+    // doesn't match findByName · contains underscore so the underscore-
+    // heuristic drops it as a custom-prefix-shaped hallucination
+    // (per bridgebuilder PR #32 MED F2 fix).
+    expect(translateEmojiShortcodes(':Ruggy_smoke:')).toBe('');
   });
 });
 
@@ -108,7 +109,7 @@ describe('translateEmojiShortcodes · edge cases', () => {
       ':ruggy_cheers: real, :ruggy_fake: gone, :hello: kept, :ruggy_dab: animated',
     );
     expect(out).toMatch(
-      /^<:ruggy_cheers:\d+> real,  gone, :hello: kept, <a:ruggy_dab:\d+> animated$/,
+      /^<:ruggy_cheers:\d+> real, gone, :hello: kept, <a:ruggy_dab:\d+> animated$/,
     );
   });
 });
