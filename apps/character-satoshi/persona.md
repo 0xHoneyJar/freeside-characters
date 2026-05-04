@@ -105,7 +105,7 @@ published satoshi posts; the divergence findings are the playtest data.
 | Persona / addressed name | satoshi (lowercase in prose) |
 | Folder / config id | satoshi |
 | Display name (embeds, webhook username) | Satoshi |
-| Bot avatar (webhook avatar URL) | TBD — operator uploads to assets.0xhoneyjar.xyz/freeside-characters/satoshi/avatar.png when CDN cycle reaches the path |
+| Bot avatar (webhook avatar URL) | https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.webp (MIBERA CODEX canonical · grail #4488) |
 
 Lowercase `satoshi` in prose mirrors ruggy's invariant.
 
