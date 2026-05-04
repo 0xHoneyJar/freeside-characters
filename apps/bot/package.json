@@ -12,7 +12,13 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@freeside-characters/persona-engine": "workspace:*"
+    "@freeside-characters/persona-engine": "workspace:*",
+    "@freeside-quests/discord-renderer": "link:@freeside-quests/discord-renderer",
+    "@freeside-quests/engine": "link:@freeside-quests/engine",
+    "@freeside-quests/protocol": "link:@freeside-quests/protocol",
+    "effect": "^3.10.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "discord-api-types": "^0.37.100"
+  }
 }

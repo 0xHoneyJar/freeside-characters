@@ -155,7 +155,29 @@ async function handleDiscordPost(
     return jsonResponse(response);
   }
 
-  // Other interaction types (component, autocomplete, modal_submit) aren't
+  // cycle-Q · sprint-3 · Q3.5: forward MESSAGE_COMPONENT (button) and
+  // MODAL_SUBMIT into dispatchSlashCommand · the dispatch entry now
+  // intercepts quest_* custom_ids (per quest-dispatch.ts isQuestInteraction)
+  // before the per-character resolution. Non-quest button/modal interactions
+  // fall through to the legacy ephemeral fallback below.
+  if (
+    interaction.type === InteractionType.MESSAGE_COMPONENT ||
+    interaction.type === InteractionType.MODAL_SUBMIT
+  ) {
+    const customId =
+      (interaction as unknown as { data?: { custom_id?: string } }).data
+        ?.custom_id ?? '';
+    if (customId.startsWith('quest_')) {
+      const response = await dispatchSlashCommand(
+        interaction,
+        args.config,
+        args.characters,
+      );
+      return jsonResponse(response);
+    }
+  }
+
+  // Other interaction types (autocomplete, non-quest components) aren't
   // wired in V0.7-A.0. Return a generic ephemeral acknowledgement so Discord
   // doesn't show "interaction failed" to the user.
   console.warn(`interactions: unhandled interaction type ${interaction.type}`);

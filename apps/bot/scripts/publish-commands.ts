@@ -100,6 +100,64 @@ if (characters.some((c) => c.id === 'satoshi')) {
   });
 }
 
+// V0.7-A.5 / cycle-Q · sprint-3 Q3.5: /quest slash command tree.
+// 4 subcommands per SDD §5.4: browse · accept <quest_id> · submit <quest_id> · status.
+// Routed by apps/bot/src/discord-interactions/dispatch.ts via the
+// `quest` command name → @freeside-quests/discord-renderer dispatchQuestInteraction.
+//
+// SYSTEM_COMMANDS extension per Q3.5 task spec — registered alongside
+// per-character commands; NOT bound to a single character (cross-NPC).
+const QUEST_SUBCOMMAND_OPTION_TYPE = 1; // SUB_COMMAND
+const QUEST_STRING_OPTION_TYPE = 3; // STRING
+commands.push({
+  name: 'quest',
+  description: 'browse · accept · submit · check the path',
+  options: [
+    {
+      name: 'browse',
+      description: 'see the quests on offer',
+      type: QUEST_SUBCOMMAND_OPTION_TYPE,
+    } as unknown as CommandOption,
+    {
+      name: 'accept',
+      description: 'mark a quest as accepted',
+      type: QUEST_SUBCOMMAND_OPTION_TYPE,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...({
+        options: [
+          {
+            name: 'quest_id',
+            description: 'the quest to accept',
+            type: QUEST_STRING_OPTION_TYPE,
+            required: true,
+          },
+        ],
+      } as any),
+    } as unknown as CommandOption,
+    {
+      name: 'submit',
+      description: 'submit your offering for an accepted quest',
+      type: QUEST_SUBCOMMAND_OPTION_TYPE,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...({
+        options: [
+          {
+            name: 'quest_id',
+            description: 'the quest you are submitting for',
+            type: QUEST_STRING_OPTION_TYPE,
+            required: true,
+          },
+        ],
+      } as any),
+    } as unknown as CommandOption,
+    {
+      name: 'status',
+      description: 'see your marks',
+      type: QUEST_SUBCOMMAND_OPTION_TYPE,
+    } as unknown as CommandOption,
+  ],
+});
+
   const url = guildId
     ? `${DISCORD_API_BASE}/applications/${applicationId}/guilds/${guildId}/commands`
     : `${DISCORD_API_BASE}/applications/${applicationId}/commands`;
