@@ -52,6 +52,7 @@ import {
   type GrailRefValidation,
 } from '../deliver/grail-ref-guard.ts';
 import { stripAttachedImageUrls } from '../deliver/strip-image-urls.ts';
+import { findByName, renderEmoji } from '../orchestrator/emojis/registry.ts';
 import {
   appendToLedger,
   getLedgerSnapshot,
@@ -338,7 +339,18 @@ export async function composeReplyWithEnrichment(
   // cleanly and the name of the collection" (2026-05-04 /smol session).
   // Substrate refs persist UNCHANGED in `grailRefValidation` + telemetry —
   // only `content` + `chunks` get the chat-medium translation.
-  const displayContent = translateGrailRefsForChat(finalContent);
+  const grailTranslated = translateGrailRefsForChat(finalContent);
+  // CMP-boundary 2026-05-04 finding 5 (vault doctrine
+  // `[[chat-medium-presentation-boundary]]`): translate raw `:name:` emoji
+  // shortcodes into Discord render format `<:name:id>` (or `<a:name:id>`
+  // for animated). LLM commonly emits raw shortcode form (matches persona
+  // doc + meme convention) but Discord renders raw `:name:` as plain text.
+  // Operator dogfood `/ruggy "what's xabbu's score"` 2026-05-04 8:36 PT
+  // surfaced this — `:ruggy_salute:` rendered as text.
+  // Side effect: hallucinated names (`ruggy_salute` not in registry) are
+  // silently dropped per persona's `fall back to bear emoji` convention,
+  // preventing fake-emoji text leaks.
+  const displayContent = translateEmojiShortcodes(grailTranslated);
   const displayChunks =
     displayContent === finalContent
       ? finalChunks
@@ -383,6 +395,50 @@ export async function composeReplyWithEnrichment(
  */
 export function translateGrailRefsForChat(text: string): string {
   return text.replace(/@g(\d+)/g, 'Mibera #$1');
+}
+
+/**
+ * Translate raw `:name:` emoji shortcodes into Discord render format
+ * `<:name:id>` (static) or `<a:name:id>` (animated).
+ *
+ * CMP-boundary 2026-05-04 finding 5 (vault doctrine
+ * `[[chat-medium-presentation-boundary]]`): the LLM emits raw `:name:`
+ * shortcodes per persona convention + meme-typing habit, but Discord
+ * renders raw shortcode as plain text — only `<:name:id>` triggers
+ * the custom-emoji render. Operator dogfood `/ruggy "what's xabbu's
+ * score"` 2026-05-04 8:36 PT showed `:ruggy_salute:` rendering as text.
+ *
+ * Substrate truth: emoji registry holds canonical names + IDs (43 emojis
+ * fetched from THJ guild 2026-04-29 · see
+ * `orchestrator/emojis/registry.ts`). `findByName` + `renderEmoji`
+ * already produce the correct Discord format including `a` prefix for
+ * animated entries. This function is the chat-medium presentation
+ * adapter that lifts raw shortcodes into Discord render shape.
+ *
+ * Hallucination handling: when the LLM invents a custom-prefix shortcode
+ * NOT in the registry (e.g. `ruggy_salute`), we silently DROP it rather
+ * than leaking the fake shortcode as text. Falls in line with persona's
+ * existing "fall back to bear emoji" rule for dev-channel cases. Only
+ * drops shortcodes with `ruggy_` or `mibera_` prefix (custom emoji
+ * convention) — non-custom shortcodes (`:colon:`, ascii art with
+ * colons, time stamps, etc.) are left untouched.
+ *
+ * Pattern: `:[a-zA-Z][a-zA-Z0-9_]*:` requires alpha-start to avoid time
+ * `12:30` collisions; underscore + alphanumeric allowed thereafter to
+ * match Discord's emoji name grammar.
+ */
+export function translateEmojiShortcodes(text: string): string {
+  return text.replace(/:([a-zA-Z][a-zA-Z0-9_]*):/g, (match, name: string) => {
+    const entry = findByName(name);
+    if (entry) return renderEmoji(entry);
+    // Hallucination guard: drop unknown CUSTOM-prefix shortcodes silently.
+    // Non-custom shortcodes (text with colons that aren't emoji-shaped)
+    // pass through untouched.
+    if (name.startsWith('ruggy_') || name.startsWith('mibera_')) {
+      return '';
+    }
+    return match;
+  });
 }
 
 /**
