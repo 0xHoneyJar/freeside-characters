@@ -26,7 +26,7 @@
 
 import {
   appendToLedger,
-  composeErrorReply,
+  composeErrorBody,
   composeReplyWithEnrichment,
   composeToolUseStatusForCharacter,
   getBotClient,
@@ -335,7 +335,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
       console.error(
         `interactions: ${character.id}/chat TIMEOUT after ${Date.now() - t0}ms · channel=${channelId}`,
       );
-      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'timeout'));
+      await deliverError(interaction, config, character, channelId, ephemeral, 'timeout');
       return;
     }
 
@@ -343,7 +343,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
       console.warn(
         `interactions: ${character.id}/chat composeReply returned null · channel=${channelId}`,
       );
-      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'empty'));
+      await deliverError(interaction, config, character, channelId, ephemeral, 'empty');
       return;
     }
 
@@ -445,13 +445,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
       `interactions: ${character.id}/chat dispatch failed · channel=${channelId}`,
       err,
     );
-    try {
-      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'error'));
-    } catch (patchErr) {
-      // Already-failed PATCH attempt feeds the circuit breaker via
-      // recordPatchOutcome inside patchOriginal. No further recovery.
-      console.error(`interactions: PATCH-original after error also failed:`, patchErr);
-    }
+    await deliverError(interaction, config, character, channelId, ephemeral, 'error');
   }
 }
 
@@ -482,7 +476,7 @@ async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
       console.error(
         `interactions: ${character.id}/imagegen TIMEOUT after ${Date.now() - t0}ms · channel=${channelId}`,
       );
-      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'timeout'));
+      await deliverError(interaction, config, character, channelId, ephemeral, 'timeout');
       return;
     }
 
@@ -575,14 +569,7 @@ async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
           webhookErr,
         );
         invalidateWebhookCache(channelId);
-        try {
-          await patchOriginal(interaction, ephemeral, formatErrorReply(character, errKind));
-        } catch (patchErr) {
-          console.error(
-            `interactions: ${character.id}/imagegen error PATCH also failed:`,
-            patchErr,
-          );
-        }
+        await deliverError(interaction, config, character, channelId, ephemeral, errKind);
       }
     } else {
       // Placeholder mode (no real bytes): fall back to text-only via the
@@ -619,11 +606,7 @@ async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
       `interactions: ${character.id}/imagegen dispatch failed · channel=${channelId}`,
       err,
     );
-    try {
-      await patchOriginal(interaction, ephemeral, formatErrorReply(character, 'error'));
-    } catch (patchErr) {
-      console.error(`interactions: PATCH-original after imagegen error also failed:`, patchErr);
-    }
+    await deliverError(interaction, config, character, channelId, ephemeral, 'error');
   }
 }
 
@@ -812,18 +795,106 @@ function formatReply(
 }
 
 /**
- * Format the in-character error reply. V0.12 (kickoff §4.3) routes
- * through the substrate-side error register so ruggy and satoshi each
- * speak from their locked register at every error class. Bold-prefix
- * attribution stays here because it disambiguates shell-bot identity
- * for interaction PATCHes (per Gemini DR 2026-04-30).
+ * Format the error body without the bold-name prefix. Used for:
+ *   - Webhook delivery (Pattern B) — character avatar+username handle
+ *     attribution; bold-prefix would be redundant noise.
+ *   - Interaction PATCH fallback when the operator wants the bot to
+ *     speak as itself rather than puppeting the character name. The
+ *     Discord interaction header already shows "<user> used /<character>"
+ *     so context is preserved without the bold-prefix.
  */
-function formatErrorReply(
+function formatErrorBody(
   character: CharacterConfig,
   kind: ErrorClass,
 ): string {
-  const displayName = character.displayName ?? character.id;
-  return composeErrorReply(character.id, displayName, kind);
+  return composeErrorBody(character.id, kind);
+}
+
+/**
+ * Pattern B error delivery via channel webhook — the character speaks
+ * the error itself (avatar + username override), matching the success-
+ * reply UX. The deferred "thinking" PATCH placeholder is DELETEd once
+ * the webhook message lands so the timeline shows a single character
+ * post (mirrors `deliverViaWebhook`'s convention).
+ *
+ * Throws on any webhook failure so the caller can fall back to PATCH
+ * with bare body (no name prefix).
+ */
+async function deliverErrorViaWebhook(
+  interaction: DiscordInteraction,
+  config: Config,
+  character: CharacterConfig,
+  channelId: string,
+  kind: ErrorClass,
+): Promise<void> {
+  const client = await getBotClient(config);
+  if (!client) {
+    throw new Error('error webhook path: bot client unavailable');
+  }
+  const webhook = await getOrCreateChannelWebhook(client, channelId);
+  const body = formatErrorBody(character, kind);
+
+  await sendChatReplyViaWebhook(webhook, character, body);
+
+  // Clean up the deferred "thinking" placeholder (Pattern B convention).
+  void deleteOriginal(interaction).catch((err) => {
+    console.warn(
+      `interactions: ${character.id} error-webhook deleteOriginal best-effort failed:`,
+      err,
+    );
+  });
+}
+
+/**
+ * Unified error delivery — operator UX directive 2026-05-04:
+ *
+ *   1. Non-ephemeral: try Pattern B webhook (character avatar+username)
+ *      so the error reads as the character speaking, matching success
+ *      replies. Fall back to PATCH with bare body if webhook fails.
+ *   2. Ephemeral: PATCH only (webhooks aren't visible per-user). Bare
+ *      body — when loa speaks, drop the character-name prefix because
+ *      the Discord interaction header already shows which character
+ *      was invoked.
+ *
+ * Best-effort; logs + swallows PATCH failures (the circuit breaker
+ * inside patchOriginal records outcomes).
+ */
+async function deliverError(
+  interaction: DiscordInteraction,
+  config: Config,
+  character: CharacterConfig,
+  channelId: string,
+  ephemeral: boolean,
+  kind: ErrorClass,
+): Promise<void> {
+  if (ephemeral) {
+    await patchOriginal(interaction, true, formatErrorBody(character, kind)).catch(
+      (patchErr) => {
+        console.error(
+          `interactions: ${character.id} error PATCH (ephemeral) failed:`,
+          patchErr,
+        );
+      },
+    );
+    return;
+  }
+  try {
+    await deliverErrorViaWebhook(interaction, config, character, channelId, kind);
+  } catch (webhookErr) {
+    console.warn(
+      `interactions: ${character.id} error-webhook delivery failed · falling back to PATCH:`,
+      webhookErr,
+    );
+    invalidateWebhookCache(channelId);
+    await patchOriginal(interaction, false, formatErrorBody(character, kind)).catch(
+      (patchErr) => {
+        console.error(
+          `interactions: ${character.id} error PATCH after webhook fallback also failed:`,
+          patchErr,
+        );
+      },
+    );
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────

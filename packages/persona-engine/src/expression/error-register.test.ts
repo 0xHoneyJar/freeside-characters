@@ -16,6 +16,7 @@ import {
   DEFAULT_ERROR_REGISTRY,
   getErrorTemplate,
   composeErrorReply,
+  composeErrorBody,
   type ErrorClass,
 } from "./error-register.ts";
 
@@ -127,6 +128,40 @@ describe("composeErrorReply · bold-prefix shape", () => {
     for (const banned of CORPORATE_BOT_BANNED) {
       expect(lower.includes(banned)).toBe(false);
     }
+  });
+});
+
+describe("composeErrorBody · bare-body shape (operator UX 2026-05-04)", () => {
+  // Per operator directive: webhook delivery (Pattern B · character speaks)
+  // and PATCH-fallback (loa speaks · drop the name) both use bare body.
+  // The bold-prefix is gone; webhook handles attribution via avatar+username,
+  // and the Discord interaction header already shows which character was
+  // invoked when loa speaks via PATCH.
+
+  test("returns just the body — no **DisplayName** prefix", () => {
+    const body = composeErrorBody("ruggy", "timeout");
+    expect(body.startsWith("**")).toBe(false);
+    expect(body).toBe(getErrorTemplate("ruggy", "timeout"));
+  });
+
+  test("body matches the registered template verbatim", () => {
+    const body = composeErrorBody("satoshi", "error");
+    expect(body).toBe(getErrorTemplate("satoshi", "error"));
+    expect(body).toBe("The channel between worlds slipped. Retry on the next.");
+  });
+
+  test("unknown character falls back to substrate-quiet generic (no prefix)", () => {
+    const body = composeErrorBody("stranger", "error");
+    expect(body).toBe("something broke. try again?");
+    expect(body.startsWith("**")).toBe(false);
+  });
+
+  test("composeErrorReply still works for legacy callers (deprecated path)", () => {
+    // Retained for any callers that haven't migrated; dispatch.ts no
+    // longer uses it but the export stays during deprecation window.
+    const reply = composeErrorReply("ruggy", "Ruggy", "timeout");
+    expect(reply.startsWith("**Ruggy**\n\n")).toBe(true);
+    expect(reply).toContain(composeErrorBody("ruggy", "timeout"));
   });
 });
 
