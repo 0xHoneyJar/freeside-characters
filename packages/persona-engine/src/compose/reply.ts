@@ -418,19 +418,44 @@ export function orderAttachmentsByCitation(
   // Build position map per candidate. Position = index of first match in
   // text, or Infinity if uncited (sorts to end). Stable sort preserves
   // relative order among uncited (and cited-at-same-position) entries.
+  //
+  // Bridgebuilder PR #29 MED `ref-substring-collision` (2026-05-04):
+  // bare `text.indexOf('@g876')` matches `@g8761` as a prefix substring
+  // (same digit-prefix collision class as the bug this fix targets).
+  // Use a negative-lookahead regex `\\g<id>(?!\\d)` to require a digit
+  // boundary so `@g876` does NOT match inside `@g8761`.
   const positions = candidates.map((c, idx) => {
     const ref = c.ref;
-    if (typeof ref !== 'string' || ref.length === 0) {
+    if (typeof ref !== 'string') {
       return { c, pos: Number.POSITIVE_INFINITY, idx };
     }
-    const found = text.indexOf(ref);
-    return { c, pos: found < 0 ? Number.POSITIVE_INFINITY : found, idx };
+    const pos = findRefPosition(text, ref);
+    return { c, pos, idx };
   });
   positions.sort((a, b) => {
     if (a.pos !== b.pos) return a.pos - b.pos;
     return a.idx - b.idx; // stable: preserve input order on ties
   });
   return positions.map((p) => p.c);
+}
+
+/**
+ * Find the first occurrence of a grail ref in text WITHOUT digit-prefix
+ * collisions. `@g876` must not match inside `@g8761` (different grail).
+ *
+ * Returns the match index, or `Number.POSITIVE_INFINITY` if not found
+ * (so positions can be naturally compared in the sort).
+ */
+function findRefPosition(text: string, ref: string): number {
+  // Escape regex metacharacters in ref (defensive · ref is `@g<digits>` so
+  // typically just `@` which isn't special, but if codex MCP ever returns
+  // a ref with regex-special chars, escape protects us).
+  const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Negative-lookahead `(?!\d)` requires the char after ref to be NOT a
+  // digit (or end-of-string), preventing `@g876` from matching `@g8761`.
+  const re = new RegExp(escaped + '(?!\\d)');
+  const match = re.exec(text);
+  return match ? match.index : Number.POSITIVE_INFINITY;
 }
 
 /**

@@ -116,6 +116,38 @@ describe('orderAttachmentsByCitation · uncited candidates go last', () => {
   });
 });
 
+describe('orderAttachmentsByCitation · digit-prefix collision (bridgebuilder PR #29 MED)', () => {
+  test('@g876 candidate is UNCITED when text only contains @g8761 (longer id with same prefix)', () => {
+    // Bridgebuilder finding `ref-substring-collision`: bare `text.indexOf('@g876')`
+    // would match position 12 inside '@g8761' (same prefix). Negative-lookahead
+    // `@g876(?!\d)` correctly says "not cited" because the next char IS a digit.
+    const G8761: CodexGrailResult = {
+      ref: '@g8761',
+      name: 'Some Long-Id Grail',
+      image: 'https://assets.0xhoneyjar.xyz/Mibera/grails/some-long.webp',
+    };
+    const text = 'voice cites @g8761 only';
+    const result = orderAttachmentsByCitation(text, [BLACK_HOLE, G8761]);
+    // G8761 cited at pos 12 → first · BLACK_HOLE uncited → second
+    // (pre-fix would put BLACK_HOLE first because indexOf('@g876') = 12 ties G8761
+    // and stable-sort preserves input order [BLACK_HOLE, G8761])
+    expect(result.map((c) => c.ref)).toEqual(['@g8761', '@g876']);
+  });
+
+  test('both prefix-overlapping refs cited · each matches its own occurrence', () => {
+    const G8761: CodexGrailResult = {
+      ref: '@g8761',
+      name: 'Long-Id',
+      image: 'https://assets.0xhoneyjar.xyz/Mibera/grails/x.webp',
+    };
+    // text cites @g876 at pos 5, @g8761 at pos 18
+    const text = 'cite @g876 then @g8761 too';
+    const result = orderAttachmentsByCitation(text, [G8761, BLACK_HOLE]);
+    // BLACK_HOLE first (cited earlier at pos 5) · G8761 second (pos 18)
+    expect(result.map((c) => c.ref)).toEqual(['@g876', '@g8761']);
+  });
+});
+
 describe('orderAttachmentsByCitation · edge cases', () => {
   test('empty candidates returns empty array', () => {
     const result = orderAttachmentsByCitation('any text', []);
