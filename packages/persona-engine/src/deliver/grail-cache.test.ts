@@ -238,16 +238,16 @@ describe('initGrailCache · failures are non-blocking', () => {
   });
 });
 
-describe('CANONICAL_GRAIL_URLS · V0.7-A.4 patch (hermes 403 → satoshi-as-hermes fix)', () => {
-  test('satoshi-as-hermes.png is in the canonical V1 list (#4488)', () => {
-    // V0.7-A.4 patch (2026-05-03): hermes.PNG returned 403 from S3 in PROD.
-    // Hotfix later that day flipped to canonical satoshi-as-hermes.png per
-    // apps/character-satoshi/persona.md + codex-anchors.md (mercury was a
-    // PROPERTY of #4488 · not the filename). Verified 200 at 7.4MB. Cycle B
-    // URL canonicalization will replace this hardcoded patch.
+describe('CANONICAL_GRAIL_URLS · CMP-boundary 2026-05-04 webp prefer', () => {
+  test('satoshi-as-hermes.webp is in the canonical V1 list (#4488)', () => {
+    // CMP-boundary 2026-05-04 hotfix per [[chat-medium-presentation-boundary]]
+    // doctrine finding 4 · CANONICAL_GRAIL_URLS flipped .png to .webp · ~50x win.
+    // V0.7-A.4 patch history (2026-05-03): hermes.PNG returned 403 from S3 in
+    // PROD. Hotfix flipped to canonical satoshi-as-hermes.png. CMP-boundary
+    // hotfix flipped extension to .webp (verified 200 · 361KB · was 7.4MB PNG).
     const urls = _canonicalGrailUrlsForTests();
     expect(
-      urls.includes('https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.png'),
+      urls.includes('https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.webp'),
     ).toBe(true);
   });
 
