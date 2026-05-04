@@ -177,7 +177,7 @@ export async function dispatchSlashCommand(
   // ─── cycle-Q · sprint-3 · Q3.5 — quest substrate interception ──────
   // After anti-spam + circuit-breaker pre-checks, route quest_*
   // interactions (slash + button + modal_submit) to
-  // @freeside-quests/discord-renderer dispatchQuestInteraction.
+  // @0xhoneyjar/quests-discord-renderer dispatchQuestInteraction.
   // Per-character resolution below is bypassed (quest is a system command,
   // not character-bound).
   if (isQuest) {

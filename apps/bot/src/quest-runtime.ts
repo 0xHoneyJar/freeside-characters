@@ -7,7 +7,7 @@
  * isolation. Memory adapter for dev/test; Postgres adapter for
  * production worlds (mibera-db / apdao-db / cubquest-db).
  *
- * This module wraps the @freeside-quests/engine adapter Layers behind a
+ * This module wraps the @0xhoneyjar/quests-engine adapter Layers behind a
  * single resolver function the dispatch caller invokes per interaction.
  *
  * Architect lock A2 (SDD §10.2): QuestStatePort Tag identity is the
@@ -22,7 +22,7 @@ import {
   QuestStatePortPostgresLayer,
   type PostgresAdapterConfig,
   type QuestStatePostgresPool,
-} from "@freeside-quests/engine";
+} from "@0xhoneyjar/quests-engine";
 import type { WorldManifestQuestSubset } from "./world-resolver.ts";
 import { resolveWorldForGuild } from "./world-resolver.ts";
 
@@ -70,4 +70,4 @@ export const buildQuestStatePortLayerForGuild = (
   return QuestStatePortPostgresLayer(config);
 };
 
-export { QuestStatePort } from "@freeside-quests/engine";
+export { QuestStatePort } from "@0xhoneyjar/quests-engine";

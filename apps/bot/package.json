@@ -12,10 +12,10 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@0xhoneyjar/quests-discord-renderer": "^0.1.2",
+    "@0xhoneyjar/quests-engine": "^0.1.2",
+    "@0xhoneyjar/quests-protocol": "^0.1.2",
     "@freeside-characters/persona-engine": "workspace:*",
-    "@freeside-quests/discord-renderer": "link:@freeside-quests/discord-renderer",
-    "@freeside-quests/engine": "link:@freeside-quests/engine",
-    "@freeside-quests/protocol": "link:@freeside-quests/protocol",
     "effect": "^3.10.0"
   },
   "devDependencies": {

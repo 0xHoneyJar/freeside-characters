@@ -103,7 +103,7 @@ if (characters.some((c) => c.id === 'satoshi')) {
 // V0.7-A.5 / cycle-Q · sprint-3 Q3.5: /quest slash command tree.
 // 4 subcommands per SDD §5.4: browse · accept <quest_id> · submit <quest_id> · status.
 // Routed by apps/bot/src/discord-interactions/dispatch.ts via the
-// `quest` command name → @freeside-quests/discord-renderer dispatchQuestInteraction.
+// `quest` command name → @0xhoneyjar/quests-discord-renderer dispatchQuestInteraction.
 //
 // SYSTEM_COMMANDS extension per Q3.5 task spec — registered alongside
 // per-character commands; NOT bound to a single character (cross-NPC).

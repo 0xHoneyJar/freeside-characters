@@ -1,6 +1,6 @@
 /**
  * quest-dispatch.ts — bridge from freeside-characters bot dispatch into
- * `@freeside-quests/discord-renderer` (cycle-Q · sprint-3 · Q3.5).
+ * `@0xhoneyjar/quests-discord-renderer` (cycle-Q · sprint-3 · Q3.5).
  *
  * Per SDD §5.5 + §7.3: the bot consumer constructs the per-guild context
  * (catalog · characters · voice · player) + provides the QuestStatePort
@@ -26,9 +26,9 @@ import {
   type CuratorVoiceProfile,
   type EngineConfigShape,
   type QuestCatalog,
-} from "@freeside-quests/discord-renderer";
-import { QuestStatePort } from "@freeside-quests/engine";
-import type { PlayerIdentity } from "@freeside-quests/protocol";
+} from "@0xhoneyjar/quests-discord-renderer";
+import { QuestStatePort } from "@0xhoneyjar/quests-engine";
+import type { PlayerIdentity } from "@0xhoneyjar/quests-protocol";
 import type {
   DiscordInteraction,
   DiscordInteractionResponse,

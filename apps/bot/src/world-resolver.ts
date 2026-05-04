@@ -42,7 +42,7 @@ export interface WorldManifestQuestSubset {
 }
 
 /**
- * EngineConfig shape consumed by @freeside-quests/discord-renderer's
+ * EngineConfig shape consumed by @0xhoneyjar/quests-discord-renderer's
  * dispatchQuestInteraction. Mirrors EngineConfigShape exported from
  * the discord-renderer package — re-declared here as a structural type
  * so the bot doesn't need a hard runtime dep at the resolver layer.
