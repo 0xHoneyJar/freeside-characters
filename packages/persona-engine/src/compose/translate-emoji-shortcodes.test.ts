@@ -20,7 +20,7 @@ import { describe, test, expect } from 'bun:test';
 import { translateEmojiShortcodes } from './reply.ts';
 
 describe('translateEmojiShortcodes · happy path (real registry entries)', () => {
-  test('static emoji ruggy_smoke translates to <:name:id> form', () => {
+  test('static emoji ruggy_cheers translates to <:name:id> form', () => {
     // ruggy_cheers is in registry · static (no `a` prefix)
     const out = translateEmojiShortcodes('chill vibes :ruggy_cheers:');
     expect(out).toMatch(/^chill vibes <:ruggy_cheers:\d+>$/);
@@ -48,9 +48,21 @@ describe('translateEmojiShortcodes · the operator-dogfood hallucination case', 
     expect(out).toBe('dude\'s on the map');
   });
 
-  test('hallucinated mibera_sparkle (NOT in registry) is silently dropped', () => {
-    const out = translateEmojiShortcodes('honey moment :mibera_sparkle: yes');
+  test('hallucinated nani_X (matches known nani_ prefix from registry) is silently dropped', () => {
+    // nani_ IS a known prefix per derived KNOWN_EMOJI_PREFIXES (the lone
+    // mibera entry uses `nani_` shape · registry data drives the predicate).
+    const out = translateEmojiShortcodes('honey moment :nani_fake: yes');
     expect(out).toBe('honey moment yes');
+  });
+
+  test('legitimate non-emoji underscore shortcode passes through (F1 MED fix)', () => {
+    // Bridgebuilder PR #32 pass-2 MED `F1-underscore-heuristic-false-positives`:
+    // technical jargon like `:my_var:` or `:file_path:` does NOT match any
+    // known emoji prefix (ruggy_, nani_) so it passes through unchanged.
+    // The previous underscore-heuristic would have dropped these · registry-
+    // derived prefixes bound the false-positive surface.
+    expect(translateEmojiShortcodes('see :my_var: in code')).toBe('see :my_var: in code');
+    expect(translateEmojiShortcodes('the :file_path: matters')).toBe('the :file_path: matters');
   });
 });
 

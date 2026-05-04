@@ -52,7 +52,7 @@ import {
   type GrailRefValidation,
 } from '../deliver/grail-ref-guard.ts';
 import { stripAttachedImageUrls } from '../deliver/strip-image-urls.ts';
-import { findByName, renderEmoji } from '../orchestrator/emojis/registry.ts';
+import { EMOJIS, findByName, renderEmoji } from '../orchestrator/emojis/registry.ts';
 import {
   appendToLedger,
   getLedgerSnapshot,
@@ -427,14 +427,30 @@ export function translateGrailRefsForChat(text: string): string {
  * `12:30` collisions; underscore + alphanumeric allowed thereafter to
  * match Discord's emoji name grammar.
  */
+/**
+ * Module-load: derive known custom-emoji prefixes from the registry itself.
+ *
+ * Bridgebuilder PR #32 pass-2 MED `F1-underscore-heuristic-false-positives`:
+ * the previous heuristic ("contains underscore → drop on miss") was
+ * over-eager · it would silently consume legitimate non-emoji shortcodes
+ * like `:my_var:`, `:file_path:`, technical jargon. The fix is
+ * registry-as-source-of-truth: collect prefixes from registered names
+ * (`ruggy_*` and `mibera_*` today · auto-extends as registry grows for
+ * new personas like yetinaut_*, honeybee_*, etc) and only drop on miss
+ * when the shortcode shape matches a KNOWN prefix.
+ *
+ * False positives now bounded by data the operator controls (registry).
+ * `:my_var:` passes through · `:ruggy_salute:` (hallucinated but matches
+ * `ruggy_` prefix) gets dropped.
+ */
+const KNOWN_EMOJI_PREFIXES: ReadonlySet<string> = new Set(
+  EMOJIS.map((e) => {
+    const match = e.name.match(/^([a-z]+_)/);
+    return match ? match[1]! : null;
+  }).filter((p): p is string => p !== null),
+);
+
 export function translateEmojiShortcodes(text: string): string {
-  // Bridgebuilder PR #32 pass-1 MED `F2-prefix-list-hardcoded`: shifted from
-  // hardcoded `ruggy_`/`mibera_` allowlist to underscore-heuristic so new
-  // personas (purupuru-yetinaut · honeyport-bee · future) inherit hallucination-
-  // drop without code change. Custom emoji names conventionally include
-  // underscore (`ruggy_smoke` · `mibera_kiii`); single-word shortcodes
-  // (`:hello:`, `:colon:`, ascii art) lack underscore and pass through.
-  //
   // Bridgebuilder PR #32 pass-1 LOW `F1-whitespace-artifact`: consume one
   // preceding space when dropping a hallucinated shortcode so we don't leak
   // double-spaces / trailing whitespace into Discord output.
@@ -444,12 +460,16 @@ export function translateEmojiShortcodes(text: string): string {
       // Hit · render Discord format · keep the leading space.
       return `${leadingSpace}${renderEmoji(entry)}`;
     }
-    // Miss + underscore in name → custom-emoji-shaped hallucination · drop
-    // (also drop the preceding space if one was matched · no whitespace artifact).
-    if (name.includes('_')) {
-      return '';
+    // Miss + matches a known custom-emoji prefix from registry →
+    // custom-emoji-shaped hallucination · drop (also drop the preceding
+    // space if one was matched · no whitespace artifact).
+    for (const prefix of KNOWN_EMOJI_PREFIXES) {
+      if (name.toLowerCase().startsWith(prefix)) {
+        return '';
+      }
     }
-    // Miss + no underscore → not custom-emoji-shaped · pass through unchanged.
+    // Miss + not a known-prefix shape → not a custom-emoji-shaped hallucination ·
+    // pass through unchanged (covers `:my_var:`, `:file_path:`, technical jargon).
     return match;
   });
 }
