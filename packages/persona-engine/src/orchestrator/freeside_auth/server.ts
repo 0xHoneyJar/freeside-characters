@@ -333,12 +333,26 @@ async function resolveHandleToWallet(handleInput: string): Promise<ResolvedRever
     }
 
     const row = rows.rows[0]!;
+    // Bridgebuilder PR #31 pass-2 MED `null-wallet-address-not-handled`:
+    // midi_profiles may have rows where a profile is registered but no
+    // wallet was set yet · null/empty wallet_address would throw on
+    // .toLowerCase() and surface as misleading 'query failed' / db_unavailable.
+    if (!row.wallet_address) {
+      return {
+        found: false,
+        query: handle,
+        wallet: null,
+        matched_via: 'unknown',
+        hint: `profile matched '${handle}' but has no wallet on file — operator may need to drop a wallet 0x... directly`,
+      };
+    }
     return {
       found: true,
       query: handle,
-      // Bridgebuilder PR #31 MED `wallet-not-normalized`: contract advertised
-      // lowercase-normalized wallet · column may store checksummed/mixed case ·
-      // lowercase here so downstream get_wallet_scorecard chain sees normalized.
+      // Bridgebuilder PR #31 pass-1 MED `wallet-not-normalized`: contract
+      // advertised lowercase-normalized wallet · column may store checksummed/
+      // mixed case · lowercase here so downstream get_wallet_scorecard sees
+      // normalized.
       wallet: row.wallet_address.toLowerCase(),
       matched_via: row.matched_col as ResolvedReverse['matched_via'],
     };
@@ -411,12 +425,23 @@ async function resolveMiberaIdToWallet(miberaInput: string): Promise<ResolvedRev
       };
     }
 
+    const walletAddress = rows.rows[0]!.wallet_address;
+    // Bridgebuilder PR #31 pass-2 MED `null-wallet-address-not-handled`:
+    // same null-guard shape as resolve_handle_to_wallet.
+    if (!walletAddress) {
+      return {
+        found: false,
+        query: miberaId,
+        wallet: null,
+        matched_via: 'unknown',
+        hint: `mibera_id '${miberaId}' matched a profile but has no owner wallet on file — operator may need to drop the wallet 0x... directly`,
+      };
+    }
     return {
       found: true,
       query: miberaId,
-      // Bridgebuilder PR #31 MED `wallet-not-normalized`: same fix shape as
-      // resolve_handle_to_wallet · honor the lowercase contract.
-      wallet: rows.rows[0]!.wallet_address.toLowerCase(),
+      // Bridgebuilder PR #31 pass-1 MED `wallet-not-normalized`.
+      wallet: walletAddress.toLowerCase(),
       matched_via: 'mibera_id',
     };
   } catch (err) {
