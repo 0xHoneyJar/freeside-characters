@@ -336,7 +336,10 @@ async function resolveHandleToWallet(handleInput: string): Promise<ResolvedRever
     return {
       found: true,
       query: handle,
-      wallet: row.wallet_address,
+      // Bridgebuilder PR #31 MED `wallet-not-normalized`: contract advertised
+      // lowercase-normalized wallet · column may store checksummed/mixed case ·
+      // lowercase here so downstream get_wallet_scorecard chain sees normalized.
+      wallet: row.wallet_address.toLowerCase(),
       matched_via: row.matched_col as ResolvedReverse['matched_via'],
     };
   } catch (err) {
@@ -411,7 +414,9 @@ async function resolveMiberaIdToWallet(miberaInput: string): Promise<ResolvedRev
     return {
       found: true,
       query: miberaId,
-      wallet: rows.rows[0]!.wallet_address,
+      // Bridgebuilder PR #31 MED `wallet-not-normalized`: same fix shape as
+      // resolve_handle_to_wallet · honor the lowercase contract.
+      wallet: rows.rows[0]!.wallet_address.toLowerCase(),
       matched_via: 'mibera_id',
     };
   } catch (err) {
