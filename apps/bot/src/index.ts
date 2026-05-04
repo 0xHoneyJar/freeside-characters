@@ -40,6 +40,8 @@ import {
   startInteractionServer,
   type InteractionServerHandle,
 } from './discord-interactions/server.ts';
+import { setQuestRuntime } from './discord-interactions/dispatch.ts';
+import { buildMemoryDevQuestRuntime } from './quest-runtime-bootstrap.ts';
 
 const banner = `─── freeside-characters bot · v0.6.0-A ────────────────────────`;
 
@@ -77,6 +79,38 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error('persona/codex load failed:', err);
     process.exit(1);
+  }
+
+  // cycle-Q post-merge: env-gated quest runtime selection. Default disabled
+  // preserves backward-compat (V0.7-A.4 parity · /quest returns ephemeral
+  // "no quest path yet" via noQuestRuntime).
+  //
+  //   QUEST_RUNTIME=disabled    (default · noQuestRuntime · pre-cycle-Q parity)
+  //   QUEST_RUNTIME=memory      memory adapter · in-process state · QA dogfood
+  //   QUEST_RUNTIME=production  operator-authored · NOT wired here · throws
+  const questRuntimeMode = (process.env.QUEST_RUNTIME ?? 'disabled').trim();
+  if (questRuntimeMode === 'memory') {
+    const devGuildId = process.env.QUEST_DEV_GUILD_ID;
+    const runtime = buildMemoryDevQuestRuntime({
+      devGuildId,
+      characters,
+    });
+    setQuestRuntime(runtime);
+    console.log(
+      `quest-runtime:  memory · world=${'mongolian'} · dev_guild=${devGuildId ?? '(unset · /quest will return polite no-path reply)'}`,
+    );
+  } else if (questRuntimeMode === 'production') {
+    // OPERATOR-AUTHORED: production runtime requires a real world-manifest
+    // source + per-world Pg pools (mibera-db / apdao-db / cubquest-db).
+    // Out of scope for the QA bootstrap. Operator wires this when Q2.9
+    // DB migration lands + world-manifest source is published.
+    throw new Error(
+      'QUEST_RUNTIME=production not yet wired · use QUEST_RUNTIME=memory for QA',
+    );
+  } else {
+    console.log(
+      `quest-runtime:  disabled · /quest returns ephemeral (set QUEST_RUNTIME=memory for QA)`,
+    );
   }
 
   if (config.DISCORD_BOT_TOKEN) {
