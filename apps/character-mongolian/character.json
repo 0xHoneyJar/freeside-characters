@@ -1,0 +1,22 @@
+{
+  "$schema": "https://freeside-characters/schema/character.v0.json",
+  "id": "mongolian",
+  "displayName": "Munkh",
+  "personaFile": "persona.md",
+  "exemplarsDir": "exemplars",
+  "emojiAffinity": {
+    "primary": "mibera",
+    "fallback": "mibera"
+  },
+  "anchoredArchetypes": ["Ancient Witness", "Quest Keeper"],
+  "mcps": ["codex", "freeside_auth"],
+  "tool_invocation_style": "Use codex when a player asks about Mongolian lore, ancestors, or grail history — ground the answer in canon rather than improvising. Use freeside_auth to resolve wallet identity when a player's on-chain presence is relevant to quest progress. Default to voice; tools support, never lead.",
+  "webhookAvatarUrl": "",
+  "webhookUsername": "Munkh",
+  "doc": {
+    "creativeDirection": "creative-direction.md",
+    "codexAnchors": "codex-anchors.md"
+  },
+  "stage": "character",
+  "stageNotes": "V0.1 draft. First mibera-as-npc instance. Mongolian Grail #507 (Ancestor category). NPC quest character with judgment capability — new pattern not present in ruggy/satoshi."
+}
