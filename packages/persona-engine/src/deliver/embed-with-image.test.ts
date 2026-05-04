@@ -97,6 +97,8 @@ describe('composeWithImage · happy path', () => {
           // V0.7-A.4 patch (2026-05-03): was hermes.PNG (403); hotfix flipped
           // to canonical satoshi-as-hermes.png per persona.md + codex-anchors
           // (mercury was wrong file · property of #4488 not the filename).
+          // CMP-boundary 2026-05-04: subsequently flipped .png → .webp
+          // ([[chat-medium-presentation-boundary]] doctrine finding 4 · ~50× smaller).
           image_url: 'https://assets.0xhoneyjar.xyz/Mibera/grails/satoshi-as-hermes.webp',
         },
       ],
@@ -372,6 +374,11 @@ describe('composeWithImage · F6 size cap', () => {
 
 describe('composeWithImage · V0.7-A.4 cache-first fast path', () => {
   const CACHED_URL = 'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.webp';
+  // Arbitrary opaque sentinel bytes for cache-hit assertion. NOT format-bearing —
+  // the test asserts byte-equality of the round-trip (cache → composer output),
+  // never that the bytes are valid WebP. Using PNG-magic prefix + 0xdeadbeef keeps
+  // the sentinel visually distinctive in test failures. (CMP-boundary
+  // bridgebuilder F3 LOW · 2026-05-04 · clarification not behavior change.)
   const CACHED_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xde, 0xad, 0xbe, 0xef]);
 
   test('cache hit returns cached bytes WITHOUT invoking fetch', async () => {

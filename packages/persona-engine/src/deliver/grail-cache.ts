@@ -124,6 +124,17 @@ const CANONICAL_GRAIL_URLS: ReadonlyArray<string> = [
   // still work. Cycle B asset-pipeline AssetService.fetchOptimal({acceptFormats:['webp','png']})
   // is the architectural-grade replacement for this hardcoded preference.
   //
+  // Pre-merge verification (CMP-boundary bridgebuilder F1 HIGH · 2026-05-04):
+  // all 7 URLs verified HTTP 200 · content-type image/webp · sizes match comment
+  // (curl HEAD per URL). CDN: CloudFront · Cache-Control: immutable max-age=1y.
+  // Operational expectation: the asset pipeline (manually managed in V1; Cycle B
+  // AssetService in V1.5+) MUST guarantee both .webp + .png variants exist at
+  // canonical paths. If a .webp variant is removed/regenerated incorrectly, the
+  // boot-prefetch warns (see prefetchOne) but the cache-miss live-fetch path will
+  // ALSO fail (no .webp→.png fallback in V1) — operator MUST regenerate the .webp
+  // or revert this constant to .png. V1.5 fetchOptimal({acceptFormats}) makes this
+  // resilient via per-entry format negotiation.
+  //
   // 876  Black Hole (concept) — V0.7-A.3 SC1 reference
   'https://assets.0xhoneyjar.xyz/Mibera/grails/black-hole.webp',
   // 4488 Satoshi-as-Hermes (ancestor) — V0.7-A.3 SC2 reference
@@ -262,8 +273,14 @@ async function prefetchOne(url: string, timeoutMs: number): Promise<boolean> {
       redirect: 'error',
     });
     if (!res.ok) {
+      // F2 follow-up (CMP-boundary 2026-05-04): louder warning for canonical
+      // URL miss. V1 has no .webp→.png fallback (Cycle B AssetService territory),
+      // so a 404/403 here means the cache-miss live-fetch path will ALSO fail
+      // and the bot will deliver text-only for this grail. Operator MUST
+      // regenerate the missing variant or revert CANONICAL_GRAIL_URLS.
       console.warn(
-        `[grail-cache] prefetch failed status=${res.status} url=${url}`,
+        `[grail-cache] CANONICAL prefetch failed · status=${res.status} url=${url} ` +
+          `· no fallback in V1 · regenerate variant or revert constant`,
       );
       return false;
     }
