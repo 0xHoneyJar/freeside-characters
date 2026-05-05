@@ -103,6 +103,20 @@ export {
   extractAttachedUrls,
 } from './deliver/strip-image-urls.ts';
 
+// Cycle-R sprint-1 voice-discipline transforms (cmp-boundary §9 ·
+// 2026-05-04). Surfaces the runtime strip for chat-mode delivery paths
+// (slash-command replies via webhook · ephemeral PATCH fallback). The
+// digest path applies these via embed.ts internally; chat-mode callers
+// (apps/bot/src/discord-interactions/dispatch.ts) apply via this export.
+//
+// Refs: ~/vault/wiki/concepts/chat-medium-presentation-boundary.md §9 ·
+//       ~/vault/wiki/concepts/discord-native-register.md (2026-05-04 amend)
+export {
+  stripVoiceDisciplineDrift,
+  escapeDiscordMarkdown,
+} from './deliver/sanitize.ts';
+export type { VoiceDisciplineOpts } from './deliver/sanitize.ts';
+
 // Chat-mode routing helpers (V0.7-A.4 surface-completeness test surface)
 export { shouldUseOrchestrator, resolveChatProvider } from './compose/reply.ts';
 export type { ChatProvider } from './compose/reply.ts';

@@ -35,6 +35,7 @@ import {
   sendChatReplyViaWebhook,
   sendImageReplyViaWebhook,
   splitForDiscord,
+  stripVoiceDisciplineDrift,
   type CharacterConfig,
   type Config,
   type EnrichedFile,
@@ -406,6 +407,20 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
         `channel=${channelId}`,
     );
 
+    // Voice-discipline transforms applied per-chunk before delivery
+    // (cmp-boundary §9 · cycle-r sprint-1 fast-follow 2026-05-05). The
+    // digest path applies these via embed.ts/buildPostPayload, but the
+    // chat-mode reply path (slash commands → composeReplyWithEnrichment
+    // → sendChatReplyViaWebhook) bypasses buildPostPayload entirely.
+    // Sprint 1 originally wired only the digest path; this surface
+    // catches the slash-command output where Eileen flagged em-dashes
+    // 2026-05-04. Strip runs on chunks (bot output) only · the user's
+    // prompt quote-prepend in deliverViaWebhook is applied AFTER this
+    // transform so user text passes through unchanged.
+    const cleanedChunks = result.chunks.map((chunk) =>
+      stripVoiceDisciplineDrift(chunk),
+    );
+
     // Delivery routing:
     //   - ephemeral=true   → interaction PATCH (webhooks can't be ephemeral ·
     //                        invoker chose this · accepts shell identity)
@@ -419,7 +434,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
     //                        when payload.files is populated · PATCH fallback
     //                        if webhook delivery fails (without attachment).
     if (ephemeral) {
-      await deliverViaInteraction(interaction, character, result.chunks, true);
+      await deliverViaInteraction(interaction, character, cleanedChunks, true);
     } else {
       try {
         await deliverViaWebhook(
@@ -427,7 +442,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
           config,
           character,
           channelId,
-          result.chunks,
+          cleanedChunks,
           prompt,
           invoker.username,
           attachedFiles,
@@ -438,7 +453,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
           webhookErr,
         );
         invalidateWebhookCache(channelId);
-        await deliverViaInteraction(interaction, character, result.chunks, false);
+        await deliverViaInteraction(interaction, character, cleanedChunks, false);
       }
     }
 
