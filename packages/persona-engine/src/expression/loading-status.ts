@@ -39,16 +39,21 @@ import { getMoodsForTool } from "./tool-mood-map.ts";
  * (today: satoshi · gumi-locked "no custom emoji" register).
  *
  * Per kickoff §3:
- *   satoshi → "the ledger advances — one moment." (NO custom emoji ·
+ *   satoshi → "the ledger advances, one moment." (NO custom emoji ·
  *             locked register · sentence case · gnomic)
  *
  * The map is keyed by character.id. New characters added without a
- * plain-text fallback resolve to null (substrate-shaped quiet — caller
+ * plain-text fallback resolve to null (substrate-shaped quiet · caller
  * skips the patch). This is intentional: a generic plain-text fallback
  * would re-introduce substrate-voice during a character moment.
+ *
+ * Voice discipline (cmp-boundary §9 · cycle R sprint 1): templates use
+ * plain punctuation only — no em-dashes (—) or en-dashes (–). The shell
+ * bot ("Loa" identity) renders these strings directly via patchOriginal
+ * which bypasses the chat-mode strip. Static templates must be clean.
  */
 const PLAIN_TEXT_LOADING_REGISTER: Readonly<Record<string, string>> = {
-  satoshi: "the ledger advances — one moment.",
+  satoshi: "the ledger advances, one moment.",
 };
 
 /**

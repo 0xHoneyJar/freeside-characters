@@ -326,7 +326,12 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
       // Resolve the moment to character expression. Returns null when the
       // substrate should stay quiet (unmapped tool, or intentional silence
       // for self-referential / V1-deferred tools like emojis/imagegen).
-      const status = composeToolUseStatusForCharacter(character, event.name);
+      // Voice-discipline strip applied as defense-in-depth (cmp-boundary §9):
+      // shell-bot status text bypasses the chat-mode strip in deliverViaWebhook,
+      // so apply here. Static templates are em-dash-clean today, but this
+      // catches future regressions.
+      const rawStatus = composeToolUseStatusForCharacter(character, event.name);
+      const status = rawStatus === null ? null : stripVoiceDisciplineDrift(rawStatus);
       console.log(
         `interactions: ${character.id}/chat tool_use · ${event.name} · status=${
           status === null ? 'null(skip)' : `"${status}"`
@@ -862,7 +867,10 @@ function formatErrorBody(
   character: CharacterConfig,
   kind: ErrorClass,
 ): string {
-  return composeErrorBody(character.id, kind);
+  // Defense-in-depth voice-discipline strip (cmp-boundary §9) on shell-bot
+  // error output. Static templates are em-dash-clean today; this catches
+  // future regressions per architect lock A4 (universal · zero opt-out).
+  return stripVoiceDisciplineDrift(composeErrorBody(character.id, kind));
 }
 
 /**

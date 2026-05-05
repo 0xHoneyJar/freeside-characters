@@ -127,7 +127,7 @@ describe("composeToolUseStatusForCharacter · satoshi plain-text register", () =
       satoshi,
       "mcp__score__get_zone_digest",
     );
-    expect(status).toBe("the ledger advances — one moment.");
+    expect(status).toBe("the ledger advances, one moment.");
     // Defense-in-depth: no Discord custom emoji syntax
     expect(status).not.toMatch(/<a?:[^:]+:\d+>/);
   });
@@ -137,7 +137,7 @@ describe("composeToolUseStatusForCharacter · satoshi plain-text register", () =
       satoshi,
       "mcp__codex__lookup_grail",
     );
-    expect(status).toBe("the ledger advances — one moment.");
+    expect(status).toBe("the ledger advances, one moment.");
   });
 
   test("rosenzu tool returns the same locked template", () => {
@@ -145,7 +145,7 @@ describe("composeToolUseStatusForCharacter · satoshi plain-text register", () =
       satoshi,
       "mcp__rosenzu__read_room",
     );
-    expect(status).toBe("the ledger advances — one moment.");
+    expect(status).toBe("the ledger advances, one moment.");
   });
 
   test("emojis MCP returns null (defense — satoshi's mcps[] omits emojis anyway)", () => {
