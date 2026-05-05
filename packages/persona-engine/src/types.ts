@@ -9,6 +9,10 @@
  * characters supply CharacterConfig, the substrate dispatches.
  */
 
+import type {
+  MediumCapabilityOverridesType,
+  TokenBindingType,
+} from '@0xhoneyjar/medium-registry';
 import type { ZoneId } from './score/types.ts';
 import type { PostType } from './compose/post-types.ts';
 
@@ -135,6 +139,61 @@ export interface CharacterConfig {
    * in persona.md prose.
    */
   tool_invocation_style?: string;
+
+  /**
+   * V0.8 (cycle R sprint 4 · cmp-boundary-architecture-2026-05-04):
+   * per-character medium-capability overrides — the BASE override tier.
+   *
+   * Sparse Record<MediumId, Partial<MediumCapability>> (per
+   * `@0xhoneyjar/medium-registry@0.1.0` shape). When a character wants
+   * to opt out of, say, Discord stickers globally (across every instance
+   * of this character), they write:
+   *
+   *   { discord: { sticker: false } }
+   *
+   * Fields not present in the override are inherited from the registry
+   * default for the active medium.
+   *
+   * Resolution precedence (per SDD §3.2 lock + IMP-011 disambiguation):
+   *   1. tokenBinding set + wardrobe-resolver returns non-null override
+   *      (cycle-3) → use L0 metadata `medium_capabilities[mediumId]`
+   *   2. mediumOverrides set                       → use character-default
+   *   3. neither set                               → use registry default
+   *
+   * Additive optional · architect lock A7. CharacterConfigs without this
+   * field operate against registry defaults exactly as before.
+   *
+   * @see freeside-characters/packages/persona-engine/src/deliver/wardrobe-resolver.ts
+   * @see ~/vault/wiki/concepts/chat-medium-presentation-boundary.md §9
+   */
+  readonly mediumOverrides?: MediumCapabilityOverridesType;
+
+  /**
+   * V0.8 (cycle R sprint 4 · cmp-boundary-architecture-2026-05-04):
+   * per-token NFT binding — the OVERRIDE override tier.
+   *
+   * When set AND `wardrobe-resolver` (cycle-3 fill) returns a non-null
+   * override, EACH token of `contract` resolves its OWN medium
+   * capabilities from the bound NFT's L0 metadata
+   * (`MetadataDocument.medium_capabilities` per
+   * `@0xhoneyjar/freeside-protocol@^1.4.0`).
+   *
+   * Resolver implementation lives in mibera-as-NPC cycle-3 (gated on
+   * loa-finn#157 6/7 sprints). Sprint 4 ships the SCAFFOLD signature
+   * (returns null until cycle-3 fills) — see
+   * `deliver/wardrobe-resolver.ts` and the `@future mibera-as-NPC
+   * cycle-3` grep-traceable marker (architect lock A6).
+   *
+   * Setting `tokenBinding` on a CharacterConfig WITHOUT cycle-3 having
+   * shipped: the resolver returns null, the precedence chain falls
+   * through to `mediumOverrides`, and behavior is identical to the
+   * `mediumOverrides`-only case. Safe to set early.
+   *
+   * Additive optional · architect lock A7.
+   *
+   * @see ~/vault/wiki/concepts/mibera-as-npc.md (cycle-3 doctrine)
+   */
+  readonly tokenBinding?: TokenBindingType;
 }
 
 /**
