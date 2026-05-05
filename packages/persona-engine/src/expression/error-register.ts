@@ -76,12 +76,12 @@ const TEMPLATES_RAW: Record<string, Record<ErrorClass, string>> = {
   // **Ruggy** prefix; the voice is unmistakably ruggy.
   ruggy: {
     timeout: "took longer than ruggy could hold the line for. wanna try that again?",
-    empty: "cables got crossed — nothing came back. try again?",
+    empty: "cables got crossed, nothing came back. try again?",
     error: "something snapped on ruggy's end. cool to retry?",
     "image-too-large":
       "the image came out too thicc for discord. try tightening the prompt?",
     "image-delivery-failed":
-      "image rendered but delivery hiccuped. same seed should reproduce — try again?",
+      "image rendered but delivery hiccuped. same seed should reproduce, try again?",
   },
 
   // SATOSHI — sentence case, gnomic, dense. "Signal between worlds" register.
@@ -94,7 +94,7 @@ const TEMPLATES_RAW: Record<string, Record<ErrorClass, string>> = {
     "image-too-large":
       "The image carried more weight than the channel allows. Try again with less.",
     "image-delivery-failed":
-      "The image surfaced but failed to cross. Retry — the seed remembers.",
+      "The image surfaced but failed to cross. Retry, the seed remembers.",
   },
 };
 
