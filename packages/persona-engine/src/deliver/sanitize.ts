@@ -98,8 +98,30 @@ export function inlineCode(id: string): string {
 // =============================================================================
 
 /**
- * Options for stripVoiceDisciplineDrift. Sprint 3 will extend with `medium`
- * for medium-aware variant selection per `MediumCapability` registry.
+ * Medium identifier for voice-discipline opt threading (cycle R sprint 3).
+ *
+ * Matches `mediumIdOf(...)` from `@0xhoneyjar/medium-registry@0.2.0`.
+ * Stays as a string union (NOT a registry import) to avoid forcing
+ * persona-engine consumers to take a medium-registry dep just to pass
+ * post-type metadata. Composer wires the registry at the
+ * variant-selection layer (deliver/embed.ts).
+ *
+ * Universal voice discipline (architect lock A4) does NOT vary by medium —
+ * em-dashes, asterisk roleplay, default closings are stripped uniformly.
+ * The `mediumId` arg is reserved for FUTURE medium-specific prose
+ * register adjustments (Telegram has different conventions; CLI strips
+ * additional ANSI-confusing characters).
+ */
+export type VoiceMediumId = "discord-webhook" | "discord-interaction" | "cli" | "telegram-stub";
+
+/**
+ * Options for stripVoiceDisciplineDrift. Cycle R Sprint 3 extends with
+ * `mediumId` for medium-aware additional discipline (CLI strips
+ * ANSI-confusing characters; Discord retains current behavior).
+ *
+ * Universal voice transforms (em-dash · asterisk roleplay · closing
+ * signoff) are NOT gated by mediumId — architect lock A4 (universal ·
+ * zero opt-out · code-block-safe · idempotent).
  */
 export interface VoiceDisciplineOpts {
   /**
@@ -108,6 +130,20 @@ export interface VoiceDisciplineOpts {
    * discord-native-register doctrine. Default: undefined → strip closings.
    */
   postType?: string;
+
+  /**
+   * Active medium · cycle R Sprint 3 · enables medium-specific discipline
+   * additions BEYOND the universal transforms. Today:
+   *
+   *   - 'cli'                           → strip ANSI escape sequences
+   *                                       (defense-in-depth · cli-renderer
+   *                                       package also strips at render time)
+   *   - 'discord-webhook' / 'discord-interaction' / undefined → no extra
+   *
+   * Default: undefined → universal-only behavior (back-compat · matches
+   * Sprint 1 + Sprint 2 callers that don't yet thread the medium through).
+   */
+  mediumId?: VoiceMediumId;
 }
 
 /**
@@ -160,13 +196,55 @@ export function stripVoiceDisciplineDrift(
   const skipClosings = opts?.postType === 'digest';
   const closed = skipClosings ? transformed : stripTrailingClosings(transformed);
 
+  // Cycle R Sprint 3 — medium-specific discipline ADDITIONS beyond the
+  // universal transforms. CLI strips ANSI escape sequences as
+  // defense-in-depth (cli-renderer package also strips at render time;
+  // applying here means downstream renderers + telemetry sinks get safe
+  // text too).
+  const mediumDisciplined =
+    opts?.mediumId === 'cli' ? stripAnsiEscapes(closed) : closed;
+
   // FINAL cleanup at whole-text level:
   //  - Trim leading whitespace at start (artifact from stripped roleplay
   //    at sentence start). Per-line indentation preserved.
   //  - Trim trailing comma + whitespace (artifact from em-dash transform
   //    at end of text · em-dash followed by trailing whitespace becomes
   //    `, ` per the no-peek branch · meaningless at end of text).
-  return closed.replace(/^[ \t]+/, '').replace(/,?\s*$/, '');
+  return mediumDisciplined.replace(/^[ \t]+/, '').replace(/,?\s*$/, '');
+}
+
+/**
+ * ANSI escape sequence stripper for CLI medium.
+ *
+ * Defense-in-depth — `@0xhoneyjar/cli-renderer` ALSO strips at render
+ * time (per SKP-001 architectural fix in cycle R sprint 3). Applying
+ * here means:
+ *
+ *   1. Telemetry / logging sinks downstream of sanitize see safe text
+ *   2. If a future non-cli-renderer consumer renders to terminal directly,
+ *      they're protected
+ *   3. Two-layer strip catches accidental cli-renderer bypasses
+ *
+ * Pattern matches CSI (`ESC [ ... final-byte`), OSC (`ESC ] ... BEL/ST`),
+ * and single-char escapes (`ESC X`). Same shape as cli-renderer's
+ * sanitize-ansi.ts.
+ */
+function stripAnsiEscapes(text: string): string {
+  if (!text) return text;
+  return text.replace(
+    new RegExp(
+      [
+        // CSI sequences (most common: SGR colors, cursor moves)
+        '[\\x1b\\x9b][\\[]([0-9;<=>?]*)[\\x20-\\x2f]*[\\x40-\\x7e]',
+        // OSC sequences (window title, hyperlinks) — terminated by BEL or ST
+        '[\\x1b\\x9b][\\]][^\\x07\\x1b]*(?:\\x07|\\x1b\\\\)',
+        // Single-char escapes (DEC private modes, charset switches)
+        '[\\x1b][@-Z\\\\-_]',
+      ].join('|'),
+      'g',
+    ),
+    '',
+  );
 }
 
 /**

@@ -6,14 +6,27 @@
  *
  * For embedded types: ALWAYS populate `message.content` as graceful
  * fallback for users with embeds disabled.
+ *
+ * Cycle R Sprint 3: opts.medium threads through @0xhoneyjar/medium-registry
+ * descriptors. Default is DISCORD_WEBHOOK_DESCRIPTOR (Pattern B shell-bot
+ * delivery) per architect lock A4 + the SKP-001 ctx-split. Future
+ * non-Discord consumers (cli-renderer, telegram-renderer cycles) pass
+ * their own descriptor.
  */
 
+import {
+  DISCORD_WEBHOOK_DESCRIPTOR,
+  hasCapability,
+  mediumIdOf,
+  type MediumCapability,
+} from '@0xhoneyjar/medium-registry';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR, DIMENSION_NAME } from '../score/types.ts';
 import { POST_TYPE_SPECS, type PostType } from '../compose/post-types.ts';
 import {
   escapeDiscordMarkdown,
   stripVoiceDisciplineDrift,
+  type VoiceMediumId,
 } from './sanitize.ts';
 
 const DIRECTION_COLORS = {
@@ -42,22 +55,43 @@ export interface DiscordEmbed {
   footer?: { text: string };
 }
 
+export interface BuildPostPayloadOpts {
+  /**
+   * Active medium descriptor. Cycle R Sprint 3 — defaults to
+   * DISCORD_WEBHOOK_DESCRIPTOR (Pattern B shell-bot · the persona-bot
+   * default). Pass DISCORD_INTERACTION_DESCRIPTOR for slash-command
+   * responses or CLI_DESCRIPTOR for cli-renderer pre-formatting.
+   */
+  readonly medium?: MediumCapability;
+}
+
 export function buildPostPayload(
   digest: ZoneDigest,
   voice: string,
   postType: PostType,
+  opts: BuildPostPayloadOpts = {},
 ): DigestPayload {
   const spec = POST_TYPE_SPECS[postType];
+  const medium = opts.medium ?? DISCORD_WEBHOOK_DESCRIPTOR;
+  const mediumId = mediumIdOf(medium) as VoiceMediumId;
+
   // Voice discipline runs BEFORE markdown escape: strip em-dashes,
   // asterisk roleplay, and (non-digest) closing signoffs. Digest is the
   // only post-type that retains "stay groovy 🐻"-style closings per
   // discord-native-register doctrine. Per cmp-boundary §9 voice-discipline
-  // drift class · cycle R cmp-boundary-architecture S1.
-  const voiceCleaned = stripVoiceDisciplineDrift(voice, { postType });
+  // drift class · cycle R cmp-boundary-architecture S1. Sprint 3 threads
+  // mediumId for CLI ANSI-strip + future medium-specific register tunes.
+  const voiceCleaned = stripVoiceDisciplineDrift(voice, { postType, mediumId });
   const sanitized = escapeDiscordMarkdown(voiceCleaned);
 
-  if (!spec.useEmbed) {
-    // Plain content for micro / lore_drop / question — lightweight
+  // Cycle R Sprint 3 — gate embed shape on registry capability. Most
+  // calls land DISCORD_WEBHOOK_DESCRIPTOR which has embed=true; the
+  // gate is a safety net for future non-Discord callers.
+  const useEmbed = spec.useEmbed && hasCapability(medium, 'embed');
+
+  if (!useEmbed) {
+    // Plain content for micro / lore_drop / question OR for any medium
+    // that doesn't render embeds (CLI · future Telegram).
     return {
       content: sanitized,
       embeds: [],
