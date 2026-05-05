@@ -16,6 +16,7 @@
  * touches the SDK or MCP layer.
  */
 
+import type { MediumCapability } from '@0xhoneyjar/medium-registry';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import { fetchZoneDigest } from '../score/client.ts';
@@ -41,11 +42,26 @@ export interface PostComposeResult {
   payload: DigestPayload;
 }
 
+/**
+ * Per-invocation opts for composeZonePost. Cycle R Sprint 3.
+ *
+ * `medium` defaults to DISCORD_WEBHOOK_DESCRIPTOR when omitted (Pattern B
+ * shell-bot · the persona-bot default). Pass DISCORD_INTERACTION_DESCRIPTOR
+ * for slash-command responses, CLI_DESCRIPTOR for cli-renderer fixtures,
+ * etc. The medium threads through buildPostPayload to gate embed shape on
+ * `hasCapability(medium, 'embed')` and through stripVoiceDisciplineDrift
+ * for CLI ANSI strip / future medium-specific prose adjustments.
+ */
+export interface ComposeZonePostOpts {
+  readonly medium?: MediumCapability;
+}
+
 export async function composeZonePost(
   config: Config,
   character: CharacterConfig,
   zone: ZoneId,
   postType: PostType = 'digest',
+  opts: ComposeZonePostOpts = {},
 ): Promise<PostComposeResult | null> {
   // Fetch a digest in parallel with the LLM call — the LLM gets its own
   // copy via mcp__score__get_zone_digest; this one is for embed metadata
@@ -104,7 +120,11 @@ export async function composeZonePost(
     voice = applyHeadlineLock(rawVoice, zone, postType, character.id);
   }
 
-  const payload = buildPostPayload(digest, voice, postType);
+  // Cycle R Sprint 3: thread the medium through to the payload builder.
+  // Default (omitted opts.medium) preserves Sprint-1/Sprint-2 callsite
+  // semantics — buildPostPayload internally falls back to
+  // DISCORD_WEBHOOK_DESCRIPTOR.
+  const payload = buildPostPayload(digest, voice, postType, { medium: opts.medium });
   return { zone, postType, digest, voice, payload };
 }
 
