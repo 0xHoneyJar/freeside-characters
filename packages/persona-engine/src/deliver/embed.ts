@@ -11,7 +11,10 @@
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR, DIMENSION_NAME } from '../score/types.ts';
 import { POST_TYPE_SPECS, type PostType } from '../compose/post-types.ts';
-import { escapeDiscordMarkdown } from './sanitize.ts';
+import {
+  escapeDiscordMarkdown,
+  stripVoiceDisciplineDrift,
+} from './sanitize.ts';
 
 const DIRECTION_COLORS = {
   green: 0x2ecc71,
@@ -45,7 +48,13 @@ export function buildPostPayload(
   postType: PostType,
 ): DigestPayload {
   const spec = POST_TYPE_SPECS[postType];
-  const sanitized = escapeDiscordMarkdown(voice);
+  // Voice discipline runs BEFORE markdown escape: strip em-dashes,
+  // asterisk roleplay, and (non-digest) closing signoffs. Digest is the
+  // only post-type that retains "stay groovy 🐻"-style closings per
+  // discord-native-register doctrine. Per cmp-boundary §9 voice-discipline
+  // drift class · cycle R cmp-boundary-architecture S1.
+  const voiceCleaned = stripVoiceDisciplineDrift(voice, { postType });
+  const sanitized = escapeDiscordMarkdown(voiceCleaned);
 
   if (!spec.useEmbed) {
     // Plain content for micro / lore_drop / question — lightweight
