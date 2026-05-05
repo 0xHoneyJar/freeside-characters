@@ -27,10 +27,6 @@
       "name": "@freeside-characters/character-mongolian",
       "version": "0.1.0",
     },
-    "apps/character-mongolian": {
-      "name": "@freeside-characters/character-mongolian",
-      "version": "0.1.0",
-    },
     "apps/character-ruggy": {
       "name": "@freeside-characters/character-ruggy",
       "version": "0.8.0",
@@ -43,6 +39,7 @@
       "name": "@freeside-characters/persona-engine",
       "version": "0.8.0",
       "dependencies": {
+        "@0xhoneyjar/medium-registry": "^0.2.0",
         "@anthropic-ai/claude-agent-sdk": "^0.2.122",
         "discord.js": "^14.16.3",
         "effect": "^3.21.2",
@@ -64,6 +61,8 @@
     },
   },
   "packages": {
+    "@0xhoneyjar/medium-registry": ["@0xhoneyjar/medium-registry@0.2.0", "", { "peerDependencies": { "effect": "^3.10.0" } }, "sha512-A7Kpd8UjfymCzQ6Gdod8ZcGn2LvWmgaksYhiY8M3RpUWAziJ/0VSc0SBG7PLt5dCwtWdf0xiOLG3TPJ5qitIqw=="],
+
     "@0xhoneyjar/quests-discord-renderer": ["@0xhoneyjar/quests-discord-renderer@0.1.2", "", { "dependencies": { "@0xhoneyjar/quests-engine": "^0.1.2", "@0xhoneyjar/quests-protocol": "^0.1.2" }, "peerDependencies": { "discord-api-types": "^0.37.0", "effect": "^3.10.0" } }, "sha512-1X8XALTMs825xEzdE5e6fpj0vjILzn/r4w1PA8OcGk8ihCKFszXa0DikmZ2N+bE5SicX0ie5J20MxBeNmVN9yA=="],
 
     "@0xhoneyjar/quests-engine": ["@0xhoneyjar/quests-engine@0.1.2", "", { "dependencies": { "@0xhoneyjar/quests-protocol": "^0.1.2" }, "peerDependencies": { "effect": "^3.10.0", "pg": "^8.11.0" }, "optionalPeers": ["pg"] }, "sha512-zwyNmuX3uSLEJBtVe320Nn8YuopqZfa69Jwuyzen4M2kWYjecn5egCPfCiNrc3ck0JLhVINd94sGstRWAYwAog=="],
