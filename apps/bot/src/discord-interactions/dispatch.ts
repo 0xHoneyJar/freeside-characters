@@ -54,6 +54,13 @@ import {
 } from './quest-dispatch.ts';
 import { getZoneForChannel } from '../lib/channel-zone-map.ts';
 import {
+  attachAuthContext,
+  AuthBridgeError,
+  type AuthContext,
+  type InteractionContext,
+} from '../auth-bridge.ts';
+import { getAuthBridgeDeps } from '../auth-bridge-deps.ts';
+import {
   InteractionResponseType,
   InteractionType,
   MessageFlags,
@@ -131,6 +138,43 @@ export function getActiveQuestRuntime(): QuestRuntime {
   return activeQuestRuntime;
 }
 
+/**
+ * Per-interaction AuthContext stash · cycle-B sprint-1 review fix (PR #53
+ * Blocker #1 · cross-reviewer flatline CRITICAL). The auth-bridge attaches
+ * an AuthContext per Discord interaction · downstream quest dispatch reads
+ * it via `getAuthContextForInteraction(interaction.id)` to compose the
+ * Sietch Layer (cycle-B B-1.9 · @freeside-quests/engine) at the right
+ * boundary.
+ *
+ * Map keyed by `interaction.id` (Discord snowflake · 17-20 digits · stable
+ * for the interaction lifetime). Entries auto-expire when the dispatch
+ * worker calls `clearAuthContextForInteraction` after PATCHing the reply ·
+ * worst-case stale entries (worker crashes mid-flight) age out via the
+ * MAX_AUTH_CTX_ENTRIES cap below.
+ */
+const authContextByInteractionId = new Map<string, AuthContext>();
+const MAX_AUTH_CTX_ENTRIES = 500;
+
+const setAuthContextForInteraction = (
+  interaction_id: string,
+  auth: AuthContext,
+): void => {
+  if (authContextByInteractionId.size >= MAX_AUTH_CTX_ENTRIES) {
+    // Evict oldest · simple FIFO via insertion-order Map iteration
+    const firstKey = authContextByInteractionId.keys().next().value;
+    if (firstKey !== undefined) authContextByInteractionId.delete(firstKey);
+  }
+  authContextByInteractionId.set(interaction_id, auth);
+};
+
+export const getAuthContextForInteraction = (
+  interaction_id: string,
+): AuthContext | undefined => authContextByInteractionId.get(interaction_id);
+
+export const clearAuthContextForInteraction = (interaction_id: string): void => {
+  authContextByInteractionId.delete(interaction_id);
+};
+
 export async function dispatchSlashCommand(
   interaction: DiscordInteraction,
   config: Config,
@@ -173,6 +217,52 @@ export async function dispatchSlashCommand(
     return ephemeralReply(
       'this channel is temporarily unavailable for character replies. try again after the next restart.',
     );
+  }
+
+  // ─── cycle-B sprint-1 · auth-bridge attach (Blocker #1 fix) ───────
+  // Per AC-B1.6 + cross-reviewer flatline (PR #53 · CRITICAL Blocker #1):
+  // every interaction gets an AuthContext attached BEFORE quest dispatch
+  // OR character routing. Lock-7 default AUTH_BACKEND=anon makes this a
+  // fast no-op (anon AuthContext attached); flipping to freeside-jwt
+  // activates the verified path (post bun-link of @freeside-auth/engine
+  // + setAuthBridgeDeps wired at boot in index.ts).
+  //
+  // Failure modes:
+  //   - verified-required route + missing/invalid JWT → AuthBridgeError
+  //     thrown · we map to ephemeral 401 reply (operator-readable code +
+  //     reason in audit log via attachAuthContext's logger)
+  //   - verified-with-anon-fallback route + verify failure → audit-log
+  //     anon-fallback ctx attached · interaction proceeds with anon-tier
+  //     downstream (Lock-7 storm warning if fallbacks accumulate)
+  //   - public route → anon ctx attached, no verification attempted
+  const interactionCtx: InteractionContext = {
+    interaction_id: interaction.id,
+    guild_id: interaction.guild_id ?? null,
+    discord_id: invoker.id,
+  };
+  const cmdName = interaction.data?.name ?? (isQuest ? 'quest' : 'unknown');
+  try {
+    await attachAuthContext({
+      interaction,
+      ctx: interactionCtx,
+      commandName: cmdName,
+      deps: getAuthBridgeDeps(),
+    });
+  } catch (err) {
+    if (err instanceof AuthBridgeError) {
+      console.warn(
+        `interactions: 401 fail-closed · cmd=${cmdName} code=${err.code} ` +
+          `reason="${err.reason}" user=${invoker.id}`,
+      );
+      return ephemeralReply(
+        `authentication required: ${err.code}. (route is verified-required · please /verify and try again)`,
+      );
+    }
+    // Unknown error · bubble to outer handler (logs + connects to alerting)
+    throw err;
+  }
+  if (interactionCtx.auth) {
+    setAuthContextForInteraction(interaction.id, interactionCtx.auth);
   }
 
   // ─── cycle-Q · sprint-3 · Q3.5 — quest substrate interception ──────

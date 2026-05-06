@@ -29,14 +29,24 @@
  *
  * Fields are optional because v1.0 manifests omit them. The resolver
  * filters out manifests without quest fields.
+ *
+ * cycle-B sprint-1 (B-1.7): added `tenant_id` and `auth.backend` so the
+ * bot's auth-bridge can resolve a per-guild tenant + know which backend
+ * (anon or freeside-jwt) the world has opted into. Both fields are
+ * optional to keep cycle-Q v1.0 manifests forward-compatible — only
+ * worlds that declare an identity composition need to populate them.
  */
 export interface WorldManifestQuestSubset {
   readonly slug: string;
+  readonly tenant_id?: string;
   readonly quest_namespace?: string;
   readonly quest_engine_config?: {
     readonly questAcceptanceMode: "open" | "auth-required" | "open-badge-gated";
     readonly submissionStyle: "inline_thread" | "modal_form";
     readonly positiveFrictionDelayMs: number;
+  };
+  readonly auth?: {
+    readonly backend: "anon" | "freeside-jwt";
   };
   readonly guild_ids?: readonly string[];
 }
@@ -105,4 +115,50 @@ export const resolveEngineConfigForGuild = (
   const world = resolveWorldForGuild(guild_id, manifests);
   if (!world) return null;
   return buildEngineConfigForWorld(world);
+};
+
+/**
+ * cycle-B sprint-1 (B-1.7): resolve the canonical tenant_id for a Discord
+ * guild from the world-manifest registry.
+ *
+ * Returns null when:
+ *   - no world claims the guild, OR
+ *   - the matched world manifest does not declare `tenant_id` (cycle-Q
+ *     v1.0 manifest · no identity composition)
+ *
+ * Auth-bridge consumes this to drive its `TenantResolverPort`. The bridge
+ * decides what null means based on the per-route fail-mode (verified-required
+ * → AuthBridgeError; verified-with-anon-fallback → audited downgrade;
+ * public/anon → not consulted at all).
+ *
+ * Pure-data function · no IO · no Discord API call · safe to invoke per
+ * interaction at the dispatch layer.
+ */
+export const resolveTenantFromGuild = (
+  guild_id: string,
+  manifests: readonly WorldManifestQuestSubset[],
+): string | null => {
+  const world = resolveWorldForGuild(guild_id, manifests);
+  if (!world) return null;
+  return world.tenant_id ?? null;
+};
+
+/**
+ * cycle-B sprint-1 (B-1.7): resolve the auth backend the world has opted
+ * into. Returns the manifest's declared backend or 'anon' when the world
+ * doesn't declare identity composition.
+ *
+ * Composes orthogonally with the AUTH_BACKEND env var (Lock-7): operators
+ * gate by env at the bot binary level; worlds advertise their preferred
+ * backend at the manifest level. The strict policy (env=anon overrides
+ * everything) is enforced inside auth-bridge · this resolver only surfaces
+ * the world's stated preference.
+ */
+export const resolveAuthBackendForGuild = (
+  guild_id: string,
+  manifests: readonly WorldManifestQuestSubset[],
+): "anon" | "freeside-jwt" => {
+  const world = resolveWorldForGuild(guild_id, manifests);
+  if (!world) return "anon";
+  return world.auth?.backend ?? "anon";
 };

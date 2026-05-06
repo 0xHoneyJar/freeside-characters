@@ -42,6 +42,13 @@ import {
 } from './discord-interactions/server.ts';
 import { setQuestRuntime } from './discord-interactions/dispatch.ts';
 import { buildMemoryDevQuestRuntime } from './quest-runtime-bootstrap.ts';
+import {
+  buildEnvTenantPgPoolFactory,
+  buildProductionQuestRuntime,
+  envConnectionStringSource,
+} from './quest-runtime-production.ts';
+import { pgPoolBuilder } from './lib/pg-pool-builder.ts';
+import type { WorldManifestQuestSubset } from './world-resolver.ts';
 import { publishCommands } from './lib/publish-commands.ts';
 
 const banner = `─── freeside-characters bot · v0.6.0-A ────────────────────────`;
@@ -111,12 +118,90 @@ async function main(): Promise<void> {
       `quest-runtime:  memory · world=${'mongolian'} · guild=${guildId ?? '(unset · /quest will return polite no-path reply)'} · ${runtimeContext}`,
     );
   } else if (questRuntimeMode === 'production') {
-    // OPERATOR-AUTHORED: production runtime requires a real world-manifest
-    // source + per-world Pg pools (mibera-db / apdao-db / cubquest-db).
-    // Out of scope for the QA bootstrap. Operator wires this when Q2.9
-    // DB migration lands + world-manifest source is published.
-    throw new Error(
-      'QUEST_RUNTIME=production not yet wired · use QUEST_RUNTIME=memory for QA',
+    // === PRODUCTION RUNTIME · cycle-B sprint-1 · B-1.8 ============
+    // Composition:
+    //   - world manifests: hardcoded mibera entry until B-1.12 lands the
+    //     freeside-worlds registry loader. Operator extends this list as
+    //     additional worlds onboard (cubquest in B-2 · others in V2).
+    //   - tenant Pg pool factory: env-driven · TENANT_<TENANT>_DATABASE_URL
+    //     · pools created lazily via `pg.Pool` on first access · cached
+    //     for process lifetime.
+    //   - catalog: defaults to memory stub (Mongolian munkh-introduction-v1)
+    //     until B-1.13 lands cartridge loader. Same shape as memory-mode
+    //     bootstrap — swap-in target.
+    //   - resolvePlayer: defaults to anon-only (PRD D4) · auth-bridge wires
+    //     verified player identity at the dispatch layer (B-1.6 ports
+    //     declared · operator wires bridge call in dispatch.ts upstream).
+    //
+    // Per Lock-7 the production runtime composes orthogonally with
+    // AUTH_BACKEND. Operator runs `QUEST_RUNTIME=production AUTH_BACKEND=anon`
+    // to validate Pg path before flipping verified.
+    // =================================================================
+    const guildId =
+      process.env.QUEST_GUILD_ID ?? process.env.DISCORD_GUILD_ID;
+    const worldManifests: readonly WorldManifestQuestSubset[] = [
+      {
+        slug: 'mongolian',
+        tenant_id: 'mibera',
+        guild_ids: guildId ? [guildId] : [],
+        auth: { backend: 'freeside-jwt' },
+        quest_namespace: 'mongolian',
+        quest_engine_config: {
+          questAcceptanceMode: 'auth-required',
+          submissionStyle: 'inline_thread',
+          positiveFrictionDelayMs: 12000,
+        },
+      },
+    ];
+
+    // === FAIL-CLOSED PRECONDITION CHECK · cycle-B sprint-1 review fix ====
+    // Cross-reviewer flatline (PR #53 · CRITICAL Blocker #2): production runtime
+    // must NOT silently fall back to memory when TENANT_<TENANT>_DATABASE_URL
+    // is unset. Lock-7 fail-closed posture: missing env at QUEST_RUNTIME=production
+    // is a configuration error · throw at startup so Railway logs surface it
+    // before any interaction lands.
+    //
+    // Each manifest with tenant_id MUST have its TENANT_<TENANT>_DATABASE_URL
+    // env populated. The check runs before pool factory construction so the
+    // failure is operator-readable in the boot banner.
+    const requiredTenantEnvVars = worldManifests
+      .filter((w) => w.tenant_id)
+      .map((w) => ({
+        tenant_id: w.tenant_id!,
+        env_key: `TENANT_${w.tenant_id!.toUpperCase().replace(/-/g, '_')}_DATABASE_URL`,
+      }));
+    const missing = requiredTenantEnvVars.filter(
+      ({ env_key }) => !process.env[env_key] || process.env[env_key]!.trim().length === 0,
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `QUEST_RUNTIME=production fail-closed precondition: missing env var(s) for ` +
+          `tenant${missing.length > 1 ? 's' : ''} ` +
+          missing.map((m) => `${m.tenant_id} (${m.env_key})`).join(', ') +
+          `. Set the connection string(s) on Railway env or downgrade to ` +
+          `QUEST_RUNTIME=memory for QA. Manifest source: hardcoded mibera ` +
+          `entry (cycle-B B-1.12 swap target).`,
+      );
+    }
+
+    const tenantPgPoolFactory = buildEnvTenantPgPoolFactory(
+      pgPoolBuilder,
+      envConnectionStringSource(),
+    );
+
+    const runtime = buildProductionQuestRuntime({
+      worldManifests,
+      characters,
+      tenantPgPoolFactory,
+    });
+    setQuestRuntime(runtime);
+
+    const tenantsConfigured = requiredTenantEnvVars
+      .map((t) => t.tenant_id)
+      .join(',') || '(none)';
+    console.log(
+      `quest-runtime:  production · world=mongolian · guild=${guildId ?? '(unset)'} ` +
+        `· tenants_configured=${tenantsConfigured}`,
     );
   } else {
     console.log(
