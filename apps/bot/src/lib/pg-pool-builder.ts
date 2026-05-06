@@ -32,6 +32,12 @@ interface PgPoolLike {
     rows: ReadonlyArray<Record<string, unknown>>;
     rowCount: number | null;
   }>;
+  /**
+   * Idle-client error event · cross-reviewer flatline IMP-001 (PR #53 ·
+   * HIGH_CONSENSUS 910): unhandled `error` events from idle pg clients
+   * crash the whole Node process. Always attach a handler at construction.
+   */
+  on: (event: 'error', handler: (err: Error) => void) => void;
 }
 
 interface PgModuleLike {
@@ -52,6 +58,19 @@ export const pgPoolBuilder: PoolBuilder = {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const pg = require('pg') as PgModuleLike;
     const pool = new pg.Pool({ connectionString: connection_string });
+
+    // Cross-reviewer flatline IMP-001 (PR #53 · HIGH_CONSENSUS 910): node-postgres
+    // emits `error` events on idle clients (DB connection lost · sleep timeout ·
+    // server killed connection). UNHANDLED, these events crash the entire bot
+    // process per Node.js EventEmitter rules. Logging keeps the bot alive while
+    // surfacing the failure for operator triage; the next acquired client either
+    // reconnects automatically or throws on the next query (caught by adapter).
+    pool.on('error', (err) => {
+      console.warn(
+        `[pg-pool-builder] idle client error · pool kept alive: ${err.message}`,
+      );
+    });
+
     return {
       query: async <T extends Record<string, unknown> = Record<string, unknown>>(
         text: string,

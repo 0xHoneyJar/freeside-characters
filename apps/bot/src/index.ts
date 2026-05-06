@@ -154,6 +154,36 @@ async function main(): Promise<void> {
       },
     ];
 
+    // === FAIL-CLOSED PRECONDITION CHECK · cycle-B sprint-1 review fix ====
+    // Cross-reviewer flatline (PR #53 · CRITICAL Blocker #2): production runtime
+    // must NOT silently fall back to memory when TENANT_<TENANT>_DATABASE_URL
+    // is unset. Lock-7 fail-closed posture: missing env at QUEST_RUNTIME=production
+    // is a configuration error · throw at startup so Railway logs surface it
+    // before any interaction lands.
+    //
+    // Each manifest with tenant_id MUST have its TENANT_<TENANT>_DATABASE_URL
+    // env populated. The check runs before pool factory construction so the
+    // failure is operator-readable in the boot banner.
+    const requiredTenantEnvVars = worldManifests
+      .filter((w) => w.tenant_id)
+      .map((w) => ({
+        tenant_id: w.tenant_id!,
+        env_key: `TENANT_${w.tenant_id!.toUpperCase().replace(/-/g, '_')}_DATABASE_URL`,
+      }));
+    const missing = requiredTenantEnvVars.filter(
+      ({ env_key }) => !process.env[env_key] || process.env[env_key]!.trim().length === 0,
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `QUEST_RUNTIME=production fail-closed precondition: missing env var(s) for ` +
+          `tenant${missing.length > 1 ? 's' : ''} ` +
+          missing.map((m) => `${m.tenant_id} (${m.env_key})`).join(', ') +
+          `. Set the connection string(s) on Railway env or downgrade to ` +
+          `QUEST_RUNTIME=memory for QA. Manifest source: hardcoded mibera ` +
+          `entry (cycle-B B-1.12 swap target).`,
+      );
+    }
+
     const tenantPgPoolFactory = buildEnvTenantPgPoolFactory(
       pgPoolBuilder,
       envConnectionStringSource(),
@@ -166,8 +196,8 @@ async function main(): Promise<void> {
     });
     setQuestRuntime(runtime);
 
-    const tenantsConfigured = ['mibera', 'cubquest']
-      .filter((t) => process.env[`TENANT_${t.toUpperCase()}_DATABASE_URL`])
+    const tenantsConfigured = requiredTenantEnvVars
+      .map((t) => t.tenant_id)
       .join(',') || '(none)';
     console.log(
       `quest-runtime:  production · world=mongolian · guild=${guildId ?? '(unset)'} ` +
