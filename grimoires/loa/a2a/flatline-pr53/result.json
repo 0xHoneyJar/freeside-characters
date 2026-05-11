@@ -1,0 +1,178 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 2,
+    "disputed_count": 3,
+    "low_value_count": 0,
+    "blocker_count": 8,
+    "model_agreement_percent": 70,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "High-impact reliability fix with very low implementation cost. Unhandled `Pool` error events are a known node-postgres failure mode and can crash the whole process, so adding an idle-client error handler is strongly justified.",
+      "gpt_score": 940,
+      "opus_score": 880,
+      "tertiary_score": 950,
+      "delta": 60,
+      "average_score": 910,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "If the described runtime wiring is accurate, this is a core correctness bug: production silently ignores verified auth identity and falls back to anonymous behavior. The benefit is high and the fix should be localized to runtime construction/dispatch wiring.",
+      "gpt_score": 920,
+      "opus_score": 820,
+      "tertiary_score": 900,
+      "delta": 100,
+      "average_score": 870,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-008",
+      "description": "Valuable operational control. Per-tenant pool sizing and connection timeout defaults can become real production issues as tenant count grows or Postgres stalls. Implementation cost is moderate because env parsing, defaults, and tests should be added carefully.",
+      "gpt_score": 780,
+      "opus_score": 0,
+      "tertiary_score": 750,
+      "delta": 780,
+      "average_score": 780,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-009",
+      "description": "Useful documentation improvement with low cost. JWT second-vs-millisecond confusion is common and can cause subtle bugs, though this is preventive rather than fixing an observed defect.",
+      "gpt_score": 610,
+      "opus_score": 0,
+      "tertiary_score": 600,
+      "delta": 610,
+      "average_score": 610,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-010",
+      "description": "Good lifecycle hardening for deploys and shutdowns. Draining cached pools is standard practice and likely not expensive to implement, though it requires fitting into the bot's existing shutdown path cleanly.",
+      "gpt_score": 740,
+      "opus_score": 0,
+      "tertiary_score": 800,
+      "delta": 740,
+      "average_score": 740,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-001",
+      "concern": "Global AUTH_BACKEND overrides per-world manifest settings",
+      "severity": "CRITICAL",
+      "severity_score": 820,
+      "why_matters": "The PR introduces `resolveAuthBackendForGuild` in `world-resolver.ts` to support multi-tenant heterogeneity (some worlds anon, some verified), but `auth-bridge.ts` completely ignores it. By reading only the global `process.env.AUTH_BACKEND`, switching the bot to `freeside-jwt` forces ALL worlds into verified mode, breaking backwards compatibility for worlds not yet migrated to Dynamic SDK.",
+      "location": "apps/bot/src/auth-bridge.ts (attachAuthContext) & apps/bot/src/world-resolver.ts",
+      "recommendation": "Update `attachAuthContext` to evaluate the world's specific auth setting using `deps.tenantResolver` (or inject `resolveAuthBackendForGuild`) before falling back to the global env variable.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Missing cross-user identity assertions in post-mint validation",
+      "severity": "CRITICAL",
+      "severity_score": 850,
+      "why_matters": "The bridge meticulously asserts `mintResult.claims.tenant === tenant_id` (Lock I6) but fails to assert that the returned JWT actually belongs to the requesting user (`claims.sub === dynamic_user_id` or `claims.discord_id === discord_id`). A bug or caching issue in the orchestrator port could return a JWT for a different user, allowing silent cross-user identity confusion and privilege escalation.",
+      "location": "apps/bot/src/auth-bridge.ts (attachAuthContext, line 353)",
+      "recommendation": "Add strict assertions: `if (mintResult.claims.sub !== dynamic_user_id)` or check `discord_id` before attaching the verified context.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Production runtime silently falls back to memory-backed quest state when a tenant database URL is missing.",
+      "severity": "HIGH",
+      "severity_score": 780,
+      "why_matters": "In production this can cause quest accept/submit state to be non-persistent, process-local, and potentially inconsistent across restarts or replicas, creating data loss and authorization/audit gaps.",
+      "location": "quest-runtime-production.ts / buildEnvTenantPgPoolFactory / buildWorldPgPoolFactoryFromTenants",
+      "recommendation": "Make missing tenant DB configuration a startup or per-request error in QUEST_RUNTIME=production unless an explicit ALLOW_MEMORY_FALLBACK flag is set for controlled testing.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "The auth bridge appears to be added as a standalone module but is not wired into the Discord interaction dispatch path, despite the requirement that auth be attached at the start of every interaction.",
+      "severity": "CRITICAL",
+      "severity_score": 910,
+      "why_matters": "Downstream quest dispatch and authorization checks may continue running with no ctx.auth, making the claimed tenant and verified identity guarantees unenforced in production.",
+      "location": "Architectural Locks / auth-bridge integration / apps/bot/src/index.ts",
+      "recommendation": "Wire attachAuthContext into the interaction entrypoint before any command dispatch, add integration tests proving ctx.auth exists for public, fallback, and verified-required routes, and fail requests that reach protected handlers without auth.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "The declared failure-mode contract names AUTH_BACKEND_UNREACHABLE and TENANT_MISMATCH, but the implementation emits mint_failed and tenant_assertion_failed.",
+      "severity": "HIGH",
+      "severity_score": 730,
+      "why_matters": "Callers, dashboards, tests, or runbooks expecting the documented error codes may fail to classify incidents correctly, especially for cross-tenant identity confusion.",
+      "location": "AuthBridgeError codes / Three Failure Modes / auth-bridge.ts",
+      "recommendation": "Align AuthBridgeError codes with the public contract or explicitly update the contract, and add tests asserting exact error codes for backend unreachable and tenant mismatch.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "Unbounded network calls per interaction (DDoS risk)",
+      "severity": "HIGH",
+      "severity_score": 780,
+      "why_matters": "Every interaction in a `verified-required` command triggers synchronous network calls to fetch the `dynamic_user_id` and mint a new JWT. Without token caching, a user spamming Discord buttons will instantly exhaust Dynamic SDK rate limits and overload the `freeside-auth` engine.",
+      "location": "apps/bot/src/auth-bridge.ts (attachAuthContext)",
+      "recommendation": "Implement an in-memory session cache mapping `discord_id` + `tenant_id` to the valid JWT, bounded by the JWT `exp` timestamp.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-004",
+      "concern": "Unrecognized AUTH_BACKEND values default to anon instead of failing configuration validation.",
+      "severity": "HIGH",
+      "severity_score": 710,
+      "why_matters": "A typo such as AUTH_BACKEND=freeside_jwt could silently disable verified auth for the whole bot, weakening access control without an obvious deployment failure.",
+      "location": "auth-bridge.ts / readAuthBackend",
+      "recommendation": "Default only when AUTH_BACKEND is unset; treat unknown non-empty values as a startup/configuration error, or require an explicit AUTH_BACKEND=anon for fallback mode.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "`mintFailed` swallowed silently in `verified-with-anon-fallback` mode without a circuit breaker — repeated gateway 5xx will degrade every interaction to anon-fallback while audit logs accumulate, and operators may not notice until midi profile coverage 'looks' fine but is actually masking a backend outage.",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "Silent degradation is the worst failure mode for an auth system. Without rate-limiting alerts or a circuit breaker, a multi-hour gateway outage becomes invisible — and because every quest in slice-B is `verified-with-anon-fallback`, users transparently lose verified-tier permissions. The audit log is informational only; nothing pages.",
+      "location": "auth-bridge.ts handleVerifiedFailure / mapCodeToFallbackReason · index.ts production runtime composition",
+      "recommendation": "Add a metric counter (or at minimum a structured warn-level log distinct from `audit`) for `mint_failed` fallbacks with rate threshold. Operator dashboard should alert when fallback ratio exceeds N% over a 5-min window. Document in runbook that high `mint-failed` audit volume = backend incident, not coverage gap.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "pr",
+  "document": "grimoires/loa/a2a/flatline-pr53/pr-diff.md",
+  "domain": "auth-bridge L4 boundary tenant assertion JWT pg pool TypeScript Discord bot",
+  "tertiary_model_used": "gemini-3.0-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "hitl",
+    "mode_reason": "Simstim workflow active (.run/simstim-state.json state=RUNNING)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-06T00:40:27Z",
+  "metrics": {
+    "total_latency_ms": 103000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

@@ -21,6 +21,8 @@ apps/bot/.run/
 .claude/hooks
 .claude/data
 .claude/schemas
+.claude/adapters
+.claude/defaults
 .claude/loa/CLAUDE.loa.md
 .claude/loa/reference
 .claude/loa/feedback-ontology.yaml
@@ -29,3 +31,11 @@ apps/bot/.run/
 .claude/checksums.json
 .loa-state/
 .claude.backup.*
+
+# loa runtime state (audit log, beads sqlite cache, cost ledger, trajectory)
+.run/
+.beads/beads.db
+grimoires/loa/a2a/cost-ledger.jsonl
+grimoires/loa/a2a/.daily-spend-*.json
+grimoires/loa/a2a/trajectory/
+grimoires/loa/analytics/permission-requests.jsonl
