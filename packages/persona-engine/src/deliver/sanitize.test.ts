@@ -13,11 +13,13 @@
  *   ~/vault/wiki/concepts/discord-native-register.md (2026-05-04 amend)
  */
 
-import { describe, test, expect } from 'bun:test';
+import { afterEach, beforeEach, describe, test, expect } from 'bun:test';
 import {
   stripVoiceDisciplineDrift,
   escapeDiscordMarkdown,
+  sanitizeOutboundBody,
 } from './sanitize.ts';
+import { composeErrorBody } from '../expression/error-register.ts';
 
 describe('stripVoiceDisciplineDrift · em-dash transform', () => {
   test('em-dash followed by lowercase becomes comma + space', () => {
@@ -202,5 +204,200 @@ describe('stripVoiceDisciplineDrift · composition with escapeDiscordMarkdown', 
     // step 2: markdown escape preserves the comma, escapes underscore
     const final = escapeDiscordMarkdown(voice);
     expect(final).toBe('mibera\\_acquire, heavy lifting today');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// sanitizeOutboundBody (FAGAN A4 · bug-20260511-b6eb97)
+// ─────────────────────────────────────────────────────────────────────
+
+describe('sanitizeOutboundBody · raw-api-error substitution', () => {
+  // Capture telemetry · restore console.warn between cases.
+  let warnings: string[] = [];
+  const originalWarn = console.warn;
+  beforeEach(() => {
+    warnings = [];
+    console.warn = (msg: string) => {
+      warnings.push(typeof msg === 'string' ? msg : String(msg));
+    };
+  });
+  afterEach(() => {
+    console.warn = originalWarn;
+  });
+
+  test('Anthropic API error body substitutes to in-character', () => {
+    const input = 'API Error: 500 Internal Server Error';
+    const out = sanitizeOutboundBody(input, 'ruggy');
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(out).toBe("something snapped on ruggy's end. cool to retry?");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('[outbound-sanitize]');
+    expect(warnings[0]).toContain('character=ruggy');
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+    expect(warnings[0]).toContain('original_len=36');
+  });
+
+  test('Anthropic API error with Error: prefix (String(err) form) substitutes', () => {
+    const input = 'Error: API Error: 529 overloaded';
+    const out = sanitizeOutboundBody(input, 'satoshi');
+    expect(out).toBe('The channel between worlds slipped. Retry on the next.');
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
+
+  test('Internal Server Error substitutes', () => {
+    const out = sanitizeOutboundBody('Internal Server Error', 'ruggy');
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=http-internal-server-error');
+  });
+
+  test('bedrock chat error (reply.ts:934 throw shape) substitutes', () => {
+    const input = 'bedrock chat error: 500 {"message":"upstream timeout"}';
+    const out = sanitizeOutboundBody(input, 'ruggy');
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=bedrock-chat-error');
+  });
+
+  test('orchestrator SDK error subtype (index.ts:536 throw shape) substitutes', () => {
+    const input = 'orchestrator: SDK error subtype=error_during_execution errors=Anthropic API failed';
+    const out = sanitizeOutboundBody(input, 'satoshi');
+    expect(out).toBe(composeErrorBody('satoshi', 'error'));
+    expect(warnings[0]).toContain('matched=orchestrator-sdk-error-subtype');
+  });
+
+  test('orchestrator empty completion (index.ts:556 throw shape) substitutes', () => {
+    const input = 'orchestrator: SDK query completed without an assistant text response. tool_uses=2';
+    const out = sanitizeOutboundBody(input, 'ruggy');
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=orchestrator-empty-completion');
+  });
+
+  test('freeside agent-gateway error (reply.ts:984 throw shape) substitutes', () => {
+    const input = 'freeside agent-gateway chat error: 503 Service Unavailable';
+    const out = sanitizeOutboundBody(input, 'ruggy');
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=freeside-agent-gateway-error');
+  });
+
+  test('raw JSON error envelope substitutes', () => {
+    const input = '{"type":"error","error":{"type":"api_error","message":"upstream timeout"}}';
+    const out = sanitizeOutboundBody(input, 'satoshi');
+    expect(out).toBe(composeErrorBody('satoshi', 'error'));
+    expect(warnings[0]).toContain('matched=raw-json-error-envelope');
+  });
+
+  test('dispatch REST wrapper (dispatch.ts:1083 throw shape) substitutes', () => {
+    const input = 'interactions: PATCH @original failed status=429 body={"retry_after":1.234}';
+    const out = sanitizeOutboundBody(input, 'ruggy');
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=dispatch-rest-wrapper');
+  });
+
+  test('dispatch follow-up POST wrapper substitutes', () => {
+    const input = 'interactions: follow-up POST failed status=403 body={"code":50013}';
+    const out = sanitizeOutboundBody(input, 'satoshi');
+    expect(out).toBe(composeErrorBody('satoshi', 'error'));
+    expect(warnings[0]).toContain('matched=dispatch-rest-wrapper');
+  });
+
+  test('unknown character falls through to substrate-quiet generic', () => {
+    const out = sanitizeOutboundBody('API Error: 500', 'unknown-character');
+    expect(out).toBe('something broke. try again?');
+  });
+});
+
+describe('sanitizeOutboundBody · passthrough cases', () => {
+  let warnings: string[] = [];
+  const originalWarn = console.warn;
+  beforeEach(() => {
+    warnings = [];
+    console.warn = (msg: string) => {
+      warnings.push(typeof msg === 'string' ? msg : String(msg));
+    };
+  });
+  afterEach(() => {
+    console.warn = originalWarn;
+  });
+
+  test('in-character ruggy error template passes through verbatim', () => {
+    const input = "cables got crossed, nothing came back. try again?";
+    expect(sanitizeOutboundBody(input, 'ruggy')).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('in-character satoshi error template passes through verbatim', () => {
+    const input = 'The signal is unclear this window. Retry on the next.';
+    expect(sanitizeOutboundBody(input, 'satoshi')).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('substrate-quiet generic passes through verbatim', () => {
+    const input = 'something broke. try again?';
+    expect(sanitizeOutboundBody(input, 'ruggy')).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('LLM success — multi-paragraph prose passes through verbatim', () => {
+    const input =
+      "yo, ruggy here. been watching the bear-cave today, lots of " +
+      "mibera_acquire signal. the cubs are restless.\n\n" +
+      "want to peek at the ledger? lmk.";
+    expect(sanitizeOutboundBody(input, 'ruggy')).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('LLM success — emoji-rich passes through verbatim', () => {
+    const input = '<:mibera_acquire:123> spotted three transfers today. <:bear_pog:456>';
+    expect(sanitizeOutboundBody(input, 'ruggy')).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('LLM success — code block with API-looking content passes through (no anchor match)', () => {
+    const input =
+      "here's the shape:\n\n```\nstatus=200 body={\"ok\":true}\n```\n\nbasic.";
+    expect(sanitizeOutboundBody(input, 'ruggy')).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('empty string passes through', () => {
+    expect(sanitizeOutboundBody('', 'ruggy')).toBe('');
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('LLM prose that legitimately mentions an error number does not falsely match', () => {
+    // Anchored regex protects against mid-body false positives.
+    const input = 'saw a HTTP 500 status earlier but it self-healed.';
+    expect(sanitizeOutboundBody(input, 'ruggy')).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+});
+
+describe('sanitizeOutboundBody · idempotency', () => {
+  let warnings: string[] = [];
+  const originalWarn = console.warn;
+  beforeEach(() => {
+    warnings = [];
+    console.warn = (msg: string) => {
+      warnings.push(typeof msg === 'string' ? msg : String(msg));
+    };
+  });
+  afterEach(() => {
+    console.warn = originalWarn;
+  });
+
+  test('running twice on a raw-error body produces identical output', () => {
+    const input = 'API Error: 500 Internal Server Error';
+    const first = sanitizeOutboundBody(input, 'ruggy');
+    const second = sanitizeOutboundBody(first, 'ruggy');
+    expect(second).toBe(first);
+    // First pass fires telemetry; second pass should not.
+    expect(warnings).toHaveLength(1);
+  });
+
+  test('running twice on LLM success produces identical output (no telemetry)', () => {
+    const input = "yo. been thinking about the cave.";
+    const first = sanitizeOutboundBody(input, 'ruggy');
+    const second = sanitizeOutboundBody(first, 'ruggy');
+    expect(second).toBe(first);
+    expect(warnings).toHaveLength(0);
   });
 });

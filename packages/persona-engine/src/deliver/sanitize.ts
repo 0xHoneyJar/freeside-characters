@@ -1,7 +1,7 @@
 /**
  * Discord markdown sanitizer + voice-discipline transforms.
  *
- * Two layers operate at the chat-medium presentation boundary
+ * Three layers operate at the chat-medium presentation boundary
  * (per `[[chat-medium-presentation-boundary]]` doctrine):
  *
  * 1. `escapeDiscordMarkdown` — escapes Discord format chars `_*~|` outside
@@ -17,9 +17,15 @@
  *    way." Universal · zero opt-out · code-block-safe · idempotent (per
  *    architect lock A4, cmp-boundary-architecture cycle SDD §13).
  *
+ * 3. `sanitizeOutboundBody` — substitutes raw upstream-API-error shapes
+ *    with the in-character substrate-error template. Targets the
+ *    in-character-only invariant for error voice (FAGAN architect-lock
+ *    A4 · bug-20260511-b6eb97 · 2026-05-11). Apply at every outbound
+ *    chat-medium write surface, OUTERMOST.
+ *
  * Apply these ONLY to text being sent to Discord, AFTER the LLM has
  * generated voice output and embed fields are constructed. Order:
- * `stripVoiceDisciplineDrift` → `escapeDiscordMarkdown`.
+ * `stripVoiceDisciplineDrift` → `escapeDiscordMarkdown` → `sanitizeOutboundBody`.
  *
  * Per persona-doc rule: persona writes plain text; bot guarantees
  * correctness via these transforms. The LLM never thinks about escaping
@@ -342,4 +348,101 @@ function stripTrailingClosings(text: string): string {
     }
   }
   return out;
+}
+
+// =============================================================================
+// Outbound-body sanitizer (FAGAN A4 · bug-20260511-b6eb97 · 2026-05-11)
+// =============================================================================
+
+import { composeErrorBody } from '../expression/error-register.ts';
+
+/**
+ * Raw upstream-API-error pattern · used by `sanitizeOutboundBody`.
+ *
+ * Each pattern is anchored at start-of-string (with an optional `Error: `
+ * prefix for `String(err)` forms) so legitimate prose containing the
+ * substring mid-body never matches. Patterns are ORDERED by specificity ·
+ * the first match wins (telemetry surfaces which one).
+ */
+interface RawApiErrorPattern {
+  readonly name: string;
+  readonly regex: RegExp;
+}
+
+const RAW_API_ERROR_PATTERNS: readonly RawApiErrorPattern[] = [
+  // Anthropic SDK / Bedrock direct: `API Error: 500 …`
+  { name: 'anthropic-api-error', regex: /^(?:Error: )?API Error: \d+/ },
+  // Generic HTTP body: `Internal Server Error`
+  { name: 'http-internal-server-error', regex: /^(?:Error: )?Internal Server Error/i },
+  // reply.ts:934 direct Bedrock throw: `bedrock chat error: 500 {…}`
+  { name: 'bedrock-chat-error', regex: /^(?:Error: )?bedrock chat error: \d+/i },
+  // orchestrator/index.ts:536 throw: `orchestrator: SDK error subtype=…`
+  { name: 'orchestrator-sdk-error-subtype', regex: /^(?:Error: )?orchestrator: SDK error subtype=/ },
+  // orchestrator/index.ts:556 throw: `orchestrator: SDK query completed without …`
+  { name: 'orchestrator-empty-completion', regex: /^(?:Error: )?orchestrator: SDK query completed without/ },
+  // reply.ts:984 throw: `freeside agent-gateway chat error: 500 …`
+  { name: 'freeside-agent-gateway-error', regex: /^(?:Error: )?freeside agent-gateway chat error: \d+/i },
+  // Raw Anthropic JSON error envelope: `{"type":"error",…}`
+  { name: 'raw-json-error-envelope', regex: /^(?:Error: )?\{"type":"error"/ },
+  // dispatch.ts:1083 / 1113 internal REST throw shape
+  {
+    name: 'dispatch-rest-wrapper',
+    regex: /^(?:Error: )?interactions: (?:PATCH @original|follow-up POST) failed status=\d{3}/,
+  },
+];
+
+/**
+ * Substitute raw upstream-API-error shapes with the in-character substrate
+ * error template. Defense-in-depth at the chat-medium write boundary.
+ *
+ * Closes FAGAN architect-lock A4 (agent afb548531d1fb79d5 · bug
+ * 20260511-b6eb97 · 2026-05-11): the dispatch catch at
+ * dispatch.ts:593-598 already routes through `formatErrorBody` →
+ * `composeErrorBody`, but the in-character-only invariant should be
+ * LOAD-BEARING at the boundary, not inductively at every catch site. A
+ * future Discord write surface that forgets to route through
+ * `deliverError` could leak; this sanitizer makes the rule
+ * construction-true at the wire.
+ *
+ * Behavior:
+ *   - LLM success output                    → passes through verbatim
+ *   - In-character template body            → passes through verbatim
+ *   - Raw upstream-API-error shape          → `composeErrorBody(characterId, 'error')`
+ *
+ * Idempotent: a substituted body starts with the in-character template,
+ * which does not match any `RAW_API_ERROR_PATTERNS` regex (none of the
+ * ruggy/satoshi templates start with `API Error:`, `Internal Server`,
+ * `bedrock chat error:`, `orchestrator:`, `{"type":"error"`, or
+ * `interactions:`). A second pass is a no-op.
+ *
+ * On substitution emits structured telemetry (line-oriented · mirrors
+ * `[cold-budget]` and `[chat-route]` conventions at dispatch.ts:584 +
+ * reply.ts:761 · no JSON envelope on the hot path):
+ *
+ *   [outbound-sanitize] character=<id> kind=raw-api-error matched=<pattern> original_len=<n>
+ *
+ * Operators watching this log line in production can verify whether the
+ * leak vector was real (firings observed) or purely belt-and-suspenders
+ * (zero firings over the observation window).
+ *
+ * Refs:
+ *   FAGAN agent afb548531d1fb79d5 finding A4
+ *   grimoires/loa/a2a/bug-20260511-b6eb97/triage.md · sprint.md
+ *   ~/vault/wiki/concepts/chat-medium-presentation-boundary.md §9
+ *   CLAUDE.md "Discord-as-Material" rule: in-character errors only
+ */
+export function sanitizeOutboundBody(
+  content: string,
+  characterId: string,
+): string {
+  if (!content) return content;
+  for (const { name, regex } of RAW_API_ERROR_PATTERNS) {
+    if (regex.test(content)) {
+      console.warn(
+        `[outbound-sanitize] character=${characterId} kind=raw-api-error matched=${name} original_len=${content.length}`,
+      );
+      return composeErrorBody(characterId, 'error');
+    }
+  }
+  return content;
 }

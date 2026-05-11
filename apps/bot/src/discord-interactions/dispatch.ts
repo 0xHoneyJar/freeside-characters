@@ -32,6 +32,7 @@ import {
   getBotClient,
   getOrCreateChannelWebhook,
   invalidateWebhookCache,
+  sanitizeOutboundBody,
   sendChatReplyViaWebhook,
   sendImageReplyViaWebhook,
   splitForDiscord,
@@ -436,7 +437,11 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
         return;
       }
       lastToolPatchMs = now;
-      patchOriginal(interaction, ephemeral, status).catch((err) => {
+      patchOriginal(
+        interaction,
+        ephemeral,
+        sanitizeOutboundBody(status, character.id),
+      ).catch((err) => {
         console.warn(
           `interactions: ${character.id}/chat onToolUse PATCH failed (best-effort):`,
           err,
@@ -691,9 +696,9 @@ async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
         const caption =
           `${character.displayName ?? character.id} in Freeside\n\n` +
           `${buildQuotePrefix(invoker.username, prompt).trimEnd()}`;
-        
+
         await sendImageReplyViaWebhook(webhook, character, {
-          content: caption,
+          content: sanitizeOutboundBody(caption, character.id),
           imageBytes,
           filename: result.filename!,
         });
@@ -852,7 +857,12 @@ async function deliverViaWebhook(
   for (let i = 0; i < allChunks.length; i++) {
     if (i > 0) await sleep(FOLLOW_UP_THROTTLE_MS);
     const attachOnThisChunk = i === 0 && files && files.length > 0 ? files : undefined;
-    await sendChatReplyViaWebhook(webhook, character, allChunks[i]!, attachOnThisChunk);
+    await sendChatReplyViaWebhook(
+      webhook,
+      character,
+      sanitizeOutboundBody(allChunks[i]!, character.id),
+      attachOnThisChunk,
+    );
     if (i === 0) {
       // Delete the deferred "thinking..." placeholder once the first
       // webhook chunk is up. Best-effort — if it fails (e.g., expired
@@ -896,10 +906,18 @@ async function deliverViaInteraction(
   ephemeral: boolean,
 ): Promise<void> {
   const { chunks } = formatReply(character, rawChunks);
-  await patchOriginal(interaction, ephemeral, chunks[0] ?? '');
+  await patchOriginal(
+    interaction,
+    ephemeral,
+    sanitizeOutboundBody(chunks[0] ?? '', character.id),
+  );
   for (let i = 1; i < chunks.length; i++) {
     await sleep(FOLLOW_UP_THROTTLE_MS);
-    await postFollowUp(interaction, ephemeral, chunks[i]!);
+    await postFollowUp(
+      interaction,
+      ephemeral,
+      sanitizeOutboundBody(chunks[i]!, character.id),
+    );
   }
 }
 
@@ -987,7 +1005,11 @@ async function deliverErrorViaWebhook(
   const webhook = await getOrCreateChannelWebhook(client, channelId);
   const body = formatErrorBody(character, kind);
 
-  await sendChatReplyViaWebhook(webhook, character, body);
+  await sendChatReplyViaWebhook(
+    webhook,
+    character,
+    sanitizeOutboundBody(body, character.id),
+  );
 
   // Clean up the deferred "thinking" placeholder (Pattern B convention).
   void deleteOriginal(interaction).catch((err) => {
@@ -1021,14 +1043,16 @@ async function deliverError(
   kind: ErrorClass,
 ): Promise<void> {
   if (ephemeral) {
-    await patchOriginal(interaction, true, formatErrorBody(character, kind)).catch(
-      (patchErr) => {
-        console.error(
-          `interactions: ${character.id} error PATCH (ephemeral) failed:`,
-          patchErr,
-        );
-      },
-    );
+    await patchOriginal(
+      interaction,
+      true,
+      sanitizeOutboundBody(formatErrorBody(character, kind), character.id),
+    ).catch((patchErr) => {
+      console.error(
+        `interactions: ${character.id} error PATCH (ephemeral) failed:`,
+        patchErr,
+      );
+    });
     return;
   }
   try {
@@ -1039,14 +1063,16 @@ async function deliverError(
       webhookErr,
     );
     invalidateWebhookCache(channelId);
-    await patchOriginal(interaction, false, formatErrorBody(character, kind)).catch(
-      (patchErr) => {
-        console.error(
-          `interactions: ${character.id} error PATCH after webhook fallback also failed:`,
-          patchErr,
-        );
-      },
-    );
+    await patchOriginal(
+      interaction,
+      false,
+      sanitizeOutboundBody(formatErrorBody(character, kind), character.id),
+    ).catch((patchErr) => {
+      console.error(
+        `interactions: ${character.id} error PATCH after webhook fallback also failed:`,
+        patchErr,
+      );
+    });
   }
 }
 

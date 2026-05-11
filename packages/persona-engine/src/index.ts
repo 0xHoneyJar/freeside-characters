@@ -114,6 +114,7 @@ export {
 export {
   stripVoiceDisciplineDrift,
   escapeDiscordMarkdown,
+  sanitizeOutboundBody,
 } from './deliver/sanitize.ts';
 export type { VoiceDisciplineOpts } from './deliver/sanitize.ts';
 

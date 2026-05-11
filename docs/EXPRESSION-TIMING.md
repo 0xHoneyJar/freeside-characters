@@ -147,3 +147,61 @@ intermediate state.
 - **Per-tool tempo modulation** (slower for codex, faster for score) —
   the mood map alone differentiates by emoji choice; tempo modulation
   would be a YANAGI-level refinement worth its own session.
+
+## Error-voice discipline · outbound-body sanitizer (2026-05-11)
+
+A separate surface from timing but lives in the same expression layer:
+when an upstream API throws transiently (Bedrock 500, Anthropic SDK
+error_during_execution, etc.) the raw error body MUST NOT reach Discord.
+Per CLAUDE.md "Discord-as-Material" rule: *in-character errors only —
+"cables got crossed" not "I apologize for the inconvenience"*.
+
+The dispatch catch at `apps/bot/src/discord-interactions/dispatch.ts:593-598`
+routes through `formatErrorBody → composeErrorBody` which produces the
+in-character template. As defense-in-depth (FAGAN architect-lock A4 ·
+bug-20260511-b6eb97) every body-bearing Discord write surface is wrapped
+through `sanitizeOutboundBody(content, character.id)`:
+
+| surface | location |
+|---|---|
+| onToolUse PATCH (mid-stream) | `dispatch.ts:439-444` |
+| `sendChatReplyViaWebhook` (success chunks) | `dispatch.ts:860` |
+| `patchOriginal` + `postFollowUp` (PATCH delivery) | `dispatch.ts:909`, `dispatch.ts:916` |
+| `sendChatReplyViaWebhook` (error webhook) | `dispatch.ts:1008` |
+| `patchOriginal` (error PATCH fallback × 2) | `dispatch.ts:1046`, `dispatch.ts:1066` |
+| `sendImageReplyViaWebhook` (imagegen caption) | `dispatch.ts:700` |
+
+The sanitizer pattern-matches 8 raw-error throw shapes (Anthropic API
+body, bedrock chat error, orchestrator SDK subtype + empty completion,
+agent-gateway, JSON envelope, dispatch REST wrapper, HTTP 500 body) and
+substitutes with `composeErrorBody(characterId, 'error')`. LLM success
+output and in-character template bodies pass through verbatim.
+
+### Operator telemetry
+
+On substitution emits a single line (mirrors `[cold-budget]` and
+`[chat-route]` conventions — line-oriented, no JSON envelope on the
+hot path):
+
+```
+[outbound-sanitize] character=<id> kind=raw-api-error matched=<pattern> original_len=<n>
+```
+
+**Reading the signal:**
+
+- **Zero firings over a 30-day window** → the catch routing is
+  sufficient; the sanitizer is purely belt-and-suspenders. Open audit
+  question for `/audit-sprint`: remove the helper (Loa minimalism) or
+  keep permanently (ALEXANDER craft · the rule "every write to a chat
+  medium passes through a medium-boundary sanitizer chain" generalizes).
+  Default position: KEEP.
+- **One or more firings** → there IS a real bypass path. The `matched=`
+  field surfaces which throw shape (one of 8 patterns); the `original_len`
+  surfaces whether it was a short error body or a longer one with
+  embedded JSON. Operator can grep the deploy logs for that pattern to
+  trace which code path produced the raw string.
+
+Refs:
+- `packages/persona-engine/src/deliver/sanitize.ts` (helper + patterns)
+- `grimoires/loa/a2a/bug-20260511-b6eb97/` (triage + sprint + report)
+- `~/vault/wiki/concepts/chat-medium-presentation-boundary.md` §9
