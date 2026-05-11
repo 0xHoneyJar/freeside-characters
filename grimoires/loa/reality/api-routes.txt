@@ -1,0 +1,9 @@
+=== HTTP ROUTES (Bun.serve / fetch handlers) ===
+apps/bot/src/discord-interactions/server.ts:64:    async fetch(request) {
+
+=== Slash command names ===
+apps/character-satoshi/character.json:19:      "name": "satoshi",
+apps/character-satoshi/character.json:23:        { "name": "prompt", "description": "what to say to satoshi", "type": 3, "required": true },
+apps/character-satoshi/character.json:24:        { "name": "ephemeral", "description": "only you see the reply", "type": 5, "required": false }
+apps/character-satoshi/character.json:28:      "name": "satoshi-image",
+apps/character-satoshi/character.json:32:        { "name": "prompt", "description": "image prompt — be explicit about subject + scene + light", "type": 3, "required": true }
