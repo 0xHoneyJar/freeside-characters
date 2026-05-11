@@ -120,6 +120,65 @@ export function isFlatWindow(rawStats: RawStats): boolean {
   return true;
 }
 
+// ─── cycle-003 unified silence predicate (D22 ALEXANDER) ─────────────
+
+/**
+ * Unified silence predicate: takes BOTH score-side rawStats AND on-chain
+ * stir state into account. Replaces the single-source `isFlatWindow` call
+ * for callers that want stir-awareness (chat-mode + cycle-003 ambient).
+ *
+ * "Flat" requires:
+ *   - score window is flat per existing `isFlatWindow(rawStats)`
+ *   - stir vector is below the bedrock threshold (all axes < BEDROCK_THRESHOLD)
+ *
+ * If score is flat BUT stir is non-trivial, the window is NOT silent —
+ * the room is humming even if the leaderboard didn't move. This prevents
+ * the bot from going silent during high-stir-but-flat-score windows
+ * (Flatline-caught failure mode F3).
+ */
+export interface StirSnapshotForSilence {
+  readonly press: number;
+  readonly strangers: number;
+  readonly drift: number;
+  readonly gravity_window_active: boolean;
+}
+
+const BEDROCK_THRESHOLD = 0.4; // tunable via env later if needed
+
+export function isFlatWindowWithStir(
+  rawStats: RawStats,
+  stir: StirSnapshotForSilence | null,
+): boolean {
+  if (!isFlatWindow(rawStats)) return false;
+  if (!stir) return true; // no stir signal — fall back to score-side flatness
+  if (stir.gravity_window_active) return false;
+  if (Math.abs(stir.press) >= BEDROCK_THRESHOLD) return false;
+  if (stir.strangers >= BEDROCK_THRESHOLD) return false;
+  if (stir.drift >= BEDROCK_THRESHOLD) return false;
+  return true;
+}
+
+/**
+ * D1 ALEXANDER bedrock-kick mode: when score is flat AND stir is below
+ * bedrock threshold BUT the zone hasn't crossed its baseline_silence_minutes,
+ * fire a LOW-amplitude post ("the room hums") rather than full silence.
+ *
+ * This makes silence-register the BEDROCK kick, not the absence — closer to
+ * the continuous-floor rave feel D1 commits to.
+ */
+export function shouldFireBedrockKick(
+  rawStats: RawStats,
+  stir: StirSnapshotForSilence | null,
+  minutesSinceLastFire: number,
+  baselineSilenceMinutes: number,
+): boolean {
+  // Only fire bedrock when score+stir are both flat.
+  if (!isFlatWindowWithStir(rawStats, stir)) return false;
+  // Cross the baseline_silence_minutes threshold → full silence.
+  // Otherwise we're still within "room hums" territory.
+  return minutesSinceLastFire < baselineSilenceMinutes;
+}
+
 // ─── Hot-path lookup ─────────────────────────────────────────────────
 
 /**

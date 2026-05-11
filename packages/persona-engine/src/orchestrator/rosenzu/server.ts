@@ -115,14 +115,50 @@ export const rosenzuServer = createSdkMcpServer({
 
     tool(
       'furnish_kansei',
-      'Returns the FULL per-fire KANSEI vector for a zone — baseline warmth/motion/shadow/easing/feel + a current_anchors pick (light, sound, temperature, smell, motion). Same zone re-fired in different windows produces different anchor combinations — this is the variance engine that prevents Westworld-loop static descriptions. Call this BEFORE scene composition; let the anchors lead the sensory layering.',
+      'Returns the FULL per-fire KANSEI vector for a zone — baseline warmth/motion/shadow/easing/feel + a current_anchors pick (light, sound, temperature, smell, motion). Same zone re-fired in different windows produces different anchor combinations — this is the variance engine that prevents Westworld-loop static descriptions. Call this BEFORE scene composition; let the anchors lead the sensory layering. cycle-003: also returns a `stir` sibling channel (4-axis kansei drift from on-chain events) + `rendered_modulation` derived biases for motion/shadow/density/warmth.',
       {
         zone: ZoneSchema,
         fire_id: z.number().int().optional().describe('Optional fire identifier for deterministic variance. Omit to seed from current hour.'),
       },
       async ({ zone, fire_id }) => {
         const vector = furnishKansei(zone as SpatialZoneId, fire_id);
-        return ok(vector);
+        // cycle-003 · D4: stir sibling channel + rendered modulation biases
+        let stir: unknown = null;
+        let rendered_modulation: unknown = null;
+        try {
+          const pulseSink = await import('../../ambient/live/pulse-sink.live.ts');
+          const currentStir = pulseSink.getCurrentStirSync(zone as 'stonehenge' | 'bear-cave' | 'el-dorado' | 'owsley-lab');
+          if (currentStir) {
+            stir = currentStir;
+            // D24: derive categorical bias strings — NEVER expose raw numbers
+            const motion_suggestion =
+              Math.abs(currentStir.press) > 0.7
+                ? '400ms pulse'
+                : Math.abs(currentStir.press) > 0.4
+                  ? '700ms ritual'
+                  : '1200ms hush';
+            const shadow_bias =
+              currentStir.gravity.last_significant_event_within_window
+                ? 'deep'
+                : 'baseline';
+            const density_bias =
+              currentStir.press > 0.55
+                ? 'high'
+                : currentStir.press > 0.2
+                  ? 'medium'
+                  : 'low';
+            const warmth_bias = currentStir.drift > 0.6 ? 'cooler' : 'baseline';
+            rendered_modulation = {
+              motion_suggestion,
+              shadow_bias,
+              density_bias,
+              warmth_bias,
+            };
+          }
+        } catch {
+          // ambient module not loaded — pre-cycle-003 fallback: omit stir
+        }
+        return ok({ ...vector, stir, rendered_modulation });
       },
     ),
 
