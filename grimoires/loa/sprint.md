@@ -36,7 +36,7 @@ soft parallelism inside each sprint.
 soft-parallel inside S2: live adapters can land independently; CI
 gates each.
 
-## 2 · sprint 1 — domain + ports + wallet resolver scaffold
+## Sprint 1: Domain + Ports + Wallet Resolver Scaffold
 
 **Goal**: pure-schema + Context.Tag service interfaces, no runtime.
 the four-folder discipline made enumerable via `find` + suffix-as-type.
@@ -113,7 +113,7 @@ the four-folder discipline made enumerable via `find` + suffix-as-type.
 **S1 deliverable**: green typecheck across new files; zero runtime code
 written; FAGAN suffix counts correct.
 
-## 3 · sprint 2 — live + mock adapters + circuit breaker
+## Sprint 2: Live + Mock Adapters + Circuit Breaker
 
 **Goal**: every port has a matching `*.live.ts` (production) and
 `*.mock.ts` (test) layer. STUB_MODE-compatible.
@@ -207,7 +207,7 @@ imported only in `ambient/live/` paths
 **S2 deliverable**: every port has live + mock; tests pass; new deps
 installed and BUTTERFREEZONE updated.
 
-## 4 · sprint 3 — systems + runtime + scheduler integration
+## Sprint 3: Systems + Runtime + Scheduler Integration
 
 **Goal**: wire the per-frame transforms (pulse.system, router.system)
 and compose the ambient runtime; extend the cron scheduler with the
@@ -323,7 +323,7 @@ closes the gap.
 **S3 deliverable**: ambient module composes; scheduler fires stir tier
 hourly; rosenzu serves stir-aware data.
 
-## 5 · sprint 4 — chat-mode + silence-register + tests + BUTTERFREEZONE
+## Sprint 4: Chat-Mode + Silence-Register + Tests + BUTTERFREEZONE
 
 **Goal**: surface stir state into chat-mode replies (D23); evolve
 silence-register with bedrock-kick mode (D1); regression test sweep;

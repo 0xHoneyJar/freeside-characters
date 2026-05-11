@@ -154,6 +154,20 @@ hounfour:
             input_per_mtok: 0
             output_per_mtok: 0
 
+# Run Mode — autonomous sprint execution.
+# Required for /run sprint-plan + /run sprint-N invocations.
+run_mode:
+  enabled: true
+  defaults:
+    max_cycles: 20
+    timeout_hours: 8
+  sprint_plan:
+    branch_prefix: "feat/"
+    default_branch_name: "ambient-events-as-rave"
+    consolidate_pr: true
+    commit_prefix: "feat"
+    include_commits_by_sprint: true
+
 # Simstim — HITL-accelerated 8-phase development workflow.
 # "Experience the AI's work while maintaining your own consciousness." — Gibson
 simstim:
