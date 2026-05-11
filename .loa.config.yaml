@@ -61,8 +61,8 @@ flatline_protocol:
     sprint: false
   models:
     primary: opus              # Claude Opus 4.7 (resolves via aliases below → claude-headless)
-    secondary: gpt-5.3-codex   # OpenAI Codex (resolves via aliases below → codex-headless)
-    tertiary: gemini-2.5-pro   # Gemini 2.5 Pro (resolves via aliases below → gemini-headless)
+    secondary: gpt-5.5         # OpenAI GPT-5.5 (resolves via aliases below → codex-headless) · upgraded 2026-05-11 · -pro variant had cycle-102 transport disconnects
+    tertiary: gemini-3.1-pro   # Gemini 3.1 Pro (resolves via aliases below → gemini-headless) · upgraded 2026-05-11
   thresholds:
     high_consensus: 700
     disputed_delta: 300
@@ -121,6 +121,22 @@ hounfour:
             output_per_mtok: 0
           extra:
             reasoning_effort: high
+        gpt-5.5:
+          capabilities: [chat, code]
+          context_window: 500000
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+          extra:
+            reasoning_effort: high
+        gpt-5.5-pro:
+          capabilities: [chat, code]
+          context_window: 500000
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+          extra:
+            reasoning_effort: xhigh
     google:
       type: gemini-headless  # routes through `gemini -p` (~/.gemini/settings.json)
       read_timeout: 600.0
@@ -128,6 +144,12 @@ hounfour:
         gemini-2.5-pro:
           capabilities: [chat]
           context_window: 1048576
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+        gemini-3-pro:
+          capabilities: [chat]
+          context_window: 2097152
           pricing:
             input_per_mtok: 0
             output_per_mtok: 0
