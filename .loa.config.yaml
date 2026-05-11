@@ -45,3 +45,102 @@ compaction:
 # =============================================================================
 integrations:
   - github
+
+# =============================================================================
+# Flatline Protocol (multi-model adversarial review)
+# =============================================================================
+# Enabled manually 2026-05-11 for bug-20260511-b6eb97 PR #54 review.
+# 3-model: Opus (primary) + OpenAI Codex (secondary) + Gemini (tertiary).
+# auto_trigger=false so this only runs on explicit /flatline-review invocation.
+flatline_protocol:
+  enabled: true
+  auto_trigger: false
+  phases:
+    prd: false
+    sdd: false
+    sprint: false
+  models:
+    primary: opus              # Claude Opus 4.7 (resolves via aliases below → claude-headless)
+    secondary: gpt-5.3-codex   # OpenAI Codex (resolves via aliases below → codex-headless)
+    tertiary: gemini-2.5-pro   # Gemini 2.5 Pro (resolves via aliases below → gemini-headless)
+  thresholds:
+    high_consensus: 700
+    disputed_delta: 300
+    low_value: 400
+    blocker_skeptic: 700
+
+# =============================================================================
+# Hounfour — model-heterogeneous agent routing + cheval transport config
+# =============================================================================
+# Routes flatline (and other agents) through cheval.py provider adapters.
+# 2026-05-11: switched all three providers to *-headless variants so flatline
+# bills against the operator's CLI subscription auth (codex / gemini / claude)
+# instead of the API keys (OPENAI_API_KEY quota exceeded · GOOGLE_API_KEY
+# project access denied as of this date).
+# Per feedback_multimodel_via_clis memory: "Use the CLIs I have them authed
+# already."
+hounfour:
+  # Route Flatline calls through cheval (model-invoke) instead of legacy
+  # direct-API path. Required for the *-headless adapters to fire.
+  flatline_routing: true
+
+  feature_flags:
+    google_adapter: true
+    deep_research: true
+    flatline_routing: true
+    metering: true
+    thinking_traces: true
+    jam_geometry: false
+    context_filtering: false
+
+  # Provider name → adapter type. The canonical names (anthropic / openai /
+  # google) are kept so existing alias resolutions (e.g. `opus` →
+  # `anthropic:claude-opus-4-7`) still land correctly; only the TYPE under
+  # each name is swapped to the headless variant. Anyone else who expects
+  # `openai:gpt-5.3-codex` to mean "OpenAI API" needs to re-bind explicitly.
+  providers:
+    anthropic:
+      type: claude-headless  # routes through `claude -p` (Claude Code CLI · OAuth)
+      read_timeout: 600.0
+      models:
+        claude-opus-4-7:
+          capabilities: [chat, tools, function_calling, thinking_traces]
+          context_window: 200000
+          pricing:
+            input_per_mtok: 0  # subscription-billed
+            output_per_mtok: 0
+    openai:
+      type: codex-headless   # routes through `codex exec` (~/.codex/auth.json)
+      read_timeout: 600.0
+      models:
+        gpt-5.3-codex:
+          capabilities: [chat, code]
+          context_window: 400000
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+          extra:
+            reasoning_effort: high
+    google:
+      type: gemini-headless  # routes through `gemini -p` (~/.gemini/settings.json)
+      read_timeout: 600.0
+      models:
+        gemini-2.5-pro:
+          capabilities: [chat]
+          context_window: 1048576
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+
+# Simstim — HITL-accelerated 8-phase development workflow.
+# "Experience the AI's work while maintaining your own consciousness." — Gibson
+simstim:
+  enabled: true
+  flatline:
+    auto_accept_high_consensus: true
+    show_disputed: true
+    show_blockers: true
+    phases:
+      - prd
+      - sdd
+      - sprint

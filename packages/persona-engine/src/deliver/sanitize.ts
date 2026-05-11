@@ -1,7 +1,7 @@
 /**
  * Discord markdown sanitizer + voice-discipline transforms.
  *
- * Two layers operate at the chat-medium presentation boundary
+ * Three layers operate at the chat-medium presentation boundary
  * (per `[[chat-medium-presentation-boundary]]` doctrine):
  *
  * 1. `escapeDiscordMarkdown` — escapes Discord format chars `_*~|` outside
@@ -17,9 +17,15 @@
  *    way." Universal · zero opt-out · code-block-safe · idempotent (per
  *    architect lock A4, cmp-boundary-architecture cycle SDD §13).
  *
+ * 3. `sanitizeOutboundBody` — substitutes raw upstream-API-error shapes
+ *    with the in-character substrate-error template. Targets the
+ *    in-character-only invariant for error voice (FAGAN architect-lock
+ *    A4 · bug-20260511-b6eb97 · 2026-05-11). Apply at every outbound
+ *    chat-medium write surface, OUTERMOST.
+ *
  * Apply these ONLY to text being sent to Discord, AFTER the LLM has
  * generated voice output and embed fields are constructed. Order:
- * `stripVoiceDisciplineDrift` → `escapeDiscordMarkdown`.
+ * `stripVoiceDisciplineDrift` → `escapeDiscordMarkdown` → `sanitizeOutboundBody`.
  *
  * Per persona-doc rule: persona writes plain text; bot guarantees
  * correctness via these transforms. The LLM never thinks about escaping
@@ -342,4 +348,185 @@ function stripTrailingClosings(text: string): string {
     }
   }
   return out;
+}
+
+// =============================================================================
+// Outbound-body sanitizer (FAGAN A4 · bug-20260511-b6eb97 · 2026-05-11)
+// =============================================================================
+
+/**
+ * Raw upstream-API-error pattern · used by `sanitizeOutboundBody`.
+ *
+ * Each pattern is anchored at start-of-string (with an optional `Error: `
+ * prefix for `String(err)` forms) so legitimate prose containing the
+ * substring mid-body never matches.
+ *
+ * Pattern ordering rationale (first-match-wins, bridgebuilder F12 ·
+ * 2026-05-11):
+ *   1. SPECIFIC patterns first — each names a known upstream throw shape
+ *      so the `matched=` telemetry field attributes origin correctly.
+ *      `anthropic-api-error` before `bedrock-chat-error` etc. is by
+ *      callsite frequency observed in production logs (Anthropic SDK is
+ *      the dominant throw class today).
+ *   2. GENERIC catch-all LAST — `generic-error-class-prefix` is the
+ *      last-line defense against upstream format drift (bridgebuilder
+ *      F4 · 2026-05-11). When a future SDK renames `API Error:` to
+ *      `AnthropicAPIError:` the specific pattern stops matching but the
+ *      generic shape catches it. Telemetry attributes to the generic
+ *      pattern → operator sees a previously-known throw class started
+ *      hitting the catch-all → cue to add a more-specific entry.
+ *
+ * The ordering is INVARIANT to functional correctness (every pattern
+ * substitutes the same template). It only affects telemetry attribution.
+ */
+interface RawApiErrorPattern {
+  readonly name: string;
+  readonly regex: RegExp;
+}
+
+const RAW_API_ERROR_PATTERNS: readonly RawApiErrorPattern[] = [
+  // Anthropic SDK / Bedrock direct: `API Error: 500 …`
+  { name: 'anthropic-api-error', regex: /^(?:Error: )?API Error: \d+/ },
+  // Generic HTTP body: `Internal Server Error`
+  { name: 'http-internal-server-error', regex: /^(?:Error: )?Internal Server Error/i },
+  // reply.ts:934 direct Bedrock throw: `bedrock chat error: 500 {…}`
+  { name: 'bedrock-chat-error', regex: /^(?:Error: )?bedrock chat error: \d+/i },
+  // orchestrator/index.ts:536 throw: `orchestrator: SDK error subtype=…`
+  { name: 'orchestrator-sdk-error-subtype', regex: /^(?:Error: )?orchestrator: SDK error subtype=/ },
+  // orchestrator/index.ts:556 throw: `orchestrator: SDK query completed without …`
+  { name: 'orchestrator-empty-completion', regex: /^(?:Error: )?orchestrator: SDK query completed without/ },
+  // reply.ts:984 throw: `freeside agent-gateway chat error: 500 …`
+  { name: 'freeside-agent-gateway-error', regex: /^(?:Error: )?freeside agent-gateway chat error: \d+/i },
+  // Raw Anthropic JSON error envelope · whitespace-tolerant
+  // (flatline gemini-skeptic BLK-1 · 2026-05-11). Tolerates both compact
+  // `{"type":"error",…}` and spaced `{ "type": "error", … }` forms. The
+  // trimStart in sanitizeOutboundBody handles leading newlines / whitespace.
+  { name: 'raw-json-error-envelope', regex: /^(?:Error: )?\{\s*"type"\s*:\s*"error"/ },
+  // dispatch.ts:1083 / 1113 internal REST throw shape
+  {
+    name: 'dispatch-rest-wrapper',
+    regex: /^(?:Error: )?interactions: (?:PATCH @original|follow-up POST) failed status=\d+/,
+  },
+  // discord.js specific errors (explicitly named per IMP-001 · tightened per
+  // flatline gemini-skeptic SKP-002 HIGH/720 · 2026-05-11 to handle bracketed
+  // forms like `DiscordAPIError[Cannot send messages to this user]: 50007`).
+  { name: 'discord-js-api-error', regex: /^(?:Error: )?DiscordAPIError(?:\[[^\]]+\])?:/ },
+  { name: 'discord-js-http-error', regex: /^(?:Error: )?HTTPError(?:\[[^\]]+\])?:/ },
+  // GENERIC CATCH-ALL (bridgebuilder F4 · 2026-05-11 · tightened per flatline
+  // codex G2 · 2026-05-11): last-line defense against upstream format drift.
+  // Matches any PascalCase identifier ending in Error/Exception/Failure
+  // FOLLOWED BY A COLON at start-of-string (with optional `Error: ` prefix
+  // for String(err) forms). The trailing `:` (not `\b`) prevents
+  // false-positives on legitimate character voice like
+  // `"TotalFailure is the name of my zine"` or
+  // `"ValidationError was his middle name"` — those have a word boundary
+  // after the suffix but no colon, so they pass through.
+  //
+  // Real upstream throws ALWAYS use `XxxError: message` format
+  // (Anthropic/OpenAI/Bedrock convention), so requiring `:` is both safer
+  // and matches the actual leak shape.
+  {
+    name: 'generic-error-class-prefix',
+    regex: /^(?:Error: )?[A-Z][a-zA-Z]+(?:Error|Exception|Failure):/,
+  },
+];
+
+/**
+ * Substitute raw upstream-API-error shapes with the caller-supplied
+ * in-character substrate error template. Defense-in-depth at the
+ * chat-medium write boundary.
+ *
+ * Closes FAGAN architect-lock A4 (agent afb548531d1fb79d5 · bug
+ * 20260511-b6eb97 · 2026-05-11): the dispatch catch at
+ * dispatch.ts:593-598 already routes through `formatErrorBody` →
+ * `composeErrorBody`, but the in-character-only invariant should be
+ * LOAD-BEARING at the boundary, not inductively at every catch site. A
+ * future Discord write surface that forgets to route through
+ * `deliverError` could leak; this sanitizer makes the rule
+ * construction-true at the wire.
+ *
+ * Pure helper · no module-level dependencies on `expression/` (per
+ * bridgebuilder F1 · 2026-05-11): callers supply the substitution
+ * template. This keeps `deliver/sanitize.ts` free of the character
+ * registry coupling that the prior signature implied.
+ *
+ * Behavior:
+ *   - LLM success output                    → passes through verbatim
+ *   - In-character template body            → passes through verbatim
+ *   - Raw upstream-API-error shape          → `errorTemplate` (verbatim)
+ *
+ * Idempotent: a substituted body equals `errorTemplate` — provided the
+ * template itself does not match any `RAW_API_ERROR_PATTERNS` regex
+ * (the canonical `composeErrorBody(characterId, 'error')` outputs
+ * "something snapped on ruggy's end. cool to retry?",
+ * "The channel between worlds slipped. Retry on the next.", and the
+ * substrate-quiet "something broke. try again?" all clear the regex
+ * shapes). A second pass is a no-op.
+ *
+ * On substitution emits structured telemetry (line-oriented · mirrors
+ * `[cold-budget]` and `[chat-route]` conventions at dispatch.ts:584 +
+ * reply.ts:761 · no JSON envelope on the hot path):
+ *
+ *   [outbound-sanitize] character=<id> kind=raw-api-error matched=<pattern> original_len=<n>
+ *
+ * Operators watching this log line in production can verify whether the
+ * leak vector was real (firings observed) or purely belt-and-suspenders
+ * (zero firings over the observation window).
+ *
+ * Refs:
+ *   FAGAN agent afb548531d1fb79d5 finding A4
+ *   bridgebuilder PR #54 findings F1 (pure helper) + F4 (catch-all) + F12 (ordering)
+ *   grimoires/loa/a2a/bug-20260511-b6eb97/triage.md · sprint.md
+ *   ~/vault/wiki/concepts/chat-medium-presentation-boundary.md §9
+ *   CLAUDE.md "Discord-as-Material" rule: in-character errors only
+ */
+export function sanitizeOutboundBody(
+  content: string,
+  characterId: string,
+  errorTemplate: string,
+): string {
+  if (!content) return content;
+  // Probe = trimStart + NFKC-normalize + zero-width-strip content for matching
+  // (flatline gemini-skeptic BLK-1, SKP-001 HIGH/760 · 2026-05-11). Three
+  // defenses combined:
+  //
+  //   1. trimStart catches `\n{"type":"error",…}` or `  API Error: 500…`
+  //      shapes where whitespace would otherwise defeat the `^` anchor.
+  //   2. NFKC normalization catches full-width Unicode lookalike attacks
+  //      (IMP-005): `ＡＰＩ Ｅｒｒｏｒ: ５００` → `API Error: 500` so the
+  //      ASCII-only regex patterns (`[A-Z]`, `\d`) still match.
+  //   3. Format character strip catches Cf-category obfuscation
+  //      (`A​PI Error`, BOM-prefixed `﻿{"type":"error",…}`, bidi-isolate-
+  //      wrapped variants). The `\p{Cf}` Unicode property class
+  //      (with `/u` flag) covers EVERY format char (HIGH-CONSENSUS IMP-001
+  //      + SKP-002 · flatline v3 · 2026-05-11): ZWSP/ZWNJ/ZWJ (U+200B-D),
+  //      LRM/RLM (U+200E-F), Word Joiner (U+2060), BOM (U+FEFF), bidi
+  //      isolates (U+2066-9), Arabic Letter Mark (U+061C), Soft Hyphen
+  //      (U+00AD), and the full Cf range. Broader and simpler than
+  //      enumerating. NOT Cc (would strip \n, \r, \t and break legitimate
+  //      mid-body content if it happened to produce an error-shaped match
+  //      after newlines were collapsed — trimStart already handles leading
+  //      whitespace, the only spot where \n needs stripping for matching).
+  //
+  // Mirrors the L7 soul-identity sanitization pattern (cycle-098 sprint-7
+  // HIGH-2: "NFKC-normalize + zero-width-strip section bodies before
+  // prescriptive-pattern matching" — same defense-class).
+  //
+  // We compare with `probe` but return the substitution OR the ORIGINAL
+  // `content` (preserving any whitespace / full-width text / zero-width
+  // characters on the pass-through path · LLM output with intentional
+  // Unicode survives if no error pattern matches).
+  const probe = content
+    .normalize('NFKC')
+    .replace(/\p{Cf}/gu, '')
+    .trimStart();
+  for (const { name, regex } of RAW_API_ERROR_PATTERNS) {
+    if (regex.test(probe)) {
+      console.error(
+        `[outbound-sanitize] character=${characterId} kind=raw-api-error matched=${name} original_len=${content.length}`,
+      );
+      return errorTemplate;
+    }
+  }
+  return content;
 }
