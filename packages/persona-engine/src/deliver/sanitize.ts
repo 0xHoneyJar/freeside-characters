@@ -397,13 +397,21 @@ const RAW_API_ERROR_PATTERNS: readonly RawApiErrorPattern[] = [
   { name: 'orchestrator-empty-completion', regex: /^(?:Error: )?orchestrator: SDK query completed without/ },
   // reply.ts:984 throw: `freeside agent-gateway chat error: 500 …`
   { name: 'freeside-agent-gateway-error', regex: /^(?:Error: )?freeside agent-gateway chat error: \d+/i },
-  // Raw Anthropic JSON error envelope: `{"type":"error",…}`
-  { name: 'raw-json-error-envelope', regex: /^(?:Error: )?\{"type":"error"/ },
+  // Raw Anthropic JSON error envelope · whitespace-tolerant
+  // (flatline gemini-skeptic BLK-1 · 2026-05-11). Tolerates both compact
+  // `{"type":"error",…}` and spaced `{ "type": "error", … }` forms. The
+  // trimStart in sanitizeOutboundBody handles leading newlines / whitespace.
+  { name: 'raw-json-error-envelope', regex: /^(?:Error: )?\{\s*"type"\s*:\s*"error"/ },
   // dispatch.ts:1083 / 1113 internal REST throw shape
   {
     name: 'dispatch-rest-wrapper',
-    regex: /^(?:Error: )?interactions: (?:PATCH @original|follow-up POST) failed status=\d{3}/,
+    regex: /^(?:Error: )?interactions: (?:PATCH @original|follow-up POST) failed status=\d+/,
   },
+  // discord.js specific errors (explicitly named per IMP-001 · tightened per
+  // flatline gemini-skeptic SKP-002 HIGH/720 · 2026-05-11 to handle bracketed
+  // forms like `DiscordAPIError[Cannot send messages to this user]: 50007`).
+  { name: 'discord-js-api-error', regex: /^(?:Error: )?DiscordAPIError(?:\[[^\]]+\])?:/ },
+  { name: 'discord-js-http-error', regex: /^(?:Error: )?HTTPError(?:\[[^\]]+\])?:/ },
   // GENERIC CATCH-ALL (bridgebuilder F4 · 2026-05-11 · tightened per flatline
   // codex G2 · 2026-05-11): last-line defense against upstream format drift.
   // Matches any PascalCase identifier ending in Error/Exception/Failure
@@ -478,9 +486,37 @@ export function sanitizeOutboundBody(
   errorTemplate: string,
 ): string {
   if (!content) return content;
+  // Probe = trimStart + NFKC-normalize + zero-width-strip content for matching
+  // (flatline gemini-skeptic BLK-1, SKP-001 HIGH/760 · 2026-05-11). Three
+  // defenses combined:
+  //
+  //   1. trimStart catches `\n{"type":"error",…}` or `  API Error: 500…`
+  //      shapes where whitespace would otherwise defeat the `^` anchor.
+  //   2. NFKC normalization catches full-width Unicode lookalike attacks
+  //      (IMP-005): `ＡＰＩ Ｅｒｒｏｒ: ５００` → `API Error: 500` so the
+  //      ASCII-only regex patterns (`[A-Z]`, `\d`) still match.
+  //   3. Zero-width strip catches Cf-category obfuscation (`A​PI Error`,
+  //      BOM-prefixed `﻿{"type":"error",…}`, ZWNBSP-injected variants).
+  //      The pattern matches ZWSP/ZWNJ/ZWJ (U+200B–U+200D), WORD JOINER
+  //      (U+2060), and BOM (U+FEFF) — the standard zero-width attack surface.
+  //
+  // Mirrors the L7 soul-identity sanitization pattern (cycle-098 sprint-7
+  // HIGH-2: "NFKC-normalize + zero-width-strip section bodies before
+  // prescriptive-pattern matching" — same defense-class).
+  //
+  // We compare with `probe` but return the substitution OR the ORIGINAL
+  // `content` (preserving any whitespace / full-width text / zero-width
+  // characters on the pass-through path · LLM output with intentional
+  // Unicode survives if no error pattern matches).
+  // ZWSP-ZWJ (U+200B-200D) · LRM/RLM (U+200E-200F) · Word Joiner (U+2060) ·
+  // BOM (U+FEFF) — the standard zero-width attack surface.
+  const probe = content
+    .normalize('NFKC')
+    .replace(/[​-‏⁠﻿]/g, '')
+    .trimStart();
   for (const { name, regex } of RAW_API_ERROR_PATTERNS) {
-    if (regex.test(content)) {
-      console.warn(
+    if (regex.test(probe)) {
+      console.error(
         `[outbound-sanitize] character=${characterId} kind=raw-api-error matched=${name} original_len=${content.length}`,
       );
       return errorTemplate;

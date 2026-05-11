@@ -216,17 +216,17 @@ describe('stripVoiceDisciplineDrift · composition with escapeDiscordMarkdown', 
 const tmpl = (characterId: string) => composeErrorBody(characterId, 'error');
 
 describe('sanitizeOutboundBody · raw-api-error substitution', () => {
-  // Capture telemetry · restore console.warn between cases.
+  // Capture telemetry · restore console.error between cases.
   let warnings: string[] = [];
-  const originalWarn = console.warn;
+  const originalWarn = console.error;
   beforeEach(() => {
     warnings = [];
-    console.warn = (msg: string) => {
+    console.error = (msg: string) => {
       warnings.push(typeof msg === 'string' ? msg : String(msg));
     };
   });
   afterEach(() => {
-    console.warn = originalWarn;
+    console.error = originalWarn;
   });
 
   test('Anthropic API error body substitutes to in-character', () => {
@@ -312,15 +312,15 @@ describe('sanitizeOutboundBody · raw-api-error substitution', () => {
 
 describe('sanitizeOutboundBody · generic catch-all (F4 · format-drift defense)', () => {
   let warnings: string[] = [];
-  const originalWarn = console.warn;
+  const originalWarn = console.error;
   beforeEach(() => {
     warnings = [];
-    console.warn = (msg: string) => {
+    console.error = (msg: string) => {
       warnings.push(typeof msg === 'string' ? msg : String(msg));
     };
   });
   afterEach(() => {
-    console.warn = originalWarn;
+    console.error = originalWarn;
   });
 
   test('PascalCase Error class — hypothetical Anthropic SDK rename catches', () => {
@@ -408,15 +408,15 @@ describe('sanitizeOutboundBody · generic catch-all (F4 · format-drift defense)
 
 describe('sanitizeOutboundBody · passthrough cases', () => {
   let warnings: string[] = [];
-  const originalWarn = console.warn;
+  const originalWarn = console.error;
   beforeEach(() => {
     warnings = [];
-    console.warn = (msg: string) => {
+    console.error = (msg: string) => {
       warnings.push(typeof msg === 'string' ? msg : String(msg));
     };
   });
   afterEach(() => {
-    console.warn = originalWarn;
+    console.error = originalWarn;
   });
 
   test('in-character ruggy error template passes through verbatim', () => {
@@ -474,15 +474,15 @@ describe('sanitizeOutboundBody · passthrough cases', () => {
 
 describe('sanitizeOutboundBody · idempotency', () => {
   let warnings: string[] = [];
-  const originalWarn = console.warn;
+  const originalError = console.error;
   beforeEach(() => {
     warnings = [];
-    console.warn = (msg: string) => {
+    console.error = (msg: string) => {
       warnings.push(typeof msg === 'string' ? msg : String(msg));
     };
   });
   afterEach(() => {
-    console.warn = originalWarn;
+    console.error = originalError;
   });
 
   test('running twice on a raw-error body produces identical output', () => {
@@ -500,5 +500,270 @@ describe('sanitizeOutboundBody · idempotency', () => {
     const second = sanitizeOutboundBody(first, 'ruggy', tmpl('ruggy'));
     expect(second).toBe(first);
     expect(warnings).toHaveLength(0);
+  });
+});
+
+describe('sanitizeOutboundBody · idempotency invariant (IMP-002)', () => {
+  // This test enforces the invariant that our own error templates do not
+  // themselves match the raw-error patterns. If they did, a second pass
+  // of the sanitizer would substitute them AGAIN, breaking idempotency
+  // and firing telemetry twice for one event.
+  const CHARACTER_IDS_TO_TEST = ['ruggy', 'satoshi', 'unknown-character'];
+
+  for (const charId of CHARACTER_IDS_TO_TEST) {
+    test(`error template for "${charId}" should not match any raw error patterns`, () => {
+      const errorBody = composeErrorBody(charId, 'error');
+      // A "clean" run of the sanitizer on the template should produce no
+      // warnings and return the template unchanged.
+      const sanitizedResult = sanitizeOutboundBody(errorBody, charId, "SHOULD_NOT_BE_USED");
+      expect(sanitizedResult).toBe(errorBody);
+    });
+  }
+});
+
+describe('sanitizeOutboundBody · unicode/locale variants (IMP-005)', () => {
+    let warnings: string[] = [];
+    const originalError = console.error;
+    beforeEach(() => {
+        warnings = [];
+        console.error = (msg: string) => {
+            warnings.push(typeof msg === 'string' ? msg : String(msg));
+        };
+    });
+    afterEach(() => {
+        console.error = originalError;
+    });
+
+    test('full-width unicode lookalikes are sanitized', () => {
+        // Use full-width characters for "API Error: 500"
+        const input = 'ＡＰＩ Ｅｒｒｏｒ: ５００';
+        const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+        expect(out).toBe(composeErrorBody('ruggy', 'error'));
+        expect(warnings).toHaveLength(1);
+        // NFKC normalization converts full-width to ASCII before matching,
+        // so the SPECIFIC anthropic-api-error pattern wins (not the generic
+        // catch-all). This is the desired outcome: telemetry attributes
+        // origin correctly.
+        expect(warnings[0]).toContain('matched=anthropic-api-error');
+    });
+
+    test('full-width unicode passes through when not error-shaped', () => {
+        // Character voice with intentional full-width text — must not
+        // false-positive after NFKC normalization.
+        const input = 'Ｈｅｌｌｏ ｆｒｉｅｎｄ, the bear watches today.';
+        const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+        expect(out).toBe(input);
+        expect(warnings).toHaveLength(0);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// BLOCKER #1 whitespace-tolerance regression (gemini-skeptic · 2026-05-11)
+//
+// Anchored `^` patterns are defeated if the raw error body has leading
+// whitespace or newlines. The fix: trimStart() the probe BEFORE matching.
+// We compare against trimmed input but return the substitution (on match)
+// or the original content (on no-match, preserving LLM whitespace).
+//
+// Plus: tolerate spaced JSON envelopes (`{"type": "error"…}` with space
+// after colon) since the JSON pattern is widened to use `\s*`.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('sanitizeOutboundBody · whitespace tolerance (BLOCKER #1)', () => {
+  let warnings: string[] = [];
+  const originalError = console.error;
+  beforeEach(() => {
+    warnings = [];
+    console.error = (msg: string) => {
+      warnings.push(typeof msg === 'string' ? msg : String(msg));
+    };
+  });
+  afterEach(() => {
+    console.error = originalError;
+  });
+
+  test('leading newline + API Error substitutes', () => {
+    const input = '\nAPI Error: 500 Internal Server Error';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
+
+  test('leading multiple newlines + raw JSON envelope substitutes', () => {
+    const input = '\n\n{"type":"error","error":{"type":"api_error"}}';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=raw-json-error-envelope');
+  });
+
+  test('leading spaces + bedrock chat error substitutes', () => {
+    const input = '   bedrock chat error: 503 service unavailable';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=bedrock-chat-error');
+  });
+
+  test('leading tab + orchestrator SDK throw substitutes', () => {
+    const input = '\torchestrator: SDK error subtype=error_during_execution';
+    const out = sanitizeOutboundBody(input, 'satoshi', tmpl('satoshi'));
+    expect(out).toBe(composeErrorBody('satoshi', 'error'));
+    expect(warnings[0]).toContain('matched=orchestrator-sdk-error-subtype');
+  });
+
+  test('spaced JSON envelope `{ "type" : "error" }` substitutes', () => {
+    const input = '{ "type" : "error", "error" : { "type" : "api_error" } }';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=raw-json-error-envelope');
+  });
+
+  test('mixed-whitespace + spaced JSON substitutes', () => {
+    const input = '  \n  { "type": "error", "error": { "message": "upstream" } }';
+    const out = sanitizeOutboundBody(input, 'satoshi', tmpl('satoshi'));
+    expect(out).toBe(composeErrorBody('satoshi', 'error'));
+    expect(warnings[0]).toContain('matched=raw-json-error-envelope');
+  });
+
+  test('LLM output with leading whitespace passes through verbatim (no-match preserves)', () => {
+    // No raw-error pattern matches; LLM whitespace must survive.
+    const input = '\n\nyo. just got the ledger update.';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('LLM-shaped multi-line response with internal JSON code block passes through', () => {
+    // Internal JSON is mid-body (after the LLM's prose preamble), so the
+    // `^` anchor on the trimStart()ed input doesn't match it.
+    const input = "here's the shape:\n\n```json\n{\"type\":\"error\",\"hint\":\"example\"}\n```";
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Zero-width / Cf-category bypass guards
+// (flatline gemini-skeptic SKP-001 HIGH/760 · 2026-05-11)
+//
+// NFKC alone doesn't strip zero-width characters (ZWSP, ZWNJ, ZWJ, LRM,
+// RLM, Word Joiner, BOM). An attacker could prefix or insert these to
+// defeat the `^` anchor or break literal-byte matching.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('sanitizeOutboundBody · zero-width strip (SKP-001 HIGH/760)', () => {
+  let warnings: string[] = [];
+  const originalError = console.error;
+  beforeEach(() => {
+    warnings = [];
+    console.error = (msg: string) => {
+      warnings.push(typeof msg === 'string' ? msg : String(msg));
+    };
+  });
+  afterEach(() => {
+    console.error = originalError;
+  });
+
+  test('BOM (U+FEFF) prefix + API Error substitutes', () => {
+    const input = '﻿API Error: 500 Internal Server Error';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
+
+  test('ZWSP (U+200B) inserted mid-token substitutes', () => {
+    // `A​PI` with a zero-width space between A and P.
+    const input = 'A​PI Error: 500 Internal Server Error';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
+
+  test('Word Joiner (U+2060) prefix + JSON envelope substitutes', () => {
+    const input = '⁠{"type":"error","error":{"type":"api_error"}}';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=raw-json-error-envelope');
+  });
+
+  test('ZWNJ (U+200C) + ZWJ (U+200D) scattered through error prefix substitutes', () => {
+    const input = 'API‌ Error‍: 500';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
+
+  test('LRM (U+200E) + RLM (U+200F) bidi-mark obfuscation substitutes', () => {
+    const input = '‎API Error: 500‏';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
+
+  test('NFKC + zero-width + leading whitespace: triple-stack substitutes', () => {
+    // Combine all three defenses: full-width ＡＰＩ + ZWSP + leading newline.
+    const input = '\n​ＡＰＩ Ｅｒｒｏｒ: ５００';
+    const out = sanitizeOutboundBody(input, 'satoshi', tmpl('satoshi'));
+    expect(out).toBe(composeErrorBody('satoshi', 'error'));
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
+
+  test('LLM output with intentional zero-width chars passes through verbatim', () => {
+    // ZWNJ is used in some scripts (e.g. Persian/Hindi) for legitimate
+    // text rendering. LLM output must survive if it's not error-shaped.
+    const input = 'hello‌world, the bear watches.';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// discord.js bracketed error forms (flatline gemini-skeptic SKP-002 HIGH/720)
+//
+// discord.js stringifies errors like `DiscordAPIError[Cannot send messages
+// to this user]: 50007`. Plain `DiscordAPIError:` regex misses the bracketed
+// form. Widened pattern handles both bare and bracketed signatures.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('sanitizeOutboundBody · bracketed discord.js errors (SKP-002 HIGH/720)', () => {
+  let warnings: string[] = [];
+  const originalError = console.error;
+  beforeEach(() => {
+    warnings = [];
+    console.error = (msg: string) => {
+      warnings.push(typeof msg === 'string' ? msg : String(msg));
+    };
+  });
+  afterEach(() => {
+    console.error = originalError;
+  });
+
+  test('bare DiscordAPIError: substitutes', () => {
+    const input = 'DiscordAPIError: Missing Permissions';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=discord-js-api-error');
+  });
+
+  test('bracketed DiscordAPIError[Cannot send messages]: substitutes', () => {
+    const input = 'DiscordAPIError[Cannot send messages to this user]: 50007';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=discord-js-api-error');
+  });
+
+  test('bracketed HTTPError[Rate Limited]: substitutes', () => {
+    const input = 'HTTPError[Rate Limited]: 429';
+    const out = sanitizeOutboundBody(input, 'satoshi', tmpl('satoshi'));
+    expect(out).toBe(composeErrorBody('satoshi', 'error'));
+    expect(warnings[0]).toContain('matched=discord-js-http-error');
+  });
+
+  test('Error: prefix + bracketed DiscordAPIError substitutes', () => {
+    const input = 'Error: DiscordAPIError[Unknown Channel]: 10003';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=discord-js-api-error');
   });
 });

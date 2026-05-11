@@ -153,8 +153,9 @@ intermediate state.
 A separate surface from timing but lives in the same expression layer:
 when an upstream API throws transiently (Bedrock 500, Anthropic SDK
 error_during_execution, etc.) the raw error body MUST NOT reach Discord.
-Per CLAUDE.md "Discord-as-Material" rule: *in-character errors only —
-"cables got crossed" not "I apologize for the inconvenience"*.
+Per the `Discord-as-Material` rule in `CLAUDE.md`: *in-character errors only —
+"cables got crossed" not "I apologize for the inconvenience"*. This is a
+core invariant of the `[[chat-medium-presentation-boundary]]` doctrine.
 
 The dispatch catch at `apps/bot/src/discord-interactions/dispatch.ts:593-598`
 routes through `formatErrorBody → composeErrorBody` which produces the

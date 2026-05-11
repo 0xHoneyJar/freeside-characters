@@ -364,6 +364,10 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
   // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1).
   // Match formatErrorBody's voice-discipline strip so substituted bodies
   // and normal error bodies share identical treatment (codex C4 · 2026-05-11).
+  // IMP-006: This is a deliberate trade-off. The sanitizer substitutes
+  // with the 'error' kind template, even if the upstream failure was a
+  // 'timeout' or 'empty' class. The primary goal is preventing a raw
+  // API error leak; kind-attribution is secondary.
   const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
 
   console.log(
@@ -622,6 +626,10 @@ async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
   // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1).
   // Match formatErrorBody's voice-discipline strip so substituted bodies
   // and normal error bodies share identical treatment (codex C4 · 2026-05-11).
+  // IMP-006: This is a deliberate trade-off. The sanitizer substitutes
+  // with the 'error' kind template, even if the upstream failure was a
+  // 'timeout' or 'empty' class. The primary goal is preventing a raw
+  // API error leak; kind-attribution is secondary.
   const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
 
   console.log(
