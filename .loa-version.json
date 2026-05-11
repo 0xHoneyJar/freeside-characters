@@ -1,13 +1,13 @@
 {
-  "framework_version": "v1.108.0",
+  "framework_version": "v1.148.0",
   "schema_version": 2,
   "installation_mode": "submodule",
   "submodule": {
     "path": ".loa",
-    "ref": "v1.108.0",
-    "commit": "303cd27efcb758f177c3eb4ad9b7770e935ed457"
+    "ref": "v1.148.0",
+    "commit": "e957028586b71d0f668cdaf66d10ae6153bd1a14"
   },
-  "last_sync": "2026-05-02T00:59:00Z",
+  "last_sync": "2026-05-11T16:13:47Z",
   "zones": {
     "system": ".claude",
     "submodule": ".loa/.claude",
