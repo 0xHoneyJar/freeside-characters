@@ -332,22 +332,22 @@ describe('sanitizeOutboundBody · generic catch-all (F4 · format-drift defense)
     expect(warnings[0]).toContain('matched=generic-error-class-prefix');
   });
 
-  test('PascalCase Exception class catches', () => {
-    const input = 'RateLimitException at line 42 in chat.ts';
+  test('PascalCase Exception class WITH colon catches', () => {
+    const input = 'RateLimitException: rate limit exceeded at line 42';
     const out = sanitizeOutboundBody(input, 'satoshi', tmpl('satoshi'));
     expect(out).toBe(composeErrorBody('satoshi', 'error'));
     expect(warnings[0]).toContain('matched=generic-error-class-prefix');
   });
 
-  test('PascalCase Failure class catches', () => {
+  test('PascalCase Failure class WITH colon catches', () => {
     const input = 'BedrockTimeoutFailure: connection reset by peer';
     const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
     expect(out).toBe(composeErrorBody('ruggy', 'error'));
     expect(warnings[0]).toContain('matched=generic-error-class-prefix');
   });
 
-  test('Error: prefix + PascalCase class catches', () => {
-    const input = 'Error: OpenAIRateLimitException at line 42';
+  test('Error: prefix + PascalCase class WITH colon catches', () => {
+    const input = 'Error: OpenAIRateLimitException: too many requests';
     const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
     expect(out).toBe(composeErrorBody('ruggy', 'error'));
     expect(warnings[0]).toContain('matched=generic-error-class-prefix');
@@ -364,10 +364,6 @@ describe('sanitizeOutboundBody · generic catch-all (F4 · format-drift defense)
   });
 
   test('Bare "Error" prefix without trailing class name does NOT match', () => {
-    // `Error: ruggy is here` — bare Error followed by lowercase prose.
-    // No specific pattern matches (no known shape after `Error: `).
-    // No generic match (needs PascalCase identifier ending in
-    // Error|Exception|Failure with at least one letter between).
     const input = 'Error: ruggy is here, just kidding';
     const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
     expect(out).toBe(input);
@@ -375,8 +371,35 @@ describe('sanitizeOutboundBody · generic catch-all (F4 · format-drift defense)
   });
 
   test('Lowercase prose mentioning "rate limit error" mid-body does NOT match', () => {
-    // Real character voice — never starts with PascalCase identifier.
     const input = 'yo. saw a rate limit error earlier but cleared.';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  // ─── FALSE-POSITIVE GUARDS (flatline gemini G2 · 2026-05-11) ───
+  // The catch-all now requires trailing `:` so legitimate character voice
+  // that opens with PascalCase identifier ending in Error/Exception/Failure
+  // (followed by anything other than `:`) passes through.
+
+  test('character voice: "TotalFailure is the name of my zine" passes through (G2 guard)', () => {
+    const input = 'TotalFailure is the name of my new zine, you should see it.';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('character voice: "ValidationError was his middle name" passes through (G2 guard)', () => {
+    const input = 'ValidationError was his middle name, the codex told me so.';
+    const out = sanitizeOutboundBody(input, 'satoshi', tmpl('satoshi'));
+    expect(out).toBe(input);
+    expect(warnings).toHaveLength(0);
+  });
+
+  test('character voice: PascalCase Error class followed by space-and-prose passes through', () => {
+    // Even though `RateLimitException at line 42` would have matched the old
+    // `\b` pattern (false positive), the new `:` requirement protects it.
+    const input = 'RateLimitException sounds like a band name, lowkey.';
     const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
     expect(out).toBe(input);
     expect(warnings).toHaveLength(0);

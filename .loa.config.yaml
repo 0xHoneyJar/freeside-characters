@@ -45,3 +45,26 @@ compaction:
 # =============================================================================
 integrations:
   - github
+
+# =============================================================================
+# Flatline Protocol (multi-model adversarial review)
+# =============================================================================
+# Enabled manually 2026-05-11 for bug-20260511-b6eb97 PR #54 review.
+# 3-model: Opus (primary) + OpenAI Codex (secondary) + Gemini (tertiary).
+# auto_trigger=false so this only runs on explicit /flatline-review invocation.
+flatline_protocol:
+  enabled: true
+  auto_trigger: false
+  phases:
+    prd: false
+    sdd: false
+    sprint: false
+  models:
+    primary: opus              # Claude Opus 4.7
+    secondary: gpt-5.3-codex   # OpenAI Codex (headless via Responses API)
+    tertiary: gemini-2.5-pro   # Gemini 2.5 Pro (headless via Google API · gemini-3.x removed per cycle-099 #574)
+  thresholds:
+    high_consensus: 700
+    disputed_delta: 300
+    low_value: 400
+    blocker_skeptic: 700

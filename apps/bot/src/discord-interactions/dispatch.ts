@@ -361,8 +361,10 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
 async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
   const { interaction, config, character, prompt, ephemeral, channelId, invoker } = args;
   const t0 = Date.now();
-  // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1)
-  const errorTemplate = composeErrorBody(character.id, 'error');
+  // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip so substituted bodies
+  // and normal error bodies share identical treatment (codex C4 · 2026-05-11).
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
 
   console.log(
     `interactions: ${character.id}/chat dispatch · invoker=${invoker.username} ` +
@@ -617,8 +619,10 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
 async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
   const { interaction, config, character, prompt, ephemeral, channelId, invoker } = args;
   const t0 = Date.now();
-  // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1)
-  const errorTemplate = composeErrorBody(character.id, 'error');
+  // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip so substituted bodies
+  // and normal error bodies share identical treatment (codex C4 · 2026-05-11).
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
 
   console.log(
     `interactions: ${character.id}/imagegen dispatch · invoker=${invoker.username} ` +
@@ -844,18 +848,28 @@ async function deliverViaWebhook(
     throw new Error('webhook path: bot client unavailable');
   }
   const webhook = await getOrCreateChannelWebhook(client, channelId);
-  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1)
-  const errorTemplate = composeErrorBody(character.id, 'error');
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip (codex C4 · 2026-05-11).
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
+
+  // Sanitize raw chunks BEFORE adding the quote prefix (codex C1 · 2026-05-11).
+  // The sanitizer patterns are anchored at `^`, so a raw-error-shaped chunk
+  // would NOT match `^API Error:` once a quote prefix is prepended. Sanitize
+  // first → prefix second → split → wire. This makes the defense-in-depth
+  // load-bearing on the success path (not just the error path).
+  const sanitizedChunks = chunks.map((c) =>
+    sanitizeOutboundBody(c, character.id, errorTemplate),
+  );
 
   // Prepend the user's prompt as a Discord blockquote on the first chunk so
   // others in the channel see context. allowedMentions:[] (set in
   // sendChatReplyViaWebhook) prevents the @ from triggering a ping.
   const quote = buildQuotePrefix(authorUsername, prompt);
-  const firstWithQuote = quote + chunks[0]!;
+  const firstWithQuote = quote + sanitizedChunks[0]!;
   const allChunks =
     firstWithQuote.length <= DISCORD_CHAR_LIMIT
-      ? [firstWithQuote, ...chunks.slice(1)]
-      : [...splitForDiscord(firstWithQuote, DISCORD_CHAR_LIMIT), ...chunks.slice(1)];
+      ? [firstWithQuote, ...sanitizedChunks.slice(1)]
+      : [...splitForDiscord(firstWithQuote, DISCORD_CHAR_LIMIT), ...sanitizedChunks.slice(1)];
 
   // V0.7-A.3: attach env-aware grail image bytes to the FIRST chunk only —
   // image follows voice text per ALEXANDER craft lens (spec §5). Subsequent
@@ -866,7 +880,7 @@ async function deliverViaWebhook(
     await sendChatReplyViaWebhook(
       webhook,
       character,
-      sanitizeOutboundBody(allChunks[i]!, character.id, errorTemplate),
+      allChunks[i]!,
       attachOnThisChunk,
     );
     if (i === 0) {
@@ -911,21 +925,21 @@ async function deliverViaInteraction(
   rawChunks: string[],
   ephemeral: boolean,
 ): Promise<void> {
-  const { chunks } = formatReply(character, rawChunks);
-  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1)
-  const errorTemplate = composeErrorBody(character.id, 'error');
-  await patchOriginal(
-    interaction,
-    ephemeral,
-    sanitizeOutboundBody(chunks[0] ?? '', character.id, errorTemplate),
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip (codex C4 · 2026-05-11).
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
+  // Sanitize raw chunks BEFORE formatReply prepends `**DisplayName**\n\n`
+  // (codex C1 · 2026-05-11). The sanitizer's `^`-anchored patterns would
+  // not match a raw-error chunk once the name prefix is in place; sanitize
+  // first → format second → wire.
+  const sanitizedRaw = rawChunks.map((c) =>
+    sanitizeOutboundBody(c, character.id, errorTemplate),
   );
+  const { chunks } = formatReply(character, sanitizedRaw);
+  await patchOriginal(interaction, ephemeral, chunks[0] ?? '');
   for (let i = 1; i < chunks.length; i++) {
     await sleep(FOLLOW_UP_THROTTLE_MS);
-    await postFollowUp(
-      interaction,
-      ephemeral,
-      sanitizeOutboundBody(chunks[i]!, character.id, errorTemplate),
-    );
+    await postFollowUp(interaction, ephemeral, chunks[i]!);
   }
 }
 
@@ -1013,9 +1027,10 @@ async function deliverErrorViaWebhook(
   const webhook = await getOrCreateChannelWebhook(client, channelId);
   const body = formatErrorBody(character, kind);
   // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip (codex C4 · 2026-05-11).
   // Defense-in-depth: body already came from formatErrorBody but the
   // wrap closes the invariant by construction at the wire.
-  const errorTemplate = composeErrorBody(character.id, 'error');
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
 
   await sendChatReplyViaWebhook(
     webhook,
@@ -1055,10 +1070,11 @@ async function deliverError(
   kind: ErrorClass,
 ): Promise<void> {
   // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip (codex C4 · 2026-05-11).
   // Defense-in-depth: formatErrorBody already produces in-character text,
   // but the sanitize wrap closes the invariant by construction at the wire
   // (a future drift that bypasses deliverError gets caught here too).
-  const errorTemplate = composeErrorBody(character.id, 'error');
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
 
   if (ephemeral) {
     await patchOriginal(

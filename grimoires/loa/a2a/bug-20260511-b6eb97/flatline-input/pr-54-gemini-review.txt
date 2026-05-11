@@ -1,0 +1,59 @@
+```json
+{
+  "reviewer": "gemini",
+  "model": "gemini-2.5-pro",
+  "findings": [
+    {
+      "id": "G1",
+      "severity": "BLOCKER",
+      "category": "Testing",
+      "title": "Lack of Integration Test Masks Potential Root Cause",
+      "file": "apps/bot/src/tests/dispatch-error-routing.test.ts:28",
+      "description": "The PR adds unit tests that validate the sanitizer's logic in isolation but explicitly avoids an end-to-end integration test that reproduces the original error leak. This approach tests the bandage but not the wound. The root cause of why the original error handling was bypassed remains unknown and unaudited. The sanitizer may prevent the string leak but mask a deeper underlying bug, such as unhandled promise rejections or state corruption, which would persist.",
+      "suggestion": "Implement a targeted integration test that simulates an upstream API error (e.g., via mocking) and asserts that it is handled gracefully without triggering the boundary sanitizer. The goal should be to prove the primary catch blocks are effective. A sanitizer hit should be a true last resort, and the test suite should reflect this.",
+      "confidence": 0.95
+    },
+    {
+      "id": "G2",
+      "severity": "HIGH",
+      "category": "Regex False Positive",
+      "title": "Generic Error Regex Dangers Character Voice Integrity",
+      "file": "packages/persona-engine/src/deliver/sanitize.ts:413",
+      "description": "The generic catch-all regex `/^(?:Error: )?[A-Z][a-zA-Z]+(?:Error|Exception|Failure)\\b/` is too broad and poses a significant risk of false positives. It assumes character voice will never legitimately begin with a word in PascalCase ending in 'Error', 'Exception', or 'Failure'. A character could plausibly say 'TotalFailure is the name of my new zine.' or 'ValidationError was his middle name.' and have their speech incorrectly censored. This directly conflicts with the goal of maintaining character voice.",
+      "suggestion": "Tighten the generic regex. Instead of a broad pattern, consider making it more specific, for instance by requiring it to be followed by a colon or specific punctuation (`/^(?:Error: )?[A-Z][a-zA-Z]+(?:Error|Exception|Failure):/`). Alternatively, make the sanitizer's behavior for this specific pattern less destructive, e.g., by logging a higher-severity warning but passing the text through, treating it as a signal for an operator to add a more specific pattern.",
+      "confidence": 1.0
+    },
+    {
+      "id": "G3",
+      "severity": "MEDIUM",
+      "category": "Architectural Pattern",
+      "title": "Stale Context Risk from Hoisted Error Template",
+      "file": "apps/bot/src/discord-interactions/dispatch.ts:363",
+      "description": "The pattern of hoisting `errorTemplate` at the beginning of long functions like `doReplyChat` is fragile. While it appears safe with the current control flow, it creates a dependency on the initial `character` context. Any future refactoring that introduces character-switching logic or a complex sub-flow within the `try` block could cause the `catch` handler to use a stale error template from the wrong character, violating the error-voice invariant.",
+      "suggestion": "To make this more robust, pass the `character.id` into the sanitizer and have the sanitizer call `composeErrorBody` itself if, and only if, a substitution is needed. This removes the repeated boilerplate and ensures the correct, most current character context is used at the moment the error is handled.",
+      "confidence": 0.7
+    },
+    {
+      "id": "G4",
+      "severity": "LOW",
+      "category": "Observability",
+      "title": "Telemetry via Unstructured console.warn",
+      "file": "packages/persona-engine/src/deliver/sanitize.ts:430",
+      "description": "The sanitizer uses `console.warn` to emit a formatted string for telemetry. While informative, this is an unstructured log. Production-grade observability relies on structured logs (e.g., JSON) that can be easily parsed, indexed, and queried, and upon which automated alerts can be reliably built. A simple string is harder to work with and less robust.",
+      "suggestion": "Replace `console.warn` with a call to a proper structured logger. If a project-wide logger is not available, introduce one. The log entry should include fields for `characterId`, `patternName`, and `originalLength` as structured data.",
+      "confidence": 1.0
+    },
+    {
+      "id": "G5",
+      "severity": "PRAISE",
+      "category": "Architecture",
+      "title": "Excellent Use of Boundary Sanitization for Defense-in-Depth",
+      "file": "packages/persona-engine/src/deliver/sanitize.ts:1",
+      "description": "Applying `sanitizeOutboundBody` at every body-bearing Discord write surface is a robust and commendable defense-in-depth strategy. It structurally enforces the in-character error-voice invariant at the final egress point, significantly increasing the system's resilience against future regressions or unexpected error propagation paths. This is a great example of building security and correctness by construction.",
+      "suggestion": "",
+      "confidence": 1.0
+    }
+  ],
+  "summary": "This PR introduces a robust defense-in-depth sanitizer but fails to address the root cause of the original error leak, creating a BLOCKER. While the sanitizer itself is well-tested in isolation and praiseworthy as a pattern, its generic regex poses a high risk to character voice integrity, and the lack of an integration test means we are flying blind on whether the original bug is truly fixed or merely masked."
+}
+```

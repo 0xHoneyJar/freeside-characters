@@ -1,0 +1,50 @@
+WARNING: Document size 48 KB; long prompts may trip the cheval connection-loss path on Anthropic + OpenAI. See issue #774 if Phase 1 reports failure_class=PROVIDER_DISCONNECT. The --per-call-max-tokens flag does NOT address this failure mode.
+[flatline] Execution mode: interactive (reason: Default (no explicit mode specified))
+[flatline] Tertiary model: gemini-2.5-pro (active)
+[flatline] Document: grimoires/loa/a2a/bug-20260511-b6eb97/flatline-input/pr-54-diff.md
+[flatline] Phase: pr
+[flatline] Mode: interactive
+[flatline] Timeout: 600s
+[flatline] Budget: 500 cents
+[flatline] Extracted domain: software development
+[flatline] State: INIT -> KNOWLEDGE
+[flatline] Retrieving knowledge context (two-tier)
+[flatline] Tier 1: Local knowledge retrieval
+[flatline] Warning: Tier 1 knowledge retrieval failed (continuing)
+[flatline] Tier 2: NotebookLM knowledge retrieval
+[flatline] NotebookLM: disabled (skipping)
+[flatline] Knowledge retrieval complete (two-tier)
+[flatline] State: KNOWLEDGE -> PHASE1
+[flatline] Starting Phase 1: Independent reviews (4 parallel calls)
+[flatline] Tertiary model confirmed: gemini-2.5-pro (3-model Flatline active)
+[flatline] Warning: 4 of 6 Phase 1 calls failed (degraded mode)
+[flatline]   gpt-review stderr: [model-adapter] Model: gpt-5.3-codex (gpt-5.3-codex)
+[model-adapter] Provider: openai
+[model-adapter] Mode: review
+[model-adapter] Phase: pr
+[model-adapter] Input: grimoires/loa/a2a/bug-20260511-b6eb97/flatline-input/pr-54-diff.md
+[flatline]   tertiary-review stderr: [model-adapter] Model: gemini-2.5-pro (gemini-2.5-pro)
+[model-adapter] Provider: google
+[model-adapter] Mode: review
+[model-adapter] Phase: pr
+[model-adapter] Input: grimoires/loa/a2a/bug-20260511-b6eb97/flatline-input/pr-54-diff.md
+[flatline]   gpt-skeptic stderr: [model-adapter] Model: gpt-5.3-codex (gpt-5.3-codex)
+[model-adapter] Provider: openai
+[model-adapter] Mode: skeptic
+[model-adapter] Phase: pr
+[model-adapter] Input: grimoires/loa/a2a/bug-20260511-b6eb97/flatline-input/pr-54-diff.md
+[flatline]   tertiary-skeptic stderr: [model-adapter] Model: gemini-2.5-pro (gemini-2.5-pro)
+[model-adapter] Provider: google
+[model-adapter] Mode: skeptic
+[model-adapter] Phase: pr
+[model-adapter] Input: grimoires/loa/a2a/bug-20260511-b6eb97/flatline-input/pr-54-diff.md
+[flatline] Phase 1 complete (6 calls). Total cost so far: 37 cents
+[flatline] State: KNOWLEDGE -> PHASE2
+[flatline] Starting Phase 2: Cross-scoring (2 parallel calls)
+[flatline] Phase 2 complete (2 calls). Total cost: 0 cents
+[flatline] State: KNOWLEDGE -> CONSENSUS
+[flatline] Calculating consensus
+[scoring-engine] WARNING: both input files empty (no items to score) — emitting degraded consensus per #759
+[flatline] State: KNOWLEDGE -> DONE
+[flatline] Flatline: 3-model (opus + gpt-5.3-codex + gemini-2.5-pro)
+[flatline] Flatline Protocol complete. Cost: 0 cents, Latency: 61000ms

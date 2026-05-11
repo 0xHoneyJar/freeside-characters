@@ -1,0 +1,67 @@
+{
+  "reviewer": "codex",
+  "model": "gpt-5.3-codex (via Codex CLI)",
+  "findings": [
+    {
+      "id": "C1",
+      "severity": "BLOCKER",
+      "category": "correctness",
+      "title": "Prefixes defeat the anchored sanitizer on the real write path",
+      "file": "apps/bot/src/discord-interactions/dispatch.ts:853",
+      "description": "The sanitizer patterns are all anchored with `^` in `sanitize.ts:389-421`, but the main write paths add Discord framing before calling it: webhook delivery prepends `buildQuotePrefix(...)` at `dispatch.ts:853-869`, and interaction delivery prefixes `**DisplayName**\\n\\n` via `formatReply` at `dispatch.ts:914-920` and `dispatch.ts:945-954`. A raw first chunk like `API Error: 500...` becomes `> @user asked...\\n\\nAPI Error: 500...` or `**Satoshi**\\n\\nAPI Error: 500...`, so `^` never sees the error and the raw body still ships. This is separate from the generic catch-all false-positive issue: the current placement makes the specific patterns ineffective on the first chunk of the actual delivery surfaces.",
+      "suggestion": "Sanitize raw character chunks before adding quote/name prefixes, then apply formatting and splitting. Add regression tests for `quote + API Error` and `**Satoshi**\\n\\nAPI Error` so future refactors cannot move the sanitizer back outside the prefixing step.",
+      "confidence": 0.97
+    },
+    {
+      "id": "C2",
+      "severity": "HIGH",
+      "category": "testing",
+      "title": "No integration test exercises the dispatch sanitizer call sites",
+      "file": "apps/bot/src/tests/dispatch-error-routing.test.ts:41",
+      "description": "The new dispatch test imports only `composeErrorBody`, `sanitizeOutboundBody`, and `stripVoiceDisciplineDrift` from persona-engine at `dispatch-error-routing.test.ts:41-46`; it never imports `dispatchSlashCommand`, never drives `composeReplyWithEnrichment`, and never captures `patchOriginal`/webhook output. The implementation report also acknowledges the end-to-end gap at `reviewer.md:300-306`. As a result, the suite proves the helper works in isolation but misses the C1 failure where dispatch adds a quote/name prefix before invoking the helper.",
+      "suggestion": "Add a Bun integration test seam around `dispatchSlashCommand` or `doReplyChat`: mock `composeReplyWithEnrichment` to return a raw error-shaped chunk, stub Discord `fetch`/webhook sends, and assert every captured outbound `content` is the character error template with no raw API substring.",
+      "confidence": 0.95
+    },
+    {
+      "id": "C3",
+      "severity": "MEDIUM",
+      "category": "voice",
+      "title": "Satoshi error voice is a static row, not loaded persona register",
+      "file": "packages/persona-engine/src/expression/error-register.ts:90",
+      "description": "`composeErrorBody('satoshi','error')` returns the hard-coded registry value at `error-register.ts:90-94`. It does not load or evaluate `apps/character-satoshi/persona.md` whose voice rules require sparse precision and dense observation. The current tests only assert capitalization at `error-register.test.ts:89-95` and pin the literal at `:147-150`, ratifying a static slogan rather than proving the template carries satoshi's register.",
+      "suggestion": "Treat error templates as character-owned voice assets: move or mirror them next to each character config/persona, require voice review for changes, and strengthen tests with strip-the-name golden samples for each character/error class.",
+      "confidence": 0.88
+    },
+    {
+      "id": "C4",
+      "severity": "MEDIUM",
+      "category": "voice",
+      "title": "Sanitizer substitution bypasses the normal voice-discipline strip",
+      "file": "apps/bot/src/discord-interactions/dispatch.ts:365",
+      "description": "Normal error delivery uses `formatErrorBody`, which applies `stripVoiceDisciplineDrift(composeErrorBody(...))` at `dispatch.ts:982-989`. The sanitizer replacement template is hoisted separately with bare `composeErrorBody(character.id, 'error')` at `dispatch.ts:365`, `:621`, `:848`, `:916`, `:1018`, and `:1061`. If a future error-register edit adds an em dash, roleplay marker, or banned closing, a raw-error substitution will emit it directly even though the normal error path would strip it.",
+      "suggestion": "Hoist `stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'))`, or centralize template creation through the existing `formatErrorBody(character, 'error')` path so substituted bodies and ordinary error bodies share identical voice-discipline treatment.",
+      "confidence": 0.91
+    },
+    {
+      "id": "C5",
+      "severity": "LOW",
+      "category": "observability",
+      "title": "Railway will show warn telemetry as error-level logs",
+      "file": "packages/persona-engine/src/deliver/sanitize.ts:482",
+      "description": "`sanitizeOutboundBody` emits telemetry with `console.warn` at `sanitize.ts:482-484`, and `railway.json:7-8` starts the service under Bun. Local Bun behavior sends `console.warn` to stderr. Railway's current logs documentation says stdout and stderr are captured in the dashboard, but stderr is normalized to `level.error` while stdout becomes `level.info`. The signal is visible by default, but filtering for warning logs can miss it and the event inflates error-level noise.",
+      "suggestion": "Emit a single-line structured JSON log with `level:'warn'` through the project's logger or write the telemetry to stdout with an explicit level field, then document the exact Railway query (`[outbound-sanitize]` or `@level:error` if console.warn remains).",
+      "confidence": 0.9
+    },
+    {
+      "id": "C6",
+      "severity": "PRAISE",
+      "category": "correctness",
+      "title": "doReplyAsync catch correctly handles synchronous throws inside the async function",
+      "file": "apps/bot/src/discord-interactions/dispatch.ts:309",
+      "description": "The fire-and-forget call at `dispatch.ts:309-318` attaches `.catch(...)` to `doReplyAsync(...)`, and `doReplyAsync` is declared `async` at `dispatch.ts:352`. In JavaScript, synchronous throws inside an async function are converted into rejected promises, so this catch will observe them.",
+      "suggestion": "No change required for this specific concern.",
+      "confidence": 0.96
+    }
+  ],
+  "summary": "The missed BLOCKER is placement, not regex inventory: dispatch formats the outbound body before sanitizing it, so anchored `^` patterns do not protect the first chunk on the real Discord surfaces. The tests are too shallow to prove either integration behavior — no test drives the actual dispatch-to-wire path with a failure-shaped LLM output."
+}

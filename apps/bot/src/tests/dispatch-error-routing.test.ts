@@ -266,3 +266,78 @@ describe('dispatch error-routing · transform chain order', () => {
     expect(wired).not.toContain('API Error');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// CODEX C1 REGRESSION GUARDS (2026-05-11)
+//
+// Anchored `^` patterns are defeated if a prefix is prepended BEFORE
+// sanitize fires. dispatch.ts must sanitize the raw chunk FIRST, then
+// add framing (quote prefix in deliverViaWebhook · `**DisplayName**\n\n`
+// in deliverViaInteraction). These tests pin the correct ordering AND
+// document the failure mode of the inverted (buggy) ordering, so future
+// refactors cannot silently move sanitize outside the prefix step.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('dispatch error-routing · codex C1 prefix-ordering regression', () => {
+  test('CORRECT ORDER: sanitize chunk → prepend quote → wire (deliverViaWebhook)', () => {
+    // Mirrors dispatch.ts:851-858 (post-fix). LLM emits a raw error in chunks[0];
+    // sanitize must run BEFORE buildQuotePrefix is prepended.
+    const rawChunk = 'API Error: 500 Internal Server Error';
+    const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody('ruggy', 'error'));
+    const sanitized = sanitizeOutboundBody(rawChunk, 'ruggy', errorTemplate);
+    const quote = '> @user asked: tell me about the bears\n\n';
+    const final = quote + sanitized;
+    // Final body has quote + in-character template. NO raw error substring.
+    expect(final).toBe(quote + composeErrorBody('ruggy', 'error'));
+    expect(final).not.toContain('API Error');
+    expect(final).not.toContain('Internal Server Error');
+  });
+
+  test('CORRECT ORDER: sanitize chunk → prepend name → wire (deliverViaInteraction)', () => {
+    // Mirrors dispatch.ts:909-925 (post-fix). formatReply prepends
+    // `**DisplayName**\n\n` to chunks[0]; sanitize must run on rawChunks BEFORE.
+    const rawChunk = 'API Error: 529 overloaded';
+    const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody('satoshi', 'error'));
+    const sanitized = sanitizeOutboundBody(rawChunk, 'satoshi', errorTemplate);
+    const namePrefix = '**Satoshi**\n\n';
+    const final = namePrefix + sanitized;
+    expect(final).toBe(namePrefix + composeErrorBody('satoshi', 'error'));
+    expect(final).not.toContain('API Error');
+  });
+
+  test('BUGGY ORDER (pre-fix): prepend quote → sanitize → wire = LEAKS raw body', () => {
+    // This is the failure mode codex C1 caught. Keep this test as a
+    // documentation guard — if a refactor moves sanitize back outside
+    // the prefix step, the assertion below will hold (sanitize is a
+    // no-op on prefixed input), which is the exact bug.
+    const rawChunk = 'API Error: 500 Internal Server Error';
+    const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody('ruggy', 'error'));
+    const quote = '> @user asked: hello\n\n';
+    const prefixed = quote + rawChunk;
+    const final = sanitizeOutboundBody(prefixed, 'ruggy', errorTemplate);
+    // BUGGY: anchor `^API Error:` doesn't see `^>` so sanitize doesn't fire.
+    expect(final).toBe(prefixed);
+    expect(final).toContain('API Error');
+  });
+
+  test('BUGGY ORDER (pre-fix): prepend name → sanitize → wire = LEAKS raw body', () => {
+    const rawChunk = 'bedrock chat error: 500 {"message":"upstream timeout"}';
+    const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody('satoshi', 'error'));
+    const namePrefix = '**Satoshi**\n\n';
+    const prefixed = namePrefix + rawChunk;
+    const final = sanitizeOutboundBody(prefixed, 'satoshi', errorTemplate);
+    expect(final).toBe(prefixed);
+    expect(final).toContain('bedrock chat error');
+  });
+
+  test('multi-chunk: only chunks[0] gets the quote prefix; chunks[1..N] still sanitize cleanly', () => {
+    // Webhook delivery prefixes only chunks[0]. Subsequent chunks are
+    // bare. If a raw-error somehow lands in chunks[1+], sanitize catches it
+    // because no prefix shadows the anchor.
+    const errorChunkInMiddle = 'orchestrator: SDK error subtype=error_during_execution';
+    const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody('ruggy', 'error'));
+    const sanitized = sanitizeOutboundBody(errorChunkInMiddle, 'ruggy', errorTemplate);
+    expect(sanitized).toBe(composeErrorBody('ruggy', 'error'));
+    expect(sanitized).not.toContain('orchestrator: SDK error');
+  });
+});

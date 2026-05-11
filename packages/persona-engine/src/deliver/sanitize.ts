@@ -404,21 +404,22 @@ const RAW_API_ERROR_PATTERNS: readonly RawApiErrorPattern[] = [
     name: 'dispatch-rest-wrapper',
     regex: /^(?:Error: )?interactions: (?:PATCH @original|follow-up POST) failed status=\d{3}/,
   },
-  // GENERIC CATCH-ALL (bridgebuilder F4 · 2026-05-11): last-line defense
-  // against upstream format drift. Matches any PascalCase identifier ending
-  // in Error/Exception/Failure at start-of-string (with optional `Error: `
-  // prefix for String(err) forms). The trailing `\b` requires a word
-  // boundary — so `Error` alone (5 chars then end-of-string) does NOT match
-  // here (it requires the leading [A-Z][a-zA-Z]+ to be non-empty BEFORE
-  // the Error|Exception|Failure suffix); the bare `Error: ` prefix is
-  // handled by the (?:Error: )? optional capture in the specific patterns
-  // above. False-positive risk: a character would have to start a reply
-  // with a PascalCase identifier ending in Error/Exception/Failure — not
-  // a shape ruggy/satoshi voice produces (lowercase prose · gnomic
-  // sentence-case · neither uses PascalCase identifiers as voice openers).
+  // GENERIC CATCH-ALL (bridgebuilder F4 · 2026-05-11 · tightened per flatline
+  // codex G2 · 2026-05-11): last-line defense against upstream format drift.
+  // Matches any PascalCase identifier ending in Error/Exception/Failure
+  // FOLLOWED BY A COLON at start-of-string (with optional `Error: ` prefix
+  // for String(err) forms). The trailing `:` (not `\b`) prevents
+  // false-positives on legitimate character voice like
+  // `"TotalFailure is the name of my zine"` or
+  // `"ValidationError was his middle name"` — those have a word boundary
+  // after the suffix but no colon, so they pass through.
+  //
+  // Real upstream throws ALWAYS use `XxxError: message` format
+  // (Anthropic/OpenAI/Bedrock convention), so requiring `:` is both safer
+  // and matches the actual leak shape.
   {
     name: 'generic-error-class-prefix',
-    regex: /^(?:Error: )?[A-Z][a-zA-Z]+(?:Error|Exception|Failure)\b/,
+    regex: /^(?:Error: )?[A-Z][a-zA-Z]+(?:Error|Exception|Failure):/,
   },
 ];
 
