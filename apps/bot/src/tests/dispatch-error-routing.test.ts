@@ -132,7 +132,7 @@ describe('dispatch error-routing · raw-error substitution invariant', () => {
         // Discord write surface without going through deliverError. The
         // sanitizer wraps every such surface in dispatch.ts; this proves
         // the wrap closes the invariant.
-        const sanitized = sanitizeOutboundBody(body, characterId);
+        const sanitized = sanitizeOutboundBody(body, characterId, composeErrorBody(characterId, 'error'));
 
         // The substituted output is the character's 'error' template.
         expect(sanitized).toBe(composeErrorBody(characterId, 'error'));
@@ -148,7 +148,7 @@ describe('dispatch error-routing · raw-error substitution invariant', () => {
         // drift that passes String(err) instead of err.message would still
         // be caught.
         const withErrorPrefix = `Error: ${body}`;
-        const sanitized = sanitizeOutboundBody(withErrorPrefix, characterId);
+        const sanitized = sanitizeOutboundBody(withErrorPrefix, characterId, composeErrorBody(characterId, 'error'));
         expect(sanitized).toBe(composeErrorBody(characterId, 'error'));
         for (const forbidden of FORBIDDEN_SUBSTRINGS) {
           expect(sanitized).not.toContain(forbidden);
@@ -168,7 +168,7 @@ describe('dispatch error-routing · in-character template passthrough', () => {
     for (const kind of KINDS) {
       test(`${characterId} · formatErrorBody(${kind}) passes through sanitizer verbatim`, () => {
         const body = stripVoiceDisciplineDrift(composeErrorBody(characterId, kind));
-        const sanitized = sanitizeOutboundBody(body, characterId);
+        const sanitized = sanitizeOutboundBody(body, characterId, composeErrorBody(characterId, 'error'));
         expect(sanitized).toBe(body);
       });
     }
@@ -187,7 +187,7 @@ describe('dispatch error-routing · LLM success passthrough', () => {
       'three transfers caught my eye — wait, ledger says four.\n\n' +
       'want to peek? lmk.';
     const cleaned = stripVoiceDisciplineDrift(llmOutput);
-    const sanitized = sanitizeOutboundBody(cleaned, 'ruggy');
+    const sanitized = sanitizeOutboundBody(cleaned, 'ruggy', composeErrorBody('ruggy', 'error'));
     expect(sanitized).toBe(cleaned);
   });
 
@@ -197,7 +197,7 @@ describe('dispatch error-routing · LLM success passthrough', () => {
       'Four windows opened today. ' +
       'The signal is unclear, but the pattern holds.';
     const cleaned = stripVoiceDisciplineDrift(llmOutput);
-    const sanitized = sanitizeOutboundBody(cleaned, 'satoshi');
+    const sanitized = sanitizeOutboundBody(cleaned, 'satoshi', composeErrorBody('satoshi', 'error'));
     expect(sanitized).toBe(cleaned);
   });
 
@@ -205,7 +205,7 @@ describe('dispatch error-routing · LLM success passthrough', () => {
     const llmOutput =
       '<:mibera_acquire:111> spotted, <:bear_pog:222>. ' +
       'transfer_from_wallet at 0xabc...def.';
-    const sanitized = sanitizeOutboundBody(llmOutput, 'ruggy');
+    const sanitized = sanitizeOutboundBody(llmOutput, 'ruggy', composeErrorBody('ruggy', 'error'));
     expect(sanitized).toBe(llmOutput);
   });
 
@@ -216,7 +216,7 @@ describe('dispatch error-routing · LLM success passthrough', () => {
       'heres the shape:\n\n' +
       '```\nstatus=200 body={"ok":true}\nAPI Error: 500 (example)\n```\n\n' +
       'basic.';
-    const sanitized = sanitizeOutboundBody(llmOutput, 'ruggy');
+    const sanitized = sanitizeOutboundBody(llmOutput, 'ruggy', composeErrorBody('ruggy', 'error'));
     expect(sanitized).toBe(llmOutput);
   });
 });
@@ -225,7 +225,8 @@ describe('dispatch error-routing · transform chain order', () => {
   // The wire order in dispatch.ts:
   //   1. result.chunks → stripVoiceDisciplineDrift (cleanedChunks)
   //   2. cleanedChunks → sendChatReplyViaWebhook / patchOriginal / postFollowUp
-  //      (sanitizeOutboundBody wraps the content arg at the call site)
+  //      (sanitizeOutboundBody wraps the content arg at the call site,
+  //       receiving the pre-computed errorTemplate hoisted at function entry)
   //
   // Sanitize is OUTERMOST — last transform before the wire. This test
   // verifies the chain produces the same result whether applied in two
@@ -237,7 +238,7 @@ describe('dispatch error-routing · transform chain order', () => {
     const voiced = stripVoiceDisciplineDrift(llmOutput);
     expect(voiced).toBe('yo. observed, laid-back day.');
     // Step 2: sanitize passes through (no error pattern match)
-    const wired = sanitizeOutboundBody(voiced, 'ruggy');
+    const wired = sanitizeOutboundBody(voiced, 'ruggy', composeErrorBody('ruggy', 'error'));
     expect(wired).toBe(voiced);
   });
 
@@ -246,7 +247,7 @@ describe('dispatch error-routing · transform chain order', () => {
     // sanitize wrap at the call site must be a no-op on the output.
     const errorTemplate = composeErrorBody('ruggy', 'error');
     const voiced = stripVoiceDisciplineDrift(errorTemplate);
-    const wired = sanitizeOutboundBody(voiced, 'ruggy');
+    const wired = sanitizeOutboundBody(voiced, 'ruggy', errorTemplate);
     expect(wired).toBe(voiced);
     expect(wired).toBe("something snapped on ruggy's end. cool to retry?");
   });
@@ -260,7 +261,7 @@ describe('dispatch error-routing · transform chain order', () => {
     // voice-discipline doesn't strip the error shape — that's the
     // sanitizer's job.
     expect(voiced).toContain('API Error');
-    const wired = sanitizeOutboundBody(voiced, 'ruggy');
+    const wired = sanitizeOutboundBody(voiced, 'ruggy', composeErrorBody('ruggy', 'error'));
     expect(wired).toBe(composeErrorBody('ruggy', 'error'));
     expect(wired).not.toContain('API Error');
   });

@@ -354,15 +354,30 @@ function stripTrailingClosings(text: string): string {
 // Outbound-body sanitizer (FAGAN A4 · bug-20260511-b6eb97 · 2026-05-11)
 // =============================================================================
 
-import { composeErrorBody } from '../expression/error-register.ts';
-
 /**
  * Raw upstream-API-error pattern · used by `sanitizeOutboundBody`.
  *
  * Each pattern is anchored at start-of-string (with an optional `Error: `
  * prefix for `String(err)` forms) so legitimate prose containing the
- * substring mid-body never matches. Patterns are ORDERED by specificity ·
- * the first match wins (telemetry surfaces which one).
+ * substring mid-body never matches.
+ *
+ * Pattern ordering rationale (first-match-wins, bridgebuilder F12 ·
+ * 2026-05-11):
+ *   1. SPECIFIC patterns first — each names a known upstream throw shape
+ *      so the `matched=` telemetry field attributes origin correctly.
+ *      `anthropic-api-error` before `bedrock-chat-error` etc. is by
+ *      callsite frequency observed in production logs (Anthropic SDK is
+ *      the dominant throw class today).
+ *   2. GENERIC catch-all LAST — `generic-error-class-prefix` is the
+ *      last-line defense against upstream format drift (bridgebuilder
+ *      F4 · 2026-05-11). When a future SDK renames `API Error:` to
+ *      `AnthropicAPIError:` the specific pattern stops matching but the
+ *      generic shape catches it. Telemetry attributes to the generic
+ *      pattern → operator sees a previously-known throw class started
+ *      hitting the catch-all → cue to add a more-specific entry.
+ *
+ * The ordering is INVARIANT to functional correctness (every pattern
+ * substitutes the same template). It only affects telemetry attribution.
  */
 interface RawApiErrorPattern {
   readonly name: string;
@@ -389,11 +404,28 @@ const RAW_API_ERROR_PATTERNS: readonly RawApiErrorPattern[] = [
     name: 'dispatch-rest-wrapper',
     regex: /^(?:Error: )?interactions: (?:PATCH @original|follow-up POST) failed status=\d{3}/,
   },
+  // GENERIC CATCH-ALL (bridgebuilder F4 · 2026-05-11): last-line defense
+  // against upstream format drift. Matches any PascalCase identifier ending
+  // in Error/Exception/Failure at start-of-string (with optional `Error: `
+  // prefix for String(err) forms). The trailing `\b` requires a word
+  // boundary — so `Error` alone (5 chars then end-of-string) does NOT match
+  // here (it requires the leading [A-Z][a-zA-Z]+ to be non-empty BEFORE
+  // the Error|Exception|Failure suffix); the bare `Error: ` prefix is
+  // handled by the (?:Error: )? optional capture in the specific patterns
+  // above. False-positive risk: a character would have to start a reply
+  // with a PascalCase identifier ending in Error/Exception/Failure — not
+  // a shape ruggy/satoshi voice produces (lowercase prose · gnomic
+  // sentence-case · neither uses PascalCase identifiers as voice openers).
+  {
+    name: 'generic-error-class-prefix',
+    regex: /^(?:Error: )?[A-Z][a-zA-Z]+(?:Error|Exception|Failure)\b/,
+  },
 ];
 
 /**
- * Substitute raw upstream-API-error shapes with the in-character substrate
- * error template. Defense-in-depth at the chat-medium write boundary.
+ * Substitute raw upstream-API-error shapes with the caller-supplied
+ * in-character substrate error template. Defense-in-depth at the
+ * chat-medium write boundary.
  *
  * Closes FAGAN architect-lock A4 (agent afb548531d1fb79d5 · bug
  * 20260511-b6eb97 · 2026-05-11): the dispatch catch at
@@ -404,16 +436,23 @@ const RAW_API_ERROR_PATTERNS: readonly RawApiErrorPattern[] = [
  * `deliverError` could leak; this sanitizer makes the rule
  * construction-true at the wire.
  *
+ * Pure helper · no module-level dependencies on `expression/` (per
+ * bridgebuilder F1 · 2026-05-11): callers supply the substitution
+ * template. This keeps `deliver/sanitize.ts` free of the character
+ * registry coupling that the prior signature implied.
+ *
  * Behavior:
  *   - LLM success output                    → passes through verbatim
  *   - In-character template body            → passes through verbatim
- *   - Raw upstream-API-error shape          → `composeErrorBody(characterId, 'error')`
+ *   - Raw upstream-API-error shape          → `errorTemplate` (verbatim)
  *
- * Idempotent: a substituted body starts with the in-character template,
- * which does not match any `RAW_API_ERROR_PATTERNS` regex (none of the
- * ruggy/satoshi templates start with `API Error:`, `Internal Server`,
- * `bedrock chat error:`, `orchestrator:`, `{"type":"error"`, or
- * `interactions:`). A second pass is a no-op.
+ * Idempotent: a substituted body equals `errorTemplate` — provided the
+ * template itself does not match any `RAW_API_ERROR_PATTERNS` regex
+ * (the canonical `composeErrorBody(characterId, 'error')` outputs
+ * "something snapped on ruggy's end. cool to retry?",
+ * "The channel between worlds slipped. Retry on the next.", and the
+ * substrate-quiet "something broke. try again?" all clear the regex
+ * shapes). A second pass is a no-op.
  *
  * On substitution emits structured telemetry (line-oriented · mirrors
  * `[cold-budget]` and `[chat-route]` conventions at dispatch.ts:584 +
@@ -427,6 +466,7 @@ const RAW_API_ERROR_PATTERNS: readonly RawApiErrorPattern[] = [
  *
  * Refs:
  *   FAGAN agent afb548531d1fb79d5 finding A4
+ *   bridgebuilder PR #54 findings F1 (pure helper) + F4 (catch-all) + F12 (ordering)
  *   grimoires/loa/a2a/bug-20260511-b6eb97/triage.md · sprint.md
  *   ~/vault/wiki/concepts/chat-medium-presentation-boundary.md §9
  *   CLAUDE.md "Discord-as-Material" rule: in-character errors only
@@ -434,6 +474,7 @@ const RAW_API_ERROR_PATTERNS: readonly RawApiErrorPattern[] = [
 export function sanitizeOutboundBody(
   content: string,
   characterId: string,
+  errorTemplate: string,
 ): string {
   if (!content) return content;
   for (const { name, regex } of RAW_API_ERROR_PATTERNS) {
@@ -441,7 +482,7 @@ export function sanitizeOutboundBody(
       console.warn(
         `[outbound-sanitize] character=${characterId} kind=raw-api-error matched=${name} original_len=${content.length}`,
       );
-      return composeErrorBody(characterId, 'error');
+      return errorTemplate;
     }
   }
   return content;

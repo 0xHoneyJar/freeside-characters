@@ -361,6 +361,8 @@ async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
 async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
   const { interaction, config, character, prompt, ephemeral, channelId, invoker } = args;
   const t0 = Date.now();
+  // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1)
+  const errorTemplate = composeErrorBody(character.id, 'error');
 
   console.log(
     `interactions: ${character.id}/chat dispatch · invoker=${invoker.username} ` +
@@ -440,7 +442,7 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
       patchOriginal(
         interaction,
         ephemeral,
-        sanitizeOutboundBody(status, character.id),
+        sanitizeOutboundBody(status, character.id, errorTemplate),
       ).catch((err) => {
         console.warn(
           `interactions: ${character.id}/chat onToolUse PATCH failed (best-effort):`,
@@ -615,6 +617,8 @@ async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
 async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
   const { interaction, config, character, prompt, ephemeral, channelId, invoker } = args;
   const t0 = Date.now();
+  // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1)
+  const errorTemplate = composeErrorBody(character.id, 'error');
 
   console.log(
     `interactions: ${character.id}/imagegen dispatch · invoker=${invoker.username} ` +
@@ -698,7 +702,7 @@ async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
           `${buildQuotePrefix(invoker.username, prompt).trimEnd()}`;
 
         await sendImageReplyViaWebhook(webhook, character, {
-          content: sanitizeOutboundBody(caption, character.id),
+          content: sanitizeOutboundBody(caption, character.id, errorTemplate),
           imageBytes,
           filename: result.filename!,
         });
@@ -840,6 +844,8 @@ async function deliverViaWebhook(
     throw new Error('webhook path: bot client unavailable');
   }
   const webhook = await getOrCreateChannelWebhook(client, channelId);
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1)
+  const errorTemplate = composeErrorBody(character.id, 'error');
 
   // Prepend the user's prompt as a Discord blockquote on the first chunk so
   // others in the channel see context. allowedMentions:[] (set in
@@ -860,7 +866,7 @@ async function deliverViaWebhook(
     await sendChatReplyViaWebhook(
       webhook,
       character,
-      sanitizeOutboundBody(allChunks[i]!, character.id),
+      sanitizeOutboundBody(allChunks[i]!, character.id, errorTemplate),
       attachOnThisChunk,
     );
     if (i === 0) {
@@ -906,17 +912,19 @@ async function deliverViaInteraction(
   ephemeral: boolean,
 ): Promise<void> {
   const { chunks } = formatReply(character, rawChunks);
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1)
+  const errorTemplate = composeErrorBody(character.id, 'error');
   await patchOriginal(
     interaction,
     ephemeral,
-    sanitizeOutboundBody(chunks[0] ?? '', character.id),
+    sanitizeOutboundBody(chunks[0] ?? '', character.id, errorTemplate),
   );
   for (let i = 1; i < chunks.length; i++) {
     await sleep(FOLLOW_UP_THROTTLE_MS);
     await postFollowUp(
       interaction,
       ephemeral,
-      sanitizeOutboundBody(chunks[i]!, character.id),
+      sanitizeOutboundBody(chunks[i]!, character.id, errorTemplate),
     );
   }
 }
@@ -1004,11 +1012,15 @@ async function deliverErrorViaWebhook(
   }
   const webhook = await getOrCreateChannelWebhook(client, channelId);
   const body = formatErrorBody(character, kind);
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Defense-in-depth: body already came from formatErrorBody but the
+  // wrap closes the invariant by construction at the wire.
+  const errorTemplate = composeErrorBody(character.id, 'error');
 
   await sendChatReplyViaWebhook(
     webhook,
     character,
-    sanitizeOutboundBody(body, character.id),
+    sanitizeOutboundBody(body, character.id, errorTemplate),
   );
 
   // Clean up the deferred "thinking" placeholder (Pattern B convention).
@@ -1042,11 +1054,17 @@ async function deliverError(
   ephemeral: boolean,
   kind: ErrorClass,
 ): Promise<void> {
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Defense-in-depth: formatErrorBody already produces in-character text,
+  // but the sanitize wrap closes the invariant by construction at the wire
+  // (a future drift that bypasses deliverError gets caught here too).
+  const errorTemplate = composeErrorBody(character.id, 'error');
+
   if (ephemeral) {
     await patchOriginal(
       interaction,
       true,
-      sanitizeOutboundBody(formatErrorBody(character, kind), character.id),
+      sanitizeOutboundBody(formatErrorBody(character, kind), character.id, errorTemplate),
     ).catch((patchErr) => {
       console.error(
         `interactions: ${character.id} error PATCH (ephemeral) failed:`,
@@ -1066,7 +1084,7 @@ async function deliverError(
     await patchOriginal(
       interaction,
       false,
-      sanitizeOutboundBody(formatErrorBody(character, kind), character.id),
+      sanitizeOutboundBody(formatErrorBody(character, kind), character.id, errorTemplate),
     ).catch((patchErr) => {
       console.error(
         `interactions: ${character.id} error PATCH after webhook fallback also failed:`,
