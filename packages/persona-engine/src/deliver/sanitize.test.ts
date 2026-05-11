@@ -716,6 +716,38 @@ describe('sanitizeOutboundBody · zero-width strip (SKP-001 HIGH/760)', () => {
     expect(out).toBe(input);
     expect(warnings).toHaveLength(0);
   });
+
+  // ─── Cf-broader coverage (flatline v3 SKP-002 + IMP-001 · HIGH-CONSENSUS 870) ───
+  // `\p{Cf}` covers every format char, not just the zero-width subset.
+
+  test('bidi LRI (U+2066) wrapping + API Error substitutes', () => {
+    const input = '⁦API Error: 500⁩';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
+
+  test('bidi FSI (U+2066) + RLI (U+2067) + PDI (U+2069) obfuscation substitutes', () => {
+    const input = '⁦AP⁧I Error⁩: 500';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
+
+  test('Arabic Letter Mark (U+061C) + bedrock chat error substitutes', () => {
+    const input = '؜bedrock chat error: 500';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=bedrock-chat-error');
+  });
+
+  test('Soft Hyphen (U+00AD) injected mid-token substitutes', () => {
+    // `API­ Error` — Soft Hyphen between API and Error.
+    const input = 'API­ Error: 500';
+    const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
+    expect(out).toBe(composeErrorBody('ruggy', 'error'));
+    expect(warnings[0]).toContain('matched=anthropic-api-error');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────

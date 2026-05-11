@@ -495,10 +495,18 @@ export function sanitizeOutboundBody(
   //   2. NFKC normalization catches full-width Unicode lookalike attacks
   //      (IMP-005): `ＡＰＩ Ｅｒｒｏｒ: ５００` → `API Error: 500` so the
   //      ASCII-only regex patterns (`[A-Z]`, `\d`) still match.
-  //   3. Zero-width strip catches Cf-category obfuscation (`A​PI Error`,
-  //      BOM-prefixed `﻿{"type":"error",…}`, ZWNBSP-injected variants).
-  //      The pattern matches ZWSP/ZWNJ/ZWJ (U+200B–U+200D), WORD JOINER
-  //      (U+2060), and BOM (U+FEFF) — the standard zero-width attack surface.
+  //   3. Format character strip catches Cf-category obfuscation
+  //      (`A​PI Error`, BOM-prefixed `﻿{"type":"error",…}`, bidi-isolate-
+  //      wrapped variants). The `\p{Cf}` Unicode property class
+  //      (with `/u` flag) covers EVERY format char (HIGH-CONSENSUS IMP-001
+  //      + SKP-002 · flatline v3 · 2026-05-11): ZWSP/ZWNJ/ZWJ (U+200B-D),
+  //      LRM/RLM (U+200E-F), Word Joiner (U+2060), BOM (U+FEFF), bidi
+  //      isolates (U+2066-9), Arabic Letter Mark (U+061C), Soft Hyphen
+  //      (U+00AD), and the full Cf range. Broader and simpler than
+  //      enumerating. NOT Cc (would strip \n, \r, \t and break legitimate
+  //      mid-body content if it happened to produce an error-shaped match
+  //      after newlines were collapsed — trimStart already handles leading
+  //      whitespace, the only spot where \n needs stripping for matching).
   //
   // Mirrors the L7 soul-identity sanitization pattern (cycle-098 sprint-7
   // HIGH-2: "NFKC-normalize + zero-width-strip section bodies before
@@ -508,11 +516,9 @@ export function sanitizeOutboundBody(
   // `content` (preserving any whitespace / full-width text / zero-width
   // characters on the pass-through path · LLM output with intentional
   // Unicode survives if no error pattern matches).
-  // ZWSP-ZWJ (U+200B-200D) · LRM/RLM (U+200E-200F) · Word Joiner (U+2060) ·
-  // BOM (U+FEFF) — the standard zero-width attack surface.
   const probe = content
     .normalize('NFKC')
-    .replace(/[​-‏⁠﻿]/g, '')
+    .replace(/\p{Cf}/gu, '')
     .trimStart();
   for (const { name, regex } of RAW_API_ERROR_PATTERNS) {
     if (regex.test(probe)) {

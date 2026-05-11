@@ -1,0 +1,106 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 1,
+    "disputed_count": 3,
+    "low_value_count": 0,
+    "blocker_count": 2,
+    "model_agreement_percent": 62,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "Strong security ROI for minimal cost: switching to Unicode `\\p{Cf}` closes clear bypass gaps in the same attack class with little regression risk.",
+      "gpt_score": 920,
+      "opus_score": 820,
+      "tertiary_score": 950,
+      "delta": 100,
+      "average_score": 870,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-006",
+      "description": "The optimization is plausible but lower priority because `composeErrorBody` is likely stable and cheap; the added lazy indirection may not justify immediate churn without evidence of failures.",
+      "gpt_score": 430,
+      "opus_score": 0,
+      "tertiary_score": 450,
+      "delta": 430,
+      "average_score": 430,
+      "source": "gpt_scored",
+      "would_integrate": false,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-007",
+      "description": "Programmatic character enumeration improves long-term test completeness and prevents silent coverage drift as the registry grows, with minimal complexity.",
+      "gpt_score": 660,
+      "opus_score": 0,
+      "tertiary_score": 620,
+      "delta": 660,
+      "average_score": 660,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-008",
+      "description": "Expanding JSON envelope variants could improve robustness, but broad top-level key matching may increase false positives unless constrained by additional shape checks.",
+      "gpt_score": 560,
+      "opus_score": 0,
+      "tertiary_score": 550,
+      "delta": 560,
+      "average_score": 560,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-001",
+      "concern": "Confusable-script bypass: NFKC normalization does not unify Cyrillic А (U+0410), Greek Α (U+0391), or other visually-identical glyphs with Latin A (U+0041). An attacker, a misbehaving upstream emitting localized error strings, or even a copy-paste-from-browser quirk could produce `АPI Error: 500 …` (with Cyrillic А) which would render IDENTICALLY in Discord but would NOT match any anchored ASCII-only regex in `RAW_API_ERROR_PATTERNS`. The triple-defense (trimStart + NFKC + zero-width strip) is incomplete against script-confusable substitution.",
+      "severity": "HIGH",
+      "severity_score": 760,
+      "why_matters": "The whole defense-in-depth claim of this PR rests on 'a raw API error CANNOT reach the wire'. A single Cyrillic codepoint defeats the entire substitution path while preserving visual identity — the user sees `АPI Error: 500 Internal Server Error` exactly as if the sanitizer never fired. This is exactly the failure class the PR was designed to prevent. Note: legitimate Anthropic/Bedrock SDKs always emit ASCII, so today this is theoretical, BUT (a) future SDK localizations, (b) error-message-passing through a translation/logging layer that 'helpfully' converts to typographic quotes/letters, and (c) test fixtures pasted from rich-text sources are realistic vectors. The SKP-001 fix in the PR addressed zero-width strip but did not address confusables.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts — sanitizeOutboundBody probe construction (`.normalize('NFKC').replace(/[zw]/g, '').trimStart()`)",
+      "recommendation": "Apply a confusables-fold pass before regex matching. Two options: (1) use Unicode's `Confusables.txt` mapping (TR39) via a small precomputed lookup for the high-frequency confusable set (Cyrillic А/В/С/Е/Н/К/М/О/Р/Т/Х, Greek Α/Β/Ε/Ζ/Η/Ι/Κ/Μ/Ν/Ο/Ρ/Τ/Υ/Χ → Latin) covering the chars that actually appear in `API Error`/`Internal Server Error`/`bedrock`/`orchestrator`/etc.; (2) reject any probe whose Script property is not entirely Latin/Common before matching, substituting to errorTemplate on rejection. Option (1) is the lower-risk add. Add a regression test mirroring the existing zero-width-strip test suite with confusable variants of each pattern.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Zero-width/control-character hardening is partial; only a narrow subset is stripped (`U+200B–U+200F`, `U+2060`, `U+FEFF`). Other invisible controls (for example bidi isolates `U+2066–U+2069`, `U+061C`, `U+00AD`) can still obfuscate the prefix and bypass anchored matching.",
+      "severity": "HIGH",
+      "severity_score": 740,
+      "why_matters": "A crafted or transformed upstream error string can evade sanitization and leak raw error material to Discord, directly violating the in-character-only invariant.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts (`probe` normalization/strip step)",
+      "recommendation": "Expand normalization to remove a broader, explicit set of Unicode format/control chars used for text obfuscation, and add regression tests for each added class.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "pr",
+  "document": "grimoires/loa/a2a/bug-20260511-b6eb97/flatline-input/pr-54-diff-v3.md",
+  "domain": "software development",
+  "tertiary_model_used": "gemini-2.5-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "hitl",
+    "mode_reason": "Simstim workflow active (.run/simstim-state.json state=RUNNING)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-11T21:07:09Z",
+  "metrics": {
+    "total_latency_ms": 192000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}
