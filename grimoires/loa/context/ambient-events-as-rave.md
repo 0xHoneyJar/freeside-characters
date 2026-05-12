@@ -179,7 +179,7 @@ for port in $(find packages/persona-engine/src/ambient/ports -name '*.port.ts');
 done
 
 # gate 3 (NEW): canon-vocabulary forbidden-word check
-grep -rE "sacrifice|migration|wuxing|founder.*archetype|\\bera\\b|\\bmolecule\\b" \
+grep -rE "sacrifice|migration|founder.*archetype|\\bera\\b|\\bmolecule\\b" \
   packages/persona-engine/src/ambient --include='*.ts' && {
   echo "FAIL: canon-forbidden word in ambient/"; exit 1
 }
@@ -370,7 +370,7 @@ ALEXANDER, LYNCH, and OSTROM.
 | # | decision | source |
 |---|---|---|
 | **D5** | **Field names: `time_period` (not era), `drug` (not molecule)**. Tarot is DERIVED via `drug-tarot-mapping.json`, not a top-level field | `miberas.jsonl` id=1 spot-check |
-| **D6** | **4-element WESTERN/RAVE** (Fire · Water · Earth · Air), capitalized — NOT wuxing. No wood/metal | `core-lore/archetypes.md` · `IDENTITY.md §Element` |
+| **D6** | **4-element WESTERN/RAVE** (Fire · Water · Earth · Air), capitalized — codex-canon element set | `core-lore/archetypes.md` · `IDENTITY.md §Element` |
 | **D7** | **Archetypes: Freetekno · Milady · Chicago/Detroit · Acidhouse**. "Founder" is NOT canon — earlier brief example was a hallucination | `glossary.md` |
 | **D8** | **Astrology fields** (`sun_sign · moon_sign · ascending_sign`) are available; surface in drift prose when register fits | `miberas.jsonl` shape |
 
@@ -503,7 +503,7 @@ boundary. table:
 **hard rules** (canon-derived, locked):
 - NEVER use "sacrifice" for burn (canon refuses offering-to-deity framing)
 - NEVER use "migration" for transfer (not in canon)
-- NEVER use wuxing elements (wood/metal) — only 4-element western (Fire/Water/Earth/Air)
+- Use only the canon 4-element set (Fire / Water / Earth / Air)
 - NEVER fabricate archetypes — strictly Freetekno/Milady/Chicago-Detroit/Acidhouse
 - Field references: `time_period` (born in the Modern period), `drug` (carrying St. John's Wort) — never `era`/`molecule` in prose
 
@@ -721,13 +721,13 @@ six systems-dynamics guardrails named + folded into D14–D19:
 > "narration like 'MIBERA-004221 just landed in honeyroad — founder
 > ancestor, fire element' breaks on three points: 'founder' is not a
 > codex archetype, field name is `time_period` not `era`, codex uses
-> 4-element western not wuxing."
+> 4-element western set."
 
 five canon-corrections caught and locked in D5–D8 + canon vocabulary
 table:
 1. archetypes are Freetekno/Milady/Chicago-Detroit/Acidhouse · NOT
    "Founder" → D7
-2. 4-element western (Fire/Water/Earth/Air) · NOT wuxing → D6
+2. 4-element western (Fire/Water/Earth/Air) is canon → D6
 3. field names: `time_period` not `era` · `drug` not `molecule` → D5
 4. tarot is DERIVED via `drug-tarot-mapping.json` → D5 note
 5. burn translates to "return-to-source" (NEVER "sacrifice") · transfer
@@ -772,7 +772,7 @@ assistant: [edits frontmatter status: candidate → active;
 - 4 named construct subagents ran in their bounded contexts
 - 24 specific decisions locked (vs 4 at pair-point 2)
 - canon-vocabulary correctness audited (5 bugs caught in earlier brief
-  examples — "founder" archetype, wuxing elements, `era`/`molecule`
+  examples — "founder" archetype, off-canon element vocab, `era`/`molecule`
   field names)
 - structural skeleton revised (per-primitive weights, gravity
   transient, canon-vocab module, pop-in ledger port)

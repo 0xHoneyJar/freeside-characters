@@ -46,5 +46,29 @@ export const PopInLedgerMock = Layer.succeed(
             e.ts <= untilTs,
         ),
       ),
+
+    appendIfNoFire: ({ proposedEntry, afterTs }) =>
+      Effect.sync(() => {
+        let blocker = null as typeof _entries[number] | null;
+        for (const e of _entries) {
+          if (e.zone !== proposedEntry.zone) continue;
+          if (e.decision !== "fired" && e.decision !== "bypassed") continue;
+          if (e.ts <= afterTs) continue;
+          if (e.ts > proposedEntry.ts) continue;
+          if (e.character_id === proposedEntry.character_id) continue;
+          if (!blocker || e.ts > blocker.ts) blocker = e;
+        }
+        if (blocker) {
+          _entries.push({
+            ...proposedEntry,
+            decision: "yielded_to_character",
+            triggering_axis: null,
+            yielded_to: blocker.character_id,
+          });
+          return { writtenAsProposed: false, yieldedTo: blocker.character_id };
+        }
+        _entries.push(proposedEntry);
+        return { writtenAsProposed: true, yieldedTo: null };
+      }),
   }),
 );

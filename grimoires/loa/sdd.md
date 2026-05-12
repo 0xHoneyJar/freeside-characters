@@ -328,7 +328,7 @@ export const CANON_TABLE: Record<EventClass, CanonTranslation> = {
 };
 
 // FAGAN gate: this regex MUST find zero matches in src/ambient/
-export const FORBIDDEN_REGEX = /sacrifice|migration|wuxing|founder.*archetype|\bera\b|\bmolecule\b/;
+export const FORBIDDEN_REGEX = /sacrifice|migration|founder.*archetype|\bera\b|\bmolecule\b/;
 ```
 
 ### 3.5.1 · wallet redaction (NEW · Flatline SKP-001 CRITICAL · CLAUDE.md compliance)

@@ -32,6 +32,19 @@ export const REPLAY_WINDOW_SECONDS = 60;
  * future tuning is independent. env-overridable via `EVENT_LATE_ARRIVAL_HOURS`. */
 export const LATE_ARRIVAL_REJECT_HOURS_DEFAULT = 6;
 
+/** Reads the late-arrival reject horizon from env. Falls back to the default
+ * if unset or non-positive. Closes Flatline F4 (env var defined but not
+ * consumed). */
+export function lateArrivalRejectHoursFromEnv(): number {
+  const raw = process.env.EVENT_LATE_ARRIVAL_HOURS;
+  if (!raw) return LATE_ARRIVAL_REJECT_HOURS_DEFAULT;
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return LATE_ARRIVAL_REJECT_HOURS_DEFAULT;
+  }
+  return parsed;
+}
+
 /** NFR-27 ring buffer cap. ~24h coverage at ~200 events/day baseline. */
 export const SEEN_RING_BUFFER_MAX = 5000;
 
@@ -102,11 +115,12 @@ export function computeOverlapSince(
 }
 
 /** NFR-15 late-arrival check. Returns true if the event is older than the
- * reject horizon — caller should drop + log `late_arrival`. */
+ * reject horizon — caller should drop + log `late_arrival`. Default
+ * reads from env via `lateArrivalRejectHoursFromEnv()`. */
 export function isLateArrival(
   eventTime: string,
   cursorTime: string,
-  rejectHours: number = LATE_ARRIVAL_REJECT_HOURS_DEFAULT,
+  rejectHours: number = lateArrivalRejectHoursFromEnv(),
 ): boolean {
   const eventMs = Date.parse(eventTime);
   const cursorMs = Date.parse(cursorTime);

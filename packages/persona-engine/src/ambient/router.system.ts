@@ -15,10 +15,7 @@
  */
 
 import { Effect } from "effect";
-import {
-  PopInLedger,
-  type GetLastFireParams,
-} from "./ports/pop-in-ledger.port.ts";
+import { PopInLedger } from "./ports/pop-in-ledger.port.ts";
 import {
   type Budget,
   type LedgerEntry,
@@ -59,41 +56,24 @@ export interface RouterDecision {
 /**
  * Pure-ish: yields ledger ops (the only Effect-y part). All logic is
  * synchronous given the inputs.
+ *
+ * F13 TOCTOU closure (BB review · post-PR fixup): the inter-character
+ * coordination check is no longer a separate `getLastFire` call followed
+ * later by a write. Inter-character atomicity now lives in
+ * `ledger.appendIfNoFire` — caller invokes that helper for "fired" /
+ * "bypassed" decisions. The router decision tree below covers all
+ * character-local gates (refractory + cap + bypass + threshold); the
+ * shared-zone check is deferred to the atomic write boundary.
  */
 export const routerDecide = (
   input: RouterInput,
 ): Effect.Effect<RouterDecision, never, PopInLedger> =>
   Effect.gen(function* (_) {
-    const ledger = yield* _(PopInLedger);
+    yield* _(PopInLedger); // ensures DI even though we only call ledger from appendDecision now
     const thresholds = input.thresholds ?? DEFAULT_POP_IN_THRESHOLDS;
     const refractoryHrs =
       input.refractoryHours ?? POP_IN_REFRACTORY_HOURS_DEFAULT;
     const rng = input.rng ?? Math.random;
-
-    // STEP 1: Inter-character coordination (D17 · S3.T2a)
-    if (INTER_CHARACTER_SHARED_REFRACTORY) {
-      const afterMs = Date.parse(input.now) - refractoryHrs * 3_600_000;
-      const afterTs = new Date(afterMs).toISOString();
-      const params: GetLastFireParams = { zone: input.zone, afterTs };
-      const lastFire = yield* _(
-        ledger.getLastFire(params).pipe(
-          Effect.catchAll(() => Effect.succeed(null as LedgerEntry | null)),
-        ),
-      );
-      if (lastFire && lastFire.character_id !== input.characterId) {
-        const entry: LedgerEntry = {
-          ts: input.now,
-          zone: input.zone,
-          character_id: input.characterId,
-          decision: "yielded_to_character",
-          triggering_axis: null,
-          event_class: input.latestEvent?.event_class ?? null,
-          event_id: input.latestEvent?.id ?? null,
-          yielded_to: lastFire.character_id,
-        };
-        return { entry, shouldFire: false, triggeringAxis: null };
-      }
-    }
 
     // STEP 2: Per-character refractory + daily cap
     const utcDate = toUtcDate(input.now);
@@ -197,15 +177,41 @@ export const routerDecide = (
     return { entry, shouldFire: true, triggeringAxis };
   });
 
-/** Helper: write the decision's ledger entry. Used by callers post-decision. */
+/** F13-aware write helper: for fire-class decisions (fired / bypassed),
+ * routes through `appendIfNoFire` so the inter-character race is closed
+ * atomically. Returns the actual outcome — the decision may be downgraded
+ * to a yielded_to_character if another character won the race.
+ *
+ * For non-fire decisions (capped / queued / suppressed / yielded), writes
+ * verbatim via `append`. */
 export const appendDecision = (
   decision: RouterDecision,
-): Effect.Effect<void, never, PopInLedger> =>
+  refractoryHours: number = POP_IN_REFRACTORY_HOURS_DEFAULT,
+): Effect.Effect<{ wrote: boolean; yieldedTo: string | null }, never, PopInLedger> =>
   Effect.gen(function* (_) {
     const ledger = yield* _(PopInLedger);
+    if (decision.shouldFire && INTER_CHARACTER_SHARED_REFRACTORY) {
+      // atomic check-then-write under F13 closure
+      const afterMs = Date.parse(decision.entry.ts) - refractoryHours * 3_600_000;
+      const afterTs = new Date(afterMs).toISOString();
+      const result = yield* _(
+        ledger
+          .appendIfNoFire({ proposedEntry: decision.entry, afterTs })
+          .pipe(
+            Effect.catchAll(() =>
+              Effect.succeed({
+                writtenAsProposed: false as const,
+                yieldedTo: null as string | null,
+              }),
+            ),
+          ),
+      );
+      return { wrote: result.writtenAsProposed, yieldedTo: result.yieldedTo };
+    }
     yield* _(
       ledger.append(decision.entry).pipe(
         Effect.catchAll(() => Effect.void),
       ),
     );
+    return { wrote: true, yieldedTo: null };
   });

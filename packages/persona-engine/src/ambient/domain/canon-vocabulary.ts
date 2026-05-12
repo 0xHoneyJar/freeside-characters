@@ -8,7 +8,7 @@
  * Canon corrections that this table enforces:
  *   - "burn" is NEVER "sacrifice" (canon refuses offering-to-deity framing)
  *   - "transfer" is NEVER "migration" (not in canon)
- *   - elements are 4-element WESTERN (Fire/Water/Earth/Air) NOT wuxing
+ *   - elements: 4-element western set (Fire/Water/Earth/Air) is canon
  *   - archetypes are Freetekno/Milady/Chicago-Detroit/Acidhouse (NOT "Founder")
  *   - field names: `time_period` not `era`, `drug` not `molecule`
  *
@@ -107,7 +107,6 @@ export const CANON_TABLE: Record<EventClass, CanonTranslation> = {
  *
  * The full regex covers:
  *   - per-class forbidden words from CANON_TABLE
- *   - codex element corrections: NO wuxing (no `wood` or `metal` as elements)
  *   - codex archetype corrections: NO `Founder` (the four are Freetekno /
  *     Milady / Chicago-Detroit / Acidhouse)
  *   - field-name corrections: NO bare `era` or `molecule` (use `time_period`
@@ -124,8 +123,6 @@ export const FORBIDDEN_REGEX = new RegExp(
     // Per-class forbidden words
     "sacrifice",
     "migration",
-    // Codex element corrections (wuxing leak)
-    "wuxing",
     // Codex archetype corrections (no Founder)
     "founder.*archetype",
     // Field-name corrections

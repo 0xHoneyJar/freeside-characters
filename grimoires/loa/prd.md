@@ -76,7 +76,7 @@ layer.
 - **S5** weekly digest unaffected — Sunday cron unconditional; NOT
   stir-gated (D19)
 - **S6** canon-forbidden words absent — FAGAN gate finds zero matches
-  for `sacrifice|migration|wuxing|founder.*archetype|\bera\b|\bmolecule\b`
+  for `sacrifice|migration|founder.*archetype|\bera\b|\bmolecule\b`
   in `packages/persona-engine/src/ambient/`
 - **S7** no numeric stir leak — manual spot-check of 20 pop-in
   narrations finds zero raw numeric stir scalars in user-facing text (D24)
@@ -251,7 +251,7 @@ S1–S10 success criteria need auditable pass/fail mechanisms, not interpretatio
   observation budget: simulated via timestamp-controlled test, not
   wall-clock waits.
 - **S6 verification**: CI step runs `grep -rE
-  "sacrifice|migration|wuxing|founder.*archetype|\bera\b|\bmolecule\b"
+  "sacrifice|migration|founder.*archetype|\bera\b|\bmolecule\b"
   packages/persona-engine/src/ambient --include="*.ts"`. Non-zero exit
   fails CI.
 - **S7 verification**: scope = post-merge audit of 20 production

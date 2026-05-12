@@ -118,5 +118,45 @@ export const PopInLedgerLive = Layer.succeed(
             e.ts <= untilTs,
         );
       }),
+
+    /** F13 TOCTOU closure: single sync block reads + (conditionally) writes
+     * — under singleton invariant (NFR-21), Node.js single-threaded sync
+     * execution guarantees the check-then-write is atomic w.r.t. other
+     * fibers in this process. Cross-process atomicity is handled by the
+     * deployment invariant (`task_count: 1`); a second instance would
+     * crash at boot per NFR-25 before reaching here. */
+    appendIfNoFire: ({ proposedEntry, afterTs }) =>
+      Effect.sync(() => {
+        const all = _readAllAcrossArchives();
+        // Check: any character fired in (afterTs, proposedEntry.ts] for this zone?
+        let blocker: LedgerEntry | null = null;
+        for (const e of all) {
+          if (e.zone !== proposedEntry.zone) continue;
+          if (e.decision !== "fired" && e.decision !== "bypassed") continue;
+          if (e.ts <= afterTs) continue;
+          if (e.ts > proposedEntry.ts) continue;
+          if (e.character_id === proposedEntry.character_id) continue;
+          if (!blocker || e.ts > blocker.ts) blocker = e;
+        }
+        if (blocker) {
+          // Lex-min comparison: if the proposing character is lex-LESS than
+          // the blocker, the proposer would have won a true race. We honor
+          // wall-clock-first-wins here since the blocker's entry is already
+          // persisted — but the proposing character still records a yield
+          // to make the race outcome auditable.
+          const yieldEntry: LedgerEntry = {
+            ...proposedEntry,
+            decision: "yielded_to_character",
+            triggering_axis: null,
+            yielded_to: blocker.character_id,
+          };
+          _checkMonthlyRotate(proposedEntry.ts);
+          _atomicAppend(yieldEntry);
+          return { writtenAsProposed: false, yieldedTo: blocker.character_id };
+        }
+        _checkMonthlyRotate(proposedEntry.ts);
+        _atomicAppend(proposedEntry);
+        return { writtenAsProposed: true, yieldedTo: null };
+      }),
   }),
 );

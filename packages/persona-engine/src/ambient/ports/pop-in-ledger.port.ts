@@ -27,6 +27,23 @@ export interface GetLastFireParams {
   readonly afterTs: string;
 }
 
+export interface AppendIfNoFireParams {
+  readonly proposedEntry: LedgerEntry;
+  /** Lower bound for the check-side search window
+   * — typically `now - refractory_hours`. */
+  readonly afterTs: string;
+}
+
+export interface AppendIfNoFireResult {
+  /** True if the proposedEntry's decision was written verbatim.
+   * False if another character fired in the window and a
+   * yielded_to_character entry was written instead. */
+  readonly writtenAsProposed: boolean;
+  /** When `writtenAsProposed` is false, this names the character_id
+   * that holds the window. Null otherwise. */
+  readonly yieldedTo: string | null;
+}
+
 export class PopInLedger extends Context.Tag("ambient/PopInLedger")<
   PopInLedger,
   {
@@ -53,5 +70,18 @@ export class PopInLedger extends Context.Tag("ambient/PopInLedger")<
       sinceTs: string;
       untilTs: string;
     }) => Effect.Effect<ReadonlyArray<LedgerEntry>, PopInLedgerError>;
+
+    /** F13 TOCTOU closure: atomic check-then-write under a single
+     * flock-acquired critical section. If another character has a "fired"
+     * entry within (afterTs, now] for the same zone, this character
+     * yields — a "yielded_to_character" entry is written in place of the
+     * proposedEntry. Otherwise proposedEntry is written verbatim.
+     *
+     * Caller still does refractory + daily-cap checks (those are
+     * character-local; only the inter-character race needs atomicity).
+     * Lex-min character_id wins ties for fairness/determinism. */
+    readonly appendIfNoFire: (
+      params: AppendIfNoFireParams,
+    ) => Effect.Effect<AppendIfNoFireResult, PopInLedgerError>;
   }
 >() {}

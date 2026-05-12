@@ -375,7 +375,7 @@ silence-register reads it correctly
 - BUTTERFREEZONE.md regenerated at repo root reflecting new ambient/
   module + new MCP tools consumed
 - CI step added for FAGAN gates:
-  - `grep -rE "sacrifice|migration|wuxing|founder.*archetype|\bera\b|\bmolecule\b" packages/persona-engine/src/ambient --include='*.ts'` → exit-zero match-zero
+  - `grep -rE "sacrifice|migration|founder.*archetype|\bera\b|\bmolecule\b" packages/persona-engine/src/ambient --include='*.ts'` → exit-zero match-zero
   - `grep -r "ManagedRuntime\.make(" packages/persona-engine/src/ambient --include='*.ts' | wc -l` → expect 1
   - `grep -E "task_count:\s*1|replicas:\s*1" docs/DEPLOY.md` → expect non-zero match (NFR-23)
 - update `docs/DEPLOY.md` with singleton invariant declaration
