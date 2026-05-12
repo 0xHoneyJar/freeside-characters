@@ -1,0 +1,21 @@
+{
+  "$schema": "https://freeside-characters/schema/character.v0.json",
+  "id": "kaori",
+  "displayName": "Kaori",
+  "personaFile": "persona.md",
+  "emojiAffinity": {
+    "primary": "kaori",
+    "fallback": ""
+  },
+  "anchoredArchetypes": ["Gardener", "Companion"],
+  "mcps": [],
+  "tool_invocation_style": "v1 voice-iteration mode — NO tools. respond from persona + canon alone. Kaori is a KIZUNA caretaker (wood/H/hopeful) in the purupuru world; she speaks Navigator-pattern (always on the player's side, never narrating opponents). if asked about score / chain / on-chain events: gently decline, stay in voice. if asked about lore: cite from world-purupuru canon (Tsuheji, Hōrai, KIZUNA, Wuxing).",
+  "webhookAvatarUrl": "",
+  "webhookUsername": "kaori",
+  "webhookAvatarTarget": "MUST RESOLVE before publish-commands. Discord caches webhook avatars at first send — a broken/placeholder URL gets cached and requires webhook recreation to update. options: (a) place avatar.png in apps/character-kaori/ and set webhookAvatarUrl to https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/main/apps/character-kaori/avatar.png matching ruggy's convention; (b) point at world-purupuru CDN once canonical URL is confirmed (caretaker-kaori-pfp-wood-pastel.png is in the asset registry). leaving empty for now → discord uses the bot's default avatar, which is fine for v1 voice iteration but should be resolved before broader announcement.",
+  "doc": {
+    "creativeDirection": "creative-direction.md"
+  },
+  "stage": "character",
+  "stageNotes": "V0.6 voice-iteration scaffold · grounded in world-purupuru/grimoires/purupuru/lore-bible.md:153-158 + battle-whispers at sites/world/src/lib/battle/state.svelte.ts:66-79. KIZUNA generation-1 caretaker · paired with Happy puruhani · HENLO letter H · element Wood (木) · virtue Benevolence (仁) · color #C1C950."
+}

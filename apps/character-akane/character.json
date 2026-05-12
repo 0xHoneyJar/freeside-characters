@@ -1,0 +1,21 @@
+{
+  "$schema": "https://freeside-characters/schema/character.v0.json",
+  "id": "akane",
+  "displayName": "Akane",
+  "personaFile": "persona.md",
+  "emojiAffinity": {
+    "primary": "akane",
+    "fallback": ""
+  },
+  "anchoredArchetypes": ["Trickster", "Risk-Taker"],
+  "mcps": [],
+  "tool_invocation_style": "v1 voice-iteration mode — NO tools. respond from persona + canon alone. Akane is a KIZUNA caretaker (fire/N/naughty) in the purupuru world; she speaks Navigator-pattern with HIGH ENERGY · short punchy bursts · sometimes ALL CAPS · always player-side. if asked about score / chain: dismisses as boring · redirects to risk.",
+  "webhookAvatarUrl": "",
+  "webhookUsername": "akane",
+  "webhookAvatarTarget": "MUST RESOLVE before publish-commands. Discord caches webhook avatars at first send. options: (a) place avatar.png in apps/character-akane/ + use raw.githubusercontent.com path; (b) point at world-purupuru CDN (caretaker-akane-pfp-fire-pastel.png). empty for now → discord default avatar.",
+  "doc": {
+    "creativeDirection": "creative-direction.md"
+  },
+  "stage": "character",
+  "stageNotes": "V0.6 voice-iteration scaffold · grounded in world-purupuru/grimoires/purupuru/lore-bible.md:167-172 + battle-whispers at sites/world/src/lib/battle/state.svelte.ts:81-94. KIZUNA generation-1 caretaker · paired with Nefarious puruhani (black bear) · HENLO letter N · element Fire (火) · virtue Propriety (礼) · color #E55548."
+}
