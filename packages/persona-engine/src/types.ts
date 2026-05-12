@@ -56,6 +56,31 @@ export interface CharacterConfig {
   displayName?: string;
   webhookAvatarUrl?: string;
   webhookUsername?: string;
+
+  /**
+   * V0.7 (2026-05-12) per-character guild routing for slash command registration.
+   *
+   * When set, slash commands for this character are PUT only to the listed
+   * Discord guilds — eliminating cross-guild bleed at the registration
+   * boundary (vs. relying on LLM persona-compliance at dispatch time).
+   *
+   * When empty/missing, falls back to the publishCommands `guildId` arg
+   * (sourced from `DISCORD_GUILD_ID` env in auto-publish) — backward
+   * compatible with the V0.6 single-guild model.
+   *
+   * Built-in/system commands (/satoshi-image, /quest) are routed alongside
+   * their parent character — /satoshi-image goes wherever satoshi goes,
+   * /quest goes wherever mongolian (quest-bound) goes. This is enforced
+   * by buildCommandSet's conditional add (only included if the parent
+   * character is in the guild's character subset).
+   *
+   * Examples:
+   *   ruggy/satoshi/mongolian → ["1135545260538339420"]  // THJ only
+   *   kaori/nemu/akane/ren/ruan → ["1495534680617910396"]  // purupuru only
+   *
+   * @see apps/bot/src/lib/publish-commands.ts
+   */
+  publishGuilds?: ReadonlyArray<string>;
   /**
    * V0.6-D voice/v4: anchored archetypes per character — the 1-2 cabal
    * archetypes that genuinely map to who the character IS (NOT rotating

@@ -47,6 +47,12 @@ interface CharacterJson {
    *  blueprints, no fences. Substituted into the environment-context
    *  block at compose time. Optional; omit for no guidance line. */
   tool_invocation_style?: string;
+  /** V0.7 (2026-05-12): per-character Discord guild IDs for slash command
+   *  registration. When set, slash commands route only to listed guilds;
+   *  when omitted, falls back to publishCommands `guildId` arg (env
+   *  DISCORD_GUILD_ID in auto-publish). Eliminates cross-guild bleed at
+   *  the registration boundary. */
+  publishGuilds?: string[];
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -86,6 +92,7 @@ export function loadCharacter(id: string): CharacterConfig {
     slash_commands: json.slash_commands,
     mcps: json.mcps,
     tool_invocation_style: json.tool_invocation_style,
+    publishGuilds: json.publishGuilds,
   };
 }
 

@@ -64,11 +64,22 @@ export interface PublishCommandsResult {
  * Register slash commands with Discord. Idempotent — Discord PUT replaces
  * the full set per (application, guild) so duplicate calls don't leak.
  *
- * @throws Error on missing/invalid auth, network failure, or non-2xx response.
+ * Per-character guild routing (V0.7 · 2026-05-12): if any character has
+ * `publishGuilds` set, characters are grouped by their target guilds and
+ * each guild receives only its allowed characters. Characters without
+ * `publishGuilds` fall back to `opts.guildId` (which may be undefined for
+ * global publish — backward-compat with V0.6 single-guild model).
+ *
+ * Returns one PublishCommandsResult per guild published. For backward-
+ * compat callers that expected a single result, use `results[0]`.
+ *
+ * @throws Error on missing/invalid auth, network failure, or non-2xx response
+ *         FOR ANY guild publish. Earlier guilds may have succeeded before
+ *         the throwing call; check returned results array for what landed.
  */
 export async function publishCommands(
   opts: PublishCommandsOptions,
-): Promise<PublishCommandsResult> {
+): Promise<PublishCommandsResult[]> {
   if (!opts.botToken) {
     throw new Error('publishCommands: botToken is required');
   }
@@ -85,35 +96,59 @@ export async function publishCommands(
     throw new Error('publishCommands: no characters provided');
   }
 
-  const commands = buildCommandSet(opts.characters);
-
-  const url = opts.guildId
-    ? `${DISCORD_API_BASE}/applications/${applicationId}/guilds/${opts.guildId}/commands`
-    : `${DISCORD_API_BASE}/applications/${applicationId}/commands`;
-
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bot ${opts.botToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(commands),
-  });
-
-  if (!response.ok) {
-    const txt = await response.text().catch(() => '<unreadable>');
-    throw new Error(
-      `publishCommands: Discord PUT failed status=${response.status} body=${txt}`,
-    );
+  // Group characters by target guild. Characters with publishGuilds set
+  // route per-guild; characters without it fall back to opts.guildId
+  // (which may be undefined = global publish).
+  const byGuild = new Map<string | undefined, CharacterConfig[]>();
+  for (const char of opts.characters) {
+    const targets =
+      char.publishGuilds && char.publishGuilds.length > 0
+        ? Array.from(char.publishGuilds)
+        : [opts.guildId];
+    for (const guild of targets) {
+      const existing = byGuild.get(guild);
+      if (existing) {
+        existing.push(char);
+      } else {
+        byGuild.set(guild, [char]);
+      }
+    }
   }
 
-  const result = (await response.json()) as Array<{ id: string; name: string }>;
-  return {
-    registered: result.length,
-    commands: result.map((r) => ({ name: r.name, id: r.id })),
-    scope: opts.guildId ? 'guild' : 'global',
-    guildId: opts.guildId,
-  };
+  const results: PublishCommandsResult[] = [];
+  for (const [guildId, characters] of byGuild) {
+    const commands = buildCommandSet(characters);
+
+    const url = guildId
+      ? `${DISCORD_API_BASE}/applications/${applicationId}/guilds/${guildId}/commands`
+      : `${DISCORD_API_BASE}/applications/${applicationId}/commands`;
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bot ${opts.botToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(commands),
+    });
+
+    if (!response.ok) {
+      const txt = await response.text().catch(() => '<unreadable>');
+      throw new Error(
+        `publishCommands: Discord PUT failed for guild=${guildId ?? '(global)'} status=${response.status} body=${txt}`,
+      );
+    }
+
+    const result = (await response.json()) as Array<{ id: string; name: string }>;
+    results.push({
+      registered: result.length,
+      commands: result.map((r) => ({ name: r.name, id: r.id })),
+      scope: guildId ? 'guild' : 'global',
+      guildId,
+    });
+  }
+
+  return results;
 }
 
 /**

@@ -13,6 +13,7 @@
   "webhookAvatarUrl": "",
   "webhookUsername": "kaori",
   "webhookAvatarTarget": "MUST RESOLVE before publish-commands. Discord caches webhook avatars at first send — a broken/placeholder URL gets cached and requires webhook recreation to update. options: (a) place avatar.png in apps/character-kaori/ and set webhookAvatarUrl to https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/main/apps/character-kaori/avatar.png matching ruggy's convention; (b) point at world-purupuru CDN once canonical URL is confirmed (caretaker-kaori-pfp-wood-pastel.png is in the asset registry). leaving empty for now → discord uses the bot's default avatar, which is fine for v1 voice iteration but should be resolved before broader announcement.",
+  "publishGuilds": ["1495534680617910396"],
   "doc": {
     "creativeDirection": "creative-direction.md"
   },
