@@ -14,13 +14,46 @@ import { EventFeed } from "../ports/event-source.port.ts";
 import type { EventFeedError } from "../ports/event-source.port.ts";
 import { CircuitBreaker } from "../ports/circuit-breaker.port.ts";
 import { MiberaEvent } from "../domain/event.ts";
-import { computeOverlapSince, REPLAY_WINDOW_SECONDS } from "../domain/cursor.ts";
+import {
+  computeOverlapSince,
+  isLateArrival,
+  lateArrivalRejectHoursFromEnv,
+  REPLAY_WINDOW_SECONDS,
+  SEEN_RING_BUFFER_MAX,
+} from "../domain/cursor.ts";
 import type { EventCursor } from "../domain/cursor.ts";
 import { callScoreToolAmbient } from "./score-mcp-client.ts";
 import { loadConfig } from "../../config.ts";
 
 const SCORE_TIMEOUT_MS = 15_000;
 const SCORE_CB_KEY = "score-mcp";
+
+/** BB F4 closure: in-memory dedup ring for the consumer-side dedup that
+ * the cursor overlap window mandates (NFR-13). Maintained per process;
+ * survives across calls. Under singleton invariant (NFR-21), one ring
+ * per zone (or null for global) is sufficient. */
+const _seenRings: Map<string, Array<string>> = new Map();
+
+function _seenKey(zone: EventCursor["zone"]): string {
+  return zone ?? "__global__";
+}
+
+function _markSeen(zone: EventCursor["zone"], id: string): void {
+  const k = _seenKey(zone);
+  let ring = _seenRings.get(k);
+  if (!ring) {
+    ring = [];
+    _seenRings.set(k, ring);
+  }
+  ring.push(id);
+  while (ring.length > SEEN_RING_BUFFER_MAX) ring.shift();
+}
+
+function _hasSeen(zone: EventCursor["zone"], id: string): boolean {
+  const ring = _seenRings.get(_seenKey(zone));
+  if (!ring) return false;
+  return ring.includes(id);
+}
 
 interface RawEventsResponse {
   events: ReadonlyArray<unknown>;
@@ -106,17 +139,47 @@ export const EventSourceLive = Layer.effect(
           );
 
           // NFR-11 unknown-class quarantine via Either decode
+          // BB F4 closure: also apply late-arrival rejection (NFR-15) and
+          // dedup ring filter (NFR-13) before adding to the output set.
           const decodeOne = Schema.decodeUnknownEither(MiberaEvent);
           let quarantined = 0;
+          let lateRejected = 0;
+          let duplicateSkipped = 0;
           const events: Array<typeof MiberaEvent.Type> = [];
+          const lateArrivalCutoffHours = lateArrivalRejectHoursFromEnv();
           for (const evt of raw.events) {
             const result = decodeOne(evt);
-            if (result._tag === "Right") {
-              events.push(result.right);
-            } else {
+            if (result._tag !== "Right") {
               quarantined += 1;
-              // surface to trajectory in S3.T4 scheduler integration
+              continue;
             }
+            const decoded = result.right;
+            // NFR-13 dedup: same tx_hash+log_index → same id → already seen
+            const idStr = decoded.id as unknown as string;
+            if (_hasSeen(cursor.zone, idStr)) {
+              duplicateSkipped += 1;
+              continue;
+            }
+            // NFR-15 late-arrival: events older than cursor - LATE_ARRIVAL_HOURS
+            if (
+              isLateArrival(
+                decoded.occurred_at,
+                cursor.event_time,
+                lateArrivalCutoffHours,
+              )
+            ) {
+              lateRejected += 1;
+              continue;
+            }
+            _markSeen(cursor.zone, idStr);
+            events.push(decoded);
+          }
+          // Surface late-rejected + duplicate counters to debug logs
+          if (lateRejected > 0 || duplicateSkipped > 0) {
+            console.log(
+              `event-source: zone=${cursor.zone ?? "global"} ` +
+                `late_rejected=${lateRejected} duplicate_skipped=${duplicateSkipped}`,
+            );
           }
 
           const nextCursor: EventCursor = {

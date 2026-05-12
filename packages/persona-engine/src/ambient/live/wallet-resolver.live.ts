@@ -16,7 +16,7 @@ import {
   type WalletIdentity,
 } from "../ports/wallet-resolver.port.ts";
 import { CircuitBreaker } from "../ports/circuit-breaker.port.ts";
-import { callScoreToolAmbient } from "./score-mcp-client.ts";
+import { callAmbientMcpTool } from "./score-mcp-client.ts";
 import { loadConfig } from "../../config.ts";
 
 const CACHE_MAX = 200;
@@ -80,10 +80,14 @@ export const WalletResolverLive = Layer.effect(
           }
 
           const config = loadConfig();
+          // BB F10 closure: resolve_wallet lives on freeside-auth-mcp,
+          // not score-mcp. Routing through callAmbientMcpTool(endpoint:
+          // "freeside-auth") reads FREESIDE_AUTH_MCP_URL + KEY env vars.
           const call = Effect.tryPromise({
             try: (signal: AbortSignal) =>
-              callScoreToolAmbient<unknown>(
+              callAmbientMcpTool<unknown>(
                 config,
+                "freeside-auth",
                 "resolve_wallet",
                 { wallet: addr },
                 signal,

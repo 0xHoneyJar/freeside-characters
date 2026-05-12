@@ -30,14 +30,20 @@ function _ensureDir(): void {
 }
 
 function _atomicAppend(entry: LedgerEntry): void {
+  // BB F6 closure: POSIX guarantees `write()` calls ≤ PIPE_BUF bytes are
+  // atomic relative to other writers when O_APPEND is set. A single
+  // JSONL line of LedgerEntry shape stays well under PIPE_BUF (typically
+  // 4096–65536 bytes depending on platform). Using fs.appendFileSync —
+  // which Node implements as a single write() syscall with O_APPEND —
+  // is therefore atomic for line writes AND O(1) instead of O(file_size).
+  //
+  // The whole-file rewrite pattern (read → concat → rename) is correct
+  // for atomic REPLACEMENT but unnecessarily expensive for append-only
+  // logs. Under singleton invariant (NFR-21) this single-process atomicity
+  // is sufficient; cross-process protection requires flock (BB F5 open).
   _ensureDir();
   const line = JSON.stringify(entry) + "\n";
-  const tmpPath = `${LEDGER_PATH}.tmp.${process.pid}.${Date.now()}`;
-  const existing = fs.existsSync(LEDGER_PATH)
-    ? fs.readFileSync(LEDGER_PATH, "utf-8")
-    : "";
-  fs.writeFileSync(tmpPath, existing + line);
-  fs.renameSync(tmpPath, LEDGER_PATH);
+  fs.appendFileSync(LEDGER_PATH, line, { flag: "a" });
 }
 
 function _readAllEntries(file: string): ReadonlyArray<LedgerEntry> {

@@ -15,7 +15,7 @@ import {
   type MiberaResolverError,
 } from "../ports/mibera-resolver.port.ts";
 import { CircuitBreaker } from "../ports/circuit-breaker.port.ts";
-import { callScoreToolAmbient } from "./score-mcp-client.ts";
+import { callAmbientMcpTool } from "./score-mcp-client.ts";
 import { loadConfig } from "../../config.ts";
 
 const CACHE_MAX = 60;
@@ -89,10 +89,14 @@ export const MiberaResolverLive = Layer.effect(
           }
 
           const config = loadConfig();
+          // BB F10 closure: lookup_mibera lives on codex-mcp, not score-mcp.
+          // Routing through callAmbientMcpTool(endpoint: "codex") reads
+          // CODEX_MCP_URL + CODEX_MCP_KEY env vars.
           const call = Effect.tryPromise<unknown, MiberaResolverError>({
             try: (signal) =>
-              callScoreToolAmbient<unknown>(
+              callAmbientMcpTool<unknown>(
                 config,
+                "codex",
                 "lookup_mibera",
                 { id },
                 signal,

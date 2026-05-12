@@ -85,6 +85,7 @@ function _initialCursor(zone: ZoneId, now: string): EventCursor {
 }
 
 function _saveCursor(cursor: EventCursor): void {
+  // BB F6 closure: POSIX-atomic line append; no file rewrite.
   const file = _cursorPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const row: CursorRow = {
@@ -93,11 +94,7 @@ function _saveCursor(cursor: EventCursor): void {
     event_id: cursor.event_id as unknown as string,
     updated_at: cursor.updated_at,
   };
-  const line = JSON.stringify(row) + "\n";
-  const tmpPath = `${file}.tmp.${process.pid}.${Date.now()}`;
-  const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf-8") : "";
-  fs.writeFileSync(tmpPath, existing + line);
-  fs.renameSync(tmpPath, file);
+  fs.appendFileSync(file, JSON.stringify(row) + "\n", { flag: "a" });
 }
 
 const STIR_TICK_LIMIT = 100;
@@ -169,8 +166,28 @@ export async function runStirTick(
       quarantined: number;
       nextCursor?: EventCursor;
     };
+
+    // BB F1 closure: ALWAYS advance the cursor on every successful tick,
+    // even when zero events landed. Otherwise the idle path keeps
+    // re-querying `since_ts = initialCursor.event_time - 60s` every hour,
+    // and the window drifts ever further behind real time. The advance
+    // pattern: keep last-known event_id for tiebreaking; bump event_time
+    // forward by REPLAY_WINDOW_SECONDS so the next call still has the
+    // overlap window but isn't re-fetching the same bucket forever.
     if (result.cursor_advanced && result.nextCursor) {
       _saveCursor(result.nextCursor);
+    } else {
+      // Idle-path advance: roll the cursor forward to `now - REPLAY_WINDOW_SECONDS`
+      // preserving the existing event_id. This means the next tick queries
+      // from `now - 2 * REPLAY_WINDOW_SECONDS` (after computeOverlapSince
+      // applies the standard 60s window). Steady-state correct.
+      const idleAdvanceMs = Date.parse(now) - REPLAY_WINDOW_SECONDS * 1000;
+      const idleCursor: EventCursor = {
+        ...cursor,
+        event_time: new Date(idleAdvanceMs).toISOString(),
+        updated_at: now,
+      };
+      _saveCursor(idleCursor);
     }
     return {
       zone,

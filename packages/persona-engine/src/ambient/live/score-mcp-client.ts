@@ -151,28 +151,125 @@ async function mcpToolCall<T>(
   return JSON.parse(content) as T;
 }
 
-/** Public helper — wraps init + tool call in one go. */
+/** Endpoint identifier — picks which MCP the call routes to.
+ * BB F10 closure: separate transports per MCP. `lookup_mibera` lives on
+ * codex-mcp; `resolve_wallet` lives on freeside-auth-mcp; `get_events_*`
+ * lives on score-mcp. The previous design routed ALL three through
+ * `SCORE_API_URL` which would 404 in production. */
+export type AmbientMcpEndpoint = "score" | "codex" | "freeside-auth";
+
+interface EndpointConfig {
+  url: string | undefined;
+  key: string | undefined;
+  bearer?: string;
+}
+
+function _endpointConfig(
+  config: Config,
+  endpoint: AmbientMcpEndpoint,
+): EndpointConfig {
+  switch (endpoint) {
+    case "score":
+      return {
+        url: config.SCORE_API_URL
+          ? `${config.SCORE_API_URL}/mcp`
+          : undefined,
+        key: config.MCP_KEY,
+        bearer: config.SCORE_BEARER,
+      };
+    case "codex":
+      return {
+        url: process.env.CODEX_MCP_URL,
+        key: process.env.CODEX_MCP_KEY ?? config.MCP_KEY,
+      };
+    case "freeside-auth":
+      return {
+        url: process.env.FREESIDE_AUTH_MCP_URL,
+        key: process.env.FREESIDE_AUTH_MCP_KEY ?? config.MCP_KEY,
+      };
+  }
+}
+
+/** BB F3 closure (NFR-30): boot-time transport security check.
+ * Caller invokes once at AmbientLayer construction to fail-fast on
+ * misconfigured endpoints. */
+export function validateEndpointConfig(
+  endpoint: AmbientMcpEndpoint,
+  config: Config,
+): { ok: true } | { ok: false; reason: string } {
+  const ec = _endpointConfig(config, endpoint);
+  if (!ec.url) {
+    return { ok: false, reason: `${endpoint}-mcp URL not configured` };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(ec.url);
+  } catch {
+    return { ok: false, reason: `${endpoint}-mcp URL not parseable: ${ec.url}` };
+  }
+  if (parsed.protocol !== "https:") {
+    // localhost http allowed only in NODE_ENV=development
+    if (
+      !(process.env.NODE_ENV !== "production" && parsed.hostname === "localhost")
+    ) {
+      return {
+        ok: false,
+        reason: `${endpoint}-mcp must use https:// (got ${parsed.protocol})`,
+      };
+    }
+  }
+  const allowlist = (process.env.MCP_ENDPOINT_ALLOWLIST ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (allowlist.length > 0 && !allowlist.includes(parsed.hostname)) {
+    return {
+      ok: false,
+      reason: `${endpoint}-mcp hostname '${parsed.hostname}' not in MCP_ENDPOINT_ALLOWLIST`,
+    };
+  }
+  return { ok: true };
+}
+
+/** Public helper — call an MCP tool on the named endpoint.
+ * BB F10 closure: routes to score / codex / freeside-auth MCPs separately. */
+export async function callAmbientMcpTool<T>(
+  config: Config,
+  endpoint: AmbientMcpEndpoint,
+  toolName: string,
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const ec = _endpointConfig(config, endpoint);
+  if (!ec.url) {
+    throw new Error(
+      `ambient-mcp ${endpoint}: ${toolName} called but ${endpoint}-mcp URL not configured`,
+    );
+  }
+  if (!ec.key) {
+    throw new Error(
+      `ambient-mcp ${endpoint}: ${toolName} called without MCP key (use STUB_MODE adapter or set ${endpoint.toUpperCase().replace("-", "_")}_MCP_KEY)`,
+    );
+  }
+  const { sessionId } = await mcpInit(ec.url, ec.key, ec.bearer, signal);
+  return mcpToolCall<T>(
+    ec.url,
+    ec.key,
+    sessionId,
+    toolName,
+    args,
+    ec.bearer,
+    signal,
+  );
+}
+
+/** Legacy alias — pre-F10. Score-only path. Kept for event-source.live.ts
+ * which legitimately calls score-mcp tools (`get_events_since`, etc.). */
 export async function callScoreToolAmbient<T>(
   config: Config,
   toolName: string,
   args: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<T> {
-  if (!config.MCP_KEY) {
-    throw new Error(
-      `score-mcp ${toolName} called without MCP_KEY (use STUB_MODE adapter)`,
-    );
-  }
-  const url = `${config.SCORE_API_URL}/mcp`;
-  const bearer = config.SCORE_BEARER;
-  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer, signal);
-  return mcpToolCall<T>(
-    url,
-    config.MCP_KEY,
-    sessionId,
-    toolName,
-    args,
-    bearer,
-    signal,
-  );
+  return callAmbientMcpTool<T>(config, "score", toolName, args, signal);
 }

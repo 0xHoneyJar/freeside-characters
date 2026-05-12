@@ -63,16 +63,14 @@ function _loadFromDisk(): void {
 }
 
 function _writeAtomic(status: CircuitStatus): void {
+  // BB F6 closure: POSIX-atomic JSONL line append. Full state derives
+  // from last-write-per-key on _loadFromDisk(); the file is a log not
+  // a snapshot.
   try {
     fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
-    const tmpPath = `${STATE_PATH}.tmp.${process.pid}.${Date.now()}`;
-    // Append the new entry; full state derives from last-write-per-key on load.
-    const existing = fs.existsSync(STATE_PATH)
-      ? fs.readFileSync(STATE_PATH, "utf-8")
-      : "";
-    const next = existing + JSON.stringify(status) + "\n";
-    fs.writeFileSync(tmpPath, next);
-    fs.renameSync(tmpPath, STATE_PATH);
+    fs.appendFileSync(STATE_PATH, JSON.stringify(status) + "\n", {
+      flag: "a",
+    });
   } catch {
     // best-effort write; in-memory state remains authoritative for this process
   }
