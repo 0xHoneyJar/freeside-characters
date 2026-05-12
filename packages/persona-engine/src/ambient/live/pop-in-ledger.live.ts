@@ -75,6 +75,9 @@ function _checkMonthlyRotate(now: string): void {
     const archive = _monthArchivePath(entries[0]!.ts);
     try {
       fs.renameSync(LEDGER_PATH, archive);
+      // BB pass-5 F2: rotation renames active file → archive name; old
+      // cache key is now stale. Flush ALL cache entries; cheapest correct.
+      _invalidateAllCache();
     } catch {
       // best-effort rotation
     }
@@ -131,6 +134,58 @@ function _invalidateActiveCache(): void {
   _activeFileMtimeMs = 0;
 }
 
+/** BB pass-5 F2 closure: flush ALL cache entries on monthly rotation.
+ * The active file gets renamed to its archive name; the old path key
+ * becomes stale. Cheapest correct response is to drop everything;
+ * cache rebuilds on next read. */
+function _invalidateAllCache(): void {
+  _entryCache.clear();
+  _activeFileMtimeMs = 0;
+}
+
+/** BB pass-5 F4 closure: test-only reset hook. The module globals
+ * (_entryCache, _activeFileMtimeMs) survive across tests that swap
+ * LEDGER_PATH/LEDGER_DIR in the same process. Export this so tests
+ * can isolate. NOT used in production paths. */
+export function __resetPopInLedgerLiveCacheForTests(): void {
+  _invalidateAllCache();
+}
+
+/** BB pass-5 F1 + F11 closure: read-side lex-min collapse for
+ * same-millisecond "fired" entries. When two characters write fired
+ * entries at the EXACT same ts (rare but possible under F7 lex-min
+ * tie-break), readers should treat only the lex-min character_id as
+ * the canonical fire. The others are superseded.
+ *
+ * Cap/cooldown counting relies on this — without it, a tie would
+ * double-count fires in the readWindow path and double-block in
+ * appendIfNoFire's blocker scan.
+ *
+ * Pure function; preserves entry array order otherwise.
+ */
+function _collapseSameTsLexMin(
+  entries: ReadonlyArray<LedgerEntry>,
+): ReadonlyArray<LedgerEntry> {
+  // Group fired/bypassed entries by (zone, ts). For each group, keep
+  // only the lex-min character_id as fired; mark the rest as
+  // logically-superseded by filtering them OUT of the returned array.
+  // Non-fire decisions (yielded/queued/etc.) pass through unchanged.
+  const fireKeyToLexMinCharId: Map<string, string> = new Map();
+  for (const e of entries) {
+    if (e.decision !== "fired" && e.decision !== "bypassed") continue;
+    const key = `${e.zone}|${e.ts}`;
+    const current = fireKeyToLexMinCharId.get(key);
+    if (!current || e.character_id < current) {
+      fireKeyToLexMinCharId.set(key, e.character_id);
+    }
+  }
+  return entries.filter((e) => {
+    if (e.decision !== "fired" && e.decision !== "bypassed") return true;
+    const key = `${e.zone}|${e.ts}`;
+    return fireKeyToLexMinCharId.get(key) === e.character_id;
+  });
+}
+
 export const PopInLedgerLive = Layer.succeed(
   PopInLedger,
   PopInLedger.of({
@@ -143,7 +198,9 @@ export const PopInLedgerLive = Layer.succeed(
 
     getLastFire: ({ zone, afterTs }) =>
       Effect.sync(() => {
-        const all = _readAllAcrossArchives();
+        // BB pass-5 F1: collapse same-ts duplicates to lex-min winner
+        // before scanning. Otherwise an F7 tie produces double-counting.
+        const all = _collapseSameTsLexMin(_readAllAcrossArchives());
         // S3.T2a: most recent "fired" entry for this zone, after afterTs
         let best: LedgerEntry | null = null;
         for (const e of all) {
@@ -157,7 +214,8 @@ export const PopInLedgerLive = Layer.succeed(
 
     readWindow: ({ zone, sinceTs, untilTs }) =>
       Effect.sync(() => {
-        const all = _readAllAcrossArchives();
+        // BB pass-5 F1: same-ts lex-min collapse applies here too.
+        const all = _collapseSameTsLexMin(_readAllAcrossArchives());
         return all.filter(
           (e) =>
             (!zone || e.zone === zone) &&
@@ -174,7 +232,10 @@ export const PopInLedgerLive = Layer.succeed(
      * crash at boot per NFR-25 before reaching here. */
     appendIfNoFire: ({ proposedEntry, afterTs }) =>
       Effect.sync(() => {
-        const all = _readAllAcrossArchives();
+        // BB pass-5 F1: collapse same-ts duplicates BEFORE scanning for
+        // blockers, so a previously-lex-min-resolved tie doesn't count
+        // both characters as blockers.
+        const all = _collapseSameTsLexMin(_readAllAcrossArchives());
         // Check: any character fired in (afterTs, proposedEntry.ts] for this zone?
         let blocker: LedgerEntry | null = null;
         for (const e of all) {

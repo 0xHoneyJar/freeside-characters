@@ -211,6 +211,8 @@ export async function runStirTick(
   });
 
   try {
+    // BB pass-5 F8: cast type now matches the Effect return exactly
+    // (no dangling nextCursor since cursor save is internalized).
     const result = (await ambientRuntime.runPromise(program)) as {
       events_fetched: number;
       cursor_advanced: boolean;
