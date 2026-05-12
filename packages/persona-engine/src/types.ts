@@ -64,6 +64,11 @@ export interface CharacterConfig {
    * Discord guilds — eliminating cross-guild bleed at the registration
    * boundary (vs. relying on LLM persona-compliance at dispatch time).
    *
+   * **Empty-array semantics**: `publishGuilds: []` is equivalent to omitting
+   * the field — both fall back to the env-supplied `guildId`. There is no
+   * "publish to nowhere" state by design; to disable a character entirely,
+   * remove it from the `CHARACTERS` env instead.
+   *
    * When empty/missing, falls back to the publishCommands `guildId` arg
    * (sourced from `DISCORD_GUILD_ID` env in auto-publish) — backward
    * compatible with the V0.6 single-guild model.

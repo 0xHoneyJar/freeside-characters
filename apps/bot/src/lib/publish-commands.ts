@@ -96,14 +96,40 @@ export async function publishCommands(
     throw new Error('publishCommands: no characters provided');
   }
 
+  // Mixed-config footgun guard (BB-59 global-fallback-when-mixed): if
+  // some chars have publishGuilds + some don't + opts.guildId is
+  // undefined, the chars without publishGuilds would silently publish
+  // globally. Warn loudly so operator catches an unset DISCORD_GUILD_ID
+  // before 1-hour global propagation makes it visible everywhere.
+  const charsWithGuilds = opts.characters.filter(
+    (c) => c.publishGuilds && c.publishGuilds.length > 0,
+  );
+  const charsWithoutGuilds = opts.characters.filter(
+    (c) => !c.publishGuilds || c.publishGuilds.length === 0,
+  );
+  if (
+    charsWithGuilds.length > 0 &&
+    charsWithoutGuilds.length > 0 &&
+    opts.guildId === undefined
+  ) {
+    console.warn(
+      `publishCommands: MIXED CONFIG — ${charsWithGuilds.length} chars have publishGuilds, ${charsWithoutGuilds.length} lack it, opts.guildId is undefined. ` +
+        `Chars without publishGuilds will publish GLOBALLY (1-hour propagation, visible in EVERY guild the bot is in). ` +
+        `This is likely unintended. Set publishGuilds on: [${charsWithoutGuilds.map((c) => c.id).join(', ')}] OR provide opts.guildId as fallback.`,
+    );
+  }
+
   // Group characters by target guild. Characters with publishGuilds set
-  // route per-guild; characters without it fall back to opts.guildId
-  // (which may be undefined = global publish).
+  // route per-guild; characters without it (or with empty array) fall
+  // back to opts.guildId (which may be undefined = global publish).
+  // BB-59 duplicate-guild-ids-dedup: dedupe via Set in case operator
+  // typo'd publishGuilds: ['G1', 'G1'] — would otherwise duplicate the
+  // character in G1's command set.
   const byGuild = new Map<string | undefined, CharacterConfig[]>();
   for (const char of opts.characters) {
     const targets =
       char.publishGuilds && char.publishGuilds.length > 0
-        ? Array.from(char.publishGuilds)
+        ? Array.from(new Set(char.publishGuilds))
         : [opts.guildId];
     for (const guild of targets) {
       const existing = byGuild.get(guild);
@@ -115,37 +141,65 @@ export async function publishCommands(
     }
   }
 
+  // BB-59 partial-failure-atomicity: iterate guilds, collect per-guild
+  // outcomes, log each. If any failed, throw AFTER the loop with an
+  // aggregate message — preserves observability of which guilds landed
+  // vs. which didn't (vs. the prior throw-mid-loop which abandoned
+  // remaining guilds silently).
   const results: PublishCommandsResult[] = [];
+  const failures: Array<{ guildId: string | undefined; error: Error }> = [];
+
   for (const [guildId, characters] of byGuild) {
-    const commands = buildCommandSet(characters);
+    try {
+      const commands = buildCommandSet(characters);
+      const url = guildId
+        ? `${DISCORD_API_BASE}/applications/${applicationId}/guilds/${guildId}/commands`
+        : `${DISCORD_API_BASE}/applications/${applicationId}/commands`;
 
-    const url = guildId
-      ? `${DISCORD_API_BASE}/applications/${applicationId}/guilds/${guildId}/commands`
-      : `${DISCORD_API_BASE}/applications/${applicationId}/commands`;
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bot ${opts.botToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(commands),
+      });
 
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bot ${opts.botToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(commands),
-    });
+      if (!response.ok) {
+        const txt = await response.text().catch(() => '<unreadable>');
+        throw new Error(
+          `Discord PUT failed for guild=${guildId ?? '(global)'} status=${response.status} body=${txt}`,
+        );
+      }
 
-    if (!response.ok) {
-      const txt = await response.text().catch(() => '<unreadable>');
-      throw new Error(
-        `publishCommands: Discord PUT failed for guild=${guildId ?? '(global)'} status=${response.status} body=${txt}`,
+      const result = (await response.json()) as Array<{ id: string; name: string }>;
+      results.push({
+        registered: result.length,
+        commands: result.map((r) => ({ name: r.name, id: r.id })),
+        scope: guildId ? 'guild' : 'global',
+        guildId,
+      });
+    } catch (err) {
+      const wrapped = err instanceof Error ? err : new Error(String(err));
+      failures.push({ guildId, error: wrapped });
+      console.error(
+        `publishCommands: guild=${guildId ?? '(global)'} FAILED: ${wrapped.message}`,
       );
     }
+  }
 
-    const result = (await response.json()) as Array<{ id: string; name: string }>;
-    results.push({
-      registered: result.length,
-      commands: result.map((r) => ({ name: r.name, id: r.id })),
-      scope: guildId ? 'guild' : 'global',
-      guildId,
-    });
+  if (failures.length > 0) {
+    const succeeded = results
+      .map((r) => r.guildId ?? '(global)')
+      .join(', ') || 'none';
+    const failed = failures
+      .map((f) => f.guildId ?? '(global)')
+      .join(', ');
+    throw new Error(
+      `publishCommands: ${failures.length}/${byGuild.size} guild publishes failed; ${results.length} succeeded. ` +
+        `succeeded=[${succeeded}] failed=[${failed}]. ` +
+        `First failure: guild=${failures[0].guildId ?? '(global)'} ${failures[0].error.message}`,
+    );
   }
 
   return results;

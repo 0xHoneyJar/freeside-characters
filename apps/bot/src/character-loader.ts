@@ -49,10 +49,14 @@ interface CharacterJson {
   tool_invocation_style?: string;
   /** V0.7 (2026-05-12): per-character Discord guild IDs for slash command
    *  registration. When set, slash commands route only to listed guilds;
-   *  when omitted, falls back to publishCommands `guildId` arg (env
-   *  DISCORD_GUILD_ID in auto-publish). Eliminates cross-guild bleed at
-   *  the registration boundary. */
-  publishGuilds?: string[];
+   *  when omitted (or empty array), falls back to publishCommands `guildId`
+   *  arg (env DISCORD_GUILD_ID in auto-publish). Eliminates cross-guild
+   *  bleed at the registration boundary.
+   *
+   *  ReadonlyArray<string> matches CharacterConfig.publishGuilds — JSON
+   *  spreads accept readonly so this is type-compatible with declared
+   *  arrays in character.json. */
+  publishGuilds?: ReadonlyArray<string>;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
