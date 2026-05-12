@@ -424,6 +424,97 @@ deployment topology to an invariant.
 | **SKP-003 (770)** MCP failure handling underspecified | HIGH | **ACCEPT** | NFR-7 / NFR-8 / NFR-9 added. timeouts + retries + circuit breaker now contract. |
 | **SKP-004 (720)** unknown category_key behavior undefined | HIGH | **ACCEPT** | NFR-11 added — unknown class quarantine + cron metric surface. |
 
+## 9.2 · Known technical debt (tracked, not resolved)
+
+> Per Bridgebuilder pass-4 review F25 REFRAME · 2026-05-11. The singleton
+> invariant elevated under NFR-21–25 is operationally correct for current
+> scale but is **technical debt with a known migration cost**, not a
+> satisfied requirement. This section makes the debt explicit so future
+> scale-up decisions don't surprise.
+
+### TD-1 · Singleton-as-SPOF + zero-downtime deferral
+
+**Current state** (NFR-21–25):
+- Bot deploys as exactly ONE running process per environment
+- `.run/*.jsonl` files hold cursor, ledger, circuit-breaker state
+- `flock` (or POSIX append-atomicity) protects within-process integrity
+- NFR-25 promises fail-loud crash on second-instance attempt
+
+**The debt**:
+- Any node failure or rolling deploy causes ~30s of downtime
+- Blue/green deployment requires distributed state backend (Redis/Postgres)
+  before it can be enabled
+- A future HA requirement forces rewriting all `.run/*.jsonl` state
+  writers, plus the appendIfNoFire atomic primitive, plus the cursor
+  advance protocol
+
+**Migration path** (when the operational signal demands it):
+1. Introduce a single Service port for atomic state (`StateBackend.port.ts`)
+   abstracting cursor + ledger + circuit-breaker behind a single Effect
+   interface
+2. Add Redis adapter (`state-backend.redis.live.ts`) with atomic primitives
+   (SETNX for fire-locks, INCR for daily-cap counters, ZADD for ledger
+   ordering, LRANGE+ZRANGEBYSCORE for window queries)
+3. Or Postgres adapter (`state-backend.pg.live.ts`) using the existing
+   `lib/pg-pool-builder.ts` infrastructure — likely cheaper since the
+   bot already has a Pg pool for freeside-auth
+4. Toggle via env: `STATE_BACKEND=jsonl | redis | postgres`
+5. Migration script reads existing jsonl files + bulk-writes to chosen
+   backend
+
+**Estimated effort**: ~1 sprint to abstract + ~half-sprint per adapter.
+
+**Trigger for migration**: any of —
+- Operational requirement for zero-downtime deploys
+- More than one bot character requires its own runtime instance
+- Cross-region deployment for latency
+- Anything that breaks the "one process" assumption
+
+**Decision (2026-05-11)**: defer until trigger fires. Document in
+[NFR-21–25](#75--singleton-deployment-invariant-flatline-blocker-theme-α--operator-decided)
+that the invariant is **acceptable for current scale** but should not
+be treated as architecturally permanent.
+
+### TD-2 · Wallet-resolver invocation gap (S4.T1 dependency)
+
+**Current state**: `WalletResolverLive` is wired into `AmbientLayer` but
+no router/composer path actually CALLS it. The CLAUDE.md compliance
+("never cite raw `0x…` wallets without resolve_wallet") is structurally
+enforced only by S4.T1 chat-mode composer wiring — which is deferred.
+
+**The debt**: Until S4.T1 lands, ambient pop-ins (if/when score-mibera
+Phase 1 ships) could theoretically emit raw `0x…` wallets if a
+narration code path is added that bypasses the resolver.
+
+**Mitigation today**: `EVENT_HEARTBEAT_ENABLED=false` is the default
+deploy posture until S4.T1 + score-mibera Phase 1 both land. Stir
+cron does not fire pop-in narrations in this state.
+
+**Migration path**: S4.T1 chat-mode reply.ts injection (deferred S4
+task) — invoke `WalletResolver.resolve` before any narration that
+references a wallet field. Add CI grep guard for raw `0x…` patterns
+in narration test snapshots.
+
+### TD-3 · NFR-16 stir replay on restart (not implemented)
+
+**Current state**: SDD §6 claims stir vector rebuilds from `cursor - 6h`
+events on restart. The replay code does not exist. After restart, every
+zone's stir resets to `null` and pulseTick uses `emptyStir(now)` for
+the first tick.
+
+**The debt**: A bot restart causes a perceptible "stir reset" — the
+narration deliberation tilt that ambient events accumulated is lost.
+Half-life of 6h means recovery is bounded but real.
+
+**Mitigation today**: Stir loss is bounded by half-life decay; rave-feel
+recovers naturally within ~6h. Document the gap explicitly so it doesn't
+masquerade as correct behavior.
+
+**Migration path**: On `AmbientLayer` first tick after process start,
+query score-mcp `get_events_since(cursor - 6h)` and replay through
+`pulseTick` to seed stir. Persist stir to `.run/stir-state.jsonl` for
+faster recovery on subsequent restarts. Estimated 4-6h work.
+
 ## 10 · open questions
 
 none load-bearing for cycle start. all 24 D-decisions locked at

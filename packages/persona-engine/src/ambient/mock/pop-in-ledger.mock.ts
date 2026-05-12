@@ -59,6 +59,14 @@ export const PopInLedgerMock = Layer.succeed(
           if (!blocker || e.ts > blocker.ts) blocker = e;
         }
         if (blocker) {
+          // BB pass-4 F7: lex-min character_id wins on exact-millisecond ties.
+          const sameWallClock = blocker.ts === proposedEntry.ts;
+          const proposerLexLess =
+            proposedEntry.character_id < blocker.character_id;
+          if (sameWallClock && proposerLexLess) {
+            _entries.push({ ...proposedEntry, yielded_to: null });
+            return { writtenAsProposed: true, yieldedTo: null };
+          }
           _entries.push({
             ...proposedEntry,
             decision: "yielded_to_character",

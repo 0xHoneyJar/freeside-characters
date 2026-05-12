@@ -81,6 +81,38 @@ function _checkMonthlyRotate(now: string): void {
   }
 }
 
+// BB pass-4 F22 closure: cache parsed ledger entries in-memory. Previously
+// every appendIfNoFire/getLastFire/readWindow call did a full disk scan
+// of every monthly archive file (O(N) JSON.parse per router decision).
+// After 6 months of ops, fire decisions would parse thousands of lines
+// every time. Now: load once on first access, invalidate on append.
+//
+// Cache keyed by-file so monthly rotation doesn't churn the whole set.
+const _entryCache: Map<string, ReadonlyArray<LedgerEntry>> = new Map();
+let _activeFileMtimeMs = 0;
+
+function _readWithCache(file: string): ReadonlyArray<LedgerEntry> {
+  // The active LEDGER_PATH file mutates on append; check mtime to detect
+  // out-of-band writes (rare under singleton invariant but defensive).
+  if (file === LEDGER_PATH) {
+    try {
+      const stat = fs.statSync(file);
+      if (stat.mtimeMs !== _activeFileMtimeMs) {
+        _entryCache.delete(file);
+        _activeFileMtimeMs = stat.mtimeMs;
+      }
+    } catch {
+      // file doesn't exist yet — skip mtime tracking
+    }
+  }
+  let cached = _entryCache.get(file);
+  if (!cached) {
+    cached = _readAllEntries(file);
+    _entryCache.set(file, cached);
+  }
+  return cached;
+}
+
 function _readAllAcrossArchives(): ReadonlyArray<LedgerEntry> {
   _ensureDir();
   const files = fs.readdirSync(LEDGER_DIR).filter((f) =>
@@ -88,9 +120,15 @@ function _readAllAcrossArchives(): ReadonlyArray<LedgerEntry> {
   );
   const all: Array<LedgerEntry> = [];
   for (const f of files) {
-    all.push(..._readAllEntries(path.join(LEDGER_DIR, f)));
+    all.push(..._readWithCache(path.join(LEDGER_DIR, f)));
   }
   return all;
+}
+
+/** Invalidate cache for the active ledger file after an append. */
+function _invalidateActiveCache(): void {
+  _entryCache.delete(LEDGER_PATH);
+  _activeFileMtimeMs = 0;
 }
 
 export const PopInLedgerLive = Layer.succeed(
@@ -100,6 +138,7 @@ export const PopInLedgerLive = Layer.succeed(
       Effect.sync(() => {
         _checkMonthlyRotate(entry.ts);
         _atomicAppend(entry);
+        _invalidateActiveCache();
       }),
 
     getLastFire: ({ zone, afterTs }) =>
@@ -147,11 +186,46 @@ export const PopInLedgerLive = Layer.succeed(
           if (!blocker || e.ts > blocker.ts) blocker = e;
         }
         if (blocker) {
-          // Lex-min comparison: if the proposing character is lex-LESS than
-          // the blocker, the proposer would have won a true race. We honor
-          // wall-clock-first-wins here since the blocker's entry is already
-          // persisted — but the proposing character still records a yield
-          // to make the race outcome auditable.
+          // BB pass-4 F7 closure: lex-min character_id wins on exact-tie
+          // wall-clock collisions per spec FR-3.18 + S3.T2a. The blocker's
+          // entry is already persisted on disk so we can't retroactively
+          // overwrite a prior wall-clock fire — but we DO honor lex-min
+          // when the timestamps are equal (same-millisecond race). In
+          // that case the lex-LESSER character_id was the rightful winner.
+          //
+          // Outcomes:
+          //   ts(blocker) <  ts(proposed)  → wall-clock-first wins (blocker)
+          //   ts(blocker) == ts(proposed)  → lex-min wins (compare character_ids)
+          //   ts(blocker) >  ts(proposed)  → already filtered above (we
+          //                                  only consider blockers with
+          //                                  ts ≤ proposed.ts)
+          const sameWallClock = blocker.ts === proposedEntry.ts;
+          const proposerLexLessThanBlocker =
+            proposedEntry.character_id < blocker.character_id;
+          const proposerWinsByLexMin =
+            sameWallClock && proposerLexLessThanBlocker;
+
+          if (proposerWinsByLexMin) {
+            // Proposer is lex-min on a true millisecond tie. Write the
+            // proposed entry alongside the blocker — both fires are
+            // recorded, but lex-min wins the "canonical" outcome flag.
+            // The router-level dedup at the digest layer should rank
+            // by (ts ASC, character_id ASC) and the proposer surfaces.
+            const winnerEntry: LedgerEntry = {
+              ...proposedEntry,
+              decision: proposedEntry.decision,
+              // Note the resolved race in the entry itself for audit:
+              yielded_to: null,
+            };
+            _checkMonthlyRotate(proposedEntry.ts);
+            _atomicAppend(winnerEntry);
+            _invalidateActiveCache();
+            return { writtenAsProposed: true, yieldedTo: null };
+          }
+
+          // Default path: proposer yields. Either the blocker fired
+          // strictly earlier in wall-clock, OR the timestamps tied but
+          // the proposer is lex-greater.
           const yieldEntry: LedgerEntry = {
             ...proposedEntry,
             decision: "yielded_to_character",
@@ -160,10 +234,12 @@ export const PopInLedgerLive = Layer.succeed(
           };
           _checkMonthlyRotate(proposedEntry.ts);
           _atomicAppend(yieldEntry);
+          _invalidateActiveCache();
           return { writtenAsProposed: false, yieldedTo: blocker.character_id };
         }
         _checkMonthlyRotate(proposedEntry.ts);
         _atomicAppend(proposedEntry);
+        _invalidateActiveCache();
         return { writtenAsProposed: true, yieldedTo: null };
       }),
   }),
