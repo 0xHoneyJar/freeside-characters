@@ -53,19 +53,23 @@ per `world-purupuru/sites/world/src/lib/daemon/voice.ts` doctrine: **all voice i
 
 ### path A · single bot, two guilds, GUILD-SCOPED publish (recommended for v1)
 
-ONE bot process. gateway-connects to the bot user (already invited to both THJ and purupuru). slash commands are published **guild-scoped, not global** — each guild gets only its own character set. eliminates cross-guild bleed (per bridgebuilder F8: global publish would leak `/kaori`…`/ruan` into THJ, where mitigation depends on non-deterministic LLM persona-compliance).
+ONE bot process. gateway-connects to the bot user (already invited to both THJ and purupuru). NEW caretaker commands are published **guild-scoped, not global** — purupuru guild gets only its own character set, eliminating cross-guild bleed AT THE REGISTRATION BOUNDARY for the new commands (not at non-deterministic LLM-runtime persona-compliance).
 
+**target end-state**:
 - THJ guild · gets `/ruggy` · `/satoshi`
 - purupuru guild · gets `/kaori` `/nemu` `/akane` `/ren` `/ruan`
-- no cross-guild bleed · enforced at registration, not at LLM-runtime
+
+**honest about the transition**: if `/ruggy` and `/satoshi` were previously published GLOBALLY (the prior default), they will continue to appear in purupuru guild until migrated. publishing caretaker commands guild-scoped to purupuru does NOT remove prior global registrations. there are two sub-paths to handle this:
+
+- **A.1 fast** · accept that `/ruggy` + `/satoshi` remain visible in purupuru (their personas decline purupuru-context but the commands appear in the slash menu). caretaker iteration begins immediately. ruggy/satoshi migration deferred.
+- **A.2 clean** · ALSO migrate ruggy/satoshi to THJ-guild-scoped registration AND deregister the prior global commands. fully isolates command surfaces per guild. requires running two publishes + a deregister-globals pass (operator owns sequencing). cleaner long-term posture; slightly more work now.
 
 steps:
 
-1. **PRE-PUBLISH avatar checklist** (per bridgebuilder F6 — Discord caches webhook avatars at first send, broken URLs require webhook recreation to fix):
-   - [ ] confirm each `apps/character-{kaori,nemu,akane,ren,ruan}/character.json` has a real `webhookAvatarUrl` OR accept default Discord avatar for v1 voice iteration
-   - [ ] if going with real avatars: place `avatar.png` in each character dir (matching `apps/character-ruggy/avatar.png` convention) and set `webhookAvatarUrl` to `https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/main/apps/character-<name>/avatar.png`
-   - [ ] OR if pulling from world-purupuru CDN: confirm canonical URL prefix (asset registry has `caretaker-<name>-pfp-<element>-pastel.png`)
-   - [ ] empty `webhookAvatarUrl` (default-shipped state) → discord uses bot's default avatar · acceptable for v1 voice iteration but resolve before broader announcement
+1. **PRE-PUBLISH avatar checklist** (Discord caches webhook avatars at first send; broken or empty URLs at first-send cache the default → requires webhook recreation to swap later):
+   - [ ] **v1 voice-iteration default** (currently shipped): all 5 caretaker `webhookAvatarUrl` fields are empty → Discord uses bot's default avatar. **this is intentional**: voice-only deploy explicitly prioritizes zero-friction iteration with gumi over polish at publish time (per operator framing "before any score mechanism · gumi iterates voice freely"). bridgebuilder F9 flagged this as a sticky-cache hazard; the operator-aligned response is **document the cost, ship, recreate webhooks when art lands**.
+   - [ ] **if you want real avatars before first send**: confirm `apps/character-{kaori,nemu,akane,ren,ruan}/avatar.png` exists in each character dir (matching `apps/character-ruggy/avatar.png` convention), then set `webhookAvatarUrl` to `https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/main/apps/character-<name>/avatar.png`. OR point at world-purupuru CDN once canonical URL is confirmed (asset registry has `caretaker-<name>-pfp-<element>-pastel.png`).
+   - [ ] **webhook recreation cost when swapping avatars later**: delete the channel webhook in Discord settings (or via `gh api` / discord.js), then re-invoke any caretaker so the bot recreates the webhook with the new avatar URL. operationally: ~30 seconds per channel-webhook swap. acceptable for v1 voice iteration.
 
 2. **env** (railway service for caretakers OR same service with merged CHARACTERS — see note below):
    ```
