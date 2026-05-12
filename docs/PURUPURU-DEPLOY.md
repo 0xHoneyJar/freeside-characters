@@ -99,7 +99,7 @@ steps:
    - auto-publish reads each character's `publishGuilds`, groups by guild, PUTs each guild its own command set
    - THJ guild receives: `/ruggy /satoshi /satoshi-image /mongolian /quest` (5 commands)
    - purupuru guild receives: `/kaori /nemu /akane /ren /ruan` (5 commands)
-   - any caretakers that previously leaked into THJ via global/single-guild publish → automatically deregistered by the PUT replace on next sync
+   - **Discord PUT replace semantics** (be precise): PUT replaces the command set WITHIN a single (application, guild) scope. for caretakers previously registered guild-scoped to THJ (the current state in this repo's deploy as of 2026-05-12), the new PUT-to-THJ with `[ruggy, satoshi, mongolian, satoshi-image, quest]` replaces and removes them automatically. **HOWEVER** if any character was ever registered GLOBALLY (e.g., `DISCORD_GUILD_ID` env was unset at a prior publish time), the global registration persists until a separate global publish or per-command DELETE clears it — guild-scoped PUTs do NOT touch globals. if you see commands leftover after this rollout, check: `gh api applications/$APP_ID/commands` to see globals, then issue `PUT /applications/$APP_ID/commands` with an empty array OR per-command DELETE to clear.
 
 4. **(ad-hoc) one-off publish via CLI** if needed:
    ```bash

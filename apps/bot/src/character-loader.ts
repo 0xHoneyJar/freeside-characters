@@ -84,6 +84,26 @@ export function loadCharacter(id: string): CharacterConfig {
       `character-loader: id mismatch — config says "${json.id}" but folder is "character-${id}"`,
     );
   }
+
+  // BB-59 F6: validate publishGuilds entries are Discord snowflake-shaped
+  // (17-20 digit strings). Catches operator typos (numbers vs strings,
+  // whitespace, truncated IDs) at load time with a clear character.json
+  // reference, instead of as a Discord 400 at publish time.
+  if (json.publishGuilds !== undefined) {
+    if (!Array.isArray(json.publishGuilds)) {
+      throw new Error(
+        `character-loader: ${configPath} · publishGuilds must be an array of strings, got ${typeof json.publishGuilds}`,
+      );
+    }
+    for (let i = 0; i < json.publishGuilds.length; i++) {
+      const v = json.publishGuilds[i];
+      if (typeof v !== 'string' || !/^\d{17,20}$/.test(v)) {
+        throw new Error(
+          `character-loader: ${configPath} · publishGuilds[${i}] is not a Discord snowflake (17-20 digit string): ${JSON.stringify(v)}`,
+        );
+      }
+    }
+  }
   return {
     id: json.id,
     displayName: json.displayName,

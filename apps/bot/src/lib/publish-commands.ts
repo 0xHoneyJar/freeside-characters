@@ -70,12 +70,24 @@ export interface PublishCommandsResult {
  * `publishGuilds` fall back to `opts.guildId` (which may be undefined for
  * global publish — backward-compat with V0.6 single-guild model).
  *
- * Returns one PublishCommandsResult per guild published. For backward-
- * compat callers that expected a single result, use `results[0]`.
+ * **Breaking change from V0.6**: return type is now PublishCommandsResult[]
+ * (one entry per guild published) instead of a single PublishCommandsResult.
+ * Callers MUST update to iterate the array. There is no single-result
+ * compat shim — the multi-guild routing model requires the per-guild
+ * outcome shape. Both in-tree callers (auto-publish in `apps/bot/src/index.ts`
+ * and the CLI script in `apps/bot/scripts/publish-commands.ts`) were
+ * updated in the same commit.
  *
- * @throws Error on missing/invalid auth, network failure, or non-2xx response
- *         FOR ANY guild publish. Earlier guilds may have succeeded before
- *         the throwing call; check returned results array for what landed.
+ * Partial-failure semantics (BB-59 closure): each guild publish is wrapped
+ * in try/catch. Failures are collected and logged per-guild as they happen,
+ * then the function throws AT END with an aggregate message listing
+ * succeeded/failed guilds + the first failure's message. The thrown error
+ * carries observability of partial-success state vs. the prior throw-mid-loop
+ * which abandoned remaining guilds silently.
+ *
+ * @throws Error if any guild publish failed. Succeeded guilds' results are
+ *         logged to console.error before the throw; check logs for which
+ *         guilds landed. Throw aggregate message names succeeded/failed sets.
  */
 export async function publishCommands(
   opts: PublishCommandsOptions,
