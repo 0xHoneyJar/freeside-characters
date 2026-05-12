@@ -15,7 +15,7 @@
  */
 
 import { Effect } from "effect";
-import { PopInLedger } from "./ports/pop-in-ledger.port.ts";
+import { PopInLedger } from "./ports/pop-in-ledger.port.ts"; // used by appendDecision only
 import {
   type Budget,
   type LedgerEntry,
@@ -54,22 +54,22 @@ export interface RouterDecision {
 }
 
 /**
- * Pure-ish: yields ledger ops (the only Effect-y part). All logic is
- * synchronous given the inputs.
+ * Pure decision tree given the inputs — no Effect requirements.
  *
- * F13 TOCTOU closure (BB review · post-PR fixup): the inter-character
- * coordination check is no longer a separate `getLastFire` call followed
- * later by a write. Inter-character atomicity now lives in
- * `ledger.appendIfNoFire` — caller invokes that helper for "fired" /
- * "bypassed" decisions. The router decision tree below covers all
- * character-local gates (refractory + cap + bypass + threshold); the
- * shared-zone check is deferred to the atomic write boundary.
+ * BB pass-3 F9 closure: removed the unused `yield* _(PopInLedger)` —
+ * routerDecide doesn't actually invoke the ledger; only `appendDecision`
+ * (defined below) does. Keeping the unused requirement leaked an
+ * abstraction the function never honored, and made unit-testing
+ * routerDecide harder than it needed to be.
+ *
+ * F13 TOCTOU closure: inter-character coordination is enforced at the
+ * write boundary via `ledger.appendIfNoFire` (called from
+ * `appendDecision` below), NOT here.
  */
 export const routerDecide = (
   input: RouterInput,
-): Effect.Effect<RouterDecision, never, PopInLedger> =>
+): Effect.Effect<RouterDecision, never, never> =>
   Effect.gen(function* (_) {
-    yield* _(PopInLedger); // ensures DI even though we only call ledger from appendDecision now
     const thresholds = input.thresholds ?? DEFAULT_POP_IN_THRESHOLDS;
     const refractoryHrs =
       input.refractoryHours ?? POP_IN_REFRACTORY_HOURS_DEFAULT;
