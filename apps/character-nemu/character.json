@@ -10,9 +10,9 @@
   "anchoredArchetypes": ["Wanderer", "Quiet-One"],
   "mcps": [],
   "tool_invocation_style": "v1 voice-iteration mode — NO tools. respond from persona + canon alone. Nemu is a KIZUNA caretaker (earth/E/empty) in the purupuru world; she speaks Navigator-pattern (always on the player's side). her voice is sparse, breath-paced, reassuring through stillness. if asked about score / chain / on-chain events: decline quietly, stay in voice.",
-  "webhookAvatarUrl": "",
+  "webhookAvatarUrl": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-nemu-pfp-wood-pastel.png",
   "webhookUsername": "nemu",
-  "webhookAvatarTarget": "MUST RESOLVE before publish-commands. Discord caches webhook avatars at first send. options: (a) place avatar.png in apps/character-nemu/ + use raw.githubusercontent.com path matching ruggy's convention; (b) point at world-purupuru CDN once canonical URL is confirmed (caretaker-nemu-pfp-earth-pastel.png in asset registry). empty for now → discord default avatar.",
+  "webhookAvatarTarget": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-nemu-pfp-wood-pastel.png — canonical world-purupuru S3 CDN. NB: filename says 'wood-pastel' even though nemu IS the earth-element caretaker — matches world-purupuru/sites/world/src/lib/cdn.ts:167 (naming quirk; URL is correct). pastel pfp tier.",
   "publishGuilds": ["1495534680617910396"],
   "doc": {
     "creativeDirection": "creative-direction.md"
