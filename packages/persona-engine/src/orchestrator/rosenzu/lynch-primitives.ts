@@ -61,6 +61,10 @@ export interface ZoneSpatialProfile {
   essence: string;
   /** Baseline KANSEI vector — agent rotates anchors per fire for variance */
   base_kansei: KansaiVector;
+  /** cycle-003 · D20 LYNCH: baseline silence minutes — disambiguates
+   * quiet (the place is itself, unattended) from dead (the place is broken).
+   * Used by silence-register's `shouldFireBedrockKick`. */
+  baseline_silence_minutes?: number;
   /** Persistent orientation cues — landmarks (gumi expanded set) */
   landmarks: string[];
   /** Boundaries / liminal seams — edges (gumi expanded set) */

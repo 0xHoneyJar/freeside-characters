@@ -145,5 +145,50 @@ export function schedule(args: ScheduleArgs): SchedulerHandles {
     );
   }
 
+  // ─── 4. Ambient stir tier (cycle-003 · NEW) ─────────────────────────
+  // Per D1 + D19: stir tier polls on-chain events hourly, NEVER affects
+  // digest cron path (independent error boundary). Stir is invisible
+  // by default — only updates the kansei sibling channel.
+  // env: EVENT_HEARTBEAT_ENABLED (default true), EVENT_HEARTBEAT_EXPR (default "0 * * * *")
+  const stirEnabled = process.env.EVENT_HEARTBEAT_ENABLED !== 'false';
+  if (stirEnabled) {
+    const stirExpr = process.env.EVENT_HEARTBEAT_EXPR ?? '0 * * * *';
+    if (cron.validate(stirExpr)) {
+      tasks.push(
+        cron.schedule(
+          stirExpr,
+          async () => {
+            // Lazy import — keeps scheduler.ts compileable even if ambient
+            // module is removed/disabled later.
+            try {
+              const ambientMod = await import('../ambient/scheduler-task.ts');
+              const lynchMod = await import('../orchestrator/rosenzu/lynch-primitives.ts');
+              for (const zone of zones) {
+                // skip if another cadence holds the zone lock
+                if (zoneLocks.has(zone)) continue;
+                const profile = (lynchMod as { ZONE_PROFILES?: Record<string, { primitive: 'node' | 'district' | 'edge' | 'path' | 'inner_sanctum' }> }).ZONE_PROFILES?.[zone];
+                const primitive = profile?.primitive ?? 'node';
+                const result = await ambientMod.runStirTick(zone, primitive);
+                if (result.error) {
+                  console.warn(`ambient-stir: zone=${zone} error=${result.error}`);
+                } else if (result.events_fetched > 0) {
+                  console.log(
+                    `ambient-stir: zone=${zone} fetched=${result.events_fetched} quarantined=${result.quarantined}`,
+                  );
+                }
+              }
+            } catch (err) {
+              // NFR-10: stir failures NEVER cascade into digest path
+              console.warn(`ambient-stir top-level failure: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          },
+          { timezone: 'UTC' },
+        ),
+      );
+    } else {
+      console.warn(`ambient-stir: invalid EVENT_HEARTBEAT_EXPR "${stirExpr}" — stir tier disabled`);
+    }
+  }
+
   return handles;
 }
