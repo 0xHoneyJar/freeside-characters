@@ -51,17 +51,23 @@ per `world-purupuru/sites/world/src/lib/daemon/voice.ts` doctrine: **all voice i
 
 ## deploy paths (operator chooses)
 
-### path A · single bot, two guilds (recommended for v1)
+### path A · single bot, two guilds, GUILD-SCOPED publish (recommended for v1)
 
-ONE bot process. gateway-connects to the bot user (already invited to both THJ and purupuru). slash commands published globally — discord propagates to all guilds.
+ONE bot process. gateway-connects to the bot user (already invited to both THJ and purupuru). slash commands are published **guild-scoped, not global** — each guild gets only its own character set. eliminates cross-guild bleed (per bridgebuilder F8: global publish would leak `/kaori`…`/ruan` into THJ, where mitigation depends on non-deterministic LLM persona-compliance).
 
-- THJ guild gets: `/ruggy` · `/satoshi` (existing)
-- purupuru guild gets: `/kaori` `/nemu` `/akane` `/ren` `/ruan` (new)
-- THJ users could ALSO see all 5 caretakers globally · fine for v1 since each caretaker's persona declines mibera-context and stays in voice
+- THJ guild · gets `/ruggy` · `/satoshi`
+- purupuru guild · gets `/kaori` `/nemu` `/akane` `/ren` `/ruan`
+- no cross-guild bleed · enforced at registration, not at LLM-runtime
 
 steps:
 
-1. **env**:
+1. **PRE-PUBLISH avatar checklist** (per bridgebuilder F6 — Discord caches webhook avatars at first send, broken URLs require webhook recreation to fix):
+   - [ ] confirm each `apps/character-{kaori,nemu,akane,ren,ruan}/character.json` has a real `webhookAvatarUrl` OR accept default Discord avatar for v1 voice iteration
+   - [ ] if going with real avatars: place `avatar.png` in each character dir (matching `apps/character-ruggy/avatar.png` convention) and set `webhookAvatarUrl` to `https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/main/apps/character-<name>/avatar.png`
+   - [ ] OR if pulling from world-purupuru CDN: confirm canonical URL prefix (asset registry has `caretaker-<name>-pfp-<element>-pastel.png`)
+   - [ ] empty `webhookAvatarUrl` (default-shipped state) → discord uses bot's default avatar · acceptable for v1 voice iteration but resolve before broader announcement
+
+2. **env** (railway service for caretakers OR same service with merged CHARACTERS — see note below):
    ```
    CHARACTERS=ruggy,satoshi,kaori,nemu,akane,ren,ruan
    DISCORD_BOT_TOKEN=<existing token>
@@ -69,22 +75,26 @@ steps:
    LLM_PROVIDER=anthropic
    ```
 
-2. **publish slash commands**:
+3. **publish caretaker commands GUILD-SCOPED to purupuru**:
    ```bash
-   bun run apps/bot/scripts/publish-commands.ts
+   DISCORD_GUILD_ID=1495534680617910396 \
+   CHARACTERS=kaori,nemu,akane,ren,ruan \
+     bun run apps/bot/scripts/publish-commands.ts
    ```
-   global propagation up to 1h · or scope-test first:
-   ```
-   DISCORD_GUILD_ID=1495534680617910396 bun run apps/bot/scripts/publish-commands.ts
-   ```
+   → only `/kaori` `/nemu` `/akane` `/ren` `/ruan` register in purupuru guild · instant (no global propagation lag) · zero THJ visibility
 
-3. **avatars** (placeholder URLs in each character.json currently point at `raw.githubusercontent.com/project-purupuru/world-purupuru/main/public/caretakers/<name>-pfp.png` — operator confirms the canonical CDN target, OR places fallback PNGs at those raw GitHub paths):
-   - `caretaker-kaori-pfp.png`, `caretaker-nemu-pfp.png`, `caretaker-akane-pfp.png`, `caretaker-ren-pfp.png`, `caretaker-ruan-pfp.png`
-   - world-purupuru CDN already has tiered assets (`caretaker-kaori-pfp-wood-pastel.png` etc.) — wire those URLs once confirmed
+4. **(no-op for THJ ruggy/satoshi)** — if `/ruggy` + `/satoshi` were previously published globally, they remain global · the guild-scoped publish in step 3 doesn't replace them
+   - if you want to MIGRATE ruggy/satoshi to THJ-guild-scoped too (cleanest separation):
+     ```bash
+     DISCORD_GUILD_ID=<THJ-guild-id> \
+     CHARACTERS=ruggy,satoshi \
+       bun run apps/bot/scripts/publish-commands.ts
+     ```
+     then run a deregister-globals pass — operator decides whether to do this now or defer
 
-4. **restart**: railway redeploy OR local `bun run start`
+5. **restart**: railway redeploy OR local `bun run start`
 
-5. **gumi invokes**: `/kaori prompt:"..."` (or any caretaker) in purupuru channels. iteration begins.
+6. **gumi invokes**: `/kaori prompt:"..."` (or any caretaker) in purupuru channels. iteration begins.
 
 ### path B · two bot processes (only if hard isolation needed)
 
@@ -156,13 +166,18 @@ discord caches webhook avatars at first send; updating after first send requires
 
 ## reference paths
 
-- character configs: `apps/character-kaori/character.json` (etc · 5 total)
+> **sibling-checkout convention**: paths prefixed with `<world-purupuru>/` reference the `world-purupuru` repo, expected to be checked out as a sibling of this repo (e.g., `~/Documents/GitHub/world-purupuru/` if this repo is at `~/Documents/GitHub/freeside-characters/`). adjust prefix to match your local layout.
+
+in this repo:
+- character configs: `apps/character-{kaori,nemu,akane,ren,ruan}/character.json`
 - persona scaffolds: `apps/character-{kaori,nemu,akane,ren,ruan}/persona.md`
-- existing reference (DO NOT mimic): `apps/character-ruggy/`
-- canon source: `/Users/zksoju/Documents/GitHub/world-purupuru/grimoires/purupuru/lore-bible.md:131-187`
-- battle whispers: `/Users/zksoju/Documents/GitHub/world-purupuru/sites/world/src/lib/battle/state.svelte.ts:59-144`
-- voice doctrine: `/Users/zksoju/Documents/GitHub/world-purupuru/sites/world/src/lib/daemon/voice.ts`
-- dialogue research: `/Users/zksoju/Documents/GitHub/world-purupuru/grimoires/purupuru/research/battle-dialogue-patterns.md`
+- existing reference (DO NOT mimic structurally): `apps/character-ruggy/`
 - pattern B (webhook delivery): `docs/DISCORD-INTERACTIONS-SETUP.md`
 - character loader: `apps/bot/src/character-loader.ts:52-84`
 - slash command publish: `apps/bot/scripts/publish-commands.ts`
+
+in `<world-purupuru>` (sibling repo):
+- canon source: `<world-purupuru>/grimoires/purupuru/lore-bible.md:131-187`
+- battle whispers: `<world-purupuru>/sites/world/src/lib/battle/state.svelte.ts:59-144`
+- voice doctrine: `<world-purupuru>/sites/world/src/lib/daemon/voice.ts`
+- dialogue research: `<world-purupuru>/grimoires/purupuru/research/battle-dialogue-patterns.md`

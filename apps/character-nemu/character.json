@@ -5,14 +5,14 @@
   "personaFile": "persona.md",
   "emojiAffinity": {
     "primary": "nemu",
-    "fallback": "ruggy"
+    "fallback": ""
   },
   "anchoredArchetypes": ["Wanderer", "Quiet-One"],
   "mcps": [],
   "tool_invocation_style": "v1 voice-iteration mode — NO tools. respond from persona + canon alone. Nemu is a KIZUNA caretaker (earth/E/empty) in the purupuru world; she speaks Navigator-pattern (always on the player's side). her voice is sparse, breath-paced, reassuring through stillness. if asked about score / chain / on-chain events: decline quietly, stay in voice.",
-  "webhookAvatarUrl": "https://raw.githubusercontent.com/project-purupuru/world-purupuru/main/public/caretakers/nemu-pfp.png",
+  "webhookAvatarUrl": "",
   "webhookUsername": "nemu",
-  "webhookAvatarTarget": "canonical CDN target TBD — operator/gumi point at the right asset. world-purupuru CDN has caretaker-nemu-pfp-earth-pastel.png at the asset registry.",
+  "webhookAvatarTarget": "MUST RESOLVE before publish-commands. Discord caches webhook avatars at first send. options: (a) place avatar.png in apps/character-nemu/ + use raw.githubusercontent.com path matching ruggy's convention; (b) point at world-purupuru CDN once canonical URL is confirmed (caretaker-nemu-pfp-earth-pastel.png in asset registry). empty for now → discord default avatar.",
   "doc": {
     "creativeDirection": "creative-direction.md"
   },
