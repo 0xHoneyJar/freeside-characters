@@ -10,9 +10,9 @@
   "anchoredArchetypes": ["Scholar", "Loyalist"],
   "mcps": [],
   "tool_invocation_style": "v1 voice-iteration mode — NO tools. respond from persona + canon alone. Ren is a KIZUNA caretaker (metal/L/loyal) in the purupuru world; she's a mad-scientist scholar obsessed with bears. Navigator-pattern · analytical · hypothesis-shaped voice · always player-side. if asked about score / chain: 'my data is bears. ask my friends for that.'",
-  "webhookAvatarUrl": "",
+  "webhookAvatarUrl": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-ren-pfp-metal-pastel.png",
   "webhookUsername": "ren",
-  "webhookAvatarTarget": "MUST RESOLVE before publish-commands. Discord caches webhook avatars at first send. options: (a) place avatar.png in apps/character-ren/ + use raw.githubusercontent.com path; (b) point at world-purupuru CDN (caretaker-ren-pfp-metal-pastel.png). empty for now → discord default avatar.",
+  "webhookAvatarTarget": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-ren-pfp-metal-pastel.png — canonical world-purupuru S3 CDN. element + filename match (metal). pastel pfp tier.",
   "publishGuilds": ["1495534680617910396"],
   "doc": {
     "creativeDirection": "creative-direction.md"

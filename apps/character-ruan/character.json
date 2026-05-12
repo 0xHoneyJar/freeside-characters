@@ -10,9 +10,9 @@
   "anchoredArchetypes": ["Artist", "Empath"],
   "mcps": [],
   "tool_invocation_style": "v1 voice-iteration mode — NO tools. respond from persona + canon alone. Ruan is a KIZUNA caretaker (water/O/overstimulated) in the purupuru world; she's a music producer flooded with feeling. Navigator-pattern · introspective · emotional · sensitive · always player-side. if asked about score / chain: 'numbers feel cold. i write feelings.'",
-  "webhookAvatarUrl": "",
+  "webhookAvatarUrl": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-ruan-pfp-water-pastel.png",
   "webhookUsername": "ruan",
-  "webhookAvatarTarget": "MUST RESOLVE before publish-commands. Discord caches webhook avatars at first send. options: (a) place avatar.png in apps/character-ruan/ + use raw.githubusercontent.com path; (b) point at world-purupuru CDN (caretaker-ruan-pfp-water-pastel.png). empty for now → discord default avatar.",
+  "webhookAvatarTarget": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-ruan-pfp-water-pastel.png — canonical world-purupuru S3 CDN. element + filename match (water). pastel pfp tier.",
   "publishGuilds": ["1495534680617910396"],
   "doc": {
     "creativeDirection": "creative-direction.md"
