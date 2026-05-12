@@ -48,23 +48,35 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const commands = buildCommandSet(characters);
-  const scope = guildId ? `guild ${guildId}` : 'GLOBAL (1-hour propagation)';
-  console.log(`publish-commands: registering ${commands.length} commands → ${scope}`);
-  for (const cmd of commands) {
-    console.log(`  · /${cmd.name} — ${cmd.description}`);
+  const hasPublishGuilds = characters.some(
+    (c) => c.publishGuilds && c.publishGuilds.length > 0,
+  );
+  const fallbackScope = guildId ? `guild ${guildId}` : 'GLOBAL (1-hour propagation)';
+  if (hasPublishGuilds) {
+    console.log(
+      `publish-commands: ${characters.length} characters · routing per-character publishGuilds (fallback: ${fallbackScope})`,
+    );
+  } else {
+    const commands = buildCommandSet(characters);
+    console.log(`publish-commands: registering ${commands.length} commands → ${fallbackScope}`);
+    for (const cmd of commands) {
+      console.log(`  · /${cmd.name} — ${cmd.description}`);
+    }
   }
 
   try {
-    const result = await publishCommands({
+    const results = await publishCommands({
       botToken,
       applicationId,
       guildId,
       characters,
     });
-    console.log(`publish-commands: registered ${result.registered} commands successfully`);
-    for (const r of result.commands) {
-      console.log(`  ✓ /${r.name} → id ${r.id}`);
+    for (const result of results) {
+      const scope = result.guildId ? `guild ${result.guildId}` : 'GLOBAL';
+      console.log(`publish-commands: registered ${result.registered} commands → ${scope}`);
+      for (const r of result.commands) {
+        console.log(`  ✓ /${r.name} → id ${r.id}`);
+      }
     }
   } catch (err) {
     console.error('publish-commands: FAILED');

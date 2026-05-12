@@ -47,6 +47,16 @@ interface CharacterJson {
    *  blueprints, no fences. Substituted into the environment-context
    *  block at compose time. Optional; omit for no guidance line. */
   tool_invocation_style?: string;
+  /** V0.7 (2026-05-12): per-character Discord guild IDs for slash command
+   *  registration. When set, slash commands route only to listed guilds;
+   *  when omitted (or empty array), falls back to publishCommands `guildId`
+   *  arg (env DISCORD_GUILD_ID in auto-publish). Eliminates cross-guild
+   *  bleed at the registration boundary.
+   *
+   *  ReadonlyArray<string> matches CharacterConfig.publishGuilds — JSON
+   *  spreads accept readonly so this is type-compatible with declared
+   *  arrays in character.json. */
+  publishGuilds?: ReadonlyArray<string>;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -74,6 +84,26 @@ export function loadCharacter(id: string): CharacterConfig {
       `character-loader: id mismatch — config says "${json.id}" but folder is "character-${id}"`,
     );
   }
+
+  // BB-59 F6: validate publishGuilds entries are Discord snowflake-shaped
+  // (17-20 digit strings). Catches operator typos (numbers vs strings,
+  // whitespace, truncated IDs) at load time with a clear character.json
+  // reference, instead of as a Discord 400 at publish time.
+  if (json.publishGuilds !== undefined) {
+    if (!Array.isArray(json.publishGuilds)) {
+      throw new Error(
+        `character-loader: ${configPath} · publishGuilds must be an array of strings, got ${typeof json.publishGuilds}`,
+      );
+    }
+    for (let i = 0; i < json.publishGuilds.length; i++) {
+      const v = json.publishGuilds[i];
+      if (typeof v !== 'string' || !/^\d{17,20}$/.test(v)) {
+        throw new Error(
+          `character-loader: ${configPath} · publishGuilds[${i}] is not a Discord snowflake (17-20 digit string): ${JSON.stringify(v)}`,
+        );
+      }
+    }
+  }
   return {
     id: json.id,
     displayName: json.displayName,
@@ -86,6 +116,7 @@ export function loadCharacter(id: string): CharacterConfig {
     slash_commands: json.slash_commands,
     mcps: json.mcps,
     tool_invocation_style: json.tool_invocation_style,
+    publishGuilds: json.publishGuilds,
   };
 }
 

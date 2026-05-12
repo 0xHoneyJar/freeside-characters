@@ -282,17 +282,19 @@ async function main(): Promise<void> {
       if (!botToken) {
         console.warn('auto-publish:   DISCORD_BOT_TOKEN not set · skipping command sync');
       } else {
-        const result = await publishCommands({
+        const results = await publishCommands({
           botToken,
           applicationId,
           guildId,
           characters,
         });
-        console.log(
-          `auto-publish:   synced ${result.registered} commands · ` +
-            `${result.scope}=${result.guildId ?? '(global)'} · ` +
-            `[${result.commands.map((c) => `/${c.name}`).join(' ')}]`,
-        );
+        for (const result of results) {
+          console.log(
+            `auto-publish:   synced ${result.registered} commands · ` +
+              `${result.scope}=${result.guildId ?? '(global)'} · ` +
+              `[${result.commands.map((c) => `/${c.name}`).join(' ')}]`,
+          );
+        }
       }
     } catch (err) {
       // Don't block bot startup on registration failure. Log and continue —

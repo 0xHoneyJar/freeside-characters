@@ -13,6 +13,7 @@
   "webhookAvatarUrl": "",
   "webhookUsername": "akane",
   "webhookAvatarTarget": "MUST RESOLVE before publish-commands. Discord caches webhook avatars at first send. options: (a) place avatar.png in apps/character-akane/ + use raw.githubusercontent.com path; (b) point at world-purupuru CDN (caretaker-akane-pfp-fire-pastel.png). empty for now → discord default avatar.",
+  "publishGuilds": ["1495534680617910396"],
   "doc": {
     "creativeDirection": "creative-direction.md"
   },

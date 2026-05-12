@@ -51,54 +51,67 @@ per `world-purupuru/sites/world/src/lib/daemon/voice.ts` doctrine: **all voice i
 
 ## deploy paths (operator chooses)
 
-### path A · single bot, two guilds, GUILD-SCOPED publish (recommended for v1)
+### path A · single bot, two guilds, PER-CHARACTER GUILD ROUTING (recommended)
 
-ONE bot process. gateway-connects to the bot user (already invited to both THJ and purupuru). NEW caretaker commands are published **guild-scoped, not global** — purupuru guild gets only its own character set, eliminating cross-guild bleed AT THE REGISTRATION BOUNDARY for the new commands (not at non-deterministic LLM-runtime persona-compliance).
+ONE bot process. gateway-connects to the bot user (already invited to both THJ and purupuru). slash commands route to specific guilds based on each character.json's `publishGuilds` field — enforced at the REGISTRATION BOUNDARY, not at LLM-runtime persona compliance.
 
-**target end-state**:
-- THJ guild · gets `/ruggy` · `/satoshi`
-- purupuru guild · gets `/kaori` `/nemu` `/akane` `/ren` `/ruan`
+**configuration** (V0.7 · 2026-05-12):
+- `apps/character-{ruggy,satoshi,mongolian}/character.json` · `publishGuilds: ["1135545260538339420"]` (THJ)
+- `apps/character-{kaori,nemu,akane,ren,ruan}/character.json` · `publishGuilds: ["1495534680617910396"]` (purupuru)
 
-**honest about the transition**: if `/ruggy` and `/satoshi` were previously published GLOBALLY (the prior default), they will continue to appear in purupuru guild until migrated. publishing caretaker commands guild-scoped to purupuru does NOT remove prior global registrations. there are two sub-paths to handle this:
+**how publish flows**:
+1. bot starts with `CHARACTERS=ruggy,satoshi,mongolian,kaori,nemu,akane,ren,ruan` env (all 8 loaded so each can handle invocations)
+2. auto-publish reads each character's `publishGuilds`, groups by guild
+3. THJ receives PUT with ruggy/satoshi/mongolian commands (+ /satoshi-image · /quest since mongolian is present)
+4. purupuru receives PUT with kaori/nemu/akane/ren/ruan commands
+5. Discord PUT replaces the full set per (application, guild) → previously-leaked caretakers in THJ get **deregistered** automatically on the next sync
 
-- **A.1 fast** · accept that `/ruggy` + `/satoshi` remain visible in purupuru (their personas decline purupuru-context but the commands appear in the slash menu). caretaker iteration begins immediately. ruggy/satoshi migration deferred.
-- **A.2 clean** · ALSO migrate ruggy/satoshi to THJ-guild-scoped registration AND deregister the prior global commands. fully isolates command surfaces per guild. requires running two publishes + a deregister-globals pass (operator owns sequencing). cleaner long-term posture; slightly more work now.
+**end-state**:
+- THJ guild slash menu: `/ruggy` `/satoshi` `/satoshi-image` `/mongolian` `/quest`
+- purupuru guild slash menu: `/kaori` `/nemu` `/akane` `/ren` `/ruan`
+- no cross-guild bleed in either direction
+- changing a character's target guilds is a single character.json edit + bot restart
+
+**backward compat**: characters without `publishGuilds` fall back to the env `DISCORD_GUILD_ID` (V0.6 single-guild model). New characters can opt into per-character routing without breaking existing.
+
+**field reference**: `CharacterConfig.publishGuilds?: ReadonlyArray<string>` per `packages/persona-engine/src/types.ts`.
 
 steps:
+
+0. **confirm per-character `publishGuilds` is set** (this PR's feature). each `apps/character-<id>/character.json` should have a `publishGuilds` array matching its target guild(s). default-shipped state: THJ characters → `["1135545260538339420"]` · purupuru caretakers → `["1495534680617910396"]`. if you want to add/remove a character from a guild, edit its `publishGuilds` and restart the bot — auto-publish syncs on startup.
 
 1. **PRE-PUBLISH avatar checklist** (Discord caches webhook avatars at first send; broken or empty URLs at first-send cache the default → requires webhook recreation to swap later):
    - [ ] **v1 voice-iteration default** (currently shipped): all 5 caretaker `webhookAvatarUrl` fields are empty → Discord uses bot's default avatar. **this is intentional**: voice-only deploy explicitly prioritizes zero-friction iteration with gumi over polish at publish time (per operator framing "before any score mechanism · gumi iterates voice freely"). bridgebuilder F9 flagged this as a sticky-cache hazard; the operator-aligned response is **document the cost, ship, recreate webhooks when art lands**.
    - [ ] **if you want real avatars before first send**: confirm `apps/character-{kaori,nemu,akane,ren,ruan}/avatar.png` exists in each character dir (matching `apps/character-ruggy/avatar.png` convention), then set `webhookAvatarUrl` to `https://raw.githubusercontent.com/0xHoneyJar/freeside-characters/main/apps/character-<name>/avatar.png`. OR point at world-purupuru CDN once canonical URL is confirmed (asset registry has `caretaker-<name>-pfp-<element>-pastel.png`).
    - [ ] **webhook recreation cost when swapping avatars later**: delete the channel webhook in Discord settings (or via `gh api` / discord.js), then re-invoke any caretaker so the bot recreates the webhook with the new avatar URL. operationally: ~30 seconds per channel-webhook swap. acceptable for v1 voice iteration.
 
-2. **env** (railway service for caretakers OR same service with merged CHARACTERS — see note below):
+2. **env** (railway service):
    ```
-   CHARACTERS=ruggy,satoshi,kaori,nemu,akane,ren,ruan
+   CHARACTERS=ruggy,satoshi,mongolian,kaori,nemu,akane,ren,ruan
    DISCORD_BOT_TOKEN=<existing token>
    ANTHROPIC_API_KEY=sk-...
    LLM_PROVIDER=anthropic
+   # DISCORD_GUILD_ID is now OPTIONAL · per-character publishGuilds takes precedence ·
+   # only used as fallback for characters that lack publishGuilds (backward compat)
    ```
 
-3. **publish caretaker commands GUILD-SCOPED to purupuru**:
+3. **restart railway service** OR `bun run start` locally
+   - auto-publish reads each character's `publishGuilds`, groups by guild, PUTs each guild its own command set
+   - THJ guild receives: `/ruggy /satoshi /satoshi-image /mongolian /quest` (5 commands)
+   - purupuru guild receives: `/kaori /nemu /akane /ren /ruan` (5 commands)
+   - **Discord PUT replace semantics** (be precise): PUT replaces the command set WITHIN a single (application, guild) scope. for caretakers previously registered guild-scoped to THJ (the current state in this repo's deploy as of 2026-05-12), the new PUT-to-THJ with `[ruggy, satoshi, mongolian, satoshi-image, quest]` replaces and removes them automatically. **HOWEVER** if any character was ever registered GLOBALLY (e.g., `DISCORD_GUILD_ID` env was unset at a prior publish time), the global registration persists until a separate global publish or per-command DELETE clears it — guild-scoped PUTs do NOT touch globals. if you see commands leftover after this rollout, check: `gh api applications/$APP_ID/commands` to see globals, then issue `PUT /applications/$APP_ID/commands` with an empty array OR per-command DELETE to clear.
+
+4. **(ad-hoc) one-off publish via CLI** if needed:
    ```bash
-   DISCORD_GUILD_ID=1495534680617910396 \
-   CHARACTERS=kaori,nemu,akane,ren,ruan \
-     bun run apps/bot/scripts/publish-commands.ts
+   bun run apps/bot/scripts/publish-commands.ts
    ```
-   → only `/kaori` `/nemu` `/akane` `/ren` `/ruan` register in purupuru guild · instant (no global propagation lag) · zero THJ visibility
+   reads `CHARACTERS` env, routes per-character via `publishGuilds`. for selective publish (e.g., one guild only):
+   ```bash
+   CHARACTERS=kaori,nemu,akane,ren,ruan bun run apps/bot/scripts/publish-commands.ts
+   # only caretakers loaded · their publishGuilds → only purupuru registered
+   ```
 
-4. **(no-op for THJ ruggy/satoshi)** — if `/ruggy` + `/satoshi` were previously published globally, they remain global · the guild-scoped publish in step 3 doesn't replace them
-   - if you want to MIGRATE ruggy/satoshi to THJ-guild-scoped too (cleanest separation):
-     ```bash
-     DISCORD_GUILD_ID=<THJ-guild-id> \
-     CHARACTERS=ruggy,satoshi \
-       bun run apps/bot/scripts/publish-commands.ts
-     ```
-     then run a deregister-globals pass — operator decides whether to do this now or defer
-
-5. **restart**: railway redeploy OR local `bun run start`
-
-6. **gumi invokes**: `/kaori prompt:"..."` (or any caretaker) in purupuru channels. iteration begins.
+5. **gumi invokes**: `/kaori prompt:"..."` (or any caretaker) in purupuru channels. iteration begins.
 
 ### path B · two bot processes (only if hard isolation needed)
 

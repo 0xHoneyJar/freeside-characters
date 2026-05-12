@@ -13,6 +13,7 @@
   "tool_invocation_style": "Use codex when a player asks about Mongolian lore, ancestors, or grail history — ground the answer in canon rather than improvising. Use freeside_auth to resolve wallet identity when a player's on-chain presence is relevant to quest progress. Default to voice; tools support, never lead.",
   "webhookAvatarUrl": "https://assets.0xhoneyjar.xyz/Mibera/grails/mongolian.webp",
   "webhookUsername": "Mongolian",
+  "publishGuilds": ["1135545260538339420"],
   "doc": {
     "creativeDirection": "creative-direction.md",
     "codexAnchors": "codex-anchors.md"
