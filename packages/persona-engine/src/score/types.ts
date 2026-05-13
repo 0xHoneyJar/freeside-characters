@@ -242,12 +242,41 @@ export interface CommunityCountsCoreFields {
   stickiness: number | null;     // active_7d / active_30d (DAU/MAU)
 }
 
-export interface CommunityCountsNullableFields {
+/**
+ * Prior-period count anchor. Same field names as the count-typed Core fields,
+ * with null when prior-period data is missing. **Values are COUNTS.**
+ */
+export interface CommunityCountsPreviousFields {
   active_members: number | null;
   active_7d: number | null;
   new_in_window: number | null;
   inactive_30d: number | null;
   recently_churned: number | null;
+  stickiness: number | null;
+}
+
+/**
+ * Period-over-period delta payload. Field NAMES match the count fields for
+ * structural consistency with the server schema, but the VALUES are **percent
+ * changes**, not counts. A `deltas.active_members` of `42` means +42% PoP,
+ * not 42 members. `null` when the prior-period denominator is 0 (never Infinity).
+ *
+ * The shape is intentionally distinct from CommunityCountsPreviousFields so
+ * call sites cannot accidentally treat a percent change as a member count.
+ * (Per BB-001 review on PR #73 — semantic-collision guard.)
+ */
+export interface CommunityCountsDeltaFields {
+  /** PoP percent change in active_in_window count. null if prior is 0. */
+  active_members: number | null;
+  /** PoP percent change in active_7d count. null if prior is 0. */
+  active_7d: number | null;
+  /** PoP percent change in new_in_window count. null if prior is 0. */
+  new_in_window: number | null;
+  /** PoP percent change in inactive_30d count. null if prior is 0. */
+  inactive_30d: number | null;
+  /** PoP percent change in recently_churned count. null if prior is 0. */
+  recently_churned: number | null;
+  /** PoP percent change in stickiness ratio. null if prior is 0. */
   stickiness: number | null;
 }
 
@@ -257,10 +286,10 @@ export interface GetCommunityCountsArgs {
 
 export interface GetCommunityCountsResponse extends CommunityCountsCoreFields {
   window_days: PulseWindow;
-  /** Same field set, prior-period anchor. Values are null if prior data missing. */
-  previous: CommunityCountsNullableFields;
-  /** PoP percent change for each field. null when prior is 0 (never Infinity). */
-  deltas: CommunityCountsNullableFields;
+  /** Prior-period values (counts). null fields if prior data missing. */
+  previous: CommunityCountsPreviousFields;
+  /** PoP percent changes for each field. null when prior is 0 (never Infinity). */
+  deltas: CommunityCountsDeltaFields;
   schema_version: '1.0.0';
   generated_at: string;
 }
