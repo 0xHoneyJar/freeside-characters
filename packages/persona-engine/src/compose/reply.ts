@@ -52,12 +52,58 @@ import {
   type GrailRefValidation,
 } from '../deliver/grail-ref-guard.ts';
 import { stripAttachedImageUrls } from '../deliver/strip-image-urls.ts';
-import { EMOJIS, findById, findByName, renderEmoji } from '../orchestrator/emojis/registry.ts';
+import {
+  EMOJIS,
+  findById,
+  findByName,
+  pickByMoods,
+  renderEmoji,
+  shuffle,
+  type EmojiKind,
+} from '../orchestrator/emojis/registry.ts';
 import {
   appendToLedger,
   getLedgerSnapshot,
   type LedgerEntry,
 } from '../conversation/ledger.ts';
+import { sampleVoiceCard, renderVoiceCard } from '../voice/sampler.ts';
+import type { VoiceCard } from '../voice/grimoire.ts';
+
+/**
+ * Witness picker — binds the grimoire sampler to ruggy's custom emoji
+ * registry. Picks ONE emoji name whose mood tags match the sampled card's
+ * stance. Returns null when the card's exit isn't `custom_emoji` (no need
+ * to pick) or when no mood-fit is available.
+ *
+ * Stance → mood heuristic (deliberately loose · the LLM still has freedom):
+ *   - density=fragment + splash=sparse → "cool" or "dazed" emoji (low-key)
+ *   - shape=single_punchline + bullet_palette includes 🚨 → "flex" or "shocked"
+ *   - exit=bear_emoji or silence → don't bother (returns null)
+ *   - default → "cool" mood for static · catches the "vibe" register
+ *
+ * The picker is character-scoped via `kind`. Per-character mood mappings
+ * could compose later when satoshi/mongolian want this surface — for now
+ * ruggy's the only character using the grimoire.
+ */
+function pickWitnessFromRegistry(card: Omit<VoiceCard, 'witness'>, kind: EmojiKind = 'ruggy'): string | null {
+  if (card.exit !== 'custom_emoji') return null;
+  // Match stance to mood-search terms · the registry has flex/cool/dazed/
+  // celebrate/cute/love/snark/etc · pick reaches via mood tags.
+  let moods: string[];
+  if (card.bullet_palette.includes('🚨')) {
+    moods = ['shocked', 'flex'];
+  } else if (card.density === 'fragment' || card.splash === 'sparse') {
+    moods = ['cool', 'dazed'];
+  } else if (card.splash === 'lush') {
+    moods = ['celebrate', 'cute', 'love'];
+  } else {
+    moods = ['cool', 'cute'];
+  }
+  const candidates = pickByMoods(moods as never, kind);
+  if (candidates.length === 0) return null;
+  const shuffled = shuffle(candidates);
+  return shuffled[0]?.name ?? null;
+}
 
 export interface ReplyComposeArgs {
   config: Config;
@@ -143,6 +189,18 @@ export async function composeReply(
     otherCharactersHere: args.otherCharactersHere,
   });
 
+  // 2026-05-12 — voice grimoire: sample a per-fire stance card and
+  // inject as {{VOICE_GRIMOIRE}}. Persona reads the card and shapes
+  // accordingly. Decouples voice variance from persona prose. Next
+  // iteration: load operator weight overrides from voice.config.yaml ·
+  // for now DEFAULT_VOICE_WEIGHTS apply (see voice/grimoire.ts).
+  const voiceCard = sampleVoiceCard({
+    seed: `${args.channelId}:${args.authorId}:${Date.now()}`,
+    channelId: args.channelId,
+    witnessPicker: (c) => pickWitnessFromRegistry(c, 'ruggy'),
+  });
+  const voiceGrimoire = renderVoiceCard(voiceCard);
+
   const { systemPrompt, userMessage } = buildReplyPromptPair({
     character: args.character,
     prompt: args.prompt,
@@ -153,6 +211,7 @@ export async function composeReply(
       content: h.content,
     })),
     environmentContext,
+    voiceGrimoire,
   });
 
   // Routing decision: orchestrator (full MCP scope) vs naive (V0.7-A.0

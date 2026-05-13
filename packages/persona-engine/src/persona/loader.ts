@@ -209,6 +209,15 @@ export interface BuildPromptArgsUnified {
    * that don't reference the placeholder.
    */
   environmentContext?: string;
+  /**
+   * Voice grimoire block (rendered VoiceCard · per-fire stance: entry,
+   * shape, splash, exit, density, bullet_palette, witness). 2026-05-12 ·
+   * decouples behavior parameters from persona prose · operator tunes
+   * weights via .loa.config.yaml, sampler draws a card per fire, persona
+   * reads via `{{VOICE_GRIMOIRE}}` placeholder. Empty/omitted = no-op for
+   * templates that don't reference it. See packages/persona-engine/src/voice/.
+   */
+  voiceGrimoire?: string;
 }
 
 /**
@@ -232,6 +241,7 @@ export function buildPrompt(args: BuildPromptArgsUnified): {
   const voiceAnchors = loadVoiceAnchors(character.personaPath);
   const codexAnchors = loadCodexAnchors(character.personaPath);
   const environment = args.environmentContext ?? '';
+  const voiceGrimoire = args.voiceGrimoire ?? '';
 
   // Per-shape: fragment, output instruction, exemplars, movement guidance,
   // zone substitution values.
@@ -277,6 +287,7 @@ export function buildPrompt(args: BuildPromptArgsUnified): {
     .replace(/\{\{CODEX_ANCHORS\}\}/g, codexAnchors)
     .replace(/\{\{CODEX_PRELUDE\}\}/g, codex)
     .replace(/\{\{ENVIRONMENT\}\}/g, environment)
+    .replace(/\{\{VOICE_GRIMOIRE\}\}/g, voiceGrimoire)
     .replace(/\{\{EXEMPLARS\}\}/g, exemplars)
     .replace(/\{\{ZONE_ID\}\}/g, zoneId)
     .replace(/\{\{ZONE_NAME\}\}/g, zoneName)
@@ -434,6 +445,13 @@ export interface BuildReplyPromptArgs {
    * placeholder. Backward-compatible no-op when absent.
    */
   environmentContext?: string;
+  /**
+   * 2026-05-12 — optional voice grimoire block (built by
+   * `voice/sampler.renderVoiceCard()`). Substituted into
+   * `{{VOICE_GRIMOIRE}}` placeholder. When omitted, persona falls back
+   * to the DATA-SHAPED default. Backward-compatible.
+   */
+  voiceGrimoire?: string;
 }
 
 export interface ReplyTranscriptEntry {
@@ -466,6 +484,7 @@ export function buildReplyPromptPair(args: BuildReplyPromptArgs): {
       userPrompt: args.prompt,
     },
     environmentContext: args.environmentContext,
+    voiceGrimoire: args.voiceGrimoire,
   });
 }
 
