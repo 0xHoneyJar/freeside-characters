@@ -68,6 +68,7 @@ import {
 } from '../conversation/ledger.ts';
 import { sampleVoiceCard, renderVoiceCard } from '../voice/sampler.ts';
 import type { VoiceCard } from '../voice/grimoire.ts';
+import { getVoiceWeightsFor } from '../voice/config-loader.ts';
 
 /**
  * Witness picker — binds the grimoire sampler to ruggy's custom emoji
@@ -191,12 +192,12 @@ export async function composeReply(
 
   // 2026-05-12 — voice grimoire: sample a per-fire stance card and
   // inject as {{VOICE_GRIMOIRE}}. Persona reads the card and shapes
-  // accordingly. Decouples voice variance from persona prose. Next
-  // iteration: load operator weight overrides from voice.config.yaml ·
-  // for now DEFAULT_VOICE_WEIGHTS apply (see voice/grimoire.ts).
+  // accordingly. Operator-tunable weights via voice.config.yaml at
+  // repo root · falls back to DEFAULT_VOICE_WEIGHTS when no config.
   const voiceCard = sampleVoiceCard({
     seed: `${args.channelId}:${args.authorId}:${Date.now()}`,
     channelId: args.channelId,
+    weights: getVoiceWeightsFor(args.character.id),
     witnessPicker: (c) => pickWitnessFromRegistry(c, 'ruggy'),
   });
   const voiceGrimoire = renderVoiceCard(voiceCard);
