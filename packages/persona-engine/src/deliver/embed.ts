@@ -206,14 +206,13 @@ function formatDelta(deltaPct: number | null): string {
   return `${arrow}${sign}${deltaPct < 0 ? '-' : ''}${rounded}%`;
 }
 
-/** Render a single factor row for the Most active section. */
+/** Render a single factor row for the Most active section.
+ *  Padding fits the longest verb-form label in PRIMARY_ACTION_MAP
+ *  ("Contributed to Liquid Backing" = 29 chars; bump if labels grow). */
 function renderFactorRow(f: PulseDimensionFactor): string {
   const verb = f.primary_action ?? f.display_name;
   const delta = formatDelta(f.delta_pct);
-  const wasNote = f.previous > 0 && f.delta_pct === null
-    ? ''
-    : f.previous > 0 ? `  (was ${formatCount(f.previous)})` : '';
-  return `• \`${verb.padEnd(18).slice(0, 18)}\` ${formatCount(f.total).padStart(4)}  ${delta}${wasNote}`;
+  return `• \`${verb.padEnd(30).slice(0, 30)}\` ${formatCount(f.total).padStart(4)}  ${delta}`;
 }
 
 /** Render the Went quiet inline list. Full list per operator decision —
@@ -238,32 +237,28 @@ export function buildPulseDimensionPayload(
   windowDays: 7 | 30 | 90,
 ): DigestPayload {
   const color = DIM_COLORS[dim.id];
-  const activeFactorCount = dim.total_factor_count - dim.inactive_factor_count;
   const dimDelta = formatDelta(dim.delta_pct);
-  const wasTotal = dim.previous_period_events > 0
-    ? `  (was ${formatCount(dim.previous_period_events)})`
-    : '';
 
-  // Hero line: large event count + dim-level delta + diversity chip.
-  const heroLine = `**${formatCount(dim.total_events)}** events  ${dimDelta} vs prior ${windowDays}d${wasTotal}`;
-  const diversityLine = `${activeFactorCount} of ${dim.total_factor_count} factors active`;
+  // Hero line: large event count + dim-level delta. Lean — agent infers
+  // magnitude from the percent + count alone; no `(was N)` clutter, no
+  // diversity chip line (factor count is implicit in the rendered list).
+  const heroLine = `**${formatCount(dim.total_events)}** events  ${dimDelta} vs prior ${windowDays}d`;
 
   const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
 
   // Most active block — full list (no truncation). Discord field value
   // cap is 1024 chars; onchain has 19 max base factors, ~50 chars per row
   // (incl. verb-form padding) → ~950 chars worst case, under the limit.
-  // If a future cycle pushes this over, fall back to a 2-field split
-  // (e.g. "Most active 1-15" + "Most active 16-30").
+  // If a future cycle pushes this over, fall back to a 2-field split.
   if (dim.top_factors.length > 0) {
     const topRows = dim.top_factors.map(renderFactorRow).join('\n');
     fields.push({
-      name: `Most active · last ${windowDays}d`,
+      name: 'Most active',
       value: `\`\`\`\n${topRows}\n\`\`\``,
     });
   } else {
     fields.push({
-      name: `Most active · last ${windowDays}d`,
+      name: 'Most active',
       value: '_no factor activity in this window_',
     });
   }
@@ -271,7 +266,7 @@ export function buildPulseDimensionPayload(
   // Went quiet — separate field, only when cold factors exist.
   if (dim.cold_factors.length > 0) {
     fields.push({
-      name: 'Went quiet · active prior, 0 this period',
+      name: 'Went quiet',
       value: renderColdList(dim.cold_factors),
     });
   }
@@ -279,17 +274,13 @@ export function buildPulseDimensionPayload(
   // Plain-text fallback for embed-disabled clients.
   const fallback = `${dim.display_name} · ${windowDays}d · ${formatCount(dim.total_events)} events ${dimDelta}`;
 
-  // Footer: timestamp + tool provenance.
-  const footerText = `pulse · ${dim.id} · generated ${response.generated_at}`;
-
   return {
     content: fallback,
     embeds: [
       {
         color,
-        description: `## ${dim.display_name} dimension · last ${windowDays} days\n${heroLine}\n${diversityLine}`,
+        description: `## ${dim.display_name} dimension · last ${windowDays} days\n${heroLine}`,
         fields,
-        footer: { text: footerText },
       },
     ],
   };

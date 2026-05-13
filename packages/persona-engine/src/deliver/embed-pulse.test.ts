@@ -90,36 +90,42 @@ describe('buildPulseDimensionPayload — OG live data', () => {
     expect(embed.color).toBe(0xc9a44c);
   });
 
-  it('description has dim name + windowDays + hero line + diversity chip', () => {
+  it('description has dim name + windowDays + lean hero line (no was-N, no diversity chip)', () => {
     expect(embed.description).toContain('OG dimension · last 30 days');
     expect(embed.description).toContain('**4** events');
     expect(embed.description).toContain('↓-84.6%');
-    expect(embed.description).toContain('(was 26)');
-    expect(embed.description).toContain('2 of 5 factors active');
+    // Intentionally NOT in the description — kept lean per operator review
+    expect(embed.description).not.toContain('(was');
+    expect(embed.description).not.toContain('factors active');
   });
 
-  it('Most active field has both top factors with deltas', () => {
-    const mostActive = embed.fields?.find((f) => f.name.startsWith('Most active'));
+  it('Most active field has both top factors with deltas (no was-N suffix)', () => {
+    const mostActive = embed.fields?.find((f) => f.name === 'Most active');
     expect(mostActive).toBeDefined();
     expect(mostActive?.value).toContain('Articles');
     expect(mostActive?.value).toContain('Sets');
     expect(mostActive?.value).toContain('↓-85.7%');
     expect(mostActive?.value).toContain('↓-83.3%');
-    expect(mostActive?.value).toContain('(was 14)');
-    expect(mostActive?.value).toContain('(was 12)');
+    // Intentionally NOT in the per-factor row — kept lean per operator review
+    expect(mostActive?.value).not.toContain('(was');
   });
 
   it('Went quiet field lists all 3 cold factors', () => {
-    const coldField = embed.fields?.find((f) => f.name.startsWith('Went quiet'));
+    const coldField = embed.fields?.find((f) => f.name === 'Went quiet');
     expect(coldField).toBeDefined();
     expect(coldField?.value).toContain('CFang Keys');
     expect(coldField?.value).toContain('CubQuest');
     expect(coldField?.value).toContain('Jani Keys');
   });
 
-  it('footer carries provenance', () => {
-    expect(embed.footer?.text).toContain('pulse · og');
-    expect(embed.footer?.text).toContain('2026-05-13T22:14:36.831Z');
+  it('field names are bare (no "· last 7d" or "· active prior" suffixes)', () => {
+    const names = embed.fields?.map((f) => f.name) ?? [];
+    expect(names).toContain('Most active');
+    expect(names).toContain('Went quiet');
+  });
+
+  it('does not emit a footer (intentionally minimal)', () => {
+    expect(embed.footer).toBeUndefined();
   });
 
   it('plain-text fallback for embed-disabled clients', () => {
