@@ -35,10 +35,27 @@ let cache:
   | { kind: 'loaded'; map: Record<string, VoiceWeights> } = { kind: 'unloaded' };
 
 /**
- * Repo-root discovery: walk up from `cwd` looking for the config file.
- * Capped at 6 levels to avoid runaway. Returns null if not found.
+ * Repo-root discovery (in order of precedence):
+ *   1. LOA_VOICE_CONFIG env var — absolute or cwd-relative path
+ *   2. Walk up from `cwd` looking for `voice.config.yaml` (capped at 6 levels)
+ *
+ * BB MED 0.75 (config-loader-cwd-walking-fragility · 2026-05-12): the
+ * env-var override is the load-bearing path for monorepos where the bot's
+ * cwd may not be the repo root (or where multiple repos share a config).
+ * Walking up from cwd is a useful default but not authoritative.
+ *
+ * Returns null if no config found · loader treats null as "no overrides,
+ * defaults apply" rather than as an error.
  */
 function findConfigFile(startDir: string = process.cwd()): string | null {
+  const envPath = process.env['LOA_VOICE_CONFIG'];
+  if (envPath) {
+    const resolved = envPath.startsWith('/') ? envPath : join(process.cwd(), envPath);
+    if (existsSync(resolved)) return resolved;
+    console.warn(
+      `[voice-config] LOA_VOICE_CONFIG=${envPath} (resolved to ${resolved}) does not exist · falling back to cwd walk`,
+    );
+  }
   let dir = startDir;
   for (let i = 0; i < 6; i++) {
     const candidate = join(dir, CONFIG_FILENAME);

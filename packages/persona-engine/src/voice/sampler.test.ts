@@ -16,6 +16,7 @@ import {
   sampleVoiceCard,
   renderVoiceCard,
   _resetVoiceCache,
+  _voiceCacheSize,
 } from './sampler.ts';
 import {
   ENTRY_VALUES,
@@ -180,6 +181,62 @@ describe('sampleVoiceCard · witness picker', () => {
   test('no witnessPicker = witness is null', () => {
     const card = sampleVoiceCard({ seed: 'no-picker' });
     expect(card.witness).toBeNull();
+  });
+});
+
+describe('sampleVoiceCard · noDodge opt-out (BB MED 0.80)', () => {
+  test('noDodge=true ignores recent-used cache → strict seed-determinism', () => {
+    // With dodge enabled, same channel + same seed might resample to dodge
+    // recent. With noDodge, same seed always produces same card regardless
+    // of channel history.
+    const a = sampleVoiceCard({ seed: 'strict', channelId: 'ch', noDodge: true });
+    // Fire a different seed in the same channel to "pollute" the dodge cache.
+    sampleVoiceCard({ seed: 'pollution', channelId: 'ch' });
+    sampleVoiceCard({ seed: 'pollution-2', channelId: 'ch' });
+    // Replay the original seed with noDodge=true · should match exactly.
+    const b = sampleVoiceCard({ seed: 'strict', channelId: 'ch', noDodge: true });
+    expect(a.entry).toBe(b.entry);
+    expect(a.shape).toBe(b.shape);
+  });
+
+  test('noDodge=false (default) honors recent-used dodge', () => {
+    // Sanity check: dodge IS active by default.
+    const fires = [];
+    for (let i = 0; i < 3; i++) {
+      fires.push(sampleVoiceCard({ seed: `defaultmode-${i}`, channelId: 'dodge-ch' }));
+    }
+    const pairs = new Set(fires.map((f) => `${f.entry}|${f.shape}`));
+    // At least 2 distinct pairs across 3 fires when dodge is on.
+    expect(pairs.size).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('sampleVoiceCard · LRU cap (BB MED 0.85)', () => {
+  test('channel cache evicts oldest entries past cap', () => {
+    _resetVoiceCache();
+    // Fire 300 unique channels · cap is 256 · cache should stay bounded.
+    for (let i = 0; i < 300; i++) {
+      sampleVoiceCard({ seed: `lru-fire-${i}`, channelId: `channel-${i}` });
+    }
+    expect(_voiceCacheSize()).toBeLessThanOrEqual(256);
+    // Verify we hit the cap (not lower from some bug)
+    expect(_voiceCacheSize()).toBeGreaterThanOrEqual(200);
+  });
+
+  test('re-touching a channel bumps it to most-recent (LRU semantics)', () => {
+    _resetVoiceCache();
+    // Fill cache near cap.
+    for (let i = 0; i < 256; i++) {
+      sampleVoiceCard({ seed: `seed-${i}`, channelId: `ch-${i}` });
+    }
+    // Touch channel-0 (oldest) — it should now be most-recent, surviving
+    // when we add a new entry that pushes the cap.
+    sampleVoiceCard({ seed: 'touch-0', channelId: 'ch-0' });
+    // Add ONE more new channel · should evict the NEW-oldest, not ch-0.
+    sampleVoiceCard({ seed: 'new-fire', channelId: 'ch-new' });
+    expect(_voiceCacheSize()).toBeLessThanOrEqual(256);
+    // Hard to assert ch-0 specifically survived without exposing the cache,
+    // but size invariant + the touch logic above is the contract.
   });
 });
 

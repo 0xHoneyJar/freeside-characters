@@ -116,16 +116,30 @@ function sampleBulletPalette(
 
 // ──────────────────────────────────────────────────────────────────────
 // Recent-used dodge cache · per-channel (entry, shape) pair history
+//
+// BB MED 0.85 (memory-leak-channel-cache · 2026-05-12): hard LRU cap.
+// Without one, the map grows once per unique channelId ever seen — for
+// a bot serving many guilds this is unbounded. Map is insertion-ordered
+// in JS, so we trim from the front when we exceed the cap.
 // ──────────────────────────────────────────────────────────────────────
 
 const recentCardsByChannel = new Map<string, Array<{ entry: Entry; shape: Shape }>>();
 const DEFAULT_DODGE_WINDOW = 3;
+const MAX_CHANNEL_CACHE = 256; // ~256 active channels before LRU eviction
 
 function recordRecent(channelId: string, card: { entry: Entry; shape: Shape }, windowSize: number): void {
   const cur = recentCardsByChannel.get(channelId) ?? [];
   cur.push(card);
   while (cur.length > windowSize) cur.shift();
+  // Touch the LRU: delete + re-set to bump to most-recent insertion order.
+  recentCardsByChannel.delete(channelId);
   recentCardsByChannel.set(channelId, cur);
+  // Evict oldest entries beyond the cap.
+  while (recentCardsByChannel.size > MAX_CHANNEL_CACHE) {
+    const oldest = recentCardsByChannel.keys().next().value;
+    if (oldest === undefined) break;
+    recentCardsByChannel.delete(oldest);
+  }
 }
 
 function isRecent(channelId: string, entry: Entry, shape: Shape): boolean {
@@ -139,6 +153,11 @@ export function _resetVoiceCache(): void {
   recentCardsByChannel.clear();
 }
 
+/** Inspect the current cache size · for memory monitoring + tests. */
+export function _voiceCacheSize(): number {
+  return recentCardsByChannel.size;
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // The draw · public API
 // ──────────────────────────────────────────────────────────────────────
@@ -148,6 +167,15 @@ export interface SampleVoiceCardArgs {
   weights?: VoiceWeights;
   channelId?: string;
   dodgeWindow?: number;
+  /**
+   * BB MED 0.80 (dodge-non-deterministic-with-determinism-claim · 2026-05-12):
+   * opt-out for tests + any caller that wants STRICTLY seeded output. With
+   * `noDodge: true` the sampler ignores the channel's recent-used cache,
+   * producing the same card for the same seed regardless of fire history.
+   * Default false (production wants the dodge for variance · tests + audit
+   * replays want determinism).
+   */
+  noDodge?: boolean;
   /**
    * Caller-supplied witness picker. Receives the sampled card so the
    * picker can compose its choice with the rest of the stance (e.g.
@@ -175,6 +203,7 @@ export function sampleVoiceCard(args: SampleVoiceCardArgs): VoiceCard {
 
   // Resample entry/shape pair if it matches a recent draw in this channel ·
   // capped at 4 attempts so we don't loop forever under tight constraints.
+  // Skip dodge entirely when noDodge is true (strict seed-determinism mode).
   let entry: Entry;
   let shape: Shape;
   let attempt = 0;
@@ -182,7 +211,12 @@ export function sampleVoiceCard(args: SampleVoiceCardArgs): VoiceCard {
     entry = weightedPick(ENTRY_VALUES, w.entry, rand);
     shape = weightedPick(SHAPE_VALUES, w.shape, rand);
     attempt++;
-  } while (channelId && attempt < 4 && isRecent(channelId, entry, shape));
+  } while (
+    !args.noDodge &&
+    channelId &&
+    attempt < 4 &&
+    isRecent(channelId, entry, shape)
+  );
 
   const splash = weightedPick(SPLASH_VALUES, w.splash, rand);
   const exit = weightedPick(EXIT_VALUES, w.exit, rand);

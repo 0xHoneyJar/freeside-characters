@@ -2,13 +2,26 @@
 # ==========================================================
 #
 # Copy to `voice.config.yaml` at repo root to override DEFAULT_VOICE_WEIGHTS
-# per-character. Hot-tunable: change a number → next chat-mode reply fires
-# with the new distribution (substrate reads on module load · restart bot
-# after edit · no rebuild).
+# per-character. The substrate caches per-process (no hot-reload), so:
+#
+#   edit voice.config.yaml → RESTART THE BOT → next chat-mode reply
+#   samples from the new distribution
+#
+# (BB MED 0.95 fix · the previous wording "Hot-tunable" contradicted the
+# loader semantics in config-loader.ts which explicitly says no hot-reload.)
+#
+# Alternative path: set LOA_VOICE_CONFIG=/absolute/path/to/your.yaml to
+# point at a config outside the repo (useful for monorepos / shared configs).
 #
 # Schema source of truth: packages/persona-engine/src/voice/grimoire.ts
 # Validated via Zod on load · invalid YAML logs a stderr warning and falls
 # back to defaults (no crash).
+#
+# Weight values:
+#   - Floats (probabilities) like 0.3, 0.5 work fine
+#   - Integers (ratios) like 3, 1 also work — sampler normalizes on the fly
+#   - Zero weight → that value is never sampled
+#   - Missing keys → fall back to defaults (partial maps merge cleanly)
 #
 # Per-character keys: 'ruggy' (currently the only character using grimoire).
 # satoshi / mongolian / future characters will surface here when their

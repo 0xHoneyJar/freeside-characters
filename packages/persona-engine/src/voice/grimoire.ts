@@ -181,23 +181,28 @@ export const DEFAULT_VOICE_WEIGHTS: Required<VoiceWeights> = {
 // Zod schema · runtime validation for config-loaded weights
 // ──────────────────────────────────────────────────────────────────────
 
-const fractionRecord = <T extends string>(values: readonly T[]) =>
+// BB MED 0.90 (schema-record-keys-as-fractions · 2026-05-12): per-knob
+// weights are NORMALIZED on the fly by the sampler · they don't need to
+// sum to 1 NOR be in [0,1]. The Zod constraint just requires non-negative.
+// A weight of 100 is valid · it'll just dominate. Operators may use
+// integer "ratios" (e.g. 3 vs 1) instead of fractional probabilities.
+const weightRecord = <T extends string>(values: readonly T[]) =>
   z
-    .record(z.enum(values as unknown as [T, ...T[]]), z.number().min(0).max(1))
+    .record(z.enum(values as unknown as [T, ...T[]]), z.number().min(0))
     .optional();
 
 export const VoiceWeightsSchema = z
   .object({
-    entry: fractionRecord(ENTRY_VALUES),
-    shape: fractionRecord(SHAPE_VALUES),
-    splash: fractionRecord(SPLASH_VALUES),
-    exit: fractionRecord(EXIT_VALUES),
-    density: fractionRecord(DENSITY_VALUES),
+    entry: weightRecord(ENTRY_VALUES),
+    shape: weightRecord(SHAPE_VALUES),
+    splash: weightRecord(SPLASH_VALUES),
+    exit: weightRecord(EXIT_VALUES),
+    density: weightRecord(DENSITY_VALUES),
     bullet_palette_k: z
       .object({
-        2: z.number().min(0).max(1).optional(),
-        3: z.number().min(0).max(1).optional(),
-        4: z.number().min(0).max(1).optional(),
+        2: z.number().min(0).optional(),
+        3: z.number().min(0).optional(),
+        4: z.number().min(0).optional(),
       })
       .optional(),
   })
