@@ -459,13 +459,27 @@ export async function runOrchestratorQuery(
   // — same loop, different message type.
   for await (const message of query({ prompt: req.userMessage, options })) {
     if (message.type === 'assistant') {
-      for (const block of message.message.content) {
+      // V0.12.0 fix (zone-digest tool-call leak, 2026-05-13):
+      // Previously accumulated text from EVERY assistant turn into the
+      // fallback string. Claude's standard pattern is to emit text like
+      // "I'll fire the tools first." alongside the tool_use block in the
+      // SAME assistant message — that turn's text is an announce-scaffold,
+      // not synthesis. When `result.success.result` was empty (Bedrock-
+      // routed responses), the fallback returned the announce-scaffold
+      // concatenated with the synthesis turn, leaking strings like
+      // `I'll fire the tools first. <tool_use>{"name":"..."}</tool_use>`
+      // into Discord posts (production digest screenshots 2026-05-13).
+      //
+      // Fix: only accumulate text from turns that contain NO tool_use
+      // blocks — those are synthesis turns. Announce-scaffold text from
+      // tool-using turns is discarded.
+      const blocks = message.message.content;
+      const isSynthesisTurn = !blocks.some((b) => b.type === 'tool_use');
+      for (const block of blocks) {
         if (block.type === 'text') {
-          // V0.11.2: accumulate text from each assistant turn (ruggy-v2 pattern).
-          // The final synthesis turn lands here even when the SDK doesn't
-          // populate `result.success.result` — Bedrock-routed responses
-          // sometimes leave the result field empty.
-          accumulatedAssistantText += block.text;
+          if (isSynthesisTurn) {
+            accumulatedAssistantText += block.text;
+          }
         } else if (block.type === 'tool_use') {
           const event: ToolUseEvent = {
             name: block.name,

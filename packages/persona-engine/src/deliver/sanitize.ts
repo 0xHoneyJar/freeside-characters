@@ -44,6 +44,74 @@
 // tap-to-copy on mobile. Stripping them would lose that affordance.
 const FORMAT_CHARS = /(?<!\\)([_*~|])/g;
 
+// =============================================================================
+// Tool-call markup strip · production digest leak fix (2026-05-13)
+// =============================================================================
+//
+// Defense-in-depth against tool-call markup leaking into Discord posts.
+// Primary fix lives in orchestrator/index.ts (skip text from tool-using
+// assistant turns). This sanitize layer catches anything that slips
+// through — e.g., when the LLM emits a tool-call as TEXT in a synthesis
+// turn (model regression, prompt drift, or a stringified description of
+// what the model is about to do).
+//
+// Two patterns observed in production digest screenshots 2026-05-13:
+//
+//   1. `<tool_use>{"name":"mcp__score__get_zone_digest","input":{"zone":
+//      "el-dorado","window":"weekly"}}</tool_use>` — XML-wrapped JSON
+//      tool-call (some model fine-tunes emit this as a text serialization
+//      of the structured tool_use block).
+//
+//   2. Bare JSON: `{"name": "mcp__score__get_zone_digest", "input":
+//      {"zone": "stonehenge", "window": "weekly"}}` at line start —
+//      stringified tool-call without wrapper tags.
+//
+// Both are stripped. The cleanup also collapses orphan blank lines left
+// behind by the strip so the body remains readable.
+
+// Match <tool_use>...</tool_use> (and the common variants <tool_calls>,
+// <tools>, <function_call>) — non-greedy multiline.
+const TOOL_USE_XML =
+  /<(tool_use|tool_calls|function_call|tools)>[\s\S]*?<\/\1>/gi;
+
+// Match a stringified tool-call JSON on its own line:
+//   { "name": "<identifier>", "(input|arguments|parameters)": {...} }
+// Identifier permits MCP-prefixed names (`mcp__server__tool_name`) and
+// simple ones (`get_zone_digest`). The closing `}` is matched with a
+// single layer of nested `{...}` for the args object — sufficient for
+// the observed shapes; if a tool-call leaks with deeper nesting, the
+// XML wrapper variant catches it.
+const TOOL_CALL_JSON_LINE =
+  /^[ \t]*\{\s*"name"\s*:\s*"[\w.:_-]+"\s*,\s*"(?:input|arguments|parameters)"\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\}[ \t]*$/gm;
+
+/**
+ * Strip tool-call markup that leaked into LLM text output. Catches both
+ * XML-wrapped (`<tool_use>...</tool_use>`) and bare-JSON line variants.
+ *
+ * Run BEFORE `stripVoiceDisciplineDrift` so the voice-discipline transforms
+ * operate on clean prose. Idempotent: running twice produces identical
+ * output.
+ *
+ * Primary defense against the leak lives in `orchestrator/index.ts`
+ * (skip text from tool-using assistant turns). This is the defense-in-
+ * depth backstop.
+ *
+ * Refs:
+ *   production digest screenshots 2026-05-13
+ *   orchestrator/index.ts:460 (V0.12.0 tool-call leak fix)
+ */
+export function stripToolMarkup(text: string): string {
+  if (!text) return text;
+  let stripped = text.replace(TOOL_USE_XML, '');
+  stripped = stripped.replace(TOOL_CALL_JSON_LINE, '');
+  // Collapse triple+ blank lines left by stripped blocks down to two.
+  stripped = stripped.replace(/\n{3,}/g, '\n\n');
+  // Trim leading/trailing whitespace introduced by stripped leak blocks
+  // (e.g., leak at start of body leaves leading newlines).
+  return stripped.trim();
+}
+
+
 // Custom emoji syntax: <:name:id> or <a:name:id>. Escaping the
 // underscore in `mibera_ninja` breaks Discord's emoji parser; the
 // emoji renders as broken `<:mibera\_ninja:...>` text instead of the

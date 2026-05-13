@@ -25,6 +25,7 @@ import { ZONE_FLAVOR, DIMENSION_NAME } from '../score/types.ts';
 import { POST_TYPE_SPECS, type PostType } from '../compose/post-types.ts';
 import {
   escapeDiscordMarkdown,
+  stripToolMarkup,
   stripVoiceDisciplineDrift,
   type VoiceMediumId,
 } from './sanitize.ts';
@@ -75,13 +76,20 @@ export function buildPostPayload(
   const medium = opts.medium ?? DISCORD_WEBHOOK_DESCRIPTOR;
   const mediumId = mediumIdOf(medium) as VoiceMediumId;
 
+  // Strip tool-call markup FIRST — defense in depth for the production
+  // digest leak (2026-05-13). Primary defense lives in orchestrator/
+  // index.ts (skip text from tool-using assistant turns), but this
+  // catches any stringified tool-call that slips through (LLM emitting
+  // tool-call as text in a synthesis turn). No-op when the orchestrator
+  // produced clean output.
+  const toolMarkupStripped = stripToolMarkup(voice);
   // Voice discipline runs BEFORE markdown escape: strip em-dashes,
   // asterisk roleplay, and (non-digest) closing signoffs. Digest is the
   // only post-type that retains "stay groovy 🐻"-style closings per
   // discord-native-register doctrine. Per cmp-boundary §9 voice-discipline
   // drift class · cycle R cmp-boundary-architecture S1. Sprint 3 threads
   // mediumId for CLI ANSI-strip + future medium-specific register tunes.
-  const voiceCleaned = stripVoiceDisciplineDrift(voice, { postType, mediumId });
+  const voiceCleaned = stripVoiceDisciplineDrift(toolMarkupStripped, { postType, mediumId });
   const sanitized = escapeDiscordMarkdown(voiceCleaned);
 
   // Cycle R Sprint 3 — gate embed shape on registry capability. Most
@@ -118,7 +126,25 @@ export function buildPostPayload(
             : ZONE_COLORS[digest.zone];
 
   const fallback = buildFallback(digest, postType);
-  const footerText = `${postType} · computed at ${digest.computed_at} · zone:${digest.zone}`;
+  // Staleness-aware footer (V0.12.0 fix, 2026-05-13): per operator's
+  // producer/consumer/middle-zone framing, the middle zone (us, persona-
+  // engine) is responsible for surfacing data validity. Two signals
+  // combined: substrate-emitted `stale: boolean` (score-mibera's own
+  // freshness flag) OR `computed_at` older than 8 days (weekly digest
+  // should refresh within 7 days; 8-day buffer accounts for slack between
+  // cron fires).
+  //
+  // Surface staleness in the footer so the operator can see freshness
+  // at a glance; never hide upstream cache misalignment by displaying
+  // a stale digest as if it were fresh. Substrate fix tracked separately.
+  const computedMs = Date.parse(digest.computed_at);
+  const ageMs = Number.isFinite(computedMs) ? Date.now() - computedMs : 0;
+  const STALE_THRESHOLD_MS = 8 * 24 * 60 * 60 * 1000;
+  const isStale = digest.stale === true || ageMs > STALE_THRESHOLD_MS;
+  const staleMarker = isStale
+    ? ` · STALE (${Math.round(ageMs / (24 * 60 * 60 * 1000))}d old)`
+    : '';
+  const footerText = `${postType} · computed at ${digest.computed_at}${staleMarker} · zone:${digest.zone}`;
 
   return {
     content: fallback,

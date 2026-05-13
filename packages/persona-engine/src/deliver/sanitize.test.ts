@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, test, expect } from 'bun:test';
 import {
   stripVoiceDisciplineDrift,
+  stripToolMarkup,
   escapeDiscordMarkdown,
   sanitizeOutboundBody,
 } from './sanitize.ts';
@@ -797,5 +798,151 @@ describe('sanitizeOutboundBody · bracketed discord.js errors (SKP-002 HIGH/720)
     const out = sanitizeOutboundBody(input, 'ruggy', tmpl('ruggy'));
     expect(out).toBe(composeErrorBody('ruggy', 'error'));
     expect(warnings[0]).toContain('matched=discord-js-api-error');
+  });
+});
+
+// =============================================================================
+// stripToolMarkup · production digest leak fix (2026-05-13)
+// =============================================================================
+
+describe('stripToolMarkup · XML wrapper variants', () => {
+  test('strips <tool_use>...</tool_use> wrapping a JSON tool call', () => {
+    const input = `I'll fire the tools first.
+<tool_use>{"name":"mcp__score__get_zone_digest","input":{"zone":"el-dorado","window":"weekly"}}</tool_use>
+Composing now.
+yo El Dorado (NFT) — 84 events`;
+    const out = stripToolMarkup(input);
+    expect(out).not.toContain('<tool_use>');
+    expect(out).not.toContain('mcp__score__get_zone_digest');
+    expect(out).toContain('yo El Dorado (NFT) — 84 events');
+  });
+
+  test('strips <tool_calls> variant (some model fine-tunes)', () => {
+    const input = '<tool_calls>{"name":"get_zone_digest","input":{}}</tool_calls>\nbody';
+    expect(stripToolMarkup(input)).toBe('body');
+  });
+
+  test('strips <function_call> variant', () => {
+    const input = '<function_call>{"name":"x","arguments":{}}</function_call>\nbody';
+    expect(stripToolMarkup(input)).toBe('body');
+  });
+
+  test('strips multiline JSON inside the wrapper', () => {
+    const input = `<tool_use>
+{
+  "name": "mcp__score__get_zone_digest",
+  "input": {"zone":"stonehenge","window":"weekly"}
+}
+</tool_use>
+yo stonehenge`;
+    const out = stripToolMarkup(input);
+    expect(out).toBe('yo stonehenge');
+  });
+
+  test('strips multiple wrapped tool-calls in one body', () => {
+    const input = `<tool_use>{"name":"a","input":{}}</tool_use>
+mid-body
+<tool_use>{"name":"b","arguments":{}}</tool_use>
+end`;
+    const out = stripToolMarkup(input);
+    expect(out).not.toContain('tool_use');
+    expect(out).toContain('mid-body');
+    expect(out).toContain('end');
+  });
+});
+
+describe('stripToolMarkup · bare JSON line variants', () => {
+  test('strips bare {"name":"mcp__...", "input":{...}} on own line', () => {
+    const input = `I'll call the tools first to ground this properly.
+{"name": "mcp__score__get_zone_digest", "input": {"zone": "stonehenge", "window": "weekly"}}
+ok so here's the digest`;
+    const out = stripToolMarkup(input);
+    expect(out).not.toContain('mcp__score__get_zone_digest');
+    expect(out).toContain("here's the digest");
+  });
+
+  test('strips bare {"name":..., "arguments":...} variant', () => {
+    const input = `prefix
+{"name": "mcp__score__get_zone_digest", "arguments": {"zone": "stonehenge", "window": "weekly"}}
+suffix`;
+    const out = stripToolMarkup(input);
+    expect(out).not.toContain('"arguments"');
+    expect(out).toContain('prefix');
+    expect(out).toContain('suffix');
+  });
+
+  test('strips non-MCP-prefixed tool names too', () => {
+    const input = '{"name":"get_zone_digest","input":{"zone":"stonehenge","window":"weekly"}}\nbody';
+    expect(stripToolMarkup(input)).toBe('body');
+  });
+
+  test('does NOT strip JSON-shaped content inside body prose', () => {
+    const input = `here is some inline json: {"name": "foo"} mid-sentence
+and a single line with json: {"name": "bar", "input": "qux"}`;
+    // Inline JSON in middle of a sentence isn't stripped (not at line start)
+    const out = stripToolMarkup(input);
+    expect(out).toContain('here is some inline json');
+    // The second line has tool-call shape but "input" value is a string not object
+    // → schema mismatch → NOT stripped. Conservative pattern keeps real prose.
+    expect(out).toContain('"input": "qux"');
+  });
+});
+
+describe('stripToolMarkup · whitespace cleanup', () => {
+  test('collapses triple+ blank lines left by stripping', () => {
+    const input = 'before\n<tool_use>{"name":"a","input":{}}</tool_use>\n\n\n\nafter';
+    const out = stripToolMarkup(input);
+    expect(out).toBe('before\n\nafter');
+  });
+
+  test('strips leading whitespace when leak is at start of body', () => {
+    const input = '<tool_use>{"name":"a","input":{}}</tool_use>\n\nbody';
+    expect(stripToolMarkup(input)).toBe('body');
+  });
+
+  test('strips trailing whitespace when leak is at end of body', () => {
+    const input = 'body\n\n<tool_use>{"name":"a","input":{}}</tool_use>\n';
+    expect(stripToolMarkup(input)).toBe('body');
+  });
+});
+
+describe('stripToolMarkup · idempotency + safety', () => {
+  test('running twice produces identical output', () => {
+    const input = `I'll fire the tools first.
+<tool_use>{"name":"mcp__score__get_zone_digest","input":{"zone":"el-dorado"}}</tool_use>
+Composing now.
+yo El Dorado — 84 events`;
+    const once = stripToolMarkup(input);
+    const twice = stripToolMarkup(once);
+    expect(twice).toBe(once);
+  });
+
+  test('clean body passes through unchanged', () => {
+    const input = 'yo bear-cave team, 47 events this week. solid stacking.';
+    expect(stripToolMarkup(input)).toBe(input);
+  });
+
+  test('empty string returns empty', () => {
+    expect(stripToolMarkup('')).toBe('');
+  });
+
+  test('production digest leak (screenshot 2026-05-13) — full repro', () => {
+    // Exact text observed in El Dorado (NFT) digest 5/9/26 5:00 PM.
+    const leaked = `I'll fire the tools first.
+
+<tool_use>
+{"name":"mcp__score__get_zone_digest","input":{"zone":"el-dorado","window":"weekly"}}
+</tool_use>
+
+Composing now.
+
+yo El Dorado (NFT)⛏️ · 84 events · 31 miberas · steady`;
+    const out = stripToolMarkup(leaked);
+    expect(out).not.toContain('<tool_use>');
+    expect(out).not.toContain('mcp__score__get_zone_digest');
+    // "Composing now." is plain text (not structural markup), so the
+    // sanitize-layer strip won't catch it — that's the orchestrator
+    // fix's responsibility (skip text from tool-using turns).
+    expect(out).toContain('yo El Dorado (NFT)⛏️ · 84 events');
   });
 });

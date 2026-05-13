@@ -112,6 +112,7 @@ export {
 // Refs: ~/vault/wiki/concepts/chat-medium-presentation-boundary.md §9 ·
 //       ~/vault/wiki/concepts/discord-native-register.md (2026-05-04 amend)
 export {
+  stripToolMarkup,
   stripVoiceDisciplineDrift,
   escapeDiscordMarkdown,
   sanitizeOutboundBody,

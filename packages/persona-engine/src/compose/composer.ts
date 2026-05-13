@@ -23,6 +23,7 @@ import { fetchZoneDigest } from '../score/client.ts';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { invoke } from './agent-gateway.ts';
 import { enforceCanonicalHeadline } from './headline-lock.ts';
+import { translateEmojiShortcodes } from './reply.ts';
 import { buildPromptPair } from '../persona/loader.ts';
 import { buildPostPayload, type DigestPayload } from '../deliver/embed.ts';
 import {
@@ -119,6 +120,18 @@ export async function composeZonePost(
   } else {
     voice = applyHeadlineLock(rawVoice, zone, postType, character.id);
   }
+
+  // V0.12.0 emoji-rendering fix (2026-05-13): the digest path historically
+  // bypassed `translateEmojiShortcodes`, which was only applied in the
+  // chat-mode reply path. Production digest screenshots showed raw `:ruggy_
+  // honeydrip:` shortcodes rendering as plain text instead of the custom
+  // emoji. Apply the same translation here so digest, weaver, pop-in, and
+  // any other composer-routed post type all render emoji consistently.
+  //
+  // Translation also drops hallucinated `ruggy_*`/`mibera_*` shortcodes
+  // that don't exist in the registry — matches persona's "fall back to
+  // bear emoji" convention rather than leak fake shortcodes.
+  voice = translateEmojiShortcodes(voice);
 
   // Cycle R Sprint 3: thread the medium through to the payload builder.
   // Default (omitted opts.medium) preserves Sprint-1/Sprint-2 callsite
