@@ -145,6 +145,49 @@ async function mcpToolCall<T>(
   return JSON.parse(text) as T;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// Cycle-021 ruggy-pulse-mcp — `get_dimension_breakdown` only (per-zone
+// dim cards). Other 3 tools (`get_community_counts`, `get_recent_events`,
+// `get_most_active_wallets`) ship in score-mibera and have type mirrors
+// in score/types.ts but are NOT wired client-side here — out of scope
+// for this PR per operator decision 2026-05-13. Add their fetcher fns
+// when those surfaces are designed (likely a stonehenge cross-dim post
+// + recognition callouts in a future cycle).
+// ══════════════════════════════════════════════════════════════════════
+
+import type {
+  GetDimensionBreakdownArgs,
+  GetDimensionBreakdownResponse,
+} from './types.ts';
+import { isPulseError } from './types.ts';
+
+export async function fetchDimensionBreakdown(
+  config: Config,
+  args: GetDimensionBreakdownArgs,
+): Promise<GetDimensionBreakdownResponse> {
+  if (!config.MCP_KEY) {
+    throw new Error('MCP_KEY required for pulse tools; PULSE_TOOLS_ENABLED must be true on score-mibera');
+  }
+  const url = `${config.SCORE_API_URL}/mcp`;
+  const bearer = config.SCORE_BEARER;
+  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer);
+  const result = await mcpToolCall<GetDimensionBreakdownResponse>(
+    url,
+    config.MCP_KEY,
+    sessionId,
+    'get_dimension_breakdown',
+    args as unknown as Record<string, unknown>,
+    bearer,
+  );
+  // Pulse tools return either success OR a FEATURE_DISABLED / UPSTREAM_ERROR
+  // envelope inside content[0].text. Throw on the latter so callers don't
+  // accidentally treat an error envelope as data.
+  if (isPulseError(result)) {
+    throw new Error(`mcp get_dimension_breakdown: ${(result as { code: string; message?: string }).code} — ${(result as { message?: string }).message ?? 'no message'}`);
+  }
+  return result;
+}
+
 export async function fetchZoneDigest(config: Config, zone: ZoneId): Promise<ZoneDigest> {
   if (config.STUB_MODE && !config.MCP_KEY) {
     return generateStubZoneDigest(zone);

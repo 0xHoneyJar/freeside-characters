@@ -158,3 +158,140 @@ function buildFallback(digest: ZoneDigest, postType: PostType): string {
       return `${flavor.emoji} ${flavor.name}${dimensionParen}`;
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// Cycle-021 ruggy-pulse-mcp — Discord embed renderers
+// ══════════════════════════════════════════════════════════════════════
+//
+// Per operator decision 2026-05-13:
+//   - Per-zone routing: each pulse-dim post lands in the dim's owning
+//     channel (bear-cave→og, el-dorado→nft, owsley-lab→onchain).
+//   - Stonehenge gets an "overall pulse" (community_counts) — the
+//     cross-dim hub.
+//   - Discord embed shape with structured fields (NOT prose-only).
+//   - Text-only v1; sparkline images deferred to a future cycle.
+//
+// Renderers are deterministic — no LLM call. Embed shape is locked so
+// the cards look identical week to week. Numbers are emitted verbatim
+// from the MCP tool response (no rounding, no editorialization).
+// Spec: PRD v0.4 §FR-2 + §FR-1; SDD v0.3 §3 + §4.
+
+import type {
+  GetDimensionBreakdownResponse,
+  PulseDimensionBreakdown,
+  PulseDimensionFactor,
+} from '../score/types.ts';
+
+/** Dim color sidebar — matches dashboard design tokens. */
+const DIM_COLORS = {
+  og: 0xc9a44c,        // gold (matches el-dorado-ish; OG is the "gold" dim)
+  nft: 0x6f4ea1,       // purple (matches owsley-ish in tone)
+  onchain: 0x4a90c0,   // cyan (matches dashboard onchain)
+} as const;
+
+/** Format event count with 1k abbrev for readability. */
+function formatCount(n: number): string {
+  if (n >= 10000) return `${(n / 1000).toFixed(0)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(n);
+}
+
+/** Render a percent delta with arrow + sign. null → em-dash. */
+function formatDelta(deltaPct: number | null): string {
+  if (deltaPct === null) return '—';
+  const arrow = deltaPct > 0 ? '↑' : deltaPct < 0 ? '↓' : '·';
+  const sign = deltaPct > 0 ? '+' : '';
+  const abs = Math.abs(deltaPct);
+  const rounded = abs >= 100 ? Math.round(abs) : Number(abs.toFixed(1));
+  return `${arrow}${sign}${deltaPct < 0 ? '-' : ''}${rounded}%`;
+}
+
+/** Render a single factor row for the Most active section. */
+function renderFactorRow(f: PulseDimensionFactor): string {
+  const verb = f.primary_action ?? f.display_name;
+  const delta = formatDelta(f.delta_pct);
+  const wasNote = f.previous > 0 && f.delta_pct === null
+    ? ''
+    : f.previous > 0 ? `  (was ${formatCount(f.previous)})` : '';
+  return `• \`${verb.padEnd(18).slice(0, 18)}\` ${formatCount(f.total).padStart(4)}  ${delta}${wasNote}`;
+}
+
+/** Render the Went quiet inline list. Full list per operator decision —
+ *  Discord embed field value cap is 1024 chars; even onchain (19 cold
+ *  factors max) at ~25 chars/factor (incl. delimiters) sits well under. */
+function renderColdList(cold: PulseDimensionFactor[]): string {
+  if (cold.length === 0) return '_no factors went silent this period_';
+  return cold.map((f) => `\`${f.primary_action ?? f.display_name}\``).join(' · ');
+}
+
+/**
+ * Build a Discord post payload for a per-dimension pulse card.
+ * Maps to the dashboard's `/dimension/[id]` page surface (full breakdown).
+ *
+ * Routing (caller's responsibility): post to the channel owned by the
+ * zone whose dimension matches `dim.id`:
+ *   og → bear-cave, nft → el-dorado, onchain → owsley-lab.
+ */
+export function buildPulseDimensionPayload(
+  response: GetDimensionBreakdownResponse,
+  dim: PulseDimensionBreakdown,
+  windowDays: 7 | 30 | 90,
+): DigestPayload {
+  const color = DIM_COLORS[dim.id];
+  const activeFactorCount = dim.total_factor_count - dim.inactive_factor_count;
+  const dimDelta = formatDelta(dim.delta_pct);
+  const wasTotal = dim.previous_period_events > 0
+    ? `  (was ${formatCount(dim.previous_period_events)})`
+    : '';
+
+  // Hero line: large event count + dim-level delta + diversity chip.
+  const heroLine = `**${formatCount(dim.total_events)}** events  ${dimDelta} vs prior ${windowDays}d${wasTotal}`;
+  const diversityLine = `${activeFactorCount} of ${dim.total_factor_count} factors active`;
+
+  const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
+
+  // Most active block — full list (no truncation). Discord field value
+  // cap is 1024 chars; onchain has 19 max base factors, ~50 chars per row
+  // (incl. verb-form padding) → ~950 chars worst case, under the limit.
+  // If a future cycle pushes this over, fall back to a 2-field split
+  // (e.g. "Most active 1-15" + "Most active 16-30").
+  if (dim.top_factors.length > 0) {
+    const topRows = dim.top_factors.map(renderFactorRow).join('\n');
+    fields.push({
+      name: `Most active · last ${windowDays}d`,
+      value: `\`\`\`\n${topRows}\n\`\`\``,
+    });
+  } else {
+    fields.push({
+      name: `Most active · last ${windowDays}d`,
+      value: '_no factor activity in this window_',
+    });
+  }
+
+  // Went quiet — separate field, only when cold factors exist.
+  if (dim.cold_factors.length > 0) {
+    fields.push({
+      name: 'Went quiet · active prior, 0 this period',
+      value: renderColdList(dim.cold_factors),
+    });
+  }
+
+  // Plain-text fallback for embed-disabled clients.
+  const fallback = `${dim.display_name} · ${windowDays}d · ${formatCount(dim.total_events)} events ${dimDelta}`;
+
+  // Footer: timestamp + tool provenance.
+  const footerText = `pulse · ${dim.id} · generated ${response.generated_at}`;
+
+  return {
+    content: fallback,
+    embeds: [
+      {
+        color,
+        description: `## ${dim.display_name} dimension · last ${windowDays} days\n${heroLine}\n${diversityLine}`,
+        fields,
+        footer: { text: footerText },
+      },
+    ],
+  };
+}
+
