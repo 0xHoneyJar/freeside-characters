@@ -181,3 +181,87 @@ describe('translateEmojiShortcodes · edge cases', () => {
     );
   });
 });
+
+describe('translateEmojiShortcodes · fully-shaped <:name:id> hallucination (2026-05-12)', () => {
+  // Operator smoke 2026-05-12: LLM emitted `<:ruggy_eyes:1234567890123456789>`
+  // (a fake snowflake ID) instead of the canonical `:ruggy_eyes:` shortcode.
+  // Discord renders such tokens as broken `:name:` text because the ID doesn't
+  // match a real guild emoji. Earlier passes (`<:ID>` repair, `:name:` upgrade)
+  // didn't catch this — fully-shaped tokens slipped through. The 3rd pass now
+  // validates `<:name:id>` against the registry and forces canonical render.
+
+  test('fake ID on real name is corrected to canonical ID', () => {
+    // `ruggy_cheers` is in the registry · LLM-emitted fake ID 1234567890123456789
+    // gets overwritten with the real ID.
+    const out = translateEmojiShortcodes('chill <:ruggy_cheers:1234567890123456789>');
+    expect(out).toMatch(/^chill <:ruggy_cheers:\d+>$/);
+    // The fake ID must NOT survive — the canonical ID lookup wins.
+    expect(out).not.toContain('1234567890123456789');
+  });
+
+  test('fake ID on real animated emoji forces <a:name:canonical_id> shape', () => {
+    // `ruggy_dab` is animated · LLM might emit `<:ruggy_dab:fake>` with WRONG
+    // prefix (no `a`) — the pass forces the correct animated prefix from the
+    // registry entry.
+    const out = translateEmojiShortcodes('we ate <:ruggy_dab:9999999999999999999>');
+    expect(out).toMatch(/^we ate <a:ruggy_dab:\d+>$/);
+    expect(out).not.toContain('9999999999999999999');
+  });
+
+  test('inverse: wrong animated prefix on non-animated emoji is corrected (BB F1)', () => {
+    // BB F1 follow-up · the registry-as-source-of-truth approach should fix
+    // BOTH directions of prefix mismatch. ruggy_cheers is static (animated:
+    // false) — if the LLM emits `<a:ruggy_cheers:fake>` (wrong prefix), the
+    // pass should strip the `a` and use the canonical static render.
+    const out = translateEmojiShortcodes('chill <a:ruggy_cheers:8888888888888888888>');
+    expect(out).toMatch(/^chill <:ruggy_cheers:\d+>$/);
+    expect(out).not.toMatch(/<a:/);
+    expect(out).not.toContain('8888888888888888888');
+  });
+
+  test('hallucinated name in fully-shaped token is dropped (operator smoke case)', () => {
+    // EXACT REPRODUCTION of 2026-05-12 operator smoke output:
+    //   "<:ruggy_eyes:1234567890123456789>"
+    // `ruggy_eyes` is NOT in the registry, but matches the `ruggy_` known prefix.
+    // Drop it (same hallucination semantics as `:ruggy_salute:` case).
+    const out = translateEmojiShortcodes('look <:ruggy_eyes:1234567890123456789>');
+    expect(out).toBe('look');
+  });
+
+  test('canonical token already in correct shape passes through unchanged', () => {
+    // Already-canonical tokens (from MCP tool results) shouldn't get mangled.
+    const canonical = '<:ruggy_cheers:1136554310893375558>';
+    // We can't hardcode the exact ID here without coupling to registry;
+    // round-trip via the shortcode form is safer.
+    const fromShortcode = translateEmojiShortcodes(':ruggy_cheers:');
+    expect(translateEmojiShortcodes(fromShortcode)).toBe(fromShortcode);
+  });
+
+  test('unrelated angle-bracket-shaped string is left alone', () => {
+    // Don't false-positive on non-emoji tokens that happen to fit the
+    // `<:something:digits>` shape.
+    const out = translateEmojiShortcodes('the <:unrelated_thing:1234567890123456789> token');
+    // `unrelated_thing` doesn't start with a known prefix (ruggy_/mibera_/etc)
+    // so pass through.
+    expect(out).toBe('the <:unrelated_thing:1234567890123456789> token');
+  });
+
+  test('drop branch consumes leading space (BB MED whitespace-symmetry follow-up)', () => {
+    // BB MED follow-up · drop-branch whitespace-symmetry: the leading-space
+    // capture prevents double-spaces when a hallucinated token sits
+    // mid-sentence. Verify all three positions cleanly.
+
+    // mid-sentence: leading space consumed on drop · trailing space stays
+    expect(translateEmojiShortcodes('a <:ruggy_eyes:1234567890123456789> b'))
+      .toBe('a b');
+
+    // line-start: no leading space to consume · token + trailing space drops
+    // cleanly · result starts with whatever followed the token
+    expect(translateEmojiShortcodes('<:ruggy_eyes:1234567890123456789> hello'))
+      .toBe(' hello');
+
+    // line-end: leading space consumed · result has clean trailing-text edge
+    expect(translateEmojiShortcodes('hello <:ruggy_eyes:1234567890123456789>'))
+      .toBe('hello');
+  });
+});

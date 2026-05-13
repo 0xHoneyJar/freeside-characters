@@ -459,13 +459,55 @@ const KNOWN_EMOJI_PREFIXES: ReadonlySet<string> = new Set(
 );
 
 export function translateEmojiShortcodes(text: string): string {
+  // 2026-05-12 KEEPER pass: validate fully-shaped `<:name:id>` / `<a:name:id>`
+  // tokens against the registry. LLM occasionally emits the full Discord render
+  // shape with a HALLUCINATED snowflake ID (e.g. `<:ruggy_eyes:1234567890123456789>`)
+  // — Discord renders such a token as broken `:name:` plain text on miss. The
+  // earlier passes (`<:ID>` repair · `:name:` shortcode upgrade) DON'T touch
+  // fully-shaped tokens, so this pass runs FIRST and authoritatively rewrites
+  // them. If name is registered → force canonical ID + animated prefix
+  // (registry is source of truth). If name unknown but custom-prefix-shaped →
+  // drop · same hallucination semantics as the `:name:` pass.
+  // Capture-group note (BB F1 2026-05-12): the `a?` is non-capturing — the
+  // canonical animated prefix is derived from the registry entry's `animated`
+  // flag via `renderEmoji`, so the LLM's claimed prefix doesn't influence
+  // output. This means we transparently fix BOTH directions: LLM emits
+  // `<:dab:fake>` for animated ruggy_dab → output `<a:ruggy_dab:canonical>`;
+  // LLM emits `<a:ruggy_cheers:fake>` for non-animated ruggy_cheers → output
+  // `<:ruggy_cheers:canonical>`. Both inversions tested.
+  const nameValidated = text.replace(
+    /( ?)<(?:a)?:([a-zA-Z][a-zA-Z0-9_]*):(\d{17,20})>/g,
+    (match, leadingSpace: string, name: string, id: string) => {
+      const entry = findByName(name);
+      if (entry) {
+        // Hit · force canonical render (correct ID + correct animated prefix).
+        // The LLM's claimed ID is ignored — registry wins.
+        if (entry.id !== id) {
+          console.warn(`[emoji-translate] corrected hallucinated ID for :${name}: (${id} → ${entry.id})`);
+        }
+        return `${leadingSpace}${renderEmoji(entry)}`;
+      }
+      // Miss + custom-emoji-prefix-shaped → drop (same logic as `:name:` pass).
+      const lower = name.toLowerCase();
+      for (const prefix of KNOWN_EMOJI_PREFIXES) {
+        if (lower.startsWith(prefix)) {
+          console.warn(`[emoji-translate] dropped hallucinated <:${name}:${id}> token (matched prefix '${prefix}' but no registry entry)`);
+          return '';
+        }
+      }
+      // Miss + non-custom-shape → pass through (defensive · covers edge cases
+      // like `<:something_unrelated:1234567890123456789>` that isn't custom-emoji).
+      return match;
+    },
+  );
+
   // Issue #35 (2026-05-04): repair bare `<:ID>` and `<a:ID>` tokens. The LLM
   // (or upstream MCP tool result) sometimes emits the ID-only form without
   // the `:name:` segment — Discord renders that as plain text since the
   // canonical shape is `<:NAME:ID>`. Look up by ID and re-emit the correct
   // shape; pass through if the snowflake isn't in the registry (covers
   // `<:randomNumber>` non-emoji false positives).
-  const idNormalized = text.replace(/<a?:(\d{17,20})>/g, (match, id: string) => {
+  const idNormalized = nameValidated.replace(/<a?:(\d{17,20})>/g, (match, id: string) => {
     const entry = findById(id);
     return entry ? renderEmoji(entry) : match;
   });
