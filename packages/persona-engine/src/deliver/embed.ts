@@ -239,10 +239,10 @@ export function buildPulseDimensionPayload(
   const color = DIM_COLORS[dim.id];
   const dimDelta = formatDelta(dim.delta_pct);
 
-  // Hero line: large event count + dim-level delta. Lean — agent infers
-  // magnitude from the percent + count alone; no `(was N)` clutter, no
-  // diversity chip line (factor count is implicit in the rendered list).
-  const heroLine = `**${formatCount(dim.total_events)}** events  ${dimDelta} vs prior ${windowDays}d`;
+  // Hero line: large event count + dim-level delta. Lean — title above
+  // already says "last N days" so "vs prior Nd" is redundant; agent
+  // infers magnitude from the percent + count alone.
+  const heroLine = `**${formatCount(dim.total_events)}** events  ${dimDelta}`;
 
   const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
 

@@ -90,13 +90,14 @@ describe('buildPulseDimensionPayload — OG live data', () => {
     expect(embed.color).toBe(0xc9a44c);
   });
 
-  it('description has dim name + windowDays + lean hero line (no was-N, no diversity chip)', () => {
+  it('description has dim name + windowDays + lean hero line (no was-N, no diversity chip, no "vs prior" suffix)', () => {
     expect(embed.description).toContain('OG dimension · last 30 days');
     expect(embed.description).toContain('**4** events');
     expect(embed.description).toContain('↓-84.6%');
     // Intentionally NOT in the description — kept lean per operator review
     expect(embed.description).not.toContain('(was');
     expect(embed.description).not.toContain('factors active');
+    expect(embed.description).not.toContain('vs prior');
   });
 
   it('Most active field has both top factors with deltas (no was-N suffix)', () => {
