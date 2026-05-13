@@ -93,7 +93,7 @@ async function main() {
   console.log('persona reply fragment includes blockquote example:',
     systemPrompt.includes('Paddle Borrower · 4× baseline (29 vs ~7)') ? '✓' : '✗');
   console.log('');
-  console.log('calling claude-sonnet-4-6 (cheaper than opus for shape validation)…');
+  console.log('calling claude-sonnet-4-5 (cheaper than opus for shape validation)…');
   console.log('');
 
   const r = await fetch('https://api.anthropic.com/v1/messages', {

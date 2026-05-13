@@ -208,6 +208,17 @@ describe('translateEmojiShortcodes · fully-shaped <:name:id> hallucination (202
     expect(out).not.toContain('9999999999999999999');
   });
 
+  test('inverse: wrong animated prefix on non-animated emoji is corrected (BB F1)', () => {
+    // BB F1 follow-up · the registry-as-source-of-truth approach should fix
+    // BOTH directions of prefix mismatch. ruggy_cheers is static (animated:
+    // false) — if the LLM emits `<a:ruggy_cheers:fake>` (wrong prefix), the
+    // pass should strip the `a` and use the canonical static render.
+    const out = translateEmojiShortcodes('chill <a:ruggy_cheers:8888888888888888888>');
+    expect(out).toMatch(/^chill <:ruggy_cheers:\d+>$/);
+    expect(out).not.toMatch(/<a:/);
+    expect(out).not.toContain('8888888888888888888');
+  });
+
   test('hallucinated name in fully-shaped token is dropped (operator smoke case)', () => {
     // EXACT REPRODUCTION of 2026-05-12 operator smoke output:
     //   "<:ruggy_eyes:1234567890123456789>"

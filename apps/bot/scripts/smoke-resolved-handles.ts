@@ -154,10 +154,9 @@ async function main() {
     'addresses kept on bullet line (forensic anchor)': /`0x(dc1c|c673)/.test(textB),
     'still has blockquote scanline': /^>\s/m.test(textB),
     'still has emoji-handle bullets': /^(🪩|🌊|👀|🚨|🟢)\s/m.test(textB),
-    'does NOT fabricate a handle': !/@[a-z][a-z0-9_]+/i.test(textB) ||
-      // allow @-mention if it's NOT a wallet-derived handle (highly unlikely
-      // given the synthetic data has no usernames anywhere)
-      false,
+    // BB F2 cleanup: synthetic data for scenario B has no usernames anywhere,
+    // so any @-mention in the output would be fabricated. Reject all of them.
+    'does NOT fabricate a handle': !/@[a-z][a-z0-9_]+/i.test(textB),
   };
   for (const [label, pass] of Object.entries(checksB)) {
     console.log(`  ${pass ? '✓' : '✗'} ${label}`);

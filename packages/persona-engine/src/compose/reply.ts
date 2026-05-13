@@ -468,9 +468,16 @@ export function translateEmojiShortcodes(text: string): string {
   // them. If name is registered → force canonical ID + animated prefix
   // (registry is source of truth). If name unknown but custom-prefix-shaped →
   // drop · same hallucination semantics as the `:name:` pass.
+  // Capture-group note (BB F1 2026-05-12): the `a?` is non-capturing — the
+  // canonical animated prefix is derived from the registry entry's `animated`
+  // flag via `renderEmoji`, so the LLM's claimed prefix doesn't influence
+  // output. This means we transparently fix BOTH directions: LLM emits
+  // `<:dab:fake>` for animated ruggy_dab → output `<a:ruggy_dab:canonical>`;
+  // LLM emits `<a:ruggy_cheers:fake>` for non-animated ruggy_cheers → output
+  // `<:ruggy_cheers:canonical>`. Both inversions tested.
   const nameValidated = text.replace(
-    /( ?)<(a)?:([a-zA-Z][a-zA-Z0-9_]*):(\d{17,20})>/g,
-    (match, leadingSpace: string, _animatedPrefix: string | undefined, name: string, id: string) => {
+    /( ?)<(?:a)?:([a-zA-Z][a-zA-Z0-9_]*):(\d{17,20})>/g,
+    (match, leadingSpace: string, name: string, id: string) => {
       const entry = findByName(name);
       if (entry) {
         // Hit · force canonical render (correct ID + correct animated prefix).
