@@ -211,3 +211,238 @@ export interface GetZoneDigestArgs {
   zone: ZoneId;
   window?: 'weekly';
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// Cycle-021 ruggy-pulse-mcp — 4 new pulse-shaped tools (score-mibera PR #111)
+// ══════════════════════════════════════════════════════════════════════
+//
+// Hand-mirrored from score-mibera/src/mcp/tools/* + the *.v1.json response
+// schemas at score-mibera/src/mcp/schemas/. All four tools emit
+// `schema_version: '1.0.0'` and an ISO-8601 `generated_at`. Wire-format
+// stability: `schema_version` is a pinned const, not a pattern.
+//
+// Cadence ownership: operator-scheduled (cron-wired), not agent-chosen.
+// Ruggy's persona prompt selects WHICH tool to call given a fired schedule;
+// it does NOT decide WHEN to post. Window param + generated_at support any
+// operator cadence (weekly summary / daily recap / hourly ticker).
+
+export type PulseWindow = 7 | 30 | 90;
+export type PulseDimension = 'og' | 'nft' | 'onchain';
+
+// ──────────────────────────────────────────────────────────────────────
+// get_community_counts — windowed KPI snapshot
+// ──────────────────────────────────────────────────────────────────────
+
+export interface CommunityCountsCoreFields {
+  active_members: number;       // active_in_window
+  active_7d: number;             // always-7d definitional signal
+  new_in_window: number;
+  inactive_30d: number;
+  recently_churned: number;
+  stickiness: number | null;     // active_7d / active_30d (DAU/MAU)
+}
+
+/**
+ * Prior-period count anchor. Same field names as the count-typed Core fields,
+ * with null when prior-period data is missing. **Values are COUNTS.**
+ */
+export interface CommunityCountsPreviousFields {
+  active_members: number | null;
+  active_7d: number | null;
+  new_in_window: number | null;
+  inactive_30d: number | null;
+  recently_churned: number | null;
+  stickiness: number | null;
+}
+
+/**
+ * Period-over-period delta payload. Field NAMES match the count fields for
+ * structural consistency with the server schema, but the VALUES are **percent
+ * changes**, not counts. A `deltas.active_members` of `42` means +42% PoP,
+ * not 42 members. `null` when the prior-period denominator is 0 (never Infinity).
+ *
+ * The shape is intentionally distinct from CommunityCountsPreviousFields so
+ * call sites cannot accidentally treat a percent change as a member count.
+ * (Per BB-001 review on PR #73 — semantic-collision guard.)
+ */
+export interface CommunityCountsDeltaFields {
+  /** PoP percent change in active_in_window count. null if prior is 0. */
+  active_members: number | null;
+  /** PoP percent change in active_7d count. null if prior is 0. */
+  active_7d: number | null;
+  /** PoP percent change in new_in_window count. null if prior is 0. */
+  new_in_window: number | null;
+  /** PoP percent change in inactive_30d count. null if prior is 0. */
+  inactive_30d: number | null;
+  /** PoP percent change in recently_churned count. null if prior is 0. */
+  recently_churned: number | null;
+  /** PoP percent change in stickiness ratio. null if prior is 0. */
+  stickiness: number | null;
+}
+
+export interface GetCommunityCountsArgs {
+  window: PulseWindow;
+}
+
+export interface GetCommunityCountsResponse extends CommunityCountsCoreFields {
+  window_days: PulseWindow;
+  /** Prior-period values (counts). null fields if prior data missing. */
+  previous: CommunityCountsPreviousFields;
+  /** PoP percent changes for each field. null when prior is 0 (never Infinity). */
+  deltas: CommunityCountsDeltaFields;
+  schema_version: '1.0.0';
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// get_dimension_breakdown — per-dim activity ordering + cold factors
+// ──────────────────────────────────────────────────────────────────────
+
+export interface PulseDimensionFactor {
+  factor_id: string;
+  display_name: string;
+  /** Verb-style action label (e.g. "Boosted Validator"). null if not set in catalog. */
+  primary_action: string | null;
+  total: number;
+  previous: number;
+  delta_pct: number | null;
+  delta_count: number;
+}
+
+export interface PulseDimensionBreakdown {
+  id: PulseDimension;
+  display_name: string;
+  total_events: number;
+  previous_period_events: number;
+  delta_pct: number | null;
+  delta_count: number;
+  /** Count of factors in this dimension's catalog with zero events in window. */
+  inactive_factor_count: number;
+  total_factor_count: number;
+  /** ALL active factors (total > 0), sorted desc by total, factor_id ASC tie-break. */
+  top_factors: PulseDimensionFactor[];
+  /** ALL zero-row factors, sorted asc by display_name, factor_id ASC tie-break. */
+  cold_factors: PulseDimensionFactor[];
+}
+
+export interface GetDimensionBreakdownArgs {
+  window: PulseWindow;
+  /** Omit (or undefined) to return all 3 dimensions; set to filter. NO 'all' literal. */
+  dimension?: PulseDimension;
+}
+
+export interface GetDimensionBreakdownResponse {
+  dimensions: PulseDimensionBreakdown[];
+  schema_version: '1.0.0';
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// get_recent_events — flat list + by_factor roll-up
+// ──────────────────────────────────────────────────────────────────────
+
+export interface RecentEventRow {
+  event_id: string;
+  wallet: string;
+  factor_id: string;
+  factor_display_name: string;
+  dimension: PulseDimension;
+  category_key: string;
+  /** Server-formatted human-readable string (e.g. "Minted Candies #3221"). */
+  description: string;
+  raw_value: number | null;
+  raw_value_kind: string;
+  timestamp: string;             // ISO-8601
+}
+
+export interface ByFactorRollup {
+  factor_id: string;
+  factor_display_name: string;
+  dimension: PulseDimension;
+  /** Event-volume count (not unique participants). */
+  count: number;
+  /** Up to 3 distinct wallets (case-preserved from first occurrence; dedup is case-insensitive). */
+  sample_wallets: string[];
+}
+
+export interface GetRecentEventsArgs {
+  /** Default 50, max 200. */
+  limit?: number;
+  dimension?: PulseDimension;
+}
+
+export interface GetRecentEventsResponse {
+  events: RecentEventRow[];
+  /** Grouped by factor_id, ordered by count DESC + factor_id ASC tie-break. */
+  by_factor: ByFactorRollup[];
+  schema_version: '1.0.0';
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// get_most_active_wallets — ranked wallets in window
+// ──────────────────────────────────────────────────────────────────────
+
+export interface MostActiveWalletEntry {
+  /** 1-indexed, derived from array order. */
+  rank: number;
+  wallet: string;
+  event_count: number;
+  primary_dimension: PulseDimension;
+  /** Distinct dimensions this wallet was active in. */
+  dimension_count: number;
+  first_event_at: string;
+  last_event_at: string;
+}
+
+export interface GetMostActiveWalletsArgs {
+  window: PulseWindow;
+  /** Default 10, max 100. */
+  limit?: number;
+  /** Default 'all'. */
+  dimension?: PulseDimension | 'all';
+}
+
+export interface GetMostActiveWalletsResponse {
+  window_days: PulseWindow;
+  wallets: MostActiveWalletEntry[];
+  /** Count of all wallets matching the window+filters, before LIMIT. */
+  total_candidates: number;
+  schema_version: '1.0.0';
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Pulse error envelopes (shared with all 4 tools)
+// ──────────────────────────────────────────────────────────────────────
+//
+// Tools return either a success response (one of the *Response interfaces
+// above) OR an error envelope inside `result.content[0].text`. SDK-layer
+// rejections (zod parse failures) come back as JSON-RPC `error` at the
+// envelope level — those never reach `result`. See score-mibera SDD §7.
+
+export interface FeatureDisabledEnvelope {
+  error: 'feature_disabled';
+  code: 'FEATURE_DISABLED';
+  message: string;
+}
+
+export interface UpstreamErrorEnvelope {
+  error: 'upstream_error';
+  code: 'UPSTREAM_ERROR';
+  tool: string;
+  message: string;
+}
+
+export type PulseErrorEnvelope = FeatureDisabledEnvelope | UpstreamErrorEnvelope;
+
+/** Type-narrowing helper for pulse-tool consumers. */
+export function isPulseError(v: unknown): v is PulseErrorEnvelope {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'code' in v &&
+    ((v as { code: string }).code === 'FEATURE_DISABLED' ||
+      (v as { code: string }).code === 'UPSTREAM_ERROR')
+  );
+}
