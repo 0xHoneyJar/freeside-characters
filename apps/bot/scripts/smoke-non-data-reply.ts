@@ -5,6 +5,11 @@
  * conversational default, NOT the blockquote+emoji-bullet visual shape.
  * The rule should only activate when the question is analytics-shaped.
  *
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * NOT FOR CI · MANUAL OPERATOR SMOKE ONLY · 3 real Anthropic API calls
+ * per run · uses `temperature: 0` · BB review F4 / cycle-2
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ *
  * Run: bun run apps/bot/scripts/smoke-non-data-reply.ts
  */
 
@@ -41,6 +46,7 @@ async function ask(prompt: string): Promise<string> {
     body: JSON.stringify({
       model: 'claude-sonnet-4-5',
       max_tokens: 1024,
+      temperature: 0,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
     }),

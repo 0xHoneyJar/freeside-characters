@@ -9,6 +9,11 @@
  * Runs two scenarios — same question, different synthetic resolve_wallets
  * results — and checks the right vocabulary lands.
  *
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * NOT FOR CI · MANUAL OPERATOR SMOKE ONLY · 2 real Anthropic API calls
+ * per run · uses `temperature: 0` · BB review F4 / cycle-2
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ *
  * Run: bun run apps/bot/scripts/smoke-resolved-handles.ts
  */
 
@@ -104,6 +109,7 @@ async function ask(userMessage: string, label: string): Promise<string> {
     body: JSON.stringify({
       model: 'claude-sonnet-4-5',
       max_tokens: 2048,
+      temperature: 0,
       system: systemPrompt,
       messages: [{ role: 'user', content: `${base}\n\n${userMessage}` }],
     }),

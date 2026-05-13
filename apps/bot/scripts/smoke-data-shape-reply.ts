@@ -13,7 +13,16 @@
  * persona prompt produces, not the data-fetching pipeline (which is
  * unchanged).
  *
- * Run: bun run apps/bot/scripts/smoke-data-shape-reply.ts
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * NOT FOR CI · MANUAL OPERATOR SMOKE ONLY
+ *
+ * - Makes real Anthropic API calls (costs tokens · ~3-5k per run)
+ * - Uses `temperature: 0` for determinism · but LLM output can still
+ *   shift subtly across runs / model versions
+ * - Run via `bun run apps/bot/scripts/smoke-data-shape-reply.ts`
+ * - Do NOT wire into automated test runs · BB review F4 / cycle-2
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ *
  * Requires: ANTHROPIC_API_KEY (already in env per .env.local)
  */
 
@@ -106,6 +115,7 @@ async function main() {
     body: JSON.stringify({
       model: 'claude-sonnet-4-5',
       max_tokens: 2048,
+      temperature: 0,
       system: systemPrompt,
       messages: [{ role: 'user', content: enrichedUserMessage }],
     }),

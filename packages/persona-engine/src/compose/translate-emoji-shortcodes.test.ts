@@ -245,4 +245,23 @@ describe('translateEmojiShortcodes · fully-shaped <:name:id> hallucination (202
     // so pass through.
     expect(out).toBe('the <:unrelated_thing:1234567890123456789> token');
   });
+
+  test('drop branch consumes leading space (BB MED whitespace-symmetry follow-up)', () => {
+    // BB MED follow-up · drop-branch whitespace-symmetry: the leading-space
+    // capture prevents double-spaces when a hallucinated token sits
+    // mid-sentence. Verify all three positions cleanly.
+
+    // mid-sentence: leading space consumed on drop · trailing space stays
+    expect(translateEmojiShortcodes('a <:ruggy_eyes:1234567890123456789> b'))
+      .toBe('a b');
+
+    // line-start: no leading space to consume · token + trailing space drops
+    // cleanly · result starts with whatever followed the token
+    expect(translateEmojiShortcodes('<:ruggy_eyes:1234567890123456789> hello'))
+      .toBe(' hello');
+
+    // line-end: leading space consumed · result has clean trailing-text edge
+    expect(translateEmojiShortcodes('hello <:ruggy_eyes:1234567890123456789>'))
+      .toBe('hello');
+  });
 });
