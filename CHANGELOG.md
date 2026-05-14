@@ -3,6 +3,13 @@
 ## [Unreleased] — cycle-004 in progress
 
 ### Added
+- **Reaction-bar signaling primitive** (community-stickiness feedback for "what sticks"):
+  - `packages/persona-engine/src/deliver/reaction-bar.ts` — bot auto-attaches 3 seed reactions to every digest (👀 useful · 🤔 unclear · 🪲 bug/data-wrong). Fail-soft: reaction errors never fail delivery.
+  - `packages/persona-engine/src/deliver/reaction-bar.test.ts` — 14 tests (mock Discord client, channel/message failures, per-reaction failures, anti-Goodhart length invariant)
+  - `apps/bot/scripts/digest-tally.ts` — operator-side tally with baseline+delta comparison, sample-size warning, doctrine-framing output
+  - `DIGEST_REACTION_BAR_ENABLED` config (default `true`) for per-deploy toggling
+  - Wired into `deliverZoneDigest` after both webhook-shell and bot-fallback paths
+  - **Reviewed by KEEPER + OSTROM (dual construct review)**: 💤 removed (KEEPER: preemptive-judgment mood mismatch with ruggy voice); 🪲 shipped day-one (OSTROM: deferring would cause retroactive data loss when verifier ships); baseline/delta tally view added (KEEPER: structural memory); sample-size warning added (KEEPER: noise floor); TS-level Goodhart constraint added (OSTROM: scope-creep invariant).
 - **cycle-004 S1A foundation slice**: `compose/llm-gateway/` four-folder structure (`domain/ ports/ live/ mock/`) establishing the substrate-refactor pattern.
   - Port (`compose/llm-gateway/ports/llm-gateway.port.ts`): `LLMGateway` Context.Tag with `LLMError` discriminated union (6 variants: RateLimit · EmptyResponse · Auth · MalformedResponse · ContentTooLarge · Transport) + `isLLMError` type guard.
   - Live adapter (`compose/llm-gateway/live/anthropic.live.ts`): Effect-wrapped adapter delegating to legacy `agent-gateway.ts::invoke()`. Regex-dispatch `classifyLegacyError()` translates legacy Error messages → typed LLMError variants. **Bridge pattern**: classification helper goes away after caller migration (S1A.T7).
@@ -14,7 +21,7 @@
 - `run_bridge` config block added to `.loa.config.yaml` (cycle-004): enabled with depth/max_iterations cap, pr_body_opt_out_marker, bridgebuilder review block, mibera-canonical lore taxonomy.
 
 ### Tests
-- Test suite: 641 → 660 (+19 new from llm-gateway contract test). No regressions.
+- Test suite: 641 → 674 (+19 llm-gateway contract test · +14 reaction-bar). No regressions.
 
 
 ## [0.9.0] — 2026-05-01 — environment substrate (Phases B-E · cycle-001)

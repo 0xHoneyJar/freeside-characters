@@ -1,9 +1,10 @@
 ---
 title: signaling primitive — reaction-bar for community "what sticks" feedback
-status: candidate
-mode: pre-planning
+status: shipped-v1 · review-integrated
+mode: implementation
 created: 2026-05-14
-source_session: discord-exchange-2026-05-14 + /goal completion-cycle-004
+last_updated: 2026-05-14 (post KEEPER + OSTROM dual review)
+source_session: discord-exchange-2026-05-14 + /goal completion-cycle-004 + /goal reaction-bar-e2e
 expiry: until reaction-bar ships OR operator revokes
 use_label: usable
 boundaries:
@@ -13,6 +14,12 @@ boundaries:
 related-issues:
   - 0xHoneyJar/score-mibera#115 (verifier primitives — separate concern, complementary)
   - 0xHoneyJar/freeside-characters#74 (cycle-021 enrichment vs deterministic — deferred until verifier)
+v1_shipped:
+  - packages/persona-engine/src/deliver/reaction-bar.ts (130+ LoC)
+  - packages/persona-engine/src/deliver/reaction-bar.test.ts (14 tests)
+  - apps/bot/scripts/digest-tally.ts (operator-side tally with baseline+delta+sample-warning)
+  - packages/persona-engine/src/config.ts (DIGEST_REACTION_BAR_ENABLED env)
+  - packages/persona-engine/src/deliver/post.ts (wire-in to webhook-shell + bot-fallback paths)
 ---
 
 # track · reaction-bar signaling primitive
@@ -23,19 +30,21 @@ Operator (2026-05-14): *"Discord channel has operators + community members + com
 
 The verifier-primitives doctrine (score-mibera#115) addresses **truth** of claims. This track addresses **stickiness** — which posts resonate with which audience tiers — by adding a minimal community-signaling surface that doesn't require additional agent intelligence to interpret.
 
-## the primitive
+## the primitive (v1 shipped 2026-05-14)
 
-**Three seed reactions on every digest:**
+**Three seed reactions on every digest** — final set after KEEPER + OSTROM dual review:
 
 | Reaction | Meaning | Audience signal |
 |---|---|---|
-| 🙌 | "useful · landed for me" | the post earned its space |
-| 🤔 | "interesting but unclear" | the post's signal is real but the framing missed |
-| 💤 | "didn't carry — noise" | the post added volume without adding value |
+| 👀 | "useful · noticed · landed" | invitation register; in ruggy's voice already |
+| 🤔 | "interesting but unclear" | signal real but framing missed |
+| 🪲 | "bug · data wrong" | verification-class signal (pairs with score-mibera#115) |
 
-Bot auto-reacts with these three on every digest post; community members add their reaction; bot tallies.
+**Pre-review draft had 💤 (noise/skip)** as the third slot. **Removed** during KEEPER review (2026-05-14): bot-seeding 💤 reads as preemptive judgment ("we think this might be bad"), adversarial to ruggy's "let it land or don't" voice. **The fix**: don't seed 💤; let community SILENCE speak for "didn't carry." Posts with 0 reactions across all 3 categories ARE the noise signal — silence is data.
 
-**Optionally** (operator-decided) — a fourth `🪲` (bug · raw data wrong) reaction to capture verifier-class failures separately from voice-class noise, so when score-mibera#115's verifier exists, the 🪲 tally informs which claim-types most often fail.
+**🪲 shipped day-one** (instead of deferred) per OSTROM review (2026-05-14): deferring 🪲 until the verifier (score-mibera#115) ships means months of retroactive data loss. When verifier eventually lands, 🪲 history exists to correlate with `partial`/`fail` verdicts.
+
+Bot auto-reacts with these three on every digest post; community members add their reaction; operator runs `bun run apps/bot/scripts/digest-tally.ts [--days N]` to read aggregate.
 
 ## what it surfaces
 
@@ -89,3 +98,75 @@ This is independent of cycle-004 (substrate refactor + eval harness) and indepen
 - operator framing 2026-05-14 (Discord exchange + /goal completion) — usable, expiry: this conversation + downstream design
 - doctrinal context: 0xHoneyJar/score-mibera#115 (filed 2026-05-14) — companion verifier doctrine
 - related: freeside-characters#74 (cycle-021 surface disposition, deferred)
+
+## KEEPER + OSTROM dual review (2026-05-14)
+
+After v1 implementation landed, ran rigorous dual-construct review per operator goal ("get rigorous feedback from KEEPER and THE ARCADE for quality and clarity · focus on practicality and usefulness").
+
+### Integrated (shipped this revision)
+
+| Concern | Source | Resolution |
+|---|---|---|
+| 💤 reads as preemptive judgment; adversarial to ruggy voice | KEEPER | Removed 💤 from set; SILENCE = noise signal instead |
+| Deferring 🪲 = retroactive data loss when verifier ships | OSTROM | Added 🪲 day-one; tally script counts it; correlates with score-mibera#115 when that lands |
+| No structural memory — tally is snapshot, not trend | KEEPER | Added baseline+delta comparison vs prior window in `digest-tally.ts` |
+| Sample-size cliff (16 posts/month) — single member skew | KEEPER | Added `renderSampleSizeWarning()` flagging tallies below 8-digest noise floor |
+| `≤5 emoji` is suggestion, not invariant — Goodhart drift risk | OSTROM | TS-level conditional-type compile-time enforcement + runtime test |
+| Operator opacity — community doesn't know tally → doctrine, not ranking | OSTROM | Tally output includes "On reading the tally (operator doctrine)" section with pin-this-to-channel guidance |
+
+### Deferred with rationale (NOT shipped — bigger than this slice)
+
+| Concern | Source | Rationale for defer | Where it lives |
+|---|---|---|---|
+| Reactions are LEAST load-bearing signal — replies/threads/mentions tell richer stories | KEEPER | Adding thread-depth tracking is a substantial refactor; v1 ships the cheapest signal; richer tally is cycle-N+2 work | Track-file note · revisit when reaction-only signal proves too thin |
+| Extractive economy — community gives data, gets nothing back; one-way arrow | OSTROM | Reciprocity mechanics (personalized rank · highlights · transparency) require richer infrastructure (per-user state, recognition UI). Real concern but beyond v1 scope. Could be a cycle-N+2 follow-up: "what does the community get back from clicking?" | Track-file note · open question for next cycle planning |
+| Reddit-upvote failure mode (bandwagon/herding · early reactions anchor) | OSTROM | Mitigation is community-side framing, not code: pin a channel message explaining "reactions inform doctrine, don't rank posts." This is operator-action, not implementation. | Documented in tally output's doctrine section · operator must surface to community |
+| 8-week minimum read before patterns are real (vs 4-week default) | KEEPER | Operator decision — `--days 56` is the option; default stays 28 to match expected operator-cadence. Document in tally README. | Tally accepts `--days N` — operator chooses window |
+
+## Sample tally output (post-review revisions)
+
+```
+# Reaction-bar tally (last 28 days · 3 digests)
+
+## ⚠ Sample-size warning (KEEPER 2026-05-14 review)
+Only 3 digests with reaction-bar in window.
+Threshold for meaningful pattern emergence: ≥8 digests + ≥3 active reactors.
+At this scale, a single heavily-engaged member skews the tally.
+Read as anecdote, not pattern. Extend window with --days N or wait for more posts.
+
+## Per-digest detail
+| zone | timestamp | 👀 | 🤔 | 🪲 | community total |
+|------|-----------|----|----|----|----|
+| bear-cave | 2026-05-12 | 4 | 1 | 0 | 2 |
+...
+
+## Per-zone aggregate (rolling window)
+...
+
+## Delta vs prior window (KEEPER 2026-05-14 structural-memory fix)
+| metric | current | prior | Δ count | Δ % |
+| 👀 | 6 | 4 | +2 | +50% |
+| 🤔 | 2 | 1 | +1 | +100% |
+| 🪲 | 0 | 0 | 0 | (0→0) |
+| community total | 5 | 2 | +3 | +150% |
+
+## On reading the tally (operator doctrine)
+Per OSTROM 2026-05-14 review: this tally informs **doctrine**, not ranking. ...
+```
+
+## Test coverage
+
+14 tests in `reaction-bar.test.ts` across 7 describe blocks:
+- happy path (4 tests · attaches all 3 in order · order matches const · CLAUDE.md banned-list compliance · v1 length · KEEPER 💤-removal · OSTROM 🪲-day-one · OSTROM Goodhart-invariant)
+- channel failures (2 tests · null channel · non-text-based)
+- message-fetch failures (1 test)
+- per-reaction failures (2 tests · one fails / all fail)
+- verbose mode (1 test)
+
+Full test suite: **674/674 green** (was 660 baseline · +14 from this primitive).
+
+## E2E status
+
+- ✅ Unit: 14 tests pass · mock client verifies the full Discord API surface
+- ✅ Integration: `LLM_PROVIDER=stub bun run digest:once` runs all 4 zones without regression (reactions wire only fires on real-post path, skipped in dry-run by design)
+- ⏸ Live Discord: requires `DISCORD_BOT_TOKEN` + production deploy. Next Railway redeploy + next Sunday cron will exercise the live path. Tally script ready to run thereafter (`bun run apps/bot/scripts/digest-tally.ts --days 28`).

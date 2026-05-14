@@ -23,6 +23,7 @@ import type { ZoneId } from '../score/types.ts';
 import type { DigestPayload } from './embed.ts';
 import { getBotClient, postToChannel } from './client.ts';
 import { getOrCreateChannelWebhook, sendViaWebhook } from './webhook.ts';
+import { attachReactionBar } from './reaction-bar.ts';
 
 export interface DeliveryResult {
   posted: boolean;
@@ -51,6 +52,16 @@ export async function deliverZoneDigest(
     }
     const webhook = await getOrCreateChannelWebhook(client, channelId);
     const result = await sendViaWebhook(webhook, character, payload);
+    // Fire-and-forget reaction-bar attachment per
+    // DIGEST_REACTION_BAR_ENABLED (default: true). Reactions are
+    // augmentation, NOT critical path — never fail delivery on
+    // reaction-attach error. messageId may be undefined if the
+    // webhook didn't return one (legacy webhook variants).
+    if (config.DIGEST_REACTION_BAR_ENABLED && result.messageId) {
+      void attachReactionBar(client, channelId, result.messageId).catch((err) => {
+        console.error('[reaction-bar] post-delivery attach threw:', err);
+      });
+    }
     return {
       posted: true,
       dryRun: false,
@@ -74,6 +85,11 @@ export async function deliverZoneDigest(
       throw new Error('bot token set but client failed to connect');
     }
     const result = await postToChannel(client, channelId, payload);
+    if (config.DIGEST_REACTION_BAR_ENABLED && result.messageId) {
+      void attachReactionBar(client, channelId, result.messageId).catch((err) => {
+        console.error('[reaction-bar] post-delivery attach threw:', err);
+      });
+    }
     return {
       posted: true,
       dryRun: false,

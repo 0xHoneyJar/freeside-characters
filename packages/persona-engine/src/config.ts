@@ -5,6 +5,18 @@ const ConfigSchema = z.object({
   // ─── stub mode ────────────────────────────────────────────────────────
   STUB_MODE: z.string().default('true').transform((v) => v === 'true'),
 
+  // ─── reaction-bar (community-stickiness signaling primitive) ──────────
+  /** When true, bot auto-reacts on every successfully delivered digest
+   * with the 3 seed reactions (👀 useful · 🤔 unclear · 💤 noise).
+   * Defaults to true. Set false to disable autoreact on a per-deploy
+   * basis without code changes. See packages/persona-engine/src/deliver/
+   * reaction-bar.ts + grimoires/loa/context/track-2026-05-14-signaling-
+   * primitive-reaction-bar.md. */
+  DIGEST_REACTION_BAR_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v === 'true'),
+
   // ─── explicit LLM provider (V0.4 — codex-rescue F1: replace implicit
   // key-presence inference; fail loud if intent is ambiguous) ────────────
   /** stub | anthropic | freeside | bedrock | auto.
