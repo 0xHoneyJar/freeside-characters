@@ -180,3 +180,31 @@ simstim:
       - prd
       - sdd
       - sprint
+
+# Run Bridge — autonomous excellence loop (enabled for cycle-004 2026-05-13).
+run_bridge:
+  enabled: true
+  defaults:
+    depth: 3
+    per_sprint: false
+    flatline_threshold: 0.05
+    consecutive_flatline: 2
+  timeouts:
+    per_iteration_hours: 4
+    total_hours: 24
+  github_trail:
+    post_comments: true
+    update_pr_body: true
+  ground_truth:
+    enabled: true
+  vision_registry:
+    enabled: true
+    auto_capture: true
+  rtfm:
+    enabled: true
+    max_fix_iterations: 1
+  lore:
+    enabled: true
+    categories:
+      - mibera
+      - neuromancer
