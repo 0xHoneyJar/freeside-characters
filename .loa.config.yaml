@@ -180,3 +180,64 @@ simstim:
       - prd
       - sdd
       - sprint
+
+# Run Bridge — autonomous excellence loop (cycle-004).
+# Refer to grimoires/loa/cycles/cycle-004 for cycle-specific docs;
+# do NOT date-stamp this comment (will rot — RB-005).
+run_bridge:
+  enabled: true
+  defaults:
+    # depth IS the max-iterations cap (RB-001 partial-FP resolution).
+    # Explicit alias kept here for grep-clarity; mirrors depth above.
+    depth: 3
+    max_iterations: 3
+    per_sprint: false
+    # flatline_threshold: 0.05 means avg findings/iteration delta ≤ 5%.
+    # Expected convergence: 2-3 iterations for well-scoped sprints.
+    # Bridge enters HALTED if exceeds total_hours (24h) before flatline.
+    flatline_threshold: 0.05
+    consecutive_flatline: 2
+  timeouts:
+    per_iteration_hours: 4
+    total_hours: 24
+  github_trail:
+    post_comments: true
+    # update_pr_body: true overwrites PR description on each iteration
+    # (RB-003 risk: manually-authored content gets clobbered).
+    # PR descriptions containing the literal marker `<!-- bridge:no-update -->`
+    # are SKIPPED by the trail-writer to protect operator-authored bodies.
+    update_pr_body: true
+    pr_body_opt_out_marker: "<!-- bridge:no-update -->"
+  ground_truth:
+    enabled: true
+  vision_registry:
+    enabled: true
+    # auto_capture: true tags each captured vision with provenance
+    # (bridge-id + iteration + PR url + finding-id) so untraced entries
+    # are impossible by construction. See bridge-vision-capture.sh.
+    auto_capture: true
+  rtfm:
+    enabled: true
+    # max_fix_iterations: 1 keeps each iteration bounded; RTFM gate is
+    # a fail-soft gate (logged warning, not blocking). Cascading docs
+    # fixes flow through the natural bridge iteration loop, not the
+    # RTFM retry path. (RB-004 deferred — upstream-Loa-defined behavior.)
+    max_fix_iterations: 1
+  lore:
+    enabled: true
+    categories:
+      # mibera = THJ-canonical lore taxonomy (vault/wiki/concepts/mibera-*)
+      - mibera
+  # Bridgebuilder review config block (RB-009 addressed).
+  # Post-PR Bridgebuilder loop posts review as PR comment per iteration.
+  bridgebuilder:
+    persona_path: ".claude/data/bridgebuilder-persona.md"
+    enabled: true
+    # Comment redaction: gitleaks-inspired secret patterns stripped from
+    # posted reviews (SDD §3.5.2 / Flatline SKP-006).
+    redaction_enabled: true
+    # Truncation: bodies > 65KB truncate prose, preserve findings JSON.
+    # Bodies > 256KB extract findings-only.
+    max_body_bytes: 65536
+  pipeline_self_review:
+    enabled: false  # opt-in per cycle
