@@ -1,12 +1,20 @@
 ---
 title: SDD — composable substrate refactor + agent-runnable eval harness
 status: draft
-version: 0.1
+version: 0.2
 simstim_id: simstim-20260513-b7126e67
 phase: architecture
 date: 2026-05-13
 prd_ref: grimoires/loa/prd.md (v0.2)
+flatline_integrated: [SKP-001-snapshot, SKP-002-credentials, SKP-003-readonly+timeout+effect-boundary, SKP-004-contract-tests]
 ---
+
+> **v0.2 changelog** — integrates 5 substantive Flatline SDD-review findings (2026-05-13, 3-model cheval-routed, $0 cost):
+> - **Behavioral snapshot protocol PRE-refactor** (SKP-001 CRIT 880) → new §1.5: golden-snapshot capture before Phase 0 begins; manual snapshots are the regression net during refactor before eval harness exists
+> - **Eval mode read-only enforcement** (SKP-003 CRIT 870, 830) → §5.3 expanded: per-adapter read-only mechanism + contract tests prove the invariant
+> - **Async eval execution** (SKP-003 HIGH 780) → §4.3 revised: POST returns 202 + job-id; GET /eval/result/:job-id for polling (solves proxy-timeout problem on long runs)
+> - **Effect/Promise boundary convention** (SKP-003 HIGH 760) → new §1.6: every Effect-exported function wraps to `Promise<Result<X, E>>` at the module boundary; lint rule enforces
+> - **Contract tests per port** (SKP-004 HIGH 720) → new §6.1: shared `*.contract.test.ts` that BOTH live and mock adapters must pass; catches interface-vs-implementation drift
 
 # Software Design Document
 
@@ -97,6 +105,49 @@ export function buildRuntime(mode: RuntimeMode, config: RuntimeConfig): Runtime 
 ```
 
 CI gate: `grep -rE "buildRuntime\(" --include="*.ts" packages/ apps/` returns 0 or 1 (excluding tests).
+
+### 1.5 Behavioral snapshot protocol (pre-refactor regression net)
+
+Per Flatline SKP-001 CRIT (880): the eval harness is the proof, but the eval harness ships in Phase 0 alongside the agent-gateway refactor. Until then, the refactor needs a SIMPLER regression net.
+
+**Protocol** (before Phase 0 begins):
+1. Trigger one digest per zone (× 4 zones), one chat reply per character (× 8 characters), and one each of micro / weaver / lore_drop / question / callout via the deployed Railway bot.
+2. Capture the FULL Discord-rendered output (content + embed body + footer + tool-call sequence + timing) to `evals/snapshots/pre-refactor/`.
+3. Commit snapshots as canonical golden files. These ARE the seed corpus for eval fixtures (Phase 0+).
+4. Every refactor commit (each port-lift) re-runs the same triggers and diffs output against the golden snapshot. Non-trivial diff = STOP refactor and investigate.
+5. Snapshots are operator-canonical. Agent cannot regenerate them autonomously; agent can only compare against them.
+
+This protocol is OFFLINE (no eval HTTP endpoint required — uses existing Discord cron + slash commands). Cheap enough to run before every Phase commit.
+
+### 1.6 Effect-to-Promise boundary convention
+
+Per Flatline SKP-003 HIGH (760): Effect-exported APIs cannot leak into plain-TS callers as raw `Effect<X, E>`, or `Effect.runPromise` without error mapping silently re-converts typed errors to untyped throws.
+
+**Convention** (enforced by ESLint custom rule):
+
+```typescript
+// INSIDE compose/agent-gateway/ (an Effect-adopted module):
+//   Internal implementation uses Effect freely
+const invokeInternal = (args: InvokeArgs): Effect.Effect<LLMResponse, LLMError> => ...
+
+// AT THE MODULE EXPORT BOUNDARY:
+//   Wrap to Promise<Result<X, E>> using neverthrow's Result pattern
+export async function invoke(args: InvokeArgs): Promise<Result<LLMResponse, LLMError>> {
+  return Effect.runPromise(
+    Effect.either(invokeInternal(args)).pipe(
+      Effect.map((either) =>
+        Either.isLeft(either) ? err(either.left) : ok(either.right)
+      )
+    )
+  );
+}
+```
+
+Callers see `Result<X, E>` — explicit error handling, no thrown exceptions. The Effect runtime is INTERNAL to the module; the boundary is the export.
+
+**Lint rule** (`.eslintrc.boundary.json` — custom rule `no-effect-export`):
+- Module files at the export boundary (`index.ts` or any file matching `live/*.live.ts`) cannot export functions whose return type contains `Effect<` or `Layer<`.
+- Internal files (`live/_internal/*.ts`) are unrestricted.
 
 ### 1.4 Eval harness architecture
 
@@ -294,10 +345,12 @@ type EvalResult = {
 };
 ```
 
-### 4.3 Eval endpoint API contract
+### 4.3 Eval endpoint API contract (async job pattern)
+
+Per Flatline SKP-003 HIGH (780): synchronous HTTP for full eval runs hits proxy timeouts (Railway / Cloudflare both ~30-60s); a 7-fixture × N-character run takes minutes. **Async job pattern**:
 
 ```
-POST /eval/run
+POST /eval/run  (kick off job)
 Headers:
   X-Eval-Token:  <short-lived-token>           (issued by /eval/token)
   X-Eval-Sig:    HMAC-SHA256(canonical_input)  (signed body+timestamp+nonce)
@@ -306,16 +359,41 @@ Headers:
   Content-Type:  application/json
 
 Body:
-  { "fixture_id": "...", "opts": { "regenerate_baseline": false } }
+  { "fixture_ids": ["...", "..."] | "all" | "scope:digest", "opts": { ... } }
 
 Responses:
-  200 OK · EvalResult JSON
-  400 Bad Request · invalid body / unknown fixture
-  401 Unauthorized · missing/invalid token
-  403 Forbidden · token expired / kill switch active / nonce reused / timestamp out of window
-  413 Payload Too Large · body > 64KiB
-  429 Too Many Requests · rate-limited
-  503 Service Unavailable · upstream (Bedrock, score-mcp, freeside_auth) unavailable
+  202 Accepted · { "job_id": "...", "estimated_duration_ms": 180000 }
+  400 / 401 / 403 / 413 / 429 (same as before)
+```
+
+```
+GET /eval/result/:job_id  (poll for result)
+Headers:
+  X-Eval-Token:  <same-token-as-kick-off>
+  X-Eval-Sig:    HMAC-SHA256("GET" + path + ts)
+  X-Eval-TS:     <unix-seconds>
+
+Responses:
+  200 OK · job state — { "status": "queued" | "running" | "completed" | "failed",
+                          "progress": { "completed": N, "total": M },
+                          "result": EvalResult | null,
+                          "logs_tail": "..." }
+  404 Not Found · unknown job-id OR token-scope mismatch (different caller's job)
+```
+
+Job state lives in `.run/eval-jobs/<job_id>.json`; eviction after 1h. Long-poll variant (`?wait=30s` query param) supported — server blocks up to N seconds before responding.
+
+```
+POST /eval/token (operator-only)
+Headers:
+  X-Eval-Operator-Token: <long-lived-operator-creds>  (env-loaded from operator-side secret manager OR Railway CLI session)
+  Content-Type:  application/json
+
+Body:
+  { "ttl_seconds": 1800, "scope": "all" | "fixture-allowlist:...", "caller_id": "agent-zksoju-session-..." }
+
+Response:
+  200 OK · { "token": "...", "expires_at": "...", "scope": "...", "caller_id": "..." }
 ```
 
 ```
@@ -344,7 +422,20 @@ Response:
 | Eval triggers Bedrock at unbounded cost | Per-request cost budget (FR-14); kill switch env flag |
 | Audit gap (can't trace eval activity) | Append-only `.run/eval-audit.jsonl` with caller-id, fixture-id, timestamp, cost; never deleted |
 
-### 5.2 No-production-side-effects test (FR-10b)
+### 5.3 Per-adapter read-only enforcement matrix
+
+Per Flatline SKP-003 CRIT (830): read-only behavior must be enforced **technically per adapter**, not by convention. Each port has eval-mode behavior specified:
+
+| Port | Live behavior | Eval-mode behavior | Technical enforcement |
+|---|---|---|---|
+| `delivery.port.ts` | `postEmbed(channel, embed)` writes to Discord | Returns captured object; never calls discord.js | `DryRunDeliveryAdapter` is a fresh class; eval-mode `buildRuntime` wires it INSTEAD OF Live; no shared mutable state |
+| `score.port.ts` | MCP HTTP calls to score-mibera | Identical calls (read-only by tool semantics) | Score-mibera's tools that mutate (none currently; cycle-021 is read-only) would be filtered at eval-side; allowlist of "safe-to-call-in-eval" tool names |
+| `identity.port.ts` | Pg `SELECT FROM midi_profiles WHERE wallet_address = $1` | Same query inside `BEGIN READ ONLY; ...; COMMIT` transaction wrapper | Pg connection is wrapped in eval mode; any write attempt fails with `ERROR: cannot execute UPDATE in a read-only transaction` |
+| `llm-gateway.port.ts` | Bedrock / Anthropic call with prod creds | Identical (LLM calls are inherently stateless / read-only) | None needed — LLM provides no mutation surface |
+| `scheduler.port.ts` | Registers cron tasks | Eval-mode adapter is no-op (no cron registration) | `EvalSchedulerAdapter` has empty `register` method |
+| `webhook-write.port.ts` (if separate) | Discord webhook POST | Captures to ring buffer instead | `DryRunWebhookAdapter` |
+
+### 5.4 No-production-side-effects test (FR-10b)
 
 ```typescript
 // evals/__tests__/no-production-side-effects.test.ts (sketch)
@@ -359,7 +450,40 @@ describe('eval runtime: no production side effects', () => {
 });
 ```
 
-## 6. Scalability + performance
+## 6. Contract-test pattern per port
+
+Per Flatline SKP-004 HIGH (720): each port has a SHARED contract test suite that BOTH live and mock adapters must pass. Catches interface-vs-implementation drift before it reaches runtime.
+
+```typescript
+// packages/persona-engine/src/score/score.contract.test.ts
+import { describe, test, expect } from 'bun:test';
+import { LiveScoreAdapter } from './live/score.live';
+import { MockScoreAdapter } from './mock/score.mock';
+import type { ScorePort } from './ports/score.port';
+
+const adapters: Array<[name: string, factory: () => ScorePort]> = [
+  ['live', () => LiveScoreAdapter(testLiveConfig)],
+  ['mock', () => MockScoreAdapter(testMockFixtures)],
+];
+
+describe.each(adapters)('ScorePort contract (%s adapter)', (name, factory) => {
+  test('get_zone_digest returns ZoneDigest shape', async () => {
+    const port = factory();
+    const digest = await port.getZoneDigest('bear-cave');
+    expect(digest.zone).toBe('bear-cave');
+    expect(digest.window).toBe('weekly');
+    expect(typeof digest.computed_at).toBe('string');
+    // ... full shape check
+  });
+
+  test('emits LLMError on transport failure', async () => { ... });
+  test('emits SchemaError on version mismatch', async () => { ... });
+});
+```
+
+CI gates: `grep -rE "\.contract\.test\.ts" packages/` enumerates contracts; each must contain `describe.each(adapters)` to verify both live + mock run through the same tests.
+
+## 7. Scalability + performance
 
 | Concern | Approach |
 |---|---|
@@ -369,9 +493,9 @@ describe('eval runtime: no production side effects', () => {
 | Memory in eval mode | Captured-sink uses bounded ring buffer (last 100 posts retained for inspection) |
 | Bedrock rate limits | Eval runner respects 429 with exponential backoff; honors retry-after header |
 
-## 7. Open design questions (for Flatline SDD review)
+## 8. Open design questions (post Flatline SDD review)
 
-1. **Effect interop with non-Effect callers**: Phase 0-2 modules use Effect. The composition root and other modules use plain TS. Where exactly does the Effect-to-Promise translation boundary live? Likely: at each Effect-module's exported API. Document the convention.
+1. ~~**Effect interop with non-Effect callers**~~ ✅ RESOLVED — §1.6 specifies the convention: every Effect-exported function wraps to `Promise<Result<X, E>>` at the module boundary via `Effect.runPromise(Effect.either(...))`. Lint rule enforces.
 2. **Soft-scoring LLM consistency**: Haiku 4.5 is cheap but may be non-deterministic. Should soft-scoring use temperature=0 + seed-pinning? Or accept some noise and report variance over N=3 runs?
 3. **Fixture corpus governance**: Who owns the canonical fixture set? Operator gates inclusion, but who suggests new fixtures? Agent? Operator? Both?
 4. **Baseline drift**: When the persona prompt changes intentionally (e.g., today's gap-closure update), all baselines invalidate. How does the harness distinguish "intentional change → update baseline" from "regression → flag"? Operator-flagged baseline-refresh markers in fixture metadata?
