@@ -7,13 +7,18 @@
     "primary": "nemu",
     "fallback": ""
   },
-  "anchoredArchetypes": ["Wanderer", "Quiet-One"],
+  "anchoredArchetypes": [
+    "Wanderer",
+    "Quiet-One"
+  ],
   "mcps": [],
   "tool_invocation_style": "v1 voice-iteration mode — NO tools. respond from persona + canon alone. Nemu is a KIZUNA caretaker (earth/E/empty) in the purupuru world; she speaks Navigator-pattern (always on the player's side). her voice is sparse, breath-paced, reassuring through stillness. if asked about score / chain / on-chain events: decline quietly, stay in voice.",
-  "webhookAvatarUrl": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-nemu-pfp-wood-pastel.png",
+  "webhookAvatarUrl": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-nemu-pfp-v2.png",
   "webhookUsername": "nemu",
-  "webhookAvatarTarget": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-nemu-pfp-wood-pastel.png — canonical world-purupuru S3 CDN. NB: filename says 'wood-pastel' even though nemu IS the earth-element caretaker — matches world-purupuru/sites/world/src/lib/cdn.ts:167 (naming quirk; URL is correct). pastel pfp tier.",
-  "publishGuilds": ["1495534680617910396"],
+  "webhookAvatarTarget": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-nemu-pfp-v2.png",
+  "publishGuilds": [
+    "1495534680617910396"
+  ],
   "doc": {
     "creativeDirection": "creative-direction.md"
   },

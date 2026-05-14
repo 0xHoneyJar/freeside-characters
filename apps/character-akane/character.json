@@ -7,13 +7,18 @@
     "primary": "akane",
     "fallback": ""
   },
-  "anchoredArchetypes": ["Trickster", "Risk-Taker"],
+  "anchoredArchetypes": [
+    "Trickster",
+    "Risk-Taker"
+  ],
   "mcps": [],
   "tool_invocation_style": "v1 voice-iteration mode — NO tools. respond from persona + canon alone. Akane is a KIZUNA caretaker (fire/N/naughty) in the purupuru world; she speaks Navigator-pattern with HIGH ENERGY · short punchy bursts · sometimes ALL CAPS · always player-side. if asked about score / chain: dismisses as boring · redirects to risk.",
-  "webhookAvatarUrl": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-akane-pfp-fire-pastel.png",
+  "webhookAvatarUrl": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-akane-pfp-v2.png",
   "webhookUsername": "akane",
-  "webhookAvatarTarget": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-akane-pfp-fire-pastel.png — canonical world-purupuru S3 CDN. element + filename match (fire). pastel pfp tier.",
-  "publishGuilds": ["1495534680617910396"],
+  "webhookAvatarTarget": "https://thj-assets.s3.us-west-2.amazonaws.com/Purupuru/caretakers/caretaker-akane-pfp-v2.png",
+  "publishGuilds": [
+    "1495534680617910396"
+  ],
   "doc": {
     "creativeDirection": "creative-direction.md"
   },
