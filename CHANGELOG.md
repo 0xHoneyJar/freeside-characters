@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] — cycle-004 in progress
+
+### Added
+- **cycle-004 S1A foundation slice**: `compose/llm-gateway/` four-folder structure (`domain/ ports/ live/ mock/`) establishing the substrate-refactor pattern.
+  - Port (`compose/llm-gateway/ports/llm-gateway.port.ts`): `LLMGateway` Context.Tag with `LLMError` discriminated union (6 variants: RateLimit · EmptyResponse · Auth · MalformedResponse · ContentTooLarge · Transport) + `isLLMError` type guard.
+  - Live adapter (`compose/llm-gateway/live/anthropic.live.ts`): Effect-wrapped adapter delegating to legacy `agent-gateway.ts::invoke()`. Regex-dispatch `classifyLegacyError()` translates legacy Error messages → typed LLMError variants. **Bridge pattern**: classification helper goes away after caller migration (S1A.T7).
+  - Mock adapter (`compose/llm-gateway/mock/recorded.mock.ts`): fixture-based with SHA-256 message-hash precision, first-match-wins, success + error fixtures.
+  - Contract test (`compose/llm-gateway/llm-gateway.contract.test.ts`): 19 tests across 5 dimensions (LLMError shape · classifyLegacyError dispatch · RecordedMock matching · userMessage hashing · Effect-shape contract).
+- Sprint-1a Decision Log entries in `grimoires/loa/NOTES.md` capturing the bridge-pattern cleanup plan + 6 ACCEPTED-DEFERRED ACs + the BB invalid_llm_response gap.
+
+### Changed
+- `run_bridge` config block added to `.loa.config.yaml` (cycle-004): enabled with depth/max_iterations cap, pr_body_opt_out_marker, bridgebuilder review block, mibera-canonical lore taxonomy.
+
+### Tests
+- Test suite: 641 → 660 (+19 new from llm-gateway contract test). No regressions.
+
+
 ## [0.9.0] — 2026-05-01 — environment substrate (Phases B-E · cycle-001)
 
 
