@@ -1,15 +1,24 @@
 ---
 title: Sprint Plan — composable substrate refactor + agent-runnable eval harness
 status: draft
-version: 0.1
+version: 0.2
 simstim_id: simstim-20260513-b7126e67
 phase: planning
 date: 2026-05-13
 prd_ref: grimoires/loa/prd.md (v0.2)
 sdd_ref: grimoires/loa/sdd.md (v0.2)
-total_sprints: 6
-estimated_duration: 12-18 working days
+total_sprints: 8 (S0 + S1A + S1B + S2 + S3A + S3B + S4 + S5)
+estimated_duration: 14-20 working days
+flatline_integrated: [SKP-001-strict-schema+character-enum+scored-threshold, SKP-002-S1-split, SKP-003-rename-split+ip-allowlist+pg-pool-isolation, SKP-004-eval-job-persistence, SKP-005-dryrun-to-S1A+token-lifecycle]
 ---
+
+> **v0.2 changelog** — integrates 6 Flatline sprint-plan-review findings (2026-05-13, 3-model cheval-routed, $0 cost):
+> - **SKP-002 CRIT 920 / SKP-001 CRIT 850** → **Sprint 1 split into S1A + S1B**. S1A ships LLM gateway port + local recorded-fixture runner (no HTTP endpoint, no Railway). S1B ships Railway eval endpoint + token issuance + async jobs. S1A parity gate required before any endpoint exposure. Also moves `DryRunDeliveryAdapter` stub to S1A (was blocked by Sprint 4 dependency).
+> - **SKP-001 CRIT 880** → **Scored threshold replaces exact-equality** in eval parity check. New artifact: `evals/thresholds.yaml` committed in S1A defines per-fixture-type minimum hard/soft scores (hard ≥ 0.85, soft ≥ 0.70 default). S1A.T17 passes if fixtures exceed thresholds, NOT if outputs match snapshot byte-for-byte.
+> - **SKP-001 CRIT 950 + 860** → **Strict S0 schema + explicit character enumeration**. No '8 characters × 3 prompts' aspirational counts. S0 captures only currently-deployed characters with structured artifacts: raw Discord JSON + rendered markdown + tool-call trace + environment metadata + character version + prompt + timestamp + deterministic filename.
+> - **SKP-002 HIGH 780 / SKP-005 CRIT 850** → **Sprint 3 split into S3A + S3B**. S3A: identity port behind existing `freeside_auth` namespace (zero behavioral change). S3B: rename to `freeside_identity` + alias + deprecation tests + config migration. Separates port lift from rename concerns.
+> - **SKP-003 HIGH 710 + 760, SKP-005 HIGH 760** → **Eval endpoint hardening adds to S1B**: IP allowlist (Railway private networking OR CIDR allowlist for operator IPs), eval-mode Pg connection pool isolated from live pool with ROLLBACK in finally, token TTL ≤24h, `POST /eval/token/revoke` endpoint, hash-stored tokens in ring buffer.
+> - **SKP-004 HIGH 780 + 740** → **Eval job state persistence**: `.run/eval-jobs/` is ephemeral on Railway (lost on container restart). Move job state to existing Postgres instance OR Railway Volume. Acceptance criterion explicit: job state survives container restart.
 
 # Sprint Plan
 
@@ -32,22 +41,59 @@ estimated_duration: 12-18 working days
 | S0.T5 | Document capture protocol in `evals/snapshots/README.md` (how to add new snapshots, how snapshots become fixtures in Sprint 1) | agent | 15min |
 | S0.T6 | Commit golden snapshots — operator marks each as canonical (front-matter `canonical: true` + operator signature) | operator + agent | 15min |
 
-**Acceptance criteria**:
-- [ ] ≥4 digest snapshots (one per zone)
-- [ ] ≥5 alt-post-type snapshots (micro/weaver/lore_drop/question/callout)
-- [ ] ≥24 chat-mode snapshots (8 characters × 3 prompts)
-- [ ] All snapshots committed with operator's `canonical: true` marker
-- [ ] `evals/snapshots/README.md` documents protocol
+**Snapshot schema** (per Flatline SKP-001 CRIT 860, mandatory before captures begin):
 
-**Out of scope for S0**: any code changes; refactor begins Sprint 1.
+```yaml
+# evals/snapshots/<character>-<post_type>-<zone-or-slug>-<timestamp>.snapshot.yaml
+schema_version: "1.0.0"
+character: "ruggy"
+character_version: "v0.6.0-A"          # from bot boot log
+post_type: "digest"
+zone: "bear-cave"                       # optional, post-type-dependent
+canonical: false                        # operator flips to true after review
+captured_at: "2026-05-XX..."
+captured_by: "operator"
+
+input:
+  prompt: null                          # chat-mode only
+  zone_digest_payload: { ... }          # JSON from get_zone_digest (operator-supplied)
+  trigger: "cron weekly" | "/ruggy <prompt>" | "manual"
+
+output:
+  raw_discord_payload: { ... }          # full JSON from Discord API
+  rendered_markdown: "yo Bear Cave..."  # rendered embed body
+  tool_call_trace:                       # from Railway logs
+    - tool: "mcp__score__get_zone_digest"
+      args: { ... }
+      latency_ms: 312
+  environment:
+    LLM_PROVIDER: "bedrock"
+    STUB_MODE: false
+    ANTHROPIC_MODEL: "claude-opus-4-7"
+```
+
+**Currently-deployed character enumeration** (per Flatline SKP-001 CRIT 950 — no aspirational counts):
+
+Per `apps/character-*` directories: **ruggy, satoshi, munkh, kaori, nemu, akane, ren, ruan**. 8 characters total. S0 snapshots cover only deployed characters; if any character is added/removed mid-cycle, S0 expands/contracts explicitly.
+
+**Acceptance criteria**:
+- [ ] `evals/snapshots/README.md` documents the schema BEFORE first capture
+- [ ] ≥4 digest snapshots (one per zone: stonehenge, bear-cave, el-dorado, owsley-lab)
+- [ ] ≥5 alt-post-type snapshots (one each: micro, weaver, lore_drop, question, callout) on ruggy
+- [ ] **Chat-mode snapshots**: 2 currently-active characters (ruggy, satoshi) × 3 representative prompts = 6 snapshots minimum. Additional characters (munkh/kaori/nemu/akane/ren/ruan) get 1 chat snapshot each if their slash command is deployed (verify via `railway logs ... | grep "synced.*commands"` from earlier session)
+- [ ] All snapshots conform to schema above; failed-conformance snapshots rejected
+- [ ] All snapshots committed with operator's `canonical: true` marker
+- [ ] Total snapshot count documented in `evals/snapshots/MANIFEST.md`
+
+**Out of scope for S0**: any code changes; refactor begins Sprint 1A.
 
 ---
 
-## Sprint 1 · Phase 0 pilot — agent-gateway port + eval harness foundation
+## Sprint 1A · Phase 0 pilot — LLM gateway port + LOCAL eval runner
 
 **Duration**: 2-3 days · **Owner**: agent · **Risk**: medium-high (first port lift; new patterns)
 
-**Purpose**: Pilot the four-folder pattern + surgical Effect adoption on the LLM gateway. Ship the eval-harness HTTP endpoint + token issuance + fixture runner + scorer. This is the load-bearing sprint — proves the pattern + ships the regression-detection infrastructure.
+**Purpose** (per Flatline SKP-002 CRIT 920 sprint split): Pilot the four-folder pattern + surgical Effect adoption on the LLM gateway. Ship LOCAL eval-runner with recorded-fixture support — NO HTTP endpoint, NO Railway, NO tokens. Proves the pattern locally before exposing any production surface. S1B follows after S1A's parity gate passes.
 
 ### Tasks
 
@@ -62,30 +108,66 @@ estimated_duration: 12-18 working days
 | S1.T7 | Migrate all existing callers of `compose/agent-gateway.ts::invoke` to use new port-based runtime (the composer + reply.ts + any other call sites) | agent | 2h |
 | S1.T8 | Add ESLint custom rule `no-effect-export` (per SDD §1.6) | agent | 1h |
 | S1.T9 | Write `score.contract.test.ts` for llm-gateway port (live + mock both run through `describe.each`); covers all LLMError variants | agent | 2h |
-| S1.T10 | Implement eval harness foundation: `evals/src/{fixture-loader,runner,score-hard,score-soft,compare,reporter}.ts` | agent | 4h |
-| S1.T11 | Implement eval HTTP endpoint: `apps/bot/src/eval/handler.ts` (HMAC verify + token check + timestamp + nonce + rate-limit + fixture-allowlist + audit log) | agent | 4h |
-| S1.T12 | Implement async job pattern: `POST /eval/run` returns 202 + job_id; `GET /eval/result/:job_id` polls; `.run/eval-jobs/<id>.json` state | agent | 2h |
-| S1.T13 | Implement `apps/bot/scripts/issue-eval-token.ts` (operator-local CLI) + `POST /eval/token` Railway endpoint | agent | 2h |
-| S1.T14 | Implement `apps/bot/scripts/run-eval.ts` (agent/operator CLI: signs request, POSTs, polls, renders report) | agent | 2h |
-| S1.T15 | Convert at least 6 Sprint 0 snapshots into eval fixtures (`evals/fixtures/*.fixture.yaml`); each maps a snapshot to hard + soft scoring criteria | agent | 2h |
-| S1.T16 | Write `evals/__tests__/no-production-side-effects.test.ts` per SDD §5.4 (proves eval-mode runtime CANNOT write Discord / DB / mutate state) | agent | 2h |
-| S1.T17 | Run full eval harness against all Sprint-0 snapshots; verify pre-refactor parity (live adapter output ≡ pre-refactor snapshot) | agent | 1h |
-| S1.T18 | Update PRD/SDD with any learnings (Decision Log entries in `grimoires/loa/NOTES.md`) | agent | 30min |
+| S1A.T10 | Implement eval harness foundation: `evals/src/{fixture-loader,runner,score-hard,score-soft,compare,reporter}.ts` | agent | 4h |
+| S1A.T11 | Implement `evals/thresholds.yaml` (per SKP-001 CRIT 880) — per-fixture-type thresholds: hard ≥ 0.85, soft ≥ 0.70 default; operator-tunable per fixture | agent | 30min |
+| S1A.T12 | Stub `DryRunDeliveryAdapter` (per SKP-001 CRIT 850) — bare delivery-port stub at `packages/persona-engine/src/deliver/eval/dry-run-stub.adapter.ts`; captures to ring buffer; full Sprint 4 implementation later | agent | 1h |
+| S1A.T13 | Convert at least 6 Sprint 0 snapshots into eval fixtures (`evals/fixtures/*.fixture.yaml`); each maps a snapshot to hard + soft scoring criteria | agent | 2h |
+| S1A.T14 | Implement `apps/bot/scripts/run-eval-local.ts` (LOCAL CLI: invokes eval runner against recorded-mock adapter using fixtures, NO Railway) | agent | 1.5h |
+| S1A.T15 | Write `evals/__tests__/no-production-side-effects.test.ts` (structural test per SKP-005 HIGH 760 alternative: verifies eval-mode runtime's delivery slot is NOT live discord adapter; full behavioral test waits for Sprint 4) | agent | 1.5h |
+| S1A.T16 | Run local eval against all Sprint-0 snapshots using MOCK adapter; verify scored thresholds pass (hard ≥ 0.85, soft ≥ 0.70) | agent | 1h |
+| S1A.T17 | Update PRD/SDD with any learnings (Decision Log entries in `grimoires/loa/NOTES.md`) | agent | 30min |
 
-**Acceptance criteria (Phase 0 gate)**:
+**Acceptance criteria (Phase 0 LOCAL gate — S1A only)**:
 - [ ] `compose/llm-gateway/` has `domain/`, `ports/`, `live/`, `mock/` directories with files
 - [ ] `llm-gateway.contract.test.ts` exists and passes for both live + mock adapters
-- [ ] Existing test suite 641/641 still green (no regressions on Sprint 0 snapshots)
-- [ ] Eval HTTP endpoint deployed on Railway (auth gates verified)
-- [ ] `bun run apps/bot/scripts/run-eval.ts --fixture <id>` works end-to-end against Railway
-- [ ] No-production-side-effects test passes (proves DryRunDeliveryAdapter wired)
+- [ ] Existing test suite 641/641 still green
+- [ ] `evals/thresholds.yaml` committed with default per-fixture-type thresholds
+- [ ] `DryRunDeliveryAdapter` stub exists at `deliver/eval/dry-run-stub.adapter.ts`
 - [ ] At least 6 fixtures in `evals/fixtures/` corresponding to Sprint-0 snapshots
-- [ ] Eval baseline JSON committed at `evals/baselines/baseline-2026-05-XX.json`
+- [ ] `bun run apps/bot/scripts/run-eval-local.ts --fixture all` works end-to-end against MOCK adapter
+- [ ] All fixtures exceed their thresholds (hard ≥ 0.85, soft ≥ 0.70 by default)
+- [ ] Structural no-side-effects test passes (eval-mode delivery slot ≠ live discord adapter)
 - [ ] `bun run typecheck` + `bun test` both green
 
-**Verification**: agent runs `bun run apps/bot/scripts/run-eval.ts --fixture all` from local; report shows no regressions vs baseline.
+**Verification**: agent runs `bun run apps/bot/scripts/run-eval-local.ts --fixture all` from local; report shows all thresholds met. NO Railway dependencies tested.
 
-**Rollback criteria**: revert if any of (a) existing tests fail, (b) eval vs Sprint-0 snapshot diff exceeds 2 metrics per fixture, (c) Railway endpoint security gates fail any test.
+**Rollback criteria**: revert if any of (a) existing tests fail, (b) any fixture falls below its threshold, (c) Effect/Promise boundary lint rule fails, (d) DryRun stub leaks any side effect in structural test.
+
+---
+
+## Sprint 1B · Eval HTTP endpoint + token issuance + persistent job state
+
+**Duration**: 2 days · **Owner**: agent · **Risk**: medium (production surface; security gates)
+
+**Purpose** (per Flatline SKP-002 CRIT 920): expose the local eval runner from S1A as a Railway-side HTTP endpoint. Adds remote-invocation surface, token issuance, async jobs with persistent storage. **S1A must pass acceptance gate first.**
+
+### Tasks
+
+| ID | Task | Owner | Estimate |
+|---|---|---|---|
+| S1B.T1 | Implement eval HTTP endpoint: `apps/bot/src/eval/handler.ts` (HMAC verify + token check + timestamp + nonce + rate-limit + fixture-allowlist + audit log) | agent | 4h |
+| S1B.T2 | Per SKP-003 HIGH 710: add **IP allowlist** at endpoint (Railway private networking OR CIDR allowlist from env `EVAL_IP_ALLOWLIST`). Default deny; explicit allow only | agent | 1h |
+| S1B.T3 | Per SKP-004 HIGH 740: implement eval job state in **Postgres** (new table `eval_jobs` migrated via SQL) — `.run/eval-jobs/` is ephemeral on Railway containers; Pg gives persistence + concurrent access | agent | 3h |
+| S1B.T4 | Implement async job pattern: `POST /eval/run` returns 202 + job_id; `GET /eval/result/:job_id` polls Pg `eval_jobs` table | agent | 2h |
+| S1B.T5 | Implement `apps/bot/scripts/issue-eval-token.ts` (operator-local CLI) + `POST /eval/token` Railway endpoint | agent | 2h |
+| S1B.T6 | Per SKP-005 HIGH 760: **token TTL ≤24h** (env `EVAL_TOKEN_MAX_TTL_SECS`); `POST /eval/token/revoke` endpoint; hash-stored tokens in Pg ring buffer with max N (env `EVAL_TOKEN_RING_SIZE`); doc lifecycle in `docs/EVAL-AUTH.md` | agent | 2h |
+| S1B.T7 | Implement `apps/bot/scripts/run-eval.ts` (remote-CLI: signs request, POSTs to Railway, polls, renders report) | agent | 2h |
+| S1B.T8 | Run remote eval against all S1A fixtures via Railway endpoint; verify scored thresholds pass via LIVE adapter (LIVE provider + replayed fixtures); separate test target from S1A's MOCK-only run | agent | 1h |
+| S1B.T9 | Deploy to Railway; verify endpoint is reachable from operator IP only (test from non-allowlisted IP fails) | operator + agent | 1h |
+
+**Acceptance criteria (Phase 0 REMOTE gate)**:
+- [ ] `POST /eval/run` deployed on Railway, returns 202 + job_id
+- [ ] `GET /eval/result/:job_id` polls job state from Pg (survives container restart — verified by Railway redeploy mid-run)
+- [ ] `POST /eval/token` issues hash-stored tokens with TTL ≤24h
+- [ ] `POST /eval/token/revoke` works (revoked tokens fail subsequent requests)
+- [ ] IP allowlist verified: request from non-allowlisted IP returns 403
+- [ ] `bun run apps/bot/scripts/run-eval.ts --fixture all` works end-to-end against Railway
+- [ ] All fixtures' LIVE-adapter outputs exceed thresholds
+- [ ] `docs/EVAL-AUTH.md` documents token lifecycle (issue → use → expire/revoke)
+
+**Verification**: agent obtains short-lived token from operator, runs full eval against Railway, observes all fixtures pass thresholds, can revoke token + verify subsequent request fails.
+
+**Rollback criteria**: revert if (a) any auth gate test fails, (b) Pg eval_jobs storage corrupts state, (c) IP allowlist bypassable.
 
 ---
 
@@ -113,25 +195,47 @@ estimated_duration: 12-18 working days
 
 ---
 
-## Sprint 3 · Phase 2 — identity boundary port migration
+## Sprint 3A · Phase 2 part 1 — identity port (behind existing namespace)
 
-**Duration**: 2 days · **Owner**: agent · **Risk**: medium (DB stateful)
+**Duration**: 1.5 days · **Owner**: agent · **Risk**: low-medium
 
-**Purpose**: Lift `orchestrator/freeside_auth/server.ts` into `auth/{domain,ports,live,mock}/` shape. Effect-adopted. Critical doctrine: this is the FREESIDE-IDENTITY boundary (see grimoires/loa/context/track-2026-05-13-freeside-identity-rename.md). The rename happens in this sprint.
+**Purpose** (per Flatline SKP-002 HIGH 780 split): lift `orchestrator/freeside_auth/server.ts` into `auth/{domain,ports,live,mock}/` shape WITHOUT renaming the MCP namespace. Zero behavioral change. Sprint 3B handles the rename + alias + deprecation.
 
 ### Tasks
 
 | ID | Task | Owner | Estimate |
 |---|---|---|---|
-| S3.T1 | Rename module: `orchestrator/freeside_auth/` → `orchestrator/freeside_identity/` (transitional alias for back-compat) | agent | 1h |
-| S3.T2 | Define `identity.port.ts` covering `resolveWallet`, `resolveWallets` (batch), `resolveHandleToWallet`, `resolveMiberaIdToWallet` + IdentityError union | agent | 1h |
-| S3.T3 | Lift Pg pool + query logic into `live/pg-midi-profiles.live.ts`. Eval-mode wraps queries in `BEGIN READ ONLY` per SDD §5.3 | agent | 3h |
-| S3.T4 | Implement `mock/handle-map.mock.ts` — deterministic wallet→handle map from fixtures | agent | 1.5h |
-| S3.T5 | Migrate all callers; update `character.json::tool_invocation_style` to reference `freeside_identity` (if MCP namespace changes) | agent | 2h |
-| S3.T6 | Write contract tests | agent | 2h |
-| S3.T7 | Eval pass against Sprint-0 snapshots | agent | 30min |
+| S3A.T1 | Define `identity.port.ts` covering `resolveWallet`, `resolveWallets` (batch), `resolveHandleToWallet`, `resolveMiberaIdToWallet` + IdentityError union | agent | 1h |
+| S3A.T2 | Per SKP-003 HIGH 760: lift Pg pool + query logic into `live/pg-midi-profiles.live.ts`. **Eval-mode uses ISOLATED Pg connection pool** (separate from live pool) — never shares idle connections; ROLLBACK in finally for every checkout regardless of error path | agent | 3h |
+| S3A.T3 | Eval-mode wraps queries in `BEGIN READ ONLY` per SDD §5.3 | agent | 1h |
+| S3A.T4 | Implement `mock/handle-map.mock.ts` — deterministic wallet→handle map from fixtures | agent | 1.5h |
+| S3A.T5 | Migrate all callers to use port-based runtime (MCP namespace stays `freeside_auth`) | agent | 2h |
+| S3A.T6 | Write contract tests covering live + mock; explicitly test READ-ONLY enforcement (attempt UPDATE in eval-mode → assert error) | agent | 2h |
+| S3A.T7 | Eval pass against Sprint-0 snapshots | agent | 30min |
 
-**Acceptance criteria**: identity ported + renamed · Pg eval-mode is read-only (verified by side-effects test) · all tests green.
+**Acceptance criteria**: identity ported (S3A no rename) · isolated Pg pool · READ ONLY enforced + tested · all tests green · no MCP namespace change.
+
+---
+
+## Sprint 3B · Phase 2 part 2 — rename freeside_auth → freeside_identity
+
+**Duration**: 1 day · **Owner**: agent · **Risk**: medium (consumer-facing rename; back-compat critical)
+
+**Purpose** (per Flatline SKP-005 CRIT 850): split rename from port lift. Now that the port is in place, rename the namespace cleanly with explicit deprecation tests.
+
+### Tasks
+
+| ID | Task | Owner | Estimate |
+|---|---|---|---|
+| S3B.T1 | Rename module: `orchestrator/freeside_auth/` → `orchestrator/freeside_identity/` | agent | 30min |
+| S3B.T2 | Update MCP tool prefixes: `mcp__freeside_auth__*` → `mcp__freeside_identity__*` in MCP server registration | agent | 1h |
+| S3B.T3 | Add **transitional alias**: server registers BOTH `freeside_auth` (deprecated) AND `freeside_identity` (canonical) tool prefixes; alias warns on use via stderr log | agent | 1.5h |
+| S3B.T4 | Update `character.json::tool_invocation_style` for all 8 characters to reference `freeside_identity` (keep `freeside_auth` mentions in deprecation comments) | agent | 1h |
+| S3B.T5 | Add deprecation test: invoke `mcp__freeside_auth__resolve_wallet` → assert succeeds + emits deprecation warning to stderr | agent | 1h |
+| S3B.T6 | Document deprecation window in `grimoires/loa/NOTES.md` (Decision Log) + propose removal cycle (e.g., cycle-N+2) | agent | 30min |
+| S3B.T7 | Eval pass — verify chat-mode + digest path both work via new namespace; alias proven to work for old namespace | agent | 30min |
+
+**Acceptance criteria**: rename complete · alias works · deprecation warning emitted on old namespace · all 8 character personas updated · removal window documented · all tests + eval green.
 
 ---
 
@@ -201,22 +305,34 @@ estimated_duration: 12-18 working days
 | CC.4 | Bridgebuilder review on each sprint's PR (uses cheval/OAuth shim chain) | Per sprint PR |
 | CC.5 | If eval surfaces regression: STOP sprint, root-cause, fix BEFORE merging | Per regression |
 
-## Dependencies + sequencing
+## Dependencies + sequencing (v0.2)
 
 ```
-S0 (snapshot baseline)
+S0 (snapshot baseline · operator-canonical)
   │
   ▼
-S1 (agent-gateway + eval harness)  ← load-bearing; everything downstream depends on this
+S1A (LLM gateway port + LOCAL eval runner · NO Railway)
+  │  └── load-bearing — parity gate before exposing endpoint
+  ▼
+S1B (eval HTTP endpoint + tokens + Pg job state)
   │
-  ├─→ S2 (score) ──┐
-  │                │
-  ├─→ S3 (identity)│
-  │                ├─→ S4 (delivery) ──→ S5 (side surfaces) ──→ READY-FOR-MERGE
-  └─→ S2/S3 can parallelize after S1 ships, but operator may prefer sequential for review surface
+  ▼
+S2 (score boundary)
+  │
+  ▼
+S3A (identity port behind existing namespace)
+  │
+  ▼
+S3B (rename freeside_auth → freeside_identity + alias + deprecation)
+  │
+  ▼
+S4 (delivery boundary + DryRunDeliveryAdapter full impl)
+  │
+  ▼
+S5 (side surfaces + composition root cleanup) ──→ READY-FOR-MERGE
 ```
 
-Operator decision: **sequential** vs **parallel S2/S3**. Default: sequential per simstim discipline. Parallel only if operator + agent both have bandwidth.
+**Strict sequential per Flatline SDD review** — parallelization is OUT (was an option in v0.1; v0.2 removes it). Reasoning: each sprint's eval-against-baseline gate depends on the prior sprint's behavior being locked. Parallel work creates non-determinism in baselines.
 
 ## Risks (additional to PRD §Risks)
 
