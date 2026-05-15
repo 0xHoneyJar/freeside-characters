@@ -290,8 +290,104 @@ export interface GetCommunityCountsResponse extends CommunityCountsCoreFields {
   previous: CommunityCountsPreviousFields;
   /** PoP percent changes for each field. null when prior is 0 (never Infinity). */
   deltas: CommunityCountsDeltaFields;
-  schema_version: '1.0.0';
+  /**
+   * Family-wide minor bump. get_community_counts has no `factor_stats`
+   * surface (cycle-022 enrichment landed on the two factor-keyed tools
+   * only) but the family schema bumps together per the cycle-020 minor-
+   * bump convention. Accept both during the consumer transition.
+   */
+  schema_version: '1.0.0' | '1.1.0';
   generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// factor_stats — cycle-022 verification-primitives substrate (PR #116)
+// ──────────────────────────────────────────────────────────────────────
+//
+// score-mibera enriches every live per-factor object on get_dimension_breakdown
+// + get_recent_events with this `factor_stats` block — empirical percentile
+// ranks of the current window against the factor's own trailing history
+// (730-day cap), per-tier sufficiency, per-percentile reliability flags,
+// occurrence frequency, and active-day-gap cadence.
+//
+// **Numbers, not verdicts.** The substrate enforces (via a no-verdict test
+// on the score-api side: factor-stats.service.test.ts) that NO
+// `gate_suggestion` / `held` / `shifted` / `verdict` / `blocked` keys appear
+// anywhere in the response. The consumer (freeside-characters) maps these
+// numbers → permitted prose register; score-mibera does NOT parse prose.
+//
+// See the score-mibera doctrine in:
+//   - https://github.com/0xHoneyJar/score-mibera/issues/115 (doctrine)
+//   - https://github.com/0xHoneyJar/score-mibera/pull/116 (shipped)
+//   - score-api/src/services/factor-stats.service.ts:57 (canonical type)
+//
+// Absent on historic factors (catalog status:'historic'). Always present
+// when factor_stats is emitted; null fields signal "history too thin to
+// support this specific statistic" — never a fabricated number.
+
+export type FactorStatsPercentileKey = 'p10' | 'p25' | 'p50' | 'p75' | 'p90' | 'p95' | 'p99';
+
+export interface FactorStatsSurface {
+  /** Present on `magnitude` only — current-window event_count. */
+  event_count?: number;
+  /** Present on `cohort` only — current-window unique_actors. */
+  unique_actors?: number;
+  /**
+   * Per-percentile {value, reliable}. `reliable: false` means the underlying
+   * history is too thin to support THIS specific percentile — even if
+   * history.sufficiency.p50 is true, p99 may not be.
+   */
+  percentiles: Record<FactorStatsPercentileKey, { value: number | null; reliable: boolean }>;
+  /**
+   * Leave-one-out empirical rank of the current window vs the factor's own
+   * trailing distribution. null when history is too thin to rank.
+   */
+  current_percentile_rank: number | null;
+}
+
+export interface FactorStats {
+  history: {
+    active_days: number;
+    /** ISO date YYYY-MM-DD; null when no_data. */
+    last_active_date: string | null;
+    /**
+     * last_active_date older than FACTOR_STATS_STALENESS_DAYS (default 45).
+     * Surfaces dormancy without conflating with "no data".
+     */
+    stale: boolean;
+    /** Factor exists in catalog but has zero history rows. */
+    no_data: boolean;
+    /** Present+true ONLY on the degraded-failure path (score-api SDD §6). */
+    error?: boolean;
+    /** Present+true ONLY for an unknown/unresolvable factor_id. */
+    unknown_factor?: boolean;
+    /**
+     * Per-tier sufficiency. p50 requires ≥10 active days, p90 ≥30, p99 ≥60
+     * (env-configurable via FACTOR_STATS_SUFFICIENCY_{P50,P90,P99} on the
+     * score-api side).
+     */
+    sufficiency: { p50: boolean; p90: boolean; p99: boolean };
+  };
+  occurrence: {
+    /**
+     * Fraction of trailing-window days that saw events for this factor.
+     * The hurdle's "gate" dimension — magnitude rank is conditional on this.
+     */
+    active_day_frequency: number;
+    /** Was today an active day at all. */
+    current_is_active: boolean;
+  };
+  magnitude: FactorStatsSurface;
+  cohort: FactorStatsSurface;
+  cadence: {
+    days_since_last_active: number;
+    median_active_day_gap_days: number | null;
+    /**
+     * Plain empirical rank (NOT leave-one-out) — the current
+     * days-since-last is an ongoing, not-yet-completed gap.
+     */
+    current_gap_percentile_rank: number | null;
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -307,6 +403,12 @@ export interface PulseDimensionFactor {
   previous: number;
   delta_pct: number | null;
   delta_count: number;
+  /**
+   * cycle-022 verification-primitives enrichment (score-mibera PR #116).
+   * Absent for historic factors (catalog status:'historic'). Numbers, not
+   * verdicts — see FactorStats below.
+   */
+  factor_stats?: FactorStats;
 }
 
 export interface PulseDimensionBreakdown {
@@ -333,7 +435,12 @@ export interface GetDimensionBreakdownArgs {
 
 export interface GetDimensionBreakdownResponse {
   dimensions: PulseDimensionBreakdown[];
-  schema_version: '1.0.0';
+  /**
+   * 1.0.0 = pre cycle-022; 1.1.0 = cycle-022 substrate live (per-factor
+   * `factor_stats` enrichment). Pre-existing fields are byte-identical
+   * across the bump — accept both during the consumer transition.
+   */
+  schema_version: '1.0.0' | '1.1.0';
   generated_at: string;
 }
 
@@ -363,6 +470,12 @@ export interface ByFactorRollup {
   count: number;
   /** Up to 3 distinct wallets (case-preserved from first occurrence; dedup is case-insensitive). */
   sample_wallets: string[];
+  /**
+   * cycle-022 verification-primitives enrichment (score-mibera PR #116).
+   * Absent for historic factors (catalog status:'historic'). Numbers, not
+   * verdicts — see FactorStats below.
+   */
+  factor_stats?: FactorStats;
 }
 
 export interface GetRecentEventsArgs {
@@ -375,7 +488,12 @@ export interface GetRecentEventsResponse {
   events: RecentEventRow[];
   /** Grouped by factor_id, ordered by count DESC + factor_id ASC tie-break. */
   by_factor: ByFactorRollup[];
-  schema_version: '1.0.0';
+  /**
+   * 1.0.0 = pre cycle-022; 1.1.0 = cycle-022 substrate live (per-factor
+   * `factor_stats` enrichment on `by_factor[]`; `events[]` is byte-identical
+   * across the bump). Accept both during the consumer transition.
+   */
+  schema_version: '1.0.0' | '1.1.0';
   generated_at: string;
 }
 
@@ -408,7 +526,13 @@ export interface GetMostActiveWalletsResponse {
   wallets: MostActiveWalletEntry[];
   /** Count of all wallets matching the window+filters, before LIMIT. */
   total_candidates: number;
-  schema_version: '1.0.0';
+  /**
+   * Family-wide minor bump. get_most_active_wallets has no `factor_stats`
+   * surface (wallet-keyed, not factor-keyed) but the family schema bumps
+   * together per the cycle-020 minor-bump convention. Accept both during
+   * the consumer transition.
+   */
+  schema_version: '1.0.0' | '1.1.0';
   generated_at: string;
 }
 
