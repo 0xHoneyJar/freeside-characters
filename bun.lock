@@ -48,6 +48,7 @@
         "@opentelemetry/sdk-trace-base": "^2.7.1",
         "@opentelemetry/sdk-trace-node": "^2.7.1",
         "@opentelemetry/semantic-conventions": "^1.41.1",
+        "@raindrop-ai/claude-agent-sdk": "^0.0.13",
         "discord.js": "^14.16.3",
         "effect": "^3.21.2",
         "node-cron": "^3.0.3",
@@ -210,6 +211,8 @@
     "@protobufjs/pool": ["@protobufjs/pool@1.1.0", "", {}, "sha512-0kELaGSIDBKvcgS4zkjz1PeddatrjYcmMWOlAuAPwAeccUrPHdUqo/J6LiymHHEiJT5NrF1UVwxY14f+fy4WQw=="],
 
     "@protobufjs/utf8": ["@protobufjs/utf8@1.1.1", "", {}, "sha512-oOAWABowe8EAbMyWKM0tYDKi8Yaox52D+HWZhAIJqQXbqe0xI/GV7FhLWqlEKreMkfDjshR5FKgi3mnle0h6Eg=="],
+
+    "@raindrop-ai/claude-agent-sdk": ["@raindrop-ai/claude-agent-sdk@0.0.13", "", { "peerDependencies": { "@anthropic-ai/claude-agent-sdk": ">=0.1.0" } }, "sha512-l0U2ejVzRDVCoywZLn/JnbRKC2Mr4SjJ+eGJ+GkwjQ27O029pMukx20oTlWXYZ7x+NNDi8ruMc3vzPNwLvWSTQ=="],
 
     "@sapphire/async-queue": ["@sapphire/async-queue@1.5.5", "", {}, "sha512-cvGzxbba6sav2zZkH8GPf2oGk9yYoD5qrNWdu9fRehifgnFZJMV+nuy2nON2roRO4yQQ+v7MK/Pktl/HgfsUXg=="],
 
