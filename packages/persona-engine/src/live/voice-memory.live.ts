@@ -144,7 +144,19 @@ export function createVoiceMemoryLive(opts: VoiceMemoryLiveOpts = {}): VoiceMemo
     } catch (err) {
       return { ok: false, reason: err instanceof Error ? err.message : 'multi-process violation' };
     }
-    const path = pathFor(stream, entry.stream === stream ? entry.key : entry.key);
+    // BB F-001 closure (2026-05-16): explicit stream/entry-shape guard.
+    // appendEntry(stream, entry) is called with TWO sources of stream identity
+    // — the call-site param + the payload's self-identifying entry.stream. Both
+    // MUST agree, or we'd silently route writes (stream=param) while readers
+    // key off entry.stream and see mismatched payloads. Same defect class as
+    // tablet-locator bugs in distributed systems.
+    if (entry.stream !== stream) {
+      return {
+        ok: false,
+        reason: `stream-mismatch: appendEntry param="${stream}" but entry.stream="${entry.stream}"`,
+      };
+    }
+    const path = pathFor(stream, entry.key);
     // Mutex on (stream, key) tuple.
     const lockKey = `${stream}::${entry.key}`;
     const prev = keyLocks.get(lockKey)?.chain ?? Promise.resolve();

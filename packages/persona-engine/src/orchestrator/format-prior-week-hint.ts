@@ -25,15 +25,24 @@ export interface FormatPriorWeekHintArgs {
 }
 
 /**
- * HTML-entity-escape the characters that would otherwise let an attacker
- * forge the closing tag of the <untrusted-content> wrapper. Only these three
- * characters need escaping for tag-breakout defense; quotes and other chars
- * stay readable for the LLM.
+ * HTML-entity-escape ALL FIVE XML metacharacters that an attacker could use
+ * to either (a) forge the closing tag of the <untrusted-content> wrapper,
+ * or (b) break out of an attribute-value scope (stream="..." key="...").
  *
  * FLATLINE-SKP-002/CRITICAL · 2026-05-16 sprint review.
+ * BB F-002 closure · 2026-05-16 round 3 review · extended escape table from
+ * 3-char (<,>,&) to OWASP-canonical 5-char (<,>,&,",') per XSS Prevention
+ * Cheat Sheet attribute-context guidance. Partial escaping is worse than
+ * none — it telegraphs that we considered the attack surface and stopped
+ * short.
  */
 function escapeForUntrustedContent(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /**

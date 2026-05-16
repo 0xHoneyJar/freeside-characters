@@ -68,7 +68,7 @@ describe('formatPriorWeekHint · HTML-escape tag-breakout defense (FLATLINE-SKP-
     expect(out).toContain('A &amp; B');
   });
 
-  test('attacker stream value is escaped (cannot smuggle attrs)', () => {
+  test('attacker stream value is escaped (cannot smuggle attrs) · BB F-002', () => {
     // TypeScript would normally reject this, but a malicious caller could
     // bypass via `as any`. Verify defense-in-depth.
     const out = formatPriorWeekHint({
@@ -77,9 +77,38 @@ describe('formatPriorWeekHint · HTML-escape tag-breakout defense (FLATLINE-SKP-
       stream: 'digest"><evil>' as any,
       key: 'stonehenge',
     });
-    expect(out).toContain('digest&quot;&gt;&lt;evil&gt;'.replace('&quot;', '"'));
+    // BB F-002 closure: the quote character itself must be escaped to &quot;
+    // so the attacker can't escape the attribute scope.
+    expect(out).toContain('digest&quot;&gt;&lt;evil&gt;');
     // The literal evil tag opener must not appear unescaped.
     expect(out).not.toMatch(/stream="digest"><evil>/);
+    // No raw " character INSIDE the attacker-controlled stream value.
+    expect(out).not.toMatch(/stream="digest"/);
+  });
+
+  test('all 5 XML metacharacters escaped (BB F-002 · OWASP complete table)', () => {
+    const FULL_ATTACK = '<>&"\'';
+    const out = formatPriorWeekHint({
+      entry: { header: FULL_ATTACK, outro: '' },
+      stream: 'digest',
+      key: 'stonehenge',
+    });
+    // All 5 chars escaped — no raw versions inside inner content.
+    expect(out).toContain('&lt;');
+    expect(out).toContain('&gt;');
+    expect(out).toContain('&amp;');
+    expect(out).toContain('&quot;');
+    expect(out).toContain('&#39;');
+  });
+
+  test('single-quote attacker payload (XSS Filter Evasion vector)', () => {
+    const out = formatPriorWeekHint({
+      entry: { header: "alert('xss')", outro: '' },
+      stream: 'digest',
+      key: 'stonehenge',
+    });
+    expect(out).toContain('&#39;xss&#39;');
+    expect(out).not.toMatch(/alert\('xss'\)/);
   });
 
   test('attacker key value is escaped', () => {

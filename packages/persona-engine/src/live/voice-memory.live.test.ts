@@ -60,12 +60,73 @@ describe('voice-memory.live · AC-RT-001 path-traversal defense', () => {
     await expect(vm.readRecent('digest', '../../etc/passwd')).rejects.toThrow(/invalid key/);
   });
 
-  test('appendEntry throws on invalid stream', async () => {
+  test('appendEntry rejects on invalid stream (layered defense: F-001 mismatch guard fires first)', async () => {
+    const vm = createVoiceMemoryLive({ basePath });
+    // After BB F-001 fix: the stream-mismatch guard catches 'not_a_stream' as
+    // param vs 'digest' as entry.stream BEFORE pathFor's allowlist throw fires.
+    // Both layers defend; the earlier one wins. Return-shape rejection rather
+    // than throw — this is correct layered defense, not a regression.
+    const result = await vm.appendEntry(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      'not_a_stream' as any,
+      entryOf(),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Either stream-mismatch (param vs entry.stream) OR pathFor's invalid-stream
+      // throw — both are valid rejections; the test asserts one of them fires.
+      expect(result.reason).toMatch(/stream-mismatch|invalid stream/);
+    }
+  });
+
+  test('appendEntry layered defense: Zod schema catches invalid stream first', async () => {
+    const vm = createVoiceMemoryLive({ basePath });
+    // When entry.stream is not in the StreamName enum, Zod's safeParse fails
+    // BEFORE the mismatch guard or pathFor's allowlist throw fire. Three-layer
+    // defense: schema (first) → mismatch guard (second) → pathFor (third).
+    const result = await vm.appendEntry(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      'not_a_stream' as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      entryOf({ stream: 'not_a_stream' as any }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/schema validation failed|stream-mismatch|invalid stream/);
+    }
+  });
+
+  test('pathFor throws directly on invalid stream (still active third-layer defense)', async () => {
+    // Direct readRecent (no schema/mismatch path) → pathFor allowlist fires.
     const vm = createVoiceMemoryLive({ basePath });
     await expect(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      vm.appendEntry('not_a_stream' as any, entryOf()),
+      vm.readRecent('not_a_stream' as any, 'stonehenge'),
     ).rejects.toThrow(/invalid stream/);
+  });
+});
+
+describe('voice-memory.live · BB F-001 stream-mismatch guard', () => {
+  test('appendEntry rejects when stream param ≠ entry.stream', async () => {
+    const vm = createVoiceMemoryLive({ basePath });
+    // Entry claims stream='callout' but caller passes stream='digest' —
+    // would silently write to digest path while payload says callout.
+    const result = await vm.appendEntry(
+      'digest',
+      entryOf({ stream: 'callout', key: 'stonehenge:trigger123' }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/stream-mismatch/);
+      expect(result.reason).toContain('param="digest"');
+      expect(result.reason).toContain('entry.stream="callout"');
+    }
+  });
+
+  test('appendEntry accepts when stream param === entry.stream', async () => {
+    const vm = createVoiceMemoryLive({ basePath });
+    const result = await vm.appendEntry('digest', entryOf({ stream: 'digest' }));
+    expect(result.ok).toBe(true);
   });
 });
 
