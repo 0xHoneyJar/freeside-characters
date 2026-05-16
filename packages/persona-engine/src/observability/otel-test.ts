@@ -6,7 +6,7 @@
  * to an `InMemorySpanExporter`, so tests can:
  *
  *   1. `initOtelTest()` returns `{tracer, exporter}`
- *   2. exercise composeDigestForZone (or other tracer consumers)
+ *   2. exercise digest-orchestrator (or other tracer consumers)
  *   3. `exporter.getFinishedSpans()` returns the span tree for assertions
  *   4. `resetOtelTest()` clears state between tests
  *

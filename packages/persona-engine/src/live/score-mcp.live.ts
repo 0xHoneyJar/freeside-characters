@@ -9,16 +9,90 @@ import {
   type ZoneId,
 } from '../score/types.ts';
 import type { DigestSnapshot, DigestFactorSnapshot } from '../domain/digest-snapshot.ts';
-import type { ActivityPulse } from '../domain/activity-pulse.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
+import { validateSnapshotPlausibility } from '../domain/validate-snapshot-plausibility.ts';
+import { readBaseline, appendBaseline } from './score-baselines.ts';
+import { recordRejection, detectStorm } from './score-snapshot-rejections.ts';
+import { getTracer } from '../observability/otel-layer.ts';
 
 export function createScoreMcpLive(config: Config): ScoreFetchPort {
   return {
-    fetchDigestSnapshot: (zone) => fetchDigestSnapshot(config, zone),
+    fetchDigestSnapshot: (zone) => fetchValidatedDigestSnapshot(config, zone),
     fetchActivityPulse: async ({ limit }) => {
       const response = await fetchRecentEvents(config, limit);
       return { generatedAt: response.generated_at, events: response.events };
     },
+  };
+}
+
+/**
+ * Fetch a digest snapshot from score-mcp AND validate it against the
+ * zone's rolling-window baseline before handing it downstream.
+ *
+ * Red Team AC-RT-008 + FLATLINE-SKP-002/HIGH + FLATLINE-SKP-003/HIGH closure.
+ *
+ * On REJECTION:
+ *   1. Record structured entry to `.run/score-snapshot-rejections.jsonl`
+ *   2. Emit OTEL `score.snapshot.implausible` event on a fresh span
+ *   3. Detect storm (>=2 rejections within 1h) — emit `score.snapshot.fallback_storm`
+ *   4. Return a NEUTERED snapshot (topFactors stripped) so downstream
+ *      `deriveShape` naturally yields `shape: A-all-quiet`. Baseline is
+ *      NOT updated with rejected snapshot.
+ *
+ * On ACCEPT: append to baseline, return raw snapshot.
+ *
+ * Skipping validation: set `FREESIDE_SCORE_VALIDATION_SKIP=1` (test/operator escape).
+ */
+export async function fetchValidatedDigestSnapshot(config: Config, zone: ZoneId): Promise<DigestSnapshot> {
+  const snapshot = await fetchDigestSnapshot(config, zone);
+
+  if (process.env.FREESIDE_SCORE_VALIDATION_SKIP === '1') return snapshot;
+
+  const baseline = readBaseline(zone);
+  const validation = validateSnapshotPlausibility(snapshot, baseline);
+
+  if (validation.ok) {
+    appendBaseline(zone, snapshot);
+    return snapshot;
+  }
+
+  // REJECTED — record + emit telemetry + return neutered.
+  const entry = recordRejection(zone, snapshot, validation);
+
+  const tracer = getTracer();
+  tracer.startActiveSpan('score.snapshot.implausible', (span) => {
+    try {
+      span.setAttribute('zone', zone);
+      span.setAttribute('reason', entry.reason);
+      if (validation.computedSigma !== undefined) {
+        span.setAttribute('computed_sigma', validation.computedSigma);
+      }
+      if (validation.threshold !== undefined) {
+        span.setAttribute('threshold', validation.threshold);
+      }
+      span.setAttribute('baseline_sample_count', validation.baselineSampleCount);
+    } finally {
+      span.end();
+    }
+  });
+
+  const stormEntries = detectStorm();
+  if (stormEntries.length > 0) {
+    tracer.startActiveSpan('score.snapshot.fallback_storm', (span) => {
+      try {
+        span.setAttribute('storm_size', stormEntries.length);
+        span.setAttribute('zones', Array.from(new Set(stormEntries.map((e) => e.zone))).join(','));
+      } finally {
+        span.end();
+      }
+    });
+  }
+
+  // Return neutered — strip topFactors so deriveShape yields A-all-quiet.
+  return {
+    ...snapshot,
+    topFactors: [],
+    coldFactors: snapshot.coldFactors,
   };
 }
 
@@ -112,4 +186,3 @@ function aggregateBreakdowns(
 function sumActiveWallets(factors: ReadonlyArray<PulseDimensionBreakdown['top_factors'][number]>): number {
   return factors.reduce((sum, factor) => sum + (factor.factor_stats?.cohort?.unique_actors ?? 0), 0);
 }
-

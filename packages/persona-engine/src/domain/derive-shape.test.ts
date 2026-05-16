@@ -22,10 +22,38 @@ import {
   type DerivedShape,
   type LayoutShape,
 } from './derive-shape.ts';
-import { selectLayoutShape, type SelectLayoutShapeArgs } from '../compose/layout-shape.ts';
 import type { DigestSnapshot, DigestFactorSnapshot } from './digest-snapshot.ts';
 import type { ZoneId } from '../score/types.ts';
 import type { FactorStats } from '../score/types.ts';
+
+// S2 deleted compose/layout-shape.ts. The T1.8 regression-guard for
+// FLATLINE-SKP-001/HIGH (oracle-vs-legacy equivalence) persists by inlining
+// the cycle-005 selectLayoutShape logic VERBATIM here. If a future change
+// breaks deriveShape's shape output against the cycle-005 behavior, this
+// suite fails the build.
+interface LegacyArgs {
+  zones: readonly ZoneId[];
+  permittedClaimsByZone: ReadonlyMap<ZoneId, number>;
+  topRankByZone: ReadonlyMap<ZoneId, number | null>;
+}
+
+const LEGACY_RANK_HOT_THRESHOLD = 90;
+
+function legacySelectLayoutShape(args: LegacyArgs): LayoutShape {
+  let claimedCount = 0;
+  let hotRankCount = 0;
+  for (const zone of args.zones) {
+    if ((args.permittedClaimsByZone.get(zone) ?? 0) >= 1) claimedCount += 1;
+    const rank = args.topRankByZone.get(zone);
+    if (rank !== null && rank !== undefined && rank >= LEGACY_RANK_HOT_THRESHOLD) {
+      hotRankCount += 1;
+    }
+  }
+  if (claimedCount >= 2) return 'C-multi-dim-hot';
+  if (claimedCount === 1) return 'B-one-dim-hot';
+  if (hotRankCount >= 2) return 'C-multi-dim-hot';
+  return 'A-all-quiet';
+}
 
 const ZONES: readonly ZoneId[] = ['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab'];
 
@@ -213,7 +241,7 @@ describe('deriveShape · oracle equivalence (T1.3)', () => {
 // Suite 2 · Legacy equivalence (T1.8 · FLATLINE-SKP-001/HIGH)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function legacyArgsFromInput(input: DeriveShapeInput): SelectLayoutShapeArgs {
+function legacyArgsFromInput(input: DeriveShapeInput): LegacyArgs {
   const permittedClaimsByZone = new Map<ZoneId, number>();
   const topRankByZone = new Map<ZoneId, number | null>();
   for (const z of input.crossZone) {
@@ -237,7 +265,7 @@ describe('deriveShape · legacy selectLayoutShape equivalence (T1.8 · FLATLINE-
     test(`${s.id} · ${s.description} · matches legacy`, () => {
       const input = inputFromScenario(s);
       const derived = deriveShape(input);
-      const legacy = selectLayoutShape(legacyArgsFromInput(input));
+      const legacy = legacySelectLayoutShape(legacyArgsFromInput(input));
       if (derived.shape !== legacy) mismatches += 1;
       expect(derived.shape).toBe(legacy);
     });

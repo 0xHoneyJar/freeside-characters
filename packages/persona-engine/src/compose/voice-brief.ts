@@ -21,7 +21,7 @@
  */
 
 import type { ZoneId, FactorStats } from '../score/types.ts';
-import type { LayoutShape } from './layout-shape.ts';
+import type { LayoutShape } from '../domain/derive-shape.ts';
 import type { ProseGateViolation } from '../deliver/prose-gate.ts';
 
 const ZONE_VOICE_CONTEXT: Record<ZoneId, string> = {
