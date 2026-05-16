@@ -28,7 +28,8 @@
  *     `## Environment` grounding lands either way.
  */
 
-import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { type Options } from '@anthropic-ai/claude-agent-sdk';
+import { resolveQuery } from '../observability/raindrop-instrumentation.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { ZoneId } from '../score/types.ts';
@@ -975,6 +976,7 @@ async function invokeChatAnthropicSdk(
   };
 
   let text = '';
+  const query = await resolveQuery();
   for await (const message of query({ prompt: req.userMessage, options })) {
     if (message.type !== 'result') continue;
     if (message.subtype === 'success') {
