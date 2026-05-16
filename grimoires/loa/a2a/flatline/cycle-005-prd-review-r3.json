@@ -1,0 +1,244 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 3,
+    "disputed_count": 5,
+    "low_value_count": 0,
+    "blocker_count": 11,
+    "model_agreement_percent": 54,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "High ROI and low implementation cost. Without explicit telemetry graduation thresholds, the V1 validation window cannot reliably drive V1.5 escalation, making the core rollout gate subjective.",
+      "gpt_score": 910,
+      "opus_score": 920,
+      "tertiary_score": 950,
+      "delta": 10,
+      "average_score": 915,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "Valuable because exporter choice affects dependencies, environment variables, and sprint implementation. Some flexibility can remain via default-plus-override, but the contract should be pinned before build work.",
+      "gpt_score": 820,
+      "opus_score": 860,
+      "tertiary_score": 900,
+      "delta": 40,
+      "average_score": 840,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-003",
+      "description": "Strong test gap. The precedence interaction between shape overrides and the decision table is exactly where regressions are likely, and adding an acceptance criterion is cheap.",
+      "gpt_score": 860,
+      "opus_score": 780,
+      "tertiary_score": 880,
+      "delta": 80,
+      "average_score": 820,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-007",
+      "description": "Useful guardrail, but the exact latency budget may be hard to set before implementation. I would integrate a lightweight NFR or regression check, not a heavy performance gate unless baseline data exists.",
+      "gpt_score": 610,
+      "opus_score": 0,
+      "tertiary_score": 720,
+      "delta": 610,
+      "average_score": 610,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-008",
+      "description": "Reasonable ambiguity with direct rendering consequences. The fix is cheap documentation and an acceptance check, though the blast radius is limited to formatting behavior.",
+      "gpt_score": 650,
+      "opus_score": 0,
+      "tertiary_score": 740,
+      "delta": 650,
+      "average_score": 650,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-009",
+      "description": "Valid telemetry-noise concern. Lower priority because Shape A may be easy to exclude by design, but the spec should explicitly state whether the gate runs before or after Shape A rendering.",
+      "gpt_score": 620,
+      "opus_score": 0,
+      "tertiary_score": 600,
+      "delta": 620,
+      "average_score": 620,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-010",
+      "description": "Nice targeted regression coverage for a visible formatting fallback. Useful, but lower priority because it covers an env override rather than the primary behavior.",
+      "gpt_score": 560,
+      "opus_score": 0,
+      "tertiary_score": 650,
+      "delta": 560,
+      "average_score": 560,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-011",
+      "description": "Important because generated Shape A text could bypass the same prose quality controls the gate is meant to enforce. The source and gate path should be specified before implementation.",
+      "gpt_score": 760,
+      "opus_score": 0,
+      "tertiary_score": 780,
+      "delta": 760,
+      "average_score": 760,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-001",
+      "concern": "Discord 1024-char cap enforcement relies on byte length vs character length conflation; the algorithm spec says 'accumulating byte length' but Discord's 1024 cap is measured in UTF-16 code units, not bytes. Custom emoji tokens (`<:name:id>` ~25-30 chars), multi-byte factor names, and accented characters will silently breach the cap when byte-length passes the threshold but UTF-16 length exceeds 1024.",
+      "severity": "CRITICAL",
+      "severity_score": 840,
+      "why_matters": "A breached 1024-char field causes Discord to reject the embed with an HTTP 400 \u2014 the entire digest post fails, not just truncates. This converts the FR-1 substrate-failure cron-skip path into the default failure mode under the very condition the dynamic algorithm was added to prevent (PRD-SKP-001 r1+r2). Worst-case test pinning to 19 factors does not exercise UTF-16 surrogate pairs or registry-mediated emoji tokens which inflate length by 25-30 chars per row (FR-3 emoji slot was added AFTER the truncation algorithm was specified).",
+      "location": "FR-1 Truncation policy + AC-2 + FR-3 (emoji slot interaction)",
+      "recommendation": "Specify the cap-measurement unit explicitly as UTF-16 code units (`[...str].length` is wrong; use `str.length` in JS which IS UTF-16 units). Add a worst-case test fixture combining 19 factors + max-length factor names + registry emoji tokens on every row + multi-byte unicode character names. Add a defensive post-render assertion: if final field length > 1000 (buffer of 24), drop to next-shape fallback rather than risk a 400.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "Discord embed total size limits are unaddressed.",
+      "severity": "CRITICAL",
+      "severity_score": 850,
+      "why_matters": "While FR-1 correctly truncates individual fields to 1024 characters, Discord enforces a global limit of 6000 characters per embed. If multiple zones or fields reach their 1024-character caps, the total payload will exceed 6000 characters and fail with a 400 Bad Request, breaking the digest entirely.",
+      "location": "FR-1 Truncation policy",
+      "recommendation": "Implement a global accumulator for the entire embed payload (fields, title, footer) that halts adding new fields or rows when total length approaches 5900 characters.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "FR-2 kill-switch `silence` mode threading creates a layout-decision race: the gate fires PER-ZONE during compose, but FR-4 rule #1 requires the orchestrator to know `gate_overrides` BEFORE evaluating shapes 2-6. The PRD does not specify whether gate-evaluation happens before or after layout-shape selection, and the per-zone `shape_override` propagation requires the orchestrator to either (a) compose drafts twice (once for gate, once for final layout) or (b) commit to a layout before knowing if the gate will override it.",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "Without an explicit composition pipeline ordering, two reasonable implementations diverge: implementer A composes the card body first and gates the prose seasoning, finding silence-mode override too late to re-route layout (forcing a render-discard-recompose cycle costing ~2x the LLM tokens); implementer B routes layout first based on permittedClaims and discovers the gate flag mid-render. Per-zone test coverage will accidentally pin one ordering, and the OTHER ordering breaks under telemetry validation when operator escalates from `log` \u2192 `silence`.",
+      "location": "FR-2 (kill-switch + shape_override) + FR-4 (decision rule #1 mixed shape) + AC-4 + AC-8",
+      "recommendation": "Add an explicit pipeline-order subsection to FR-4: '1) fetch substrate per zone; 2) compose draft prose; 3) run inspectProse \u2192 collect per-zone validation including shape_override; 4) build gate_overrides set; 5) evaluate ordered shape predicates with gate_overrides as input; 6) render final embed.' Pin in SDD as the canonical ordering. Add AC asserting silence-mode does NOT cause a recompose (validates the ordering is single-pass).",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "FR-2 proximity-based factor-attribution algorithm has unstated behavior when MULTIPLE factor names appear within the 200-char window. The spec says 'first factor name found' and 'longest-match-first to handle multi-word names' \u2014 but does not specify scan direction (left-to-right from match, or proximity-distance-ordered from match span). 'First found' is implementation-defined.",
+      "severity": "HIGH",
+      "severity_score": 705,
+      "why_matters": "The cycle's headline regression test (sequential-mint chain \u00b7 AC-5) requires correct factor attribution. If a draft says 'Boosted Validator and Treasury Inflows moved in lockstep,' the gate must attribute the violation to the factor the LLM was actually claiming about \u2014 likely the closest one to the matched phrase, not the leftmost in the window. 'First by scan order' will silently mis-attribute under common multi-factor prose, generating false positives in telemetry that erode operator trust in the rules over the 2-4 week validation window.",
+      "location": "FR-2 Factor-attribution algorithm (PRD-SKP-003 closure) + AC-5",
+      "recommendation": "Specify: 'scan order is proximity-distance from match span midpoint, ascending; ties broken by occurrence order. Longest-match-first applies WITHIN a position (overlapping multi-word vs single-word names at the same offset).' Add test cases for: (a) two factor names in window, one closer to match; (b) two factor names equidistant; (c) overlapping names like 'Validator' vs 'Boosted Validator' at same start position.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Permanent channel silence in 'skip' kill-switch mode without active operator alerting.",
+      "severity": "HIGH",
+      "severity_score": 780,
+      "why_matters": "If PROSE_GATE_ON_VIOLATION is set to 'skip', recurrent LLM semantic drift on specific cyclic data will cause the channel to go permanently silent. This breaks user engagement and relies on operators actively polling logs to detect the outage.",
+      "location": "FR-2 Kill-switch behavior",
+      "recommendation": "Implement a consecutive-skip counter that forces a fallback to Shape A (silence mode) after N consecutive skips, or emit a high-priority operator alert metric.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-004",
+      "concern": "Proximity attribution is underspecified when multiple factor names appear in the 200-character window or when display names overlap after normalization.",
+      "severity": "HIGH",
+      "severity_score": 705,
+      "why_matters": "The gate may attach a violation to the wrong factor, producing misleading telemetry and potentially causing `skip` or `silence` on the wrong zone once kill-switch modes are enabled.",
+      "location": "FR-2 factor-attribution algorithm",
+      "recommendation": "Define deterministic tie-breaking by nearest span distance after longest-match filtering, normalize case/markdown escaping consistently, and test overlapping names plus multi-factor windows.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "Proximity-based factor attribution algorithm is ambiguous when multiple factors are present.",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "The algorithm specifies 'longest-match-first' and 'First factor name found'. If multiple factor names appear in the 400-char window, picking the first string found linearly may misattribute violations to unrelated factors, poisoning the telemetry data for V1.5.",
+      "location": "FR-2 Factor-attribution algorithm",
+      "recommendation": "Clarify tie-breaking logic: sort candidate factors by shortest absolute character distance from the violation span, rather than array order.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-004",
+      "concern": "Sequential retry cascade can breach serverless/cron execution limits.",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "A 5s timeout with 1s and 2s backoffs means a single zone can stall for ~13-18 seconds. If zones are processed sequentially, upstream API timeouts could cause the overarching cron execution to exceed platform limits before reaching all zones.",
+      "location": "FR-1 Substrate API failure handling",
+      "recommendation": "Ensure zones are processed concurrently (e.g., Effect.all with concurrency limits) and apply a strict overarching timeout to the entire digest operation.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "The Discord size policy only guards individual embed fields, but not total embed length, fallback `message.content`, header/outro, emoji tokens, cross-dim tally lines, or Shape C multi-card aggregate limits.",
+      "severity": "HIGH",
+      "severity_score": 760,
+      "why_matters": "Posts can still be rejected by Discord even when every factor section is under 1024 characters, causing missed digests or partial delivery failures in production.",
+      "location": "FR-1 truncation policy, AC-2, Discord-as-Material rules",
+      "recommendation": "Define and test full payload budgeting across `content`, embed total, all fields, header, outro, emoji tokens, and Shape A/B/C variants using Discord's actual limits.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "The regex examples escape alternation pipes as `\\|`, which in JavaScript regex means a literal pipe rather than an OR branch if implemented exactly as written.",
+      "severity": "CRITICAL",
+      "severity_score": 860,
+      "why_matters": "The prose gate could silently fail to match most prohibited phrases, invalidating the core V1 safety mechanism while tests may only pass if implementers infer a corrected regex from intent rather than the spec.",
+      "location": "FR-2 \u00b7 zerker's V1 prose-gate, regex table",
+      "recommendation": "Rewrite the regexes in unambiguous TypeScript literals or fenced code outside markdown tables, and add tests that assert each branch independently matches.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-005",
+      "concern": "The telemetry-only default has no acceptance criterion requiring an escalation runbook or review cadence, despite the PRD depending on operator escalation after 1-4 weeks.",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "Known-bad prose can keep shipping indefinitely if telemetry is collected but no one is accountable for reviewing it or changing `PROSE_GATE_ON_VIOLATION`.",
+      "location": "FR-2 kill-switch behavior, Open Question 5, Accepted Limitation A1",
+      "recommendation": "Make the canary/escalation runbook a V1 deliverable with thresholds, dashboard queries, owner, review cadence, and rollback steps.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "prd",
+  "document": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/prd.md",
+  "domain": " cycle 005 ruggy as",
+  "tertiary_model_used": "gemini-3.1-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "interactive",
+    "mode_reason": "Default (no explicit mode specified)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-16T02:12:15Z",
+  "metrics": {
+    "total_latency_ms": 170000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

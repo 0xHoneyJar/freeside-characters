@@ -1,0 +1,192 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 5,
+    "disputed_count": 2,
+    "low_value_count": 0,
+    "blocker_count": 7,
+    "model_agreement_percent": 80,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "Clear contradiction between stated implementation path and acceptance expectations. This is high ROI because resolving it prevents divergent implementation of a core gate, and the fix is cheap: split or clarify tasks before execution.",
+      "gpt_score": 930,
+      "opus_score": 880,
+      "tertiary_score": 900,
+      "delta": 50,
+      "average_score": 905,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "Valuable cleanup guard. If the old chat-trace scaffold can survive beside OTEL, observability becomes ambiguous. Cost is low, though impact depends on whether any reverted primitive actually remains.",
+      "gpt_score": 720,
+      "opus_score": 860,
+      "tertiary_score": 850,
+      "delta": 140,
+      "average_score": 790,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-003",
+      "description": "Strong process hardening. A STOP gate without a recorded override mechanism is easy to erode in an autonomous workflow. Mirroring the existing HARD-2 artifact pattern is low cost and improves auditability.",
+      "gpt_score": 760,
+      "opus_score": 720,
+      "tertiary_score": 750,
+      "delta": 40,
+      "average_score": 740,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-005",
+      "description": "Good regression guard for a known failure class. Testing against the real emoji registry protects the registry contract better than mocks. Integration cost is modest and directly supports the amendment rationale.",
+      "gpt_score": 735,
+      "opus_score": 750,
+      "tertiary_score": 820,
+      "delta": 15,
+      "average_score": 742.5,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-007",
+      "description": "Valuable operational safeguard. OTEL cardinality problems are real and often silent, and an allowed-attribute assertion is a cheap way to protect the budget over time.",
+      "gpt_score": 740,
+      "opus_score": 840,
+      "tertiary_score": 880,
+      "delta": 100,
+      "average_score": 790,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-009",
+      "description": "Valuable operational completion item. Telemetry without production endpoint wiring weakens the OTEL goal. A short deploy doc addition is low cost, though less central than the code-path and schema concerns.",
+      "gpt_score": 650,
+      "opus_score": 0,
+      "tertiary_score": 550,
+      "delta": 650,
+      "average_score": 650,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-010",
+      "description": "Useful clarification for snapshot stability and Discord rendering intent, but comparatively low risk. An implementer can likely make a reasonable local decision; still worth specifying if the sprint doc is being revised.",
+      "gpt_score": 520,
+      "opus_score": 0,
+      "tertiary_score": 500,
+      "delta": 520,
+      "average_score": 520,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-002",
+      "concern": "Proximity attribution cross-contamination on dense drafts",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "The N=200 chars `attributeFactor` proximity window ignores sentence boundaries. If a draft says 'Factor A is quiet, but Factor B had a massive structural shift!', the gate could incorrectly attribute 'structural shift' to Factor A if its string index happens to be closer. This poisons the telemetry data used for the V1.5 soft-enforcement.",
+      "location": "Sprint 1 (T1.3)",
+      "recommendation": "Constrain the proximity search to the current sentence or clause (e.g., stop at '.', ';', or '\n'), or reduce the window size. Log an 'ambiguous-factor' reason if multiple factors are equidistant or within the same bounds.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "S0.T0.0 precondition check writes .HARD-2-OVERRIDE to grimoires/loa/cycles/cycle-005-ruggy-leaderboard/.HARD-2-OVERRIDE but the override file is checked-in path with no validation of content, age, or operator signature",
+      "severity": "HIGH",
+      "severity_score": 740,
+      "why_matters": "The override mechanism allows any developer to bypass the HARD-2 substrate-version check by dropping a file with arbitrary text. No timestamp validation means a 6-month-old override silently bypasses checks for an entirely different deployment. No signature/operator-identity tie means anyone with repo write access can bypass. This is the precise downgrade-attack pattern that L4 graduated-trust + L6 handoff guardrails were built to prevent, and the override path collapses that protection. The check claims to be HARD but is actually SOFT-with-cosmetic-friction.",
+      "location": "S0 \u00a7Preconditions T0.0 script lines 'if [ -f \"...HARD-2-OVERRIDE\" ]' (sprint.md HARD-2 block)",
+      "recommendation": "Either (a) remove the override path entirely \u2014 if substrate isn't 1.1.0 in prod, STOP and surface to operator, OR (b) require the override file to contain (1) ISO-8601 timestamp within last 24h, (2) operator email matching $GIT_AUTHOR_EMAIL or OPERATORS.md, (3) explicit substrate-commit-hash being approved. Validate all three in the script. Add an audit-log emit when override fires so the trail isn't invisible.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "S0.T0.0 precondition script uses `curl ... | jq -r '.pulse_schema_version // .schema_version // \"MISSING\"'` against /health endpoint, but the SDD/PRD make no guarantee that score-mibera's /health endpoint actually exposes schema_version",
+      "severity": "HIGH",
+      "severity_score": 710,
+      "why_matters": "Sprint-blocking automation depends on an unverified API contract. If score-mibera's /health returns version info under a different key, or doesn't expose it at all, HARD-2 will ALWAYS fall through to the FETCH_FAILED branch and require the override file every run. Operators will reflexively create the override file, training them to bypass the check entirely \u2014 converting a 'HARD' gate into ambient noise. The PRD claims score-mibera 1.1.0 is merged, but the sprint plan never validates that the gh-API or /health actually surfaces this. S0 itself should be the place this is verified, not the script that runs before S0.",
+      "location": "S0 \u00a7Preconditions T0.0 script HARD-2 block",
+      "recommendation": "Before authoring the precondition script, run `curl -sS -H \"Authorization: Bearer $MCP_KEY\" \"$SCORE_API_URL/health\"` manually and inspect the actual response shape. If schema_version isn't there, change HARD-2 to call `get_dimension_breakdown` once (which the spike does anyway) and inspect `.factor_stats.schema_version` in the response payload. Pin the actual key path in the script.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "The plan has a contract contradiction around chat-mode prose-gate coverage. S1 explicitly wires the gate into the digest path only, while S5 requires composeReply chat-mode to correlate with prose_gate.violation events even though chat-mode has no MCP/tool factor_stats by design.",
+      "severity": "HIGH",
+      "severity_score": 760,
+      "why_matters": "This can make AC-S5.2 impossible to satisfy or force an unsafe implementation that runs mechanical checks without the substrate data needed to justify them.",
+      "location": "S1.T1.5, S5 AC-S5.2, project invariant: chat-mode replies have no tool calls",
+      "recommendation": "Split acceptance criteria: digest path emits prose-gate events in V1; chat-mode emits transform spans only unless an explicit factor_stats enrichment source is added. If chat-mode prose-gate is required, add a sprint task defining how factor_stats enters chat-mode safely.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "The plan references permittedClaimsByZone and permitted_claims as if they already exist, but no task defines how permitted claims are derived from factor_stats or prose-gate output.",
+      "severity": "HIGH",
+      "severity_score": 730,
+      "why_matters": "S3 layout selection depends on a missing data contract. Implementers may invent inconsistent heuristics, causing shape A/B/C behavior to drift from the PRD.",
+      "location": "Sprint 3, AC-S3.1 through AC-S3.5, T3.1, T3.3",
+      "recommendation": "Add a dedicated task before S3 to define and test the permittedClaims derivation contract, including source fields, thresholds, and no-claim behavior.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "The prose-gate is framed as licensing claims, but the V1 design only detects a small denylist of risky phrases after text generation. It does not provide positive authorization for what the LLM may say in the header and outro.",
+      "severity": "HIGH",
+      "severity_score": 705,
+      "why_matters": "Prompting the LLM to \u201cinterpret only what the gate licenses\u201d is not enforceable when the gate has no explicit license model. Overclaims can pass if they avoid the three regex families.",
+      "location": "S2.D2.3, S2.T2.4, S1 prose-gate design",
+      "recommendation": "Define an explicit permitted-claim object from substrate checks and feed only that object to the LLM. Keep regex telemetry as a backstop, not the primary license mechanism.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "Trace context propagation loss between imperative OTEL API and Effect runtime",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "Mixing native `@opentelemetry/api` (`startActiveSpan`) in the dispatcher with `Effect.useSpan` in the compose logic will result in orphaned child spans or a broken trace tree (AC-S5.1 fail). Effect does not automatically inherit native OTEL async hooks context without explicit injection or bridging.",
+      "location": "Sprint 5 (T5.4 and T5.5)",
+      "recommendation": "Use `Layer.unwrapScoped` or `Effect.withSpan` to bridge the native OTEL context into the Effect runtime, OR convert the outer dispatcher span to an Effect span (`Effect.runPromise(Effect.withSpan(...))`) to maintain contiguous trace lineage.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "sprint",
+  "document": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/sprint.md",
+  "domain": " target branch feat cycle",
+  "tertiary_model_used": "gemini-3.1-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "interactive",
+    "mode_reason": "Default (no explicit mode specified)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-16T02:11:58Z",
+  "metrics": {
+    "total_latency_ms": 153000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

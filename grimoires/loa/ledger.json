@@ -1,8 +1,92 @@
 {
   "version": "1.0.0",
-  "next_sprint_number": 6,
-  "active_cycle": "cycle-001",
+  "next_sprint_number": 12,
+  "active_cycle": "cycle-005-ruggy-leaderboard",
   "cycles": [
+    {
+      "id": "cycle-005-ruggy-leaderboard",
+      "label": "ruggy-as-leaderboard + hybrid-staged prose-gate (V1 telemetry-only)",
+      "status": "active",
+      "created_at": "2026-05-16T01:35:00Z",
+      "prd": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/prd.md",
+      "sdd": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/sdd.md",
+      "sprint_plan": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/sprint.md",
+      "target_branch": "feat/cycle-005-ruggy-leaderboard",
+      "depends_on": [
+        "PR #77 (cycle-022 factor_stats type mirror, MERGED 2026-05-16)",
+        "score-mibera 1.1.0 in prod (MERGED 2026-05-15)",
+        "cycle-004 substrate refactor (Effect-Layer foundation)"
+      ],
+      "sprints": [
+        {
+          "local_id": "S0",
+          "global_number": 6,
+          "title": "Calibration spike — factor_stats live verify + OTEL wire-cost + regex-vs-archive (auto-delete)",
+          "scope": "SMALL",
+          "task_count": 4,
+          "status": "planned",
+          "spec_phase": "S0",
+          "loc_budget": "spike-script (auto-delete on close)",
+          "epic_bead": "bd-3n4"
+        },
+        {
+          "local_id": "S1",
+          "global_number": 7,
+          "title": "V1 prose-gate (telemetry-only) — sibling to grail-ref-guard",
+          "scope": "SMALL",
+          "task_count": 5,
+          "status": "planned",
+          "spec_phase": "S1",
+          "loc_budget": "~100",
+          "epic_bead": "bd-q8f"
+        },
+        {
+          "local_id": "S2",
+          "global_number": 8,
+          "title": "Leaderboard body — reactivate buildPulseDimensionPayload + per-row mood emoji slot",
+          "scope": "MEDIUM",
+          "task_count": 6,
+          "status": "planned",
+          "spec_phase": "S2",
+          "loc_budget": "~150",
+          "epic_bead": "bd-3dm"
+        },
+        {
+          "local_id": "S3",
+          "global_number": 9,
+          "title": "Layout shape selector (A/B/C) — substrate-driven typography",
+          "scope": "SMALL",
+          "task_count": 4,
+          "status": "planned",
+          "spec_phase": "S3",
+          "loc_budget": "~80",
+          "epic_bead": "bd-2dh"
+        },
+        {
+          "local_id": "S4",
+          "global_number": 10,
+          "title": "Mood-emoji rules — factor_stats → unicode emoji per-row",
+          "scope": "SMALL",
+          "task_count": 3,
+          "status": "planned",
+          "spec_phase": "S4",
+          "loc_budget": "~60",
+          "epic_bead": "bd-1u1"
+        },
+        {
+          "local_id": "S5",
+          "global_number": 11,
+          "title": "OTEL wire-up (@effect/opentelemetry) + E2E canary + goal validation",
+          "scope": "MEDIUM",
+          "task_count": 6,
+          "status": "planned",
+          "spec_phase": "S5",
+          "loc_budget": "~80",
+          "is_final": true,
+          "epic_bead": "bd-uo1"
+        }
+      ]
+    },
     {
       "id": "cycle-001",
       "label": "V0.7-A.1 environment substrate",
