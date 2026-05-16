@@ -20,17 +20,38 @@ export function createClaudeSdkLive(
         try {
           span.setAttribute('character.id', character.id);
           span.setAttribute('zone.id', snapshot.zone);
+
+          // BB review F-006 (2026-05-16): shape derivation MUST match the
+          // real `selectLayoutShape` gates (rank ≥ 90 + p95.reliable). Using
+          // `topFactors.length > 0` as a proxy lied to the LLM — every non-
+          // empty zone got `B-one-dim-hot` guidance, even when no factor was
+          // substrate-licensed. Filter to TRULY permitted factors first,
+          // then derive shape from THAT count.
+          const permittedFactors = snapshot.topFactors
+            .filter((factor) => {
+              const stats = factor.factorStats;
+              if (!stats) return false;
+              const rank = stats.magnitude?.current_percentile_rank;
+              const p95Reliable = stats.magnitude?.percentiles?.p95?.reliable;
+              return rank !== null && rank !== undefined && rank >= 90 && p95Reliable === true;
+            })
+            .slice(0, 3)
+            .map((factor) => ({
+              display_name: factor.displayName,
+              stats: factor.factorStats!,
+            }));
+
+          // Shape is now derived from the SAME data that licenses the LLM
+          // narrative. No mismatch possible.
+          const shape = permittedFactors.length === 0 ? 'A-all-quiet' : 'B-one-dim-hot';
+          span.setAttribute('voice.shape', shape);
+          span.setAttribute('voice.permitted_count', permittedFactors.length);
+
           const brief = buildVoiceBrief({
             zone: snapshot.zone,
-            shape: snapshot.topFactors.length === 0 ? 'A-all-quiet' : 'B-one-dim-hot',
+            shape,
             isNoClaimVariant: false,
-            permittedFactors: snapshot.topFactors
-              .filter((factor) => factor.factorStats)
-              .slice(0, 3)
-              .map((factor) => ({
-                display_name: factor.displayName,
-                stats: factor.factorStats!,
-              })),
+            permittedFactors,
             silencedFactors: [],
             totalEvents: snapshot.totalEvents,
             windowDays: snapshot.windowDays,

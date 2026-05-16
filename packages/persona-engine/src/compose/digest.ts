@@ -253,39 +253,17 @@ function buildLayoutArgs(args: ComposeDigestArgs): SelectLayoutShapeArgs {
 /**
  * Shape-A renderer.
  *
- * UX nit 2026-05-16 r2 (operator-asked depth): shape A used to be voice-
- * only. operator pointed out the dashboard's dimension page shows the
- * full breakdown even when no factor is "hot" — the data IS the body,
- * voice is the seasoning. So now shape A ALSO routes through
- * `buildPulseDimensionPayload` to surface the factor list + 30d snapshot
- * row. Voice stays outside the embed via `message.content`; the embed is
- * substrate truth only.
- *
- * If the dim is genuinely empty (no factors AND zero events), we fall
- * back to the voice-only form because there's nothing to render.
+ * BB review F-016 (2026-05-16): the prior `isGenuinelyEmpty` branch was
+ * (a) redundant and (b) returned an empty `embeds: [{}]` which Discord
+ * renders as a stray colored sidebar with no content · clutter. The
+ * delegate `buildPulseDimensionPayload` already handles the empty-dim
+ * case cleanly: when there are no factors and no events, snapshot/top/
+ * cold fields are all skipped naturally, voice still flows into
+ * `message.content` per the voice-outside-divs doctrine. One code path
+ * for all shape-A cases · uniform doctrine.
  */
 function buildShapeAPayload(args: ComposeDigestArgs): DigestPayload {
-  const flavor = ZONE_FLAVOR[args.zone];
-  const dim = args.dimension;
-  const isGenuinelyEmpty =
-    dim.top_factors.length === 0 && dim.cold_factors.length === 0 && dim.total_events === 0;
-
-  if (isGenuinelyEmpty) {
-    const descParts: string[] = [];
-    if (args.voice.header) descParts.push(args.voice.header);
-    if (args.voice.outro) descParts.push(args.voice.outro);
-    const dimensionParen =
-      flavor.dimension === 'overall' ? '' : ` (${DIMENSION_NAME[flavor.dimension]})`;
-    const fallback = `${flavor.emoji} ${flavor.name}${dimensionParen}`;
-    const content = descParts.length > 0 ? `${fallback}\n${descParts.join('\n')}` : fallback;
-    return {
-      content,
-      embeds: [{}],
-    };
-  }
-
-  // Data-rich shape A: render the breakdown, keep voice as seasoning.
-  return buildPulseDimensionPayload(dim, args.zone, 30, {
+  return buildPulseDimensionPayload(args.dimension, args.zone, 30, {
     moodEmoji: moodEmojiForFactor,
     ...(args.voice.header ? { header: args.voice.header } : {}),
     ...(args.voice.outro ? { outro: args.voice.outro } : {}),

@@ -391,12 +391,14 @@ describe('buildPulseDimensionPayload · Discord-as-Material sanitize (UX nit 202
     expect(top).not.toContain('Boosted_Validator '); // un-escaped form absent
   });
 
-  test('em-dash in voice header gets stripped (Eileen Discord 2026-05-04 rule)', () => {
+  test('em-dash in voice header gets stripped (Eileen Discord 2026-05-04 rule · BB F-001 2026-05-16: assert on message.content where voice lives)', () => {
     const payload = buildPulseDimensionPayload(breakdown(), 'bear-cave', 30, {
       header: 'this week — bears are hibernating',
     });
-    const desc = payload.embeds[0]?.description ?? '';
-    expect(desc).not.toContain('—'); // em-dash stripped
+    // Voice lives in message.content per voice-outside-divs doctrine.
+    // Asserting against embed.description would be vacuous (always undefined).
+    expect(payload.content).not.toContain('—'); // em-dash stripped
+    expect(payload.content).toContain('this week'); // text preserved minus the em-dash
   });
 });
 
