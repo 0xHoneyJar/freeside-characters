@@ -1,4 +1,15 @@
 /**
+ * @deprecated cycle-006 S1 · use `domain/derive-shape.ts::deriveShape` instead.
+ * This file remains alive ONLY because `compose/digest.ts::composeDigestForZone`
+ * still imports it. S2 deletes `composeDigestForZone` (the sole non-test caller),
+ * after which this file becomes orphaned and can be removed.
+ *
+ * The S0 calibration spike (10/10 MATCH, sprint-0-COMPLETED.md) validated that
+ * `deriveShape` produces identical `shape` output for all 5 decision-tree
+ * branches. The cycle-006 single-canonical-shape invariant (BB design-review
+ * F-001 closure) is upheld by the fact that the orchestrator path (cycle-006's
+ * only production path) now exclusively uses `deriveShape`.
+ *
  * Layout shape selector (FR-4 · cycle-005 S3) — substrate-driven typography.
  *
  * Data chooses layout density:

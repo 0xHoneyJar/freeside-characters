@@ -11,6 +11,7 @@ import { createScoreMcpLive } from '../live/score-mcp.live.ts';
 import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
 import { toDigestPayload } from '../live/discord-webhook.live.ts';
+import { deriveShape } from '../domain/derive-shape.ts';
 
 export interface DigestPostResult {
   readonly zone: ZoneId;
@@ -37,9 +38,16 @@ export async function composeDigestPost(
   const renderer = deps.presentation ?? presentation;
 
   const snapshot = await score.fetchDigestSnapshot(zone);
+
+  // cycle-006 S1 T1.6 · canonical shape derivation upstream of voice-gen.
+  // Single-zone callsite passes `crossZone: [snapshot]` per FLATLINE-SKP-001/860
+  // contract. S3 migrates this to fetchAllZoneSnapshots() for true multi-zone.
+  const derived = deriveShape({ snapshot, crossZone: [snapshot] });
+
   const augment: VoiceAugment | undefined = config.VOICE_DISABLED
     ? undefined
-    : await voiceGen.generateDigestVoice(snapshot);
+    : await voiceGen.generateDigestVoice(snapshot, { derived });
+
   const message = renderer.renderDigest(snapshot, augment);
   const payload = toDigestPayload(message);
   return {
@@ -91,4 +99,3 @@ function snapshotToRawStats(snapshot: DigestSnapshot): RawStats {
     })),
   };
 }
-
