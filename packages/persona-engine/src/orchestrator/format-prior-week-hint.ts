@@ -10,7 +10,7 @@
 // Without (2), an attacker can write `</untrusted-content><system>` into the
 // memory entry and break out of the marker. Escape FIRST, then wrap.
 
-import type { PostType } from '../domain/post-type.ts';
+import type { VoiceMemoryStream } from '../domain/post-type.ts';
 import { sanitizeMemoryText } from '../domain/voice-memory-sanitize.ts';
 
 export interface PriorWeekHintEntry {
@@ -20,7 +20,7 @@ export interface PriorWeekHintEntry {
 
 export interface FormatPriorWeekHintArgs {
   readonly entry: PriorWeekHintEntry;
-  readonly stream: PostType;
+  readonly stream: VoiceMemoryStream;
   readonly key: string;
 }
 

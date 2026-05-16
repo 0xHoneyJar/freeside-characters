@@ -2,6 +2,13 @@ import type { DigestSnapshot, DigestFactorSnapshot } from '../domain/digest-snap
 import type { DigestMessage, DeterministicEmbed } from '../domain/digest-message.ts';
 import type { VoiceAugment } from '../domain/voice-augment.ts';
 import type { ActivityPulse, ActivityPulseMessage } from '../domain/activity-pulse.ts';
+import type {
+  MicroMessage,
+  LoreDropMessage,
+  QuestionMessage,
+  WeaverMessage,
+  CalloutMessage,
+} from '../domain/post-messages.ts';
 
 const ZONE_COLORS = {
   stonehenge: 0x808890,
@@ -152,7 +159,88 @@ function shortWallet(wallet: string): string {
   return wallet.length > 12 ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : wallet;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// cycle-006 S3 · per-post-type renderers (embed-less + embed variants)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function voiceLine(augment?: VoiceAugment): string {
+  if (!augment) return '';
+  return [augment.header, augment.outro].filter(Boolean).join('\n');
+}
+
+function buildSubstrateFacts(snapshot: DigestSnapshot): ReadonlyArray<string> {
+  const facts: string[] = [];
+  facts.push(`${ZONE_LABEL[snapshot.zone]} · ${snapshot.totalEvents} events / ${snapshot.windowDays}d`);
+  if (snapshot.activeWallets !== undefined) {
+    facts.push(`${snapshot.activeWallets} active wallets`);
+  }
+  return facts;
+}
+
+export function renderMicro(snapshot: DigestSnapshot, augment?: VoiceAugment): MicroMessage {
+  return {
+    voiceContent: voiceLine(augment) || `${ZONE_LABEL[snapshot.zone]} · checking in`,
+    truthFields: buildSubstrateFacts(snapshot),
+  };
+}
+
+export function renderLoreDrop(snapshot: DigestSnapshot, augment?: VoiceAugment): LoreDropMessage {
+  return {
+    voiceContent: voiceLine(augment) || `${ZONE_LABEL[snapshot.zone]} · from the codex`,
+    truthFields: buildSubstrateFacts(snapshot),
+  };
+}
+
+export function renderQuestion(snapshot: DigestSnapshot, augment?: VoiceAugment): QuestionMessage {
+  return {
+    voiceContent: voiceLine(augment) || `${ZONE_LABEL[snapshot.zone]} · ?`,
+    truthFields: buildSubstrateFacts(snapshot),
+  };
+}
+
+export function renderWeaver(
+  snapshot: DigestSnapshot,
+  crossZone: ReadonlyArray<DigestSnapshot>,
+  augment?: VoiceAugment,
+): WeaverMessage {
+  const fields: DeterministicEmbed['fields'] = crossZone.slice(0, 4).map((z) => ({
+    name: ZONE_LABEL[z.zone],
+    value: `\`\`\`\nevents ${String(z.totalEvents).padStart(8, ' ')} / ${z.windowDays}d\nw/w    ${formatDeltaPct(z.deltaPct).padStart(8, ' ')}\n\`\`\``,
+    inline: true,
+  }));
+  return {
+    voiceContent: voiceLine(augment) || 'weaving threads…',
+    truthEmbed: {
+      color: ZONE_COLORS[snapshot.zone],
+      fields,
+      footer: { text: `weaver · generated at ${snapshot.generatedAt}` },
+    },
+  };
+}
+
+export function renderCallout(snapshot: DigestSnapshot, augment?: VoiceAugment): CalloutMessage {
+  return {
+    voiceContent: voiceLine(augment) || `🚨 ${ZONE_LABEL[snapshot.zone]} · callout`,
+    truthEmbed: {
+      color: 0xe74c3c,
+      fields: [
+        {
+          name: 'snapshot',
+          value: `\`\`\`\nevents ${snapshot.totalEvents} / ${snapshot.windowDays}d\nw/w    ${formatDeltaPct(snapshot.deltaPct)}\n\`\`\``,
+          inline: false,
+        },
+      ],
+      footer: { text: `callout · ${snapshot.generatedAt} · zone:${snapshot.zone}` },
+    },
+  };
+}
+
 export const presentation = {
   renderDigest,
   renderActivityPulse,
+  renderMicro,
+  renderLoreDrop,
+  renderQuestion,
+  renderWeaver,
+  renderCallout,
 };
