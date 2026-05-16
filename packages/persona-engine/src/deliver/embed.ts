@@ -387,10 +387,19 @@ function buildSnapshotField(
   snapshot: BuildPulseDimensionPayloadOpts['snapshot'],
   windowDays: number,
 ): { name: string; value: string; inline?: boolean } {
+  // UX r5 (operator 2026-05-16): right-align the value column so the
+  // snapshot reads as a true two-column table. The whole value+unit
+  // string is right-padded to a fixed width so right-edges line up
+  // (mirrors the top-this-30d table's numeric column treatment).
+  const LABEL_W = 10;
+  const VALUE_W = 14;
+  const row = (label: string, value: string) =>
+    label.padEnd(LABEL_W, ' ') + value.padStart(VALUE_W, ' ');
+
   const rows: string[] = [];
-  rows.push(`events    ${String(dim.total_events).padStart(8, ' ')} / ${windowDays}d`);
+  rows.push(row('events', `${dim.total_events} / ${windowDays}d`));
   if (snapshot?.weeklyActiveWallets !== undefined) {
-    rows.push(`wallets   ${String(snapshot.weeklyActiveWallets).padStart(8, ' ')} active`);
+    rows.push(row('wallets', `${snapshot.weeklyActiveWallets} active`));
   }
   if (dim.delta_pct !== null && dim.delta_pct !== undefined) {
     let v: string;
@@ -400,11 +409,11 @@ function buildSnapshotField(
       const r = Math.round(dim.delta_pct);
       v = r > 0 ? `+${r}%` : `${r}%`;
     }
-    rows.push(`w/w       ${v.padStart(8, ' ')}`);
+    rows.push(row('w/w', v));
   }
   const k = snapshot?.coldFactorCount ?? dim.cold_factors.length;
   if (k > 0) {
-    rows.push(`cold      ${String(k).padStart(8, ' ')} factors`);
+    rows.push(row('cold', `${k} factors`));
   }
   return {
     name: `${windowDays}d snapshot`,
