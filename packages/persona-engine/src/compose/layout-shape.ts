@@ -35,7 +35,15 @@ export interface SelectLayoutShapeArgs {
   zones: readonly ZoneId[];
   permittedClaimsByZone: ReadonlyMap<ZoneId, number>;
   topRankByZone: ReadonlyMap<ZoneId, number | null>;
-  totalEventsByZone: ReadonlyMap<ZoneId, number>;
+  /**
+   * Currently unused by the decision tree (BB review F-004 · 2026-05-16).
+   * Retained in the public signature for callers that already build it
+   * (e.g. `composeDigestForZone`) AND to leave a hook for the PRD AC-S3.2
+   * "all 4 zones empty + total events < 50" check if S3.2 is ever
+   * promoted from renderer-level to selector-level. If still unused after
+   * V1.5, drop the field.
+   */
+  totalEventsByZone?: ReadonlyMap<ZoneId, number>;
 }
 
 const RANK_HOT_THRESHOLD = 90;

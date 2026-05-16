@@ -85,18 +85,14 @@ export interface ProseGateValidation {
   violations: readonly ProseGateViolation[];
 }
 
-/**
- * Orchestrator-augmented type (digest path applies after reading
- * `resolveProseGateMode()` + counting HIGH-severity violations). NOT
- * populated by `inspectProse`. Closes flatline blockers PRD-SKP-001
- * [740] r2 + SDD-SKP-009 [720] r3 (responsibility split).
- */
-export interface ProseGateOutcome extends ProseGateValidation {
-  /** Set to 'A' to force the per-zone Shape A render regardless of
-   *  permitted_claims/rank — populated by the digest orchestrator when
-   *  `mode='silence'` AND HIGH-violations exist. */
-  shape_override?: 'A';
-}
+// ProseGateOutcome (SDD §1 r1) was originally specified as a type-system
+// carrier for the silence-mode shape override. BB review F-005 (2026-05-16)
+// surfaced that the orchestrator (`compose/digest.ts`) computes the override
+// inline as a `LayoutShape` value at the layout-selection step rather than
+// constructing/consuming the envelope. Vestigial type removed; silence-mode
+// remains correctly implemented at `digest.ts` (search for `effectiveShape`).
+// If a future cycle reintroduces the envelope pattern (e.g. multi-step
+// override pipeline), restore the type here AND populate at the callsite.
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -12,7 +12,7 @@
  * check, not by counting).
  */
 
-import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll } from 'bun:test';
 import { initOtelTest, resetOtelTest } from './otel-test.ts';
 import { composeDigestForZone } from '../compose/digest.ts';
 import type {
@@ -100,6 +100,14 @@ beforeAll(() => {
 });
 beforeEach(() => {
   handle.reset(); // drop spans from prior test, keep provider stable
+  // BB review F-002 (2026-05-16): defensive cleanup of env state that
+  // individual tests set. Each test that mutates PROSE_GATE_ON_VIOLATION
+  // does inline cleanup; this is the belt-and-suspenders pre-test reset.
+  delete process.env.PROSE_GATE_ON_VIOLATION;
+});
+afterEach(() => {
+  // BB review F-002: hard guarantee env doesn't leak even on test throw.
+  delete process.env.PROSE_GATE_ON_VIOLATION;
 });
 afterAll(() => {
   resetOtelTest();

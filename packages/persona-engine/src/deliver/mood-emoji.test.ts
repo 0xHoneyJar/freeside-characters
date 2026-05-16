@@ -14,6 +14,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { moodEmojiForFactor, moodEmojiForColdFactor } from './mood-emoji.ts';
+import { pickByMoods } from '../orchestrator/emojis/registry.ts';
 import type { FactorStats, PulseDimensionFactor } from '../score/types.ts';
 
 function stats(o: {
@@ -78,6 +79,19 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.MOOD_EMOJI_DISABLED;
+});
+
+// Registry precondition (BB review F-001 · 2026-05-16): assert the 4 mood
+// tag sets used by S4 resolve to ≥1 emoji in kind='ruggy'. Downstream
+// positive-rule tests assume the catalog is healthy; this gate produces
+// ONE clear failure on catalog drift instead of 4 confusing ones.
+describe('mood-emoji registry preconditions (F-001 catalog-drift gate)', () => {
+  test('all S4 mood sets resolve to ≥1 ruggy emoji', () => {
+    expect(pickByMoods(['flex'], 'ruggy').length).toBeGreaterThan(0);
+    expect(pickByMoods(['eyes', 'shocked'], 'ruggy').length).toBeGreaterThan(0);
+    expect(pickByMoods(['noted', 'concerned'], 'ruggy').length).toBeGreaterThan(0);
+    expect(pickByMoods(['sadge', 'dazed'], 'ruggy').length).toBeGreaterThan(0);
+  });
 });
 
 describe('moodEmojiForFactor · positive rules (AC-S4.2/3/4)', () => {

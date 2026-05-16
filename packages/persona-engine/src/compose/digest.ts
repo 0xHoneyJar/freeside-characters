@@ -156,7 +156,8 @@ export function composeDigestForZone(args: ComposeDigestArgs): ComposeDigestResu
         rootSpan.setAttribute('layout.shape', shape);
         rootSpan.setAttribute('layout.no_claim', noClaim);
 
-        // Silence-mode forces shape A (orchestrator override per SDD §1 ProseGateOutcome)
+        // Silence-mode forces shape A (inline override · BB review F-005 2026-05-16: the
+        // ProseGateOutcome envelope SDD originally specified was vestigial and got removed).
         const effectiveShape: LayoutShape =
           mode === 'silence' && highViolations.length > 0 ? 'A-all-quiet' : shape;
         if (effectiveShape !== shape) {
