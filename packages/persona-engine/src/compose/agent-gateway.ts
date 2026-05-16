@@ -220,10 +220,26 @@ async function invokeBedrockPlaceholder(config: Config, req: InvokeRequest): Pro
         // The @aws-sdk/client-bedrock-runtime v3.700+ credential provider
         // chain reads this env var natively (no programmatic config needed).
         const baseClient = new BedrockRuntimeClient({ region });
+
+        // Raindrop wrap · LOCAL-FIRST mode. The @raindrop-ai/bedrock package
+        // gates its EventShipper (conversation payload) behind a truthy
+        // writeKey. Without one, Workshop UI shows the trace span but
+        // "Waiting for events" because the input/output never ships.
+        //
+        // Workaround: when no cloud writeKey is configured AND a local
+        // Workshop daemon is reachable, supply a dummy writeKey + point
+        // the endpoint at the local daemon. Workshop's /v1/events/track_partial
+        // handler doesn't validate Authorization, so a dummy key works.
+        // No cloud egress: events go to localhost:5899, not api.raindrop.ai.
+        const cloudKey = process.env.RAINDROP_WRITE_KEY;
+        const localDebugger = process.env.RAINDROP_LOCAL_DEBUGGER;
+        const useLocal = !cloudKey && localDebugger;
         const raindrop = createRaindropBedrock({
-          writeKey: process.env.RAINDROP_WRITE_KEY,
+          writeKey: cloudKey ?? (useLocal ? 'rk_workshop_local' : undefined),
+          endpoint: useLocal ? localDebugger : undefined,
           userId: req.character?.id ?? 'freeside',
           convoId: req.zoneHint ?? 'default',
+          debug: process.env.RAINDROP_DEBUG === '1',
         });
         const client = raindrop.wrap(baseClient);
 
