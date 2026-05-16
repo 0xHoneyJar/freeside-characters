@@ -43,11 +43,10 @@ export async function resolveQuery(): Promise<QueryFn> {
   }
 
   try {
-    // Dynamic import so the package can be optional until operator installs it.
-    const mod = await import(
-      // @ts-expect-error · optional dep — installed via operator-paced `bun add`
-      '@raindrop-ai/claude-agent-sdk'
-    );
+    // Dynamic import. Package is now in deps (cycle-006 commit 1dfc38b);
+    // the dynamic-import shape preserves the fail-open guard for any future
+    // removal of the dep without code edit.
+    const mod = await import('@raindrop-ai/claude-agent-sdk');
     const raindrop = mod.createRaindropClaudeAgentSDK({
       writeKey: process.env.RAINDROP_WRITE_KEY, // optional
     });

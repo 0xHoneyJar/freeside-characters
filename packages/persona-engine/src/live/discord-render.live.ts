@@ -40,14 +40,21 @@ function formatDeltaPct(deltaPct: number | null): string {
 }
 
 function renderSnapshotField(snapshot: DigestSnapshot): DeterministicEmbed['fields'][number] {
+  // 2026-05-16 · tighten + consistency pass per operator feedback.
+  // Drop redundant "/ 30d" suffix (header already says "30d snapshot").
+  // Tighten value column from pad8 → pad6 for less whitespace gap.
+  // Keep right-alignment so cross-row digit comparison stays readable.
+  // Label column is uniform 9-char left-padded ("events   ", "wallets  ", "w/w      ", "cold     ").
+  const PAD = 6;
+  const padLabel = (s: string) => s.padEnd(9, ' ');
   const rows: string[] = [];
-  rows.push(`events    ${String(snapshot.totalEvents).padStart(8, ' ')} / ${snapshot.windowDays}d`);
+  rows.push(`${padLabel('events')}${String(snapshot.totalEvents).padStart(PAD, ' ')}`);
   if (snapshot.activeWallets !== undefined) {
-    rows.push(`wallets   ${String(snapshot.activeWallets).padStart(8, ' ')} active`);
+    rows.push(`${padLabel('wallets')}${String(snapshot.activeWallets).padStart(PAD, ' ')} active`);
   }
-  rows.push(`w/w       ${formatDeltaPct(snapshot.deltaPct).padStart(8, ' ')}`);
+  rows.push(`${padLabel('w/w')}${formatDeltaPct(snapshot.deltaPct).padStart(PAD, ' ')}`);
   if (snapshot.coldFactorCount > 0) {
-    rows.push(`cold      ${String(snapshot.coldFactorCount).padStart(8, ' ')} factors`);
+    rows.push(`${padLabel('cold')}${String(snapshot.coldFactorCount).padStart(PAD, ' ')} cold`);
   }
   return {
     name: `${snapshot.windowDays}d snapshot`,
