@@ -24,6 +24,7 @@
   "dependencies": {
     "@0xhoneyjar/medium-registry": "^0.2.0",
     "@anthropic-ai/claude-agent-sdk": "^0.2.122",
+    "@aws-sdk/client-bedrock-runtime": "^3.1048.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.218.0",
     "@opentelemetry/resources": "^2.7.1",
@@ -31,6 +32,7 @@
     "@opentelemetry/sdk-trace-base": "^2.7.1",
     "@opentelemetry/sdk-trace-node": "^2.7.1",
     "@opentelemetry/semantic-conventions": "^1.41.1",
+    "@raindrop-ai/bedrock": "^0.0.3",
     "@raindrop-ai/claude-agent-sdk": "^0.0.13",
     "discord.js": "^14.16.3",
     "effect": "^3.21.2",
