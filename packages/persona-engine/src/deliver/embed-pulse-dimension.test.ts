@@ -314,6 +314,27 @@ describe('buildPulseDimensionPayload · 6000-char total embed cap (PRD truncatio
   });
 });
 
+describe('buildPulseDimensionPayload · Discord-as-Material sanitize (UX nit 2026-05-16)', () => {
+  test('underscore in factor display_name is escaped (avoids mid-word italicize)', () => {
+    const dim = breakdown({
+      top_factors: [factor('og:bv', 'Boosted_Validator', 5)],
+    });
+    const payload = buildPulseDimensionPayload(dim, 'bear-cave', 30);
+    const top = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
+    // Discord italicizes `_X_` — escape MUST protect display_name underscores
+    expect(top).toContain('Boosted\\_Validator');
+    expect(top).not.toContain('Boosted_Validator '); // un-escaped form absent
+  });
+
+  test('em-dash in voice header gets stripped (Eileen Discord 2026-05-04 rule)', () => {
+    const payload = buildPulseDimensionPayload(breakdown(), 'bear-cave', 30, {
+      header: 'this week — bears are hibernating',
+    });
+    const desc = payload.embeds[0]?.description ?? '';
+    expect(desc).not.toContain('—'); // em-dash stripped
+  });
+});
+
 describe('buildPulseDimensionPayload · header/outro voice surface (FR-1)', () => {
   test('header + outro flank field block in description', () => {
     const payload = buildPulseDimensionPayload(breakdown(), 'bear-cave', 30, {

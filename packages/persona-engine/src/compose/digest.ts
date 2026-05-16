@@ -28,6 +28,7 @@ import type {
   PulseDimensionBreakdown,
   ZoneId,
 } from '../score/types.ts';
+import { ZONE_FLAVOR, DIMENSION_NAME } from '../score/types.ts';
 import {
   buildFactorStatsMap,
   inspectProse,
@@ -250,14 +251,24 @@ function buildLayoutArgs(args: ComposeDigestArgs): SelectLayoutShapeArgs {
  * Shape-A renderer: minimal payload with no card body. Voice surface
  * (header/outro) is the entire post. V1 lands the simple form; the
  * silence-register module (`expression/silence-register.ts`) is the
- * S5/V1.5 wire-point for richer "italicized stage direction" rendering.
+ * V1.5 wire-point for richer "italicized stage direction" rendering.
+ *
+ * UX nit 2026-05-16: previous version emitted `[bear-cave] quiet week`
+ * as the content fallback — engineering jargon, broke ruggy's voice
+ * illusion. Now uses the zone flavor (emoji + name) so users-with-embeds-
+ * disabled still see in-character content. The dimension paren is
+ * suppressed for stonehenge (cross-dim hub · self-evident).
  */
 function buildShapeAPayload(args: ComposeDigestArgs): DigestPayload {
+  const flavor = ZONE_FLAVOR[args.zone];
+  const dimensionParen =
+    flavor.dimension === 'overall' ? '' : ` (${DIMENSION_NAME[flavor.dimension]})`;
+  const fallback = `${flavor.emoji} ${flavor.name}${dimensionParen}`;
   const descParts: string[] = [];
   if (args.voice.header) descParts.push(args.voice.header);
   if (args.voice.outro) descParts.push(args.voice.outro);
   return {
-    content: `[${args.zone}] quiet week`,
+    content: fallback,
     embeds: [
       {
         ...(descParts.length > 0 ? { description: descParts.join('\n') } : {}),

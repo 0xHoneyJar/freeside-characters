@@ -37,6 +37,23 @@ import {
   type VoiceMediumId,
 } from './sanitize.ts';
 
+/**
+ * Discord-as-Material sanitize for the pulse-card path (cycle-005 UX nit
+ * 2026-05-16): factor display_names often contain underscores (e.g.
+ * `Boosted_Validator`, `mibera_acquire`) which Discord italicizes mid-word
+ * without `escapeDiscordMarkdown`. Voice surface (header/outro) also runs
+ * through `stripVoiceDisciplineDrift` to honor the em-dash / asterisk-
+ * roleplay invariants. Mirrors `buildPostPayload` lines 99-100 pattern.
+ */
+function sanitizeForDiscord(text: string, opts: { isVoice?: boolean } = {}): string {
+  if (!text) return text;
+  let out = text;
+  if (opts.isVoice) {
+    out = stripVoiceDisciplineDrift(out, { postType: 'digest', mediumId: 'discord-webhook' });
+  }
+  return escapeDiscordMarkdown(out);
+}
+
 const DIRECTION_COLORS = {
   green: 0x2ecc71,
   red: 0xe74c3c,
@@ -216,13 +233,23 @@ function renderTopFactorRow(
 ): string {
   const emoji = moodEmoji?.(factor.factor_stats);
   const prefix = emoji ? `${emoji} ` : '';
-  const delta = `+${factor.delta_count}`;
+  // UX nit 2026-05-16: negative delta_count used to render `+-12` (the
+  // unconditional `+` prefix doubled with `-`). Sign-aware formatting:
+  //   delta_count > 0 → "+N"
+  //   delta_count < 0 → "-N"  (the minus IS the sign · no `+` prefix)
+  //   delta_count == 0 → "±0" (rare · zero-delta on top-factor implies
+  //                            same volume as previous · unusual but real)
+  const dc = factor.delta_count;
+  const delta = dc > 0 ? `+${dc}` : dc < 0 ? `${dc}` : '±0';
   const rank =
     factor.factor_stats?.magnitude?.current_percentile_rank !== undefined &&
     factor.factor_stats?.magnitude?.current_percentile_rank !== null
       ? ` rank-${factor.factor_stats.magnitude.current_percentile_rank}`
       : '';
-  return `${prefix}${factor.display_name} ${delta}${rank}`;
+  // sanitize display_name to defend against underscore-italicize bug
+  // (Discord-as-Material rule per `sanitize.ts:7`).
+  const safeName = sanitizeForDiscord(factor.display_name);
+  return `${prefix}${safeName} ${delta}${rank}`;
 }
 
 /**
@@ -236,7 +263,7 @@ function renderColdFactorRow(
 ): string {
   const emoji = moodEmoji?.(factor.factor_stats);
   const prefix = emoji ? `${emoji} ` : '';
-  return `${prefix}${factor.display_name}`;
+  return `${prefix}${sanitizeForDiscord(factor.display_name)}`;
 }
 
 /**
@@ -367,9 +394,11 @@ export function buildPulseDimensionPayload(
   }
 
   // Header + outro flank the field block. Voice is the seasoning; card body is the meal.
+  // Voice surface gets full sanitize (em-dashes, asterisk roleplay, etc.) per
+  // sanitize.ts §2 stripVoiceDisciplineDrift + Discord underscore escape.
   const descParts: string[] = [];
-  if (opts.header) descParts.push(opts.header);
-  if (opts.outro) descParts.push(opts.outro);
+  if (opts.header) descParts.push(sanitizeForDiscord(opts.header, { isVoice: true }));
+  if (opts.outro) descParts.push(sanitizeForDiscord(opts.outro, { isVoice: true }));
   const description = descParts.length > 0 ? descParts.join('\n') : undefined;
 
   // Trim decisions (regression-guarded): NO footer, NO was-N, NO diversity-chip,
