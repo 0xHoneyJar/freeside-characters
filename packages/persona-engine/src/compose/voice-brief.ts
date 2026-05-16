@@ -50,6 +50,14 @@ export interface VoiceBriefInput {
   windowDays: number;
   /** Was-N reference for previous-period count (DELIBERATELY not rendered in card per PR #73 trim · ruggy MAY allude to it in voice when material). */
   previousPeriodEvents: number;
+  /**
+   * Optional · last week's voice for this zone, as a single-line hint
+   * string (use `formatPriorWeekHint` from voice-memory.ts). When present,
+   * the LLM is invited to thread continuity. When absent, voice composes
+   * fresh. Cross-week memory is what turns 4 isolated Sunday posts into
+   * a continuous narration across months.
+   */
+  priorWeekHint?: string;
 }
 
 export interface VoiceBrief {
@@ -143,12 +151,22 @@ you must NOT:
 - invent magnitude or rarity claims about anything not in the licensed list.
 - describe the data the card body already shows (the card already shows it; your job is the framing).`;
 
-  const userPrompt =
+  const corePrompt =
     input.shape === 'A-all-quiet' || input.isNoClaimVariant ? shapeAGuidance : shapeBCGuidance;
+
+  // Cross-week memory: when the operator supplies last week's framing,
+  // append it as a continuity hint. The LLM gets ONE prior-state signal
+  // and the standing instruction "you may thread continuity or pivot".
+  // Token-cheap (single line); voice-deep (creates arcs over time).
+  const continuityBlock = input.priorWeekHint
+    ? `\n\ncontinuity context: ${input.priorWeekHint}
+
+you MAY thread continuity (reference the prior week's framing if today's data resonates with it) OR pivot (acknowledge change of state if today is different). do NOT mechanically copy last week's voice; ruggy is observing, not repeating.`
+    : '';
 
   return {
     system: baseSystem,
-    user: userPrompt.trim(),
+    user: (corePrompt + continuityBlock).trim(),
     expectedJsonSchema: { header: '', outro: '' },
   };
 }

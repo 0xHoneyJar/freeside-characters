@@ -13,6 +13,7 @@
     "./score/types": "./src/score/types.ts",
     "./compose/digest": "./src/compose/digest.ts",
     "./compose/voice-brief": "./src/compose/voice-brief.ts",
+    "./compose/voice-memory": "./src/compose/voice-memory.ts",
     "./observability/otel-test": "./src/observability/otel-test.ts",
     "./observability/otel-layer": "./src/observability/otel-layer.ts"
   },

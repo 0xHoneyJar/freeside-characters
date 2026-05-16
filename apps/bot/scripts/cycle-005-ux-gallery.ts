@@ -38,6 +38,13 @@ import {
   buildVoiceBrief,
   parseVoiceResponse,
 } from '@freeside-characters/persona-engine/compose/voice-brief';
+import {
+  appendVoiceMemory,
+  readLastVoiceMemory,
+  formatPriorWeekHint,
+  isoWeek,
+  type VoiceMemoryEntry,
+} from '@freeside-characters/persona-engine/compose/voice-memory';
 import { initOtelTest } from '@freeside-characters/persona-engine/observability/otel-test';
 import type {
   PulseDimensionBreakdown,
@@ -271,6 +278,7 @@ function deriveBriefInput(
   shape: 'A-all-quiet' | 'B-one-dim-hot' | 'C-multi-dim-hot',
   isNoClaim: boolean,
   validationViolations: number,
+  priorWeekHint?: string,
 ): Parameters<typeof buildVoiceBrief>[0] {
   if (!dim) {
     return {
@@ -282,6 +290,7 @@ function deriveBriefInput(
       totalEvents: 0,
       windowDays: 30,
       previousPeriodEvents: 0,
+      priorWeekHint,
     };
   }
   const permitted = dim.top_factors
@@ -300,6 +309,7 @@ function deriveBriefInput(
     totalEvents: dim.total_events,
     windowDays: 30,
     previousPeriodEvents: dim.previous_period_events,
+    priorWeekHint,
   };
 }
 
@@ -321,16 +331,70 @@ async function main(): Promise<void> {
   const otel = initOtelTest();
   const zonesToRender: ZoneId[] = ['bear-cave', 'el-dorado', 'owsley-lab'];
 
-  // ─── SCENARIO 1: real prod data (what ships now) ─────────────────
+  // Seed last-week memory for the continuity demo (only if the file
+  // doesn't already exist — preserves real history if the gallery has
+  // been run before · gitignored under .run/).
+  const lastWeekSeeds: Array<VoiceMemoryEntry> = [
+    {
+      at: '2026-05-09T00:00:00Z',
+      iso_week: '2026-W19',
+      zone: 'bear-cave',
+      shape: 'A-all-quiet',
+      header: '26 events across thirty days. the bears stir, then settle.',
+      outro: 'the honey waits. see you in the deep.',
+      key_numbers: { total_events: 26, previous_period_events: 30, permitted_factor_names: [] },
+    },
+    {
+      at: '2026-05-09T00:00:00Z',
+      iso_week: '2026-W19',
+      zone: 'el-dorado',
+      shape: 'A-all-quiet',
+      header: '1236 events but no rank-90 cross. the gold scatters.',
+      outro: 'the prowlers prowl. back next sunday.',
+      key_numbers: { total_events: 1236, previous_period_events: 800, permitted_factor_names: [] },
+    },
+    {
+      at: '2026-05-09T00:00:00Z',
+      iso_week: '2026-W19',
+      zone: 'owsley-lab',
+      shape: 'A-all-quiet',
+      header: '433 events past thirty days. the lab hums low.',
+      outro: 'chain-actions cool. next week we check the readings.',
+      key_numbers: { total_events: 433, previous_period_events: 380, permitted_factor_names: [] },
+    },
+  ];
+  // Use a dedicated demo history path so we don't accumulate gallery noise
+  // in production-bound .run/ruggy-voice-history.jsonl
+  const demoHistoryPath = '/tmp/ruggy-ux-gallery-history.jsonl';
+  // Reset for fresh demo run
+  try {
+    const { unlinkSync, existsSync: ex } = await import('node:fs');
+    if (ex(demoHistoryPath)) unlinkSync(demoHistoryPath);
+  } catch {
+    /* ignore */
+  }
+  for (const e of lastWeekSeeds) {
+    await appendVoiceMemory(e, { path: demoHistoryPath });
+  }
+  console.log('');
+  console.log(`  seeded last-week voice memory at ${demoHistoryPath} (3 zones · iso_week=2026-W19)`);
+
+  // ─── SCENARIO 1: real prod data (what ships now) WITH continuity ──
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('  SCENARIO 1 · REAL prod state (what users would see today)');
+  console.log('  SCENARIO 1 · REAL prod state + cross-week memory');
+  console.log('  (week N references week N-1 · ruggy threads continuity)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   const realAllZones = buildAllZones(dimensions, 'real');
+  const thisWeek = isoWeek();
   for (const zone of zonesToRender) {
     const dimId = zone === 'bear-cave' ? 'og' : zone === 'el-dorado' ? 'nft' : 'onchain';
     const dim = dimensions.get(dimId);
     if (!dim) continue;
+
+    // Read last week's voice memory for this zone
+    const lastWeek = await readLastVoiceMemory(zone, { path: demoHistoryPath });
+    const priorHint = lastWeek ? formatPriorWeekHint(lastWeek) : undefined;
 
     // Pre-compose to know the shape (so the voice brief can match)
     const provisional = composeDigestForZone({
@@ -342,7 +406,7 @@ async function main(): Promise<void> {
       tracer: otel.tracer,
     });
 
-    const briefInput = deriveBriefInput(zone, dim, provisional.shape, provisional.isNoClaim, provisional.validation.violations.length);
+    const briefInput = deriveBriefInput(zone, dim, provisional.shape, provisional.isNoClaim, provisional.validation.violations.length, priorHint);
     const brief = buildVoiceBrief(briefInput);
     const voice = await generateVoice(brief);
 
@@ -356,8 +420,27 @@ async function main(): Promise<void> {
     });
 
     console.log(`\n[${zone}] shape=${finalResult.shape} · voice.via=${voice.via}`);
+    if (priorHint) console.log(`  ← prior week: "${lastWeek?.header}"`);
     renderPostAscii(zone, finalResult.payload, 'desktop');
     renderMobileAscii(finalResult.payload);
+
+    // Write this week's voice to memory (so next gallery run sees it)
+    await appendVoiceMemory(
+      {
+        at: new Date().toISOString(),
+        iso_week: thisWeek,
+        zone,
+        shape: finalResult.shape,
+        header: voice.header,
+        outro: voice.outro,
+        key_numbers: {
+          total_events: dim.total_events,
+          previous_period_events: dim.previous_period_events,
+          permitted_factor_names: briefInput.permittedFactors.map((f) => f.display_name),
+        },
+      },
+      { path: demoHistoryPath },
+    );
   }
 
   // ─── SCENARIO 2: synthetic-hot (what users WOULD see if activity ramps) ──
