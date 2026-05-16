@@ -67,3 +67,13 @@ export function toWeaverPayload(message: WeaverMessage): DigestPayload {
 export function toCalloutPayload(message: CalloutMessage): DigestPayload {
   return embedToPayload(message);
 }
+
+// cycle-006 S5 · chat-reply payload mapper. Text-only path (no embed)
+// since interaction surfaces render plain content. Files/attachments
+// flow through the EnrichedPayload upstream; this mapper is a thin
+// projection of voiceContent → content.
+import type { ChatReplyMessage } from '../domain/chat-reply-message.ts';
+
+export function toChatReplyPayload(message: ChatReplyMessage): DigestPayload {
+  return { content: message.voiceContent, embeds: [] };
+}
