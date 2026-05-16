@@ -68,7 +68,7 @@ export const MAX_REACTION_BAR_LENGTH = 5 as const;
  * for "didn't carry" instead. Posts with 0 reactions across all 3
  * categories ARE the noise signal — silence is data.
  */
-export const REACTION_BAR_EMOJI: readonly string[] = [
+export const REACTION_BAR_EMOJI = [
   '👀', // useful / "noticed" / landed
   '🤔', // unclear / "huh?" / signal real but framing missed
   '🪲', // bug / data wrong / verification-class failure
@@ -141,7 +141,6 @@ export async function attachReactionBar(
         errors: emoji.map((e) => ({ emoji: e, reason: 'channel-not-text-based' })),
       };
     }
-    // @ts-expect-error — channel.messages is .messages on TextChannel/NewsChannel/ThreadChannel
     message = await channel.messages.fetch(messageId);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);

@@ -90,7 +90,7 @@ describe('mood-emoji registry preconditions (F-001 catalog-drift gate)', () => {
     expect(pickByMoods(['flex'], 'ruggy').length).toBeGreaterThan(0);
     expect(pickByMoods(['eyes', 'shocked'], 'ruggy').length).toBeGreaterThan(0);
     expect(pickByMoods(['noted', 'concerned'], 'ruggy').length).toBeGreaterThan(0);
-    expect(pickByMoods(['sadge', 'dazed'], 'ruggy').length).toBeGreaterThan(0);
+    expect(pickByMoods(['cry', 'dazed'], 'ruggy').length).toBeGreaterThan(0);
   });
 });
 

@@ -140,13 +140,17 @@ describe("composeErrorBody · bare-body shape (operator UX 2026-05-04)", () => {
 
   test("returns just the body — no **DisplayName** prefix", () => {
     const body = composeErrorBody("ruggy", "timeout");
+    const expected = getErrorTemplate("ruggy", "timeout");
+    expect(expected).not.toBeNull();
     expect(body.startsWith("**")).toBe(false);
-    expect(body).toBe(getErrorTemplate("ruggy", "timeout"));
+    expect(body).toBe(expected!);
   });
 
   test("body matches the registered template verbatim", () => {
     const body = composeErrorBody("satoshi", "error");
-    expect(body).toBe(getErrorTemplate("satoshi", "error"));
+    const expected = getErrorTemplate("satoshi", "error");
+    expect(expected).not.toBeNull();
+    expect(body).toBe(expected!);
     expect(body).toBe("The channel between worlds slipped. Retry on the next.");
   });
 

@@ -51,7 +51,9 @@ async function main(): Promise<void> {
   const zones = selectedZones(config);
   const typeMode = pickType(config);
 
-  const llmMode = config.ANTHROPIC_API_KEY
+  const llmMode = config.VOICE_DISABLED
+    ? 'VOICE_DISABLED (no LLM)'
+    : config.ANTHROPIC_API_KEY
     ? `anthropic-direct (${config.ANTHROPIC_MODEL})`
     : config.STUB_MODE
       ? 'STUB (canned)'

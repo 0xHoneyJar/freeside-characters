@@ -28,6 +28,7 @@ import type {
   PulseDimensionBreakdown,
   ZoneId,
 } from '../score/types.ts';
+import { ZONE_FLAVOR, DIMENSION_NAME } from '../score/types.ts';
 import {
   buildFactorStatsMap,
   inspectProse,
@@ -64,6 +65,8 @@ export interface ComposeDigestArgs {
   draft: string;
   /** Optional override tracer (tests pass OtelTest's tracer). */
   tracer?: Tracer;
+  /** Optional dim-level snapshot data for the headline row (UX nit 2026-05-16 · dashboard parity). */
+  snapshot?: { weeklyActiveWallets?: number; coldFactorCount?: number };
 }
 
 export interface ComposeDigestResult {
@@ -180,6 +183,7 @@ export function composeDigestForZone(args: ComposeDigestArgs): ComposeDigestResu
               proseGate: validation,
               ...(voiceOn && args.voice.header ? { header: args.voice.header } : {}),
               ...(voiceOn && args.voice.outro ? { outro: args.voice.outro } : {}),
+              ...(args.snapshot ? { snapshot: args.snapshot } : {}),
             });
           },
         );
@@ -247,23 +251,24 @@ function buildLayoutArgs(args: ComposeDigestArgs): SelectLayoutShapeArgs {
 }
 
 /**
- * Shape-A renderer: minimal payload with no card body. Voice surface
- * (header/outro) is the entire post. V1 lands the simple form; the
- * silence-register module (`expression/silence-register.ts`) is the
- * S5/V1.5 wire-point for richer "italicized stage direction" rendering.
+ * Shape-A renderer.
+ *
+ * BB review F-016 (2026-05-16): the prior `isGenuinelyEmpty` branch was
+ * (a) redundant and (b) returned an empty `embeds: [{}]` which Discord
+ * renders as a stray colored sidebar with no content · clutter. The
+ * delegate `buildPulseDimensionPayload` already handles the empty-dim
+ * case cleanly: when there are no factors and no events, snapshot/top/
+ * cold fields are all skipped naturally, voice still flows into
+ * `message.content` per the voice-outside-divs doctrine. One code path
+ * for all shape-A cases · uniform doctrine.
  */
 function buildShapeAPayload(args: ComposeDigestArgs): DigestPayload {
-  const descParts: string[] = [];
-  if (args.voice.header) descParts.push(args.voice.header);
-  if (args.voice.outro) descParts.push(args.voice.outro);
-  return {
-    content: `[${args.zone}] quiet week`,
-    embeds: [
-      {
-        ...(descParts.length > 0 ? { description: descParts.join('\n') } : {}),
-      },
-    ],
-  };
+  return buildPulseDimensionPayload(args.dimension, args.zone, 30, {
+    moodEmoji: moodEmojiForFactor,
+    ...(args.voice.header ? { header: args.voice.header } : {}),
+    ...(args.voice.outro ? { outro: args.voice.outro } : {}),
+    ...(args.snapshot ? { snapshot: args.snapshot } : {}),
+  });
 }
 
 /**

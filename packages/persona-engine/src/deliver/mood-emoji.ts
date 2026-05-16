@@ -89,13 +89,13 @@ export function moodEmojiForFactor(stats: FactorStats | undefined): string | nul
 
 /**
  * Cold-factor mood — `previous > 5 && total === 0` triggers a
- * `['sadge', 'dazed']` token, signaling a factor that USED to fire
+ * `['cry', 'dazed']` token, signaling a factor that USED to fire
  * but went silent this period.
  */
 export function moodEmojiForColdFactor(factor: PulseDimensionFactor): string | null {
   if (isMoodEmojiDisabled()) return null;
   if (factor.previous > 5 && factor.total === 0) {
-    return pickMood(['sadge', 'dazed']);
+    return pickMood(['cry', 'dazed']);
   }
   return null;
 }

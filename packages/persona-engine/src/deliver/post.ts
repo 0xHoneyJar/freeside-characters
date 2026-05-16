@@ -133,6 +133,10 @@ function logDryRun(
     const desc = payload.embeds[0].description ?? '';
     console.log('embed.description:');
     desc.split('\n').forEach((line) => console.log('    ' + line));
+    for (const field of payload.embeds[0].fields ?? []) {
+      console.log(`embed.field ${field.name}:`);
+      field.value.split('\n').forEach((line) => console.log('    ' + line));
+    }
     console.log('embed.footer:', payload.embeds[0].footer?.text);
   }
   console.log('──────────────────────────────────────────────────────────────\n');

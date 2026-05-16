@@ -70,13 +70,16 @@ function stats(overrides: { rank?: number | null }): FactorStats {
 }
 
 function factor(id: string, name: string, delta: number, withStats = true): PulseDimensionFactor {
+  const total = 10 + delta;
+  const previous: number = 10;
+  const delta_pct = previous === 0 ? null : ((total - previous) / previous) * 100;
   return {
     factor_id: id,
     display_name: name,
     primary_action: name,
-    total: 10 + delta,
-    previous: 10,
-    delta_pct: null,
+    total,
+    previous,
+    delta_pct,
     delta_count: delta,
     ...(withStats ? { factor_stats: stats({ rank: 50 }) } : {}),
   };
@@ -116,7 +119,7 @@ describe('buildPulseDimensionPayload · core shape', () => {
       ],
     });
     const payload = buildPulseDimensionPayload(dim, 'bear-cave', 30);
-    const top = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
     const bigIdx = top.indexOf('Big');
     const medIdx = top.indexOf('Med');
     const smallIdx = top.indexOf('Small');
@@ -143,16 +146,74 @@ describe('buildPulseDimensionPayload · 6 PR #73 trim regression-guards (AC-S2.4
     expect(JSON.stringify(payload)).not.toMatch(/diversity/i);
   });
 
-  test('NO field-name suffixes (field names are bare "top" and "cold")', () => {
+  test('field names match the UX r4 table form (snapshot · top · cold)', () => {
     const payload = buildPulseDimensionPayload(
       breakdown({ cold_factors: [factor('og:cold', 'Cold One', 0)] }),
       'bear-cave',
       30,
     );
     const fieldNames = payload.embeds[0]?.fields?.map((f) => f.name) ?? [];
+    const allowedNames = new Set(['30d snapshot', 'top this 30d', 'cold']);
     for (const name of fieldNames) {
-      expect(name).toMatch(/^(top|cold)$/); // exactly · no "(7d)" / "(30d)" / etc.
+      expect(allowedNames.has(name)).toBe(true);
     }
+  });
+
+  test('snapshot is a code-block table with label-on-left / value-on-right (UX r4)', () => {
+    const payload = buildPulseDimensionPayload(breakdown(), 'bear-cave', 30, {
+      snapshot: { weeklyActiveWallets: 7 },
+    });
+    const snap = payload.embeds[0]?.fields?.find((f) => f.name === '30d snapshot');
+    expect(snap).toBeDefined();
+    expect(snap?.value.startsWith('```')).toBe(true);
+    expect(snap?.value.endsWith('```')).toBe(true);
+    expect(snap?.value).toContain('events');
+    expect(snap?.value).toContain('wallets');
+    expect(snap?.value).toContain('7');
+    expect(snap?.value).toContain('30d');
+  });
+
+  test('top-factor code-block table renders one factor per line (UX r4)', () => {
+    const dim = breakdown({
+      top_factors: [
+        factor('og:a', 'Articles', 5),
+        factor('og:b', 'Keys', 3),
+        factor('og:c', 'Sets', 2),
+      ],
+    });
+    const payload = buildPulseDimensionPayload(dim, 'bear-cave', 30);
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
+    // Code-block table has: opening fence + header + 3 factor rows + closing fence = 6 lines
+    const lines = top.split('\n');
+    expect(lines.length).toBe(6);
+    // Three distinct factor lines
+    const factorLines = lines.filter((l) => /^(Articles|Keys|Sets)/.test(l));
+    expect(factorLines.length).toBe(3);
+    // No factor name appears twice on the same line
+    for (const ln of factorLines) {
+      const matches = ln.match(/(Articles|Keys|Sets)/g) ?? [];
+      expect(matches.length).toBe(1);
+    }
+  });
+
+  test('code-block table includes header + per-row events/wallets/delta/rank columns (UX r4)', () => {
+    const dim = breakdown({
+      top_factors: [factor('og:articles', 'Articles', -8)],
+    });
+    const payload = buildPulseDimensionPayload(dim, 'bear-cave', 30);
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
+    // Code-block fence
+    expect(top.startsWith('```')).toBe(true);
+    expect(top.endsWith('```')).toBe(true);
+    // Header row
+    expect(top).toContain('factor');
+    expect(top).toContain('events');
+    expect(top).toContain('wallets');
+    expect(top).toContain('delta');
+    expect(top).toContain('rank');
+    // Data row
+    expect(top).toContain('Articles');
+    expect(top).toMatch(/-?\d+%/);
   });
 
   test('Dynamic truncation: 50 factors with long names triggers "…and N more silent"', () => {
@@ -164,7 +225,7 @@ describe('buildPulseDimensionPayload · 6 PR #73 trim regression-guards (AC-S2.4
       'bear-cave',
       30,
     );
-    const top = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
     expect(top).toContain('more silent');
     expect(top.length).toBeLessThanOrEqual(1024);
   });
@@ -174,43 +235,47 @@ describe('buildPulseDimensionPayload · 6 PR #73 trim regression-guards (AC-S2.4
       top_factors: [factor('a', 'AAA', 50), factor('b', 'BBB', 30), factor('c', 'CCC', 10)],
     });
     const payload = buildPulseDimensionPayload(dim, 'bear-cave', 30);
-    const top = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
     expect(top.indexOf('AAA')).toBeLessThan(top.indexOf('BBB'));
     expect(top.indexOf('BBB')).toBeLessThan(top.indexOf('CCC'));
   });
 });
 
-describe('buildPulseDimensionPayload · mood-emoji slot wiring (AC-S2.5)', () => {
-  test('mood-emoji callback called once per row when option provided', () => {
+describe('buildPulseDimensionPayload · mood-emoji slot wiring (UX r4 · cold-factor only)', () => {
+  test('mood-emoji callback called for cold factors (top is now code-block table · no emoji)', () => {
     let callCount = 0;
     const stub: (s: FactorStats | undefined) => string | null = (s) => {
       callCount += 1;
-      return null; // S4-stub default
+      return null;
     };
     const dim = breakdown({
       top_factors: [factor('a', 'A', 1), factor('b', 'B', 2)],
       cold_factors: [factor('c', 'C', 0)],
     });
     buildPulseDimensionPayload(dim, 'bear-cave', 30, { moodEmoji: stub });
-    expect(callCount).toBe(3);
+    // Mood-emoji still called per cold-row (cold uses ` · ` tag-line · emoji renderable there)
+    // But top rows are code-block — emoji intentionally NOT rendered.
+    expect(callCount).toBeGreaterThan(0);
   });
 
-  test('mood-emoji non-null token rendered as prefix on factor row', () => {
+  test('top factors in code-block table do NOT include mood emoji (UX r4 · operator: monospace alignment > emoji)', () => {
     const stub: (s: FactorStats | undefined) => string | null = () => '<:flex:123>';
     const dim = breakdown({ top_factors: [factor('og:articles', 'Articles', 5)] });
     const payload = buildPulseDimensionPayload(dim, 'bear-cave', 30, { moodEmoji: stub });
-    const top = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
-    expect(top).toContain('<:flex:123> Articles');
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
+    expect(top).toContain('Articles');
+    expect(top).not.toContain('<:flex:123>'); // emoji NOT in code block
+    expect(top).toContain('```'); // wrapped in code block
   });
 
-  test('S4-stub moodEmojiForFactor returns null → no emoji slot in V1', () => {
+  test('S4-stub moodEmojiForFactor returns null → no emoji slot', () => {
     const dim = breakdown({ top_factors: [factor('og:articles', 'Articles', 5)] });
     const payload = buildPulseDimensionPayload(dim, 'bear-cave', 30, {
       moodEmoji: moodEmojiForFactor,
     });
-    const top = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
     expect(top).toContain('Articles');
-    expect(top).not.toContain('<:'); // no emoji rendered
+    expect(top).not.toContain('<:');
   });
 
   test('MOOD_EMOJI_DISABLED=true short-circuits to null', () => {
@@ -251,7 +316,7 @@ describe('buildPulseDimensionPayload · historic-factor handling (AC-S2.3)', () 
     const payload = buildPulseDimensionPayload(dim, 'bear-cave', 30, {
       moodEmoji: moodEmojiForFactor,
     });
-    const top = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
     expect(top).toContain('Historic');
     expect(top).not.toContain('rank-'); // omitted when factor_stats absent
   });
@@ -267,7 +332,7 @@ describe('buildPulseDimensionPayload · Discord 1024-char per-field cap (AC-S2.2
       'owsley-lab', // onchain dim is worst-case
       30,
     );
-    const top = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
     expect(top.length).toBeLessThanOrEqual(1024);
   });
 
@@ -280,7 +345,7 @@ describe('buildPulseDimensionPayload · Discord 1024-char per-field cap (AC-S2.2
       'bear-cave',
       30,
     );
-    const top = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
     expect(top.length).toBeLessThanOrEqual(1024);
     expect(top).toContain('more silent');
   });
@@ -305,7 +370,7 @@ describe('buildPulseDimensionPayload · 6000-char total embed cap (PRD truncatio
     // Each field has 1024 cap already; total enforcement prevents the
     // overall embed (description + fields + ...) from exceeding 6000.
     // Loose assertion: when both fields stay, sum of field values ≤ 6000.
-    const topValue = payload.embeds[0]?.fields?.find((f) => f.name === 'top')?.value ?? '';
+    const topValue = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
     const coldValue = payload.embeds[0]?.fields?.find((f) => f.name === 'cold')?.value ?? '';
     const fieldSum = topValue.length + coldValue.length;
     expect(topValue.length).toBeLessThanOrEqual(1024);
@@ -314,18 +379,52 @@ describe('buildPulseDimensionPayload · 6000-char total embed cap (PRD truncatio
   });
 });
 
-describe('buildPulseDimensionPayload · header/outro voice surface (FR-1)', () => {
-  test('header + outro flank field block in description', () => {
+describe('buildPulseDimensionPayload · Discord-as-Material sanitize (UX nit 2026-05-16)', () => {
+  test('underscore in factor display_name is escaped (avoids mid-word italicize)', () => {
+    const dim = breakdown({
+      top_factors: [factor('og:bv', 'Boosted_Validator', 5)],
+    });
+    const payload = buildPulseDimensionPayload(dim, 'bear-cave', 30);
+    const top = payload.embeds[0]?.fields?.find((f) => f.name?.startsWith('top'))?.value ?? '';
+    // Discord italicizes `_X_` — escape MUST protect display_name underscores
+    expect(top).toContain('Boosted\\_Validator');
+    expect(top).not.toContain('Boosted_Validator '); // un-escaped form absent
+  });
+
+  test('em-dash in voice header gets stripped (Eileen Discord 2026-05-04 rule · BB F-001 2026-05-16: assert on message.content where voice lives)', () => {
+    const payload = buildPulseDimensionPayload(breakdown(), 'bear-cave', 30, {
+      header: 'this week — bears are hibernating',
+    });
+    // Voice lives in message.content per voice-outside-divs doctrine.
+    // Asserting against embed.description would be vacuous (always undefined).
+    expect(payload.content).not.toContain('—'); // em-dash stripped
+    expect(payload.content).toContain('this week'); // text preserved minus the em-dash
+  });
+});
+
+describe('buildPulseDimensionPayload · voice-outside-divs (UX r4 · operator 2026-05-16)', () => {
+  test('voice goes to message.content (above embed) · NOT embed.description', () => {
     const payload = buildPulseDimensionPayload(breakdown(), 'bear-cave', 30, {
       header: 'this week in the cave',
       outro: 'stay groovy 🐻',
     });
-    expect(payload.embeds[0]?.description).toContain('this week in the cave');
-    expect(payload.embeds[0]?.description).toContain('stay groovy');
+    expect(payload.content).toContain('this week in the cave');
+    expect(payload.content).toContain('stay groovy');
+    // Embed description must NOT carry voice (truth-only zone)
+    expect(payload.embeds[0]?.description).toBeUndefined();
   });
 
-  test('absent header/outro produces no description', () => {
+  test('absent header/outro → content is just zone-flavor fallback', () => {
     const payload = buildPulseDimensionPayload(breakdown(), 'bear-cave', 30);
+    expect(payload.content).toContain('Bear Cave');
     expect(payload.embeds[0]?.description).toBeUndefined();
+  });
+
+  test('embed has zero voice text · fields are pure substrate', () => {
+    const payload = buildPulseDimensionPayload(breakdown(), 'bear-cave', 30, {
+      header: 'a voice header that should not appear in the embed',
+    });
+    const embedJson = JSON.stringify(payload.embeds[0]);
+    expect(embedJson).not.toContain('a voice header that should not appear');
   });
 });

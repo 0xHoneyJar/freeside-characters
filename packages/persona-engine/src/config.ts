@@ -31,6 +31,9 @@ const ConfigSchema = z.object({
    *  Defaults to 'auto'; recommend an explicit value in production for
    *  legibility (silences the boot-log notice). */
   LLM_PROVIDER: z.enum(['stub', 'anthropic', 'freeside', 'bedrock', 'auto']).default('auto'),
+  /** When true, digest rendering skips voice generation entirely. The
+   * deterministic embed still renders from score-mcp substrate data. */
+  VOICE_DISABLED: z.string().default('false').transform((v) => v === 'true'),
 
   // ─── score-mcp (zerker — production data path) ────────────────────────
   // Direct path (V0.5-): SCORE_API_URL=https://score-api-production.up.railway.app, MCP_KEY set, SCORE_BEARER unset.
