@@ -13,6 +13,7 @@ import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
 import { createVoiceMemoryLive } from '../live/voice-memory.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
 import { toDigestPayload } from '../live/discord-webhook.live.ts';
+import { getTracer } from '../observability/otel-layer.ts';
 import { deriveShape } from '../domain/derive-shape.ts';
 import { formatPriorWeekHint } from './format-prior-week-hint.ts';
 import { sanitizeMemoryText } from '../domain/voice-memory-sanitize.ts';
@@ -56,12 +57,16 @@ export async function composeDigestPost(
   const derived = deriveShape({ snapshot, crossZone: [snapshot] });
 
   // cycle-006 S6 T6.7 · voice-memory read-before-voice-gen.
+  // S8 NFR-5 · OTEL `voice_memory.read` event emitted via tracer span.
   // Fail-safe: any read failure → empty prior hint, never blocks the post.
   const streamKey = keyForDigest(zone);
+  const tracer = getTracer();
   let priorWeekHint = '';
+  let priorFound = false;
   try {
     const prior = await voiceMemory.readRecent('digest', streamKey, 1);
-    if (prior.length > 0) {
+    priorFound = prior.length > 0;
+    if (priorFound) {
       priorWeekHint = formatPriorWeekHint({
         entry: { header: prior[0]!.header, outro: prior[0]!.outro },
         stream: 'digest',
@@ -71,6 +76,16 @@ export async function composeDigestPost(
   } catch {
     // swallow — voice-memory is non-critical for post delivery
   }
+  // S8 T8.1 · OTEL emission for NFR-5 voice-memory observability.
+  tracer.startActiveSpan('voice_memory.read', (span) => {
+    try {
+      span.setAttribute('stream', 'digest');
+      span.setAttribute('key', streamKey);
+      span.setAttribute('found', priorFound);
+    } finally {
+      span.end();
+    }
+  });
 
   const ctx: VoiceGenContext = { derived, priorWeekHint };
   const augment: VoiceAugment | undefined = config.VOICE_DISABLED
@@ -101,11 +116,23 @@ export async function composeDigestPost(
       expiry: expiry.toISOString(),
       signed_by: `agent:${character.id ?? 'claude'}`,
     };
+    let writeOk = false;
     try {
-      await voiceMemory.appendEntry('digest', entry);
+      const writeResult = await voiceMemory.appendEntry('digest', entry);
+      writeOk = writeResult.ok;
     } catch {
       // swallow — write failure should never block delivery (SDD §6.1)
     }
+    // S8 T8.1 · OTEL emission for NFR-5 voice-memory observability.
+    tracer.startActiveSpan('voice_memory.write', (span) => {
+      try {
+        span.setAttribute('stream', 'digest');
+        span.setAttribute('key', streamKey);
+        span.setAttribute('ok', writeOk);
+      } finally {
+        span.end();
+      }
+    });
   }
 
   return {
