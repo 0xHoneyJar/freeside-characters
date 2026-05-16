@@ -145,17 +145,50 @@ export function renderDigest(snapshot: DigestSnapshot, augment?: VoiceAugment): 
   };
 }
 
+/**
+ * cycle-006 S7 T7.1 · per PRD FR-7: wallet+description pairs in 2-line format.
+ * - Line 1: `<short-wallet> → <description>`
+ * - Line 2: `<factor> · <dimension> · <timestamp>`
+ * - Blank line between events.
+ * - Default 10 events per post.
+ * - Truncate if total content exceeds DISCORD_CONTENT_CAP.
+ */
+const DISCORD_CONTENT_CAP = 3700; // ~90% of Discord 4000-char message limit
+const PULSE_DEFAULT_EVENT_COUNT = 10;
+
 export function renderActivityPulse(pulse: ActivityPulse): ActivityPulseMessage {
-  const lines = pulse.events.slice(0, 10).flatMap((event) => [
-    `${shortWallet(event.wallet)} → ${escapeDiscordMarkdown(event.description)}`,
-    `${escapeDiscordMarkdown(event.factor_display_name)} · ${event.dimension} · ${event.timestamp}`,
-  ]);
-  return {
-    content: lines.length > 0 ? lines.join('\n') : 'no recent events in the ledger.',
-  };
+  if (pulse.events.length === 0) {
+    return { content: 'no recent events in the ledger.' };
+  }
+  const blocks: string[] = [];
+  let totalLen = 0;
+  let truncated = false;
+  for (const event of pulse.events.slice(0, PULSE_DEFAULT_EVENT_COUNT)) {
+    const walletLine = `${shortenWallet(event.wallet)} → ${escapeDiscordMarkdown(event.description ?? '(no description)')}`;
+    const metaLine = `${escapeDiscordMarkdown(event.factor_display_name)} · ${event.dimension} · ${event.timestamp}`;
+    const block = `${walletLine}\n${metaLine}`;
+    if (totalLen + block.length + 2 > DISCORD_CONTENT_CAP) {
+      truncated = true;
+      break;
+    }
+    blocks.push(block);
+    totalLen += block.length + 2; // +2 for the blank-line separator
+  }
+  const content = blocks.join('\n\n');
+  return { content: truncated ? `${content}\n\n…` : content };
 }
 
-function shortWallet(wallet: string): string {
+/**
+ * Shorten an Ethereum wallet to `0xXXXX…YYYY` (first-4 hex + ellipsis +
+ * last-4 hex) per PRD FR-7. Non-hex / shorter strings pass through.
+ */
+export function shortenWallet(wallet: string): string {
+  if (!wallet) return wallet;
+  // Match 0x-prefix + at least 8 hex chars (so first-4 + last-4 don't overlap)
+  if (/^0x[0-9a-fA-F]{8,}$/.test(wallet)) {
+    return `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
+  }
+  // Non-hex passthrough — also handle long opaque IDs (>12 chars) defensively
   return wallet.length > 12 ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : wallet;
 }
 
