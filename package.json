@@ -14,6 +14,7 @@
     "build": "bun run --cwd apps/bot build",
     "test": "bun run --cwd apps/bot test",
     "typecheck": "bun run --cwd packages/persona-engine typecheck && bun run --cwd apps/bot typecheck",
+    "lint:seam": "bash scripts/audit-substrate-presentation-seam.sh",
     "digest:once": "bun run --cwd apps/bot digest:once"
   },
   "devDependencies": {

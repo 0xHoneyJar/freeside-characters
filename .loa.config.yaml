@@ -172,6 +172,10 @@ run_mode:
 # "Experience the AI's work while maintaining your own consciousness." — Gibson
 simstim:
   enabled: true
+  # Sub-phases (cycle-006 substrate-presentation refactor · operator-enabled 2026-05-16).
+  # Phase 3.5: Bridgebuilder design review on SDD before Flatline.
+  # Phase 4.5: Red Team adversarial security design on SDD.
+  bridgebuilder_design_review: true
   flatline:
     auto_accept_high_consensus: true
     show_disputed: true
@@ -180,6 +184,23 @@ simstim:
       - prd
       - sdd
       - sprint
+
+# Phase 3.5 · Bridgebuilder design review (cycle-006 opt-in).
+# Reviews SDD against 6 dimensions (architectural soundness, requirement coverage,
+# scale alignment, risk identification, frame questioning, pattern recognition).
+bridgebuilder_design_review:
+  enabled: true
+  persona_path: ".claude/data/bridgebuilder-persona.md"
+  lore_enabled: true
+  vision_capture: true
+
+# Phase 4.5 · Red Team adversarial security design (cycle-006 opt-in).
+# Generates attack scenarios against SDD; confirmed attacks (severity >700)
+# become sprint tasks.
+red_team:
+  enabled: true
+  simstim:
+    auto_trigger: true
 
 # Run Bridge — autonomous excellence loop (cycle-004).
 # Refer to grimoires/loa/cycles/cycle-004 for cycle-specific docs;

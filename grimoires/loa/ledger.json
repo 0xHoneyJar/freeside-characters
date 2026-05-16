@@ -1,8 +1,188 @@
 {
   "version": "1.0.0",
-  "next_sprint_number": 12,
-  "active_cycle": "cycle-005-ruggy-leaderboard",
+  "next_sprint_number": 21,
+  "active_cycle": "cycle-006-substrate-presentation",
   "cycles": [
+    {
+      "id": "cycle-006-substrate-presentation",
+      "label": "substrate-presentation refactor (complete the seam · per-post-type orchestrators · voice-memory production-wired · daily-pulse · 4 Red Team ACs)",
+      "status": "candidate",
+      "created_at": "2026-05-16T08:18:36Z",
+      "prd": "grimoires/loa/cycles/cycle-006-substrate-presentation/prd.md",
+      "sdd": "grimoires/loa/cycles/cycle-006-substrate-presentation/sdd.md",
+      "sprint_plan": "grimoires/loa/cycles/cycle-006-substrate-presentation/sprint.md",
+      "target_branch": "feat/cycle-006-substrate-presentation",
+      "depends_on": [
+        "PR #81 (codex's ports/live/mock initial split · either merged or rebased into 006)",
+        "cycle-005 closure (PR #80 merged · PR #81 BB REQUEST_CHANGES under remediation)",
+        "score-mibera 1.1.0 in prod (MERGED 2026-05-15)"
+      ],
+      "red_team_phase_45": {
+        "executed_at": "2026-05-16",
+        "verdict": "operator-attested 'Loa you decide for all' — 4 ACs integrated",
+        "ac_integration": {
+          "AC-RT-001": {
+            "sprint": "S6",
+            "task": "T6.5",
+            "score": 820,
+            "title": "path traversal via StreamName"
+          },
+          "AC-RT-002": {
+            "sprint": [
+              "S1",
+              "S6"
+            ],
+            "task": [
+              "T1.5",
+              "T6.7"
+            ],
+            "score": 880,
+            "title": "prior-week hint prompt injection"
+          },
+          "AC-RT-007": {
+            "sprint": [
+              "S5",
+              "S6"
+            ],
+            "task": [
+              "T5.5",
+              "T5.6",
+              "T6.2",
+              "T6.8"
+            ],
+            "score": 830,
+            "title": "chat-reply cross-channel info leak"
+          },
+          "AC-RT-008": {
+            "sprint": "S2",
+            "task": "T2.5",
+            "score": 770,
+            "title": "score-MCP snapshot spoofing"
+          }
+        },
+        "attack_log": ".run/redteam-sdd-cycle-006.json (run id rt-1778918589-22f71ce6)"
+      },
+      "sprints": [
+        {
+          "local_id": "S0",
+          "global_number": 12,
+          "title": "Calibration spike — deriveShape ↔ selectLayoutShape baseline (auto-delete)",
+          "scope": "SMALL",
+          "task_count": 3,
+          "status": "planned",
+          "spec_phase": "S0",
+          "loc_budget": "spike-script (auto-delete on close)",
+          "epic_bead": "bd-1rx"
+        },
+        {
+          "local_id": "S1",
+          "global_number": 13,
+          "title": "Type-level substrate-presentation seam + Red Team AC-RT-002 wrapping",
+          "scope": "MEDIUM",
+          "task_count": 6,
+          "status": "planned",
+          "spec_phase": "S1",
+          "loc_budget": "~250",
+          "epic_bead": "bd-1b0",
+          "red_team_acs": [
+            "AC-RT-002"
+          ]
+        },
+        {
+          "local_id": "S2",
+          "global_number": 14,
+          "title": "Delete buildPulseDimensionPayload + audit script + AC-RT-008 snapshot plausibility",
+          "scope": "MEDIUM",
+          "task_count": 5,
+          "status": "planned",
+          "spec_phase": "S2",
+          "loc_budget": "~-200 net (delete-heavy)",
+          "epic_bead": "bd-1ij",
+          "red_team_acs": [
+            "AC-RT-008"
+          ]
+        },
+        {
+          "local_id": "S3",
+          "global_number": 15,
+          "title": "Migrate pop-in / micro / lore_drop / question / weaver orchestrators",
+          "scope": "LARGE",
+          "task_count": 9,
+          "status": "planned",
+          "spec_phase": "S3",
+          "loc_budget": "~600",
+          "epic_bead": "bd-27j"
+        },
+        {
+          "local_id": "S4",
+          "global_number": 16,
+          "title": "Migrate callout orchestrator + composer.ts router finalization",
+          "scope": "MEDIUM",
+          "task_count": 4,
+          "status": "planned",
+          "spec_phase": "S4",
+          "loc_budget": "~200",
+          "epic_bead": "bd-1w8"
+        },
+        {
+          "local_id": "S5",
+          "global_number": 17,
+          "title": "Chat-mode-reply migration + Red Team AC-RT-007 tuple key foundation",
+          "scope": "LARGE",
+          "task_count": 8,
+          "status": "planned",
+          "spec_phase": "S5",
+          "loc_budget": "~400",
+          "epic_bead": "bd-1ew",
+          "red_team_acs": [
+            "AC-RT-007"
+          ],
+          "risk_tier": "HIGH (production chat-reply path)"
+        },
+        {
+          "local_id": "S6",
+          "global_number": 18,
+          "title": "Per-post-type voice memory streams + production wiring + AC-RT-001/002/007 closure",
+          "scope": "LARGE",
+          "task_count": 9,
+          "status": "planned",
+          "spec_phase": "S6",
+          "loc_budget": "~350",
+          "epic_bead": "bd-1lv",
+          "red_team_acs": [
+            "AC-RT-001",
+            "AC-RT-002",
+            "AC-RT-007"
+          ]
+        },
+        {
+          "local_id": "S7",
+          "global_number": 19,
+          "title": "Daily-pulse renderer + pulse-orchestrator",
+          "scope": "SMALL",
+          "task_count": 4,
+          "status": "planned",
+          "spec_phase": "S7",
+          "loc_budget": "~200",
+          "epic_bead": "bd-3tc",
+          "parallelizable_with": "S6"
+        },
+        {
+          "local_id": "S8",
+          "global_number": 20,
+          "title": "OTEL wire + canary + BB round 3 + cycle close + E2E goal validation",
+          "scope": "MEDIUM",
+          "task_count": 6,
+          "status": "planned",
+          "spec_phase": "S8",
+          "loc_budget": "~100",
+          "is_final": true,
+          "epic_bead": "bd-kix"
+        }
+      ],
+      "candidate_at": "2026-05-16T17:00:00Z",
+      "completed_marker": "grimoires/loa/cycles/cycle-006-substrate-presentation/COMPLETED.md"
+    },
     {
       "id": "cycle-005-ruggy-leaderboard",
       "label": "ruggy-as-leaderboard + hybrid-staged prose-gate (V1 telemetry-only)",

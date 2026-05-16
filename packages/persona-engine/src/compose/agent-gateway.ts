@@ -42,6 +42,10 @@
 
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
+import { getTracer } from '../observability/otel-layer.ts';
+import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
+import { createRaindropBedrock } from '@raindrop-ai/bedrock';
+import { writeLlmTraceEntry } from '../observability/llm-trace.ts';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR } from '../score/types.ts';
 import { generateStubZoneDigest } from '../score/client.ts';
@@ -190,73 +194,167 @@ async function invokeBedrockPlaceholder(config: Config, req: InvokeRequest): Pro
     throw new Error('Bedrock provider selected but BEDROCK_TEXT_MODEL_ID is unset');
   }
 
-  const encodedModelId = encodeURIComponent(modelId);
-  const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodedModelId}/converse`;
+  const tracer = getTracer();
+  const startedAt = Date.now();
+  return tracer.startActiveSpan('bedrock.converse', async (span) => {
+    try {
+      span.setAttribute('llm.provider', 'bedrock');
+      span.setAttribute('llm.model_id', modelId);
+      span.setAttribute('llm.region', region);
+      span.setAttribute('llm.system_prompt_preview', req.systemPrompt.slice(0, 500));
+      span.setAttribute('llm.user_message_preview', req.userMessage.slice(0, 500));
+      if (req.zoneHint) span.setAttribute('zone.id', req.zoneHint);
+      if (req.postTypeHint) span.setAttribute('post.type', req.postTypeHint);
+      if (req.character?.id) span.setAttribute('character.id', req.character.id);
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      system: [
-        {
-          text: req.systemPrompt,
-        },
-      ],
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              text: req.userMessage,
-            },
-          ],
-        },
-      ],
-      inferenceConfig: {
-        maxTokens: 1024,
-      },
-    }),
-  });
+      // Feature flag: BEDROCK_USE_SDK=1 opts into @aws-sdk/client-bedrock-runtime
+      // wrapped with @raindrop-ai/bedrock for live trace capture. Default
+      // (legacy fetch) preserves the current production call shape so we can
+      // roll the SDK path forward without forcing the cutover. Both paths
+      // share the same OTEL span + same auth (AWS_BEARER_TOKEN_BEDROCK).
+      const useSdk = process.env.BEDROCK_USE_SDK === '1';
 
-  if (!response.ok) {
-    throw new Error(`bedrock converse error: ${response.status} ${await response.text()}`);
-  }
+      let text: string | undefined;
+      let usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
 
-  const data = (await response.json()) as {
-    output?: {
-      message?: {
-        content?: Array<{ text?: string }>;
+      if (useSdk) {
+        // SDK path · auto-picks up AWS_BEARER_TOKEN_BEDROCK from process.env.
+        // The @aws-sdk/client-bedrock-runtime v3.700+ credential provider
+        // chain reads this env var natively (no programmatic config needed).
+        const baseClient = new BedrockRuntimeClient({ region });
+
+        // Raindrop wrap · LOCAL-FIRST mode. The @raindrop-ai/bedrock package
+        // gates its EventShipper (conversation payload) behind a truthy
+        // writeKey. Without one, Workshop UI shows the trace span but
+        // "Waiting for events" because the input/output never ships.
+        //
+        // Workaround: when no cloud writeKey is configured AND a local
+        // Workshop daemon is reachable, supply a dummy writeKey + point
+        // the endpoint at the local daemon. Workshop's /v1/events/track_partial
+        // handler doesn't validate Authorization, so a dummy key works.
+        // No cloud egress: events go to localhost:5899, not api.raindrop.ai.
+        const cloudKey = process.env.RAINDROP_WRITE_KEY;
+        const localDebugger = process.env.RAINDROP_LOCAL_DEBUGGER;
+        const useLocal = !cloudKey && localDebugger;
+        const raindrop = createRaindropBedrock({
+          writeKey: cloudKey ?? (useLocal ? 'rk_workshop_local' : undefined),
+          endpoint: useLocal ? localDebugger : undefined,
+          userId: req.character?.id ?? 'freeside',
+          convoId: req.zoneHint ?? 'default',
+          debug: process.env.RAINDROP_DEBUG === '1',
+        });
+        const client = raindrop.wrap(baseClient);
+
+        const response = await client.send(
+          new ConverseCommand({
+            modelId,
+            system: [{ text: req.systemPrompt }],
+            messages: [{ role: 'user', content: [{ text: req.userMessage }] }],
+            inferenceConfig: { maxTokens: 1024 },
+          }),
+        );
+
+        text = response.output?.message?.content
+          ?.map((part) => part.text)
+          .filter((t): t is string => Boolean(t))
+          .join('\n')
+          .trim();
+        usage = response.usage;
+        span.setAttribute('llm.path', 'sdk');
+      } else {
+        // Legacy REST · path used by production until SDK flag opt-in.
+        const encodedModelId = encodeURIComponent(modelId);
+        const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodedModelId}/converse`;
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            system: [{ text: req.systemPrompt }],
+            messages: [
+              { role: 'user', content: [{ text: req.userMessage }] },
+            ],
+            inferenceConfig: { maxTokens: 1024 },
+          }),
+        });
+
+        if (!response.ok) {
+          const errBody = await response.text();
+          span.setAttribute('error.status_code', response.status);
+          span.setAttribute('error.body_preview', errBody.slice(0, 500));
+          throw new Error(`bedrock converse error: ${response.status} ${errBody}`);
+        }
+
+        const data = (await response.json()) as {
+          output?: { message?: { content?: Array<{ text?: string }> } };
+          usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+        };
+
+        text = data.output?.message?.content
+          ?.map((part) => part.text)
+          .filter((t): t is string => Boolean(t))
+          .join('\n')
+          .trim();
+        usage = data.usage;
+        span.setAttribute('llm.path', 'fetch');
+      }
+
+      if (!text) {
+        throw new Error('bedrock converse returned no text');
+      }
+
+      span.setAttribute('llm.output_preview', text.slice(0, 500));
+      span.setAttribute('llm.input_tokens', usage?.inputTokens ?? 0);
+      span.setAttribute('llm.output_tokens', usage?.outputTokens ?? 0);
+      span.setAttribute('llm.total_tokens', usage?.totalTokens ?? 0);
+
+      // Substrate-native LLM trace · feeds the local dashboard.
+      void writeLlmTraceEntry({
+        at: new Date(startedAt).toISOString(),
+        duration_ms: Date.now() - startedAt,
+        model_id: modelId,
+        region,
+        path: useSdk ? 'sdk' : 'fetch',
+        zone: req.zoneHint,
+        post_type: req.postTypeHint,
+        character_id: req.character?.id,
+        system_prompt: req.systemPrompt,
+        user_message: req.userMessage,
+        output: text,
+        input_tokens: usage?.inputTokens,
+        output_tokens: usage?.outputTokens,
+        total_tokens: usage?.totalTokens,
+      });
+
+      return {
+        text,
+        meta: { provider: 'bedrock', modelId, region, usage },
       };
-    };
-    usage?: {
-      inputTokens?: number;
-      outputTokens?: number;
-      totalTokens?: number;
-    };
-  };
-
-  const text = data.output?.message?.content
-    ?.map((part) => part.text)
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-
-  if (!text) {
-    throw new Error(`bedrock converse returned no text: ${JSON.stringify(data)}`);
-  }
-
-  return {
-    text,
-    meta: {
-      provider: 'bedrock',
-      modelId,
-      region,
-      usage: data.usage,
-    },
-  };
+    } catch (err) {
+      span.recordException(err as Error);
+      // Also record errored calls in the trace log.
+      void writeLlmTraceEntry({
+        at: new Date(startedAt).toISOString(),
+        duration_ms: Date.now() - startedAt,
+        model_id: modelId,
+        region,
+        path: process.env.BEDROCK_USE_SDK === '1' ? 'sdk' : 'fetch',
+        zone: req.zoneHint,
+        post_type: req.postTypeHint,
+        character_id: req.character?.id,
+        system_prompt: req.systemPrompt,
+        user_message: req.userMessage,
+        output: '',
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    } finally {
+      span.end();
+    }
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────

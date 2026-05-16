@@ -25,7 +25,8 @@
  *   - Implement 5 anti-pattern guards
  */
 
-import { query, type McpServerConfig, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { type McpServerConfig, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { resolveQuery } from '../observability/raindrop-instrumentation.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { ZoneId } from '../score/types.ts';
@@ -457,6 +458,7 @@ export async function runOrchestratorQuery(
   // envelopes → composeWithImage attachments). The SDK emits a `user`
   // message after each tool round-trip carrying ToolResultBlockParam blocks
   // — same loop, different message type.
+  const query = await resolveQuery();
   for await (const message of query({ prompt: req.userMessage, options })) {
     if (message.type === 'assistant') {
       // V0.12.0 fix (zone-digest tool-call leak, 2026-05-13):

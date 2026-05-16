@@ -28,7 +28,7 @@ import { appendFile, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { mkdirSync, existsSync } from 'node:fs';
 import type { ZoneId } from '../score/types.ts';
-import type { LayoutShape } from './layout-shape.ts';
+import type { LayoutShape } from '../domain/derive-shape.ts';
 
 const DEFAULT_PATH = '.run/ruggy-voice-history.jsonl';
 
