@@ -45,6 +45,7 @@ import type { CharacterConfig } from '../types.ts';
 import { getTracer } from '../observability/otel-layer.ts';
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { createRaindropBedrock } from '@raindrop-ai/bedrock';
+import { writeLlmTraceEntry } from '../observability/llm-trace.ts';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR } from '../score/types.ts';
 import { generateStubZoneDigest } from '../score/client.ts';
@@ -194,6 +195,7 @@ async function invokeBedrockPlaceholder(config: Config, req: InvokeRequest): Pro
   }
 
   const tracer = getTracer();
+  const startedAt = Date.now();
   return tracer.startActiveSpan('bedrock.converse', async (span) => {
     try {
       span.setAttribute('llm.provider', 'bedrock');
@@ -309,12 +311,45 @@ async function invokeBedrockPlaceholder(config: Config, req: InvokeRequest): Pro
       span.setAttribute('llm.output_tokens', usage?.outputTokens ?? 0);
       span.setAttribute('llm.total_tokens', usage?.totalTokens ?? 0);
 
+      // Substrate-native LLM trace · feeds the local dashboard.
+      void writeLlmTraceEntry({
+        at: new Date(startedAt).toISOString(),
+        duration_ms: Date.now() - startedAt,
+        model_id: modelId,
+        region,
+        path: useSdk ? 'sdk' : 'fetch',
+        zone: req.zoneHint,
+        post_type: req.postTypeHint,
+        character_id: req.character?.id,
+        system_prompt: req.systemPrompt,
+        user_message: req.userMessage,
+        output: text,
+        input_tokens: usage?.inputTokens,
+        output_tokens: usage?.outputTokens,
+        total_tokens: usage?.totalTokens,
+      });
+
       return {
         text,
         meta: { provider: 'bedrock', modelId, region, usage },
       };
     } catch (err) {
       span.recordException(err as Error);
+      // Also record errored calls in the trace log.
+      void writeLlmTraceEntry({
+        at: new Date(startedAt).toISOString(),
+        duration_ms: Date.now() - startedAt,
+        model_id: modelId,
+        region,
+        path: process.env.BEDROCK_USE_SDK === '1' ? 'sdk' : 'fetch',
+        zone: req.zoneHint,
+        post_type: req.postTypeHint,
+        character_id: req.character?.id,
+        system_prompt: req.systemPrompt,
+        user_message: req.userMessage,
+        output: '',
+        error: err instanceof Error ? err.message : String(err),
+      });
       throw err;
     } finally {
       span.end();
