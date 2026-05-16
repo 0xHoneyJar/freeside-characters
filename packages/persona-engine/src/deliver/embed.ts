@@ -227,29 +227,63 @@ function maxFactorsHint(): number {
  * `+N` is `delta_count`; `rank-XX` is the magnitude percentile rank
  * (omitted when null). Pure function.
  */
+/**
+ * Render a single top-factor row in code-block table form (UX r4 ·
+ * 2026-05-16 · operator: emojis sacrificed for monospace alignment).
+ * Returns column-padded tuple suitable for joining with `\n` inside a
+ * ```code block``` field value.
+ */
 function renderTopFactorRow(
   factor: PulseDimensionFactor,
-  moodEmoji?: (stats: FactorStats | undefined) => string | null,
+  _moodEmoji?: (stats: FactorStats | undefined) => string | null,
 ): string {
-  const emoji = moodEmoji?.(factor.factor_stats);
-  const prefix = emoji ? `${emoji} ` : '';
-  // UX nit 2026-05-16: negative delta_count used to render `+-12` (the
-  // unconditional `+` prefix doubled with `-`). Sign-aware formatting:
-  //   delta_count > 0 → "+N"
-  //   delta_count < 0 → "-N"  (the minus IS the sign · no `+` prefix)
-  //   delta_count == 0 → "±0" (rare · zero-delta on top-factor implies
-  //                            same volume as previous · unusual but real)
-  const dc = factor.delta_count;
-  const delta = dc > 0 ? `+${dc}` : dc < 0 ? `${dc}` : '±0';
-  const rank =
-    factor.factor_stats?.magnitude?.current_percentile_rank !== undefined &&
-    factor.factor_stats?.magnitude?.current_percentile_rank !== null
-      ? ` rank-${factor.factor_stats.magnitude.current_percentile_rank}`
-      : '';
-  // sanitize display_name to defend against underscore-italicize bug
-  // (Discord-as-Material rule per `sanitize.ts:7`).
+  // Discord-as-material sanitize (underscore italicize defense)
   const safeName = sanitizeForDiscord(factor.display_name);
-  return `${prefix}${safeName} ${delta}${rank}`;
+  const N = String(factor.total);
+  const W = factor.factor_stats?.cohort?.unique_actors;
+  const wallets = W !== undefined && W !== null ? String(W) : '?';
+
+  const dp = factor.delta_pct;
+  let delta = '·';
+  if (dp !== null && dp !== undefined) {
+    if (Math.abs(dp) < 1) {
+      delta = 'steady';
+    } else {
+      const rounded = Math.round(dp);
+      delta = rounded > 0 ? `+${rounded}%` : `${rounded}%`;
+    }
+  }
+
+  const rank = factor.factor_stats?.magnitude?.current_percentile_rank;
+  const rankStr = rank !== null && rank !== undefined ? String(rank) : '·';
+
+  // Column widths: factor=18 · events=6 · wallets=8 · delta=7 · rank=4
+  // Tuned for typical factor name lengths; truncate over-long names with
+  // an ellipsis to keep the table aligned.
+  const TRUNC = 18;
+  const nameCol = safeName.length > TRUNC ? safeName.slice(0, TRUNC - 1) + '…' : safeName;
+  return [
+    nameCol.padEnd(TRUNC, ' '),
+    N.padStart(6, ' '),
+    wallets.padStart(8, ' '),
+    delta.padStart(7, ' '),
+    rankStr.padStart(4, ' '),
+  ].join(' ');
+}
+
+/**
+ * Code-block table header row. Pinned to the column widths in
+ * renderTopFactorRow. Returns the header string that goes ABOVE the
+ * factor rows inside the ```fenced``` block.
+ */
+function renderTopFactorHeader(): string {
+  return [
+    'factor'.padEnd(18, ' '),
+    'events'.padStart(6, ' '),
+    'wallets'.padStart(8, ' '),
+    'delta'.padStart(7, ' '),
+    'rank'.padStart(4, ' '),
+  ].join(' ');
 }
 
 /**
@@ -268,16 +302,18 @@ function renderColdFactorRow(
 
 /**
  * Pack rows into a field value, respecting the 1024-char per-field cap
- * (PRD FR-1 truncation policy · SDD T2.1.5 dynamic algorithm) AND the
- * soft `LEADERBOARD_MAX_FACTORS` cap. Stops appending when EITHER the
- * next row would breach the cap OR the soft hint is reached; emits
- * `…and N more silent` with the count of skipped rows from the FULL
- * available set (not just sliced-to-hint).
+ * AND the soft `LEADERBOARD_MAX_FACTORS` cap.
  *
- * `totalAvailable` is the count of rows the caller originally had
- * before any soft-cap slicing; allows the overflow token to correctly
- * account for both char-truncation drops AND soft-cap drops.
+ * UX nit 2026-05-16 r3 (operator): rows are joined with NEWLINES, not
+ * ` · `, so each row reads as a discrete table line. Operator showed
+ * the cramped form ("Articles · 2 by 2 · -86% · rank-35 · Sets · ...")
+ * was unreadable; per-line rendering is the table form.
+ *
+ * Within a row, ` · ` separators still join the column data — that's the
+ * caller's responsibility (renderTopFactorRow / renderColdFactorRow).
  */
+const ROW_JOIN = '\n';
+
 function packRowsIntoField(
   rows: readonly string[],
   totalAvailable: number,
@@ -287,15 +323,15 @@ function packRowsIntoField(
   let packed = 0;
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
-    const sep = acc.length > 0 ? ROW_SEPARATOR : '';
+    const sep = acc.length > 0 ? ROW_JOIN : '';
     const remaining = totalAvailable - packed - 1;
     const overflowSlot =
-      remaining > 0 ? ROW_SEPARATOR + OVERFLOW_TOKEN.replace('N', String(remaining)) : '';
+      remaining > 0 ? ROW_JOIN + OVERFLOW_TOKEN.replace('N', String(remaining)) : '';
     const projected = acc.length + sep.length + row.length + overflowSlot.length;
     if (projected > EMBED_FIELD_CHAR_CAP) {
       const skipped = totalAvailable - packed;
       const token = OVERFLOW_TOKEN.replace('N', String(skipped));
-      const closer = acc.length > 0 ? ROW_SEPARATOR + token : token;
+      const closer = acc.length > 0 ? ROW_JOIN + token : token;
       return { value: acc + closer, packed, skipped };
     }
     acc += sep + row;
@@ -303,18 +339,16 @@ function packRowsIntoField(
   }
   const skipped = totalAvailable - packed;
   if (skipped > 0) {
-    // Soft-cap dropped rows even though the chars fit. Append overflow token.
     const token = OVERFLOW_TOKEN.replace('N', String(skipped));
-    const closer = acc.length > 0 ? ROW_SEPARATOR + token : token;
-    // Re-check against cap after appending (rare; only triggers when soft-cap
-    // bites first and overflow token itself pushes over 1024 — falls into
-    // the per-row check above next iteration, but on the closure-append we
-    // do a defensive truncate if needed)
+    const closer = acc.length > 0 ? ROW_JOIN + token : token;
     if ((acc + closer).length > EMBED_FIELD_CHAR_CAP) {
-      // Drop the last packed row to make space for the closer
-      const lastSepIdx = acc.lastIndexOf(ROW_SEPARATOR);
+      const lastSepIdx = acc.lastIndexOf(ROW_JOIN);
       if (lastSepIdx > 0) acc = acc.slice(0, lastSepIdx);
-      return { value: acc + ROW_SEPARATOR + OVERFLOW_TOKEN.replace('N', String(skipped + 1)), packed: packed - 1, skipped: skipped + 1 };
+      return {
+        value: acc + ROW_JOIN + OVERFLOW_TOKEN.replace('N', String(skipped + 1)),
+        packed: packed - 1,
+        skipped: skipped + 1,
+      };
     }
     return { value: acc + closer, packed, skipped };
   }
@@ -328,8 +362,55 @@ export interface BuildPulseDimensionPayloadOpts {
   proseGate?: ProseGateValidation;
   /** Optional 1-line LLM-composed header (FR-1 voice seasoning). */
   header?: string;
-  /** Optional 1-line LLM-composed outro (FR-1 voice seasoning). */
+  /** Optional 1-line LLM-composed outro (FR-1 voice seasoning · UX nit
+   *  2026-05-16: operator option A — single-sentence voice. when only
+   *  `header` is provided and `outro` is absent, voice is one sentence). */
   outro?: string;
+  /** Optional dim-level snapshot — when provided, prepends a headline
+   *  field showing the dashboard-equivalent summary line (events, active
+   *  wallets, w/w delta, cold-factor count). UX nit 2026-05-16. */
+  snapshot?: {
+    /** Total active wallets across the dimension's top factors. */
+    weeklyActiveWallets?: number;
+    /** Cold factor count (zero-row factors in dim). */
+    coldFactorCount?: number;
+  };
+}
+
+/**
+ * Build the snapshot as a code-block table (UX r4 · 2026-05-16 ·
+ * operator: clear left-label / right-value form, monospace alignment).
+ * Returns ONE field with a fenced code block as its value.
+ */
+function buildSnapshotField(
+  dim: PulseDimensionBreakdown,
+  snapshot: BuildPulseDimensionPayloadOpts['snapshot'],
+  windowDays: number,
+): { name: string; value: string; inline?: boolean } {
+  const rows: string[] = [];
+  rows.push(`events    ${String(dim.total_events).padStart(8, ' ')} / ${windowDays}d`);
+  if (snapshot?.weeklyActiveWallets !== undefined) {
+    rows.push(`wallets   ${String(snapshot.weeklyActiveWallets).padStart(8, ' ')} active`);
+  }
+  if (dim.delta_pct !== null && dim.delta_pct !== undefined) {
+    let v: string;
+    if (Math.abs(dim.delta_pct) < 1) {
+      v = 'steady';
+    } else {
+      const r = Math.round(dim.delta_pct);
+      v = r > 0 ? `+${r}%` : `${r}%`;
+    }
+    rows.push(`w/w       ${v.padStart(8, ' ')}`);
+  }
+  const k = snapshot?.coldFactorCount ?? dim.cold_factors.length;
+  if (k > 0) {
+    rows.push(`cold      ${String(k).padStart(8, ' ')} factors`);
+  }
+  return {
+    name: `${windowDays}d snapshot`,
+    value: '```\n' + rows.join('\n') + '\n```',
+    inline: false,
+  };
 }
 
 /**
@@ -353,31 +434,32 @@ export function buildPulseDimensionPayload(
   const topRaw = dim.top_factors.slice(0, hint); // soft hint; dynamic algorithm refines
   const coldRaw = dim.cold_factors.slice(0, hint);
 
+  // Top factors: code-block table (UX r4 · monospace alignment · no emoji).
+  // Cold factors: flat ` · ` joined tag line (just labels · not data rows).
   const topRows = topRaw.map((f) => renderTopFactorRow(f, opts.moodEmoji));
   const coldRows = coldRaw.map((f) => renderColdFactorRow(f, opts.moodEmoji));
 
-  // totalAvailable is the caller's full count (before soft-cap slice), so
-  // the overflow token accounts for BOTH char-trunc and soft-cap drops.
   const topPacked = packRowsIntoField(topRows, dim.top_factors.length);
-  const coldPacked = packRowsIntoField(coldRows, dim.cold_factors.length);
+  const coldValue =
+    coldRows.length === 0
+      ? ''
+      : coldRows.slice(0, Math.min(coldRows.length, 30)).join(' · ');
 
   // Trim 6000-char total cap: cold first, then top
   const fixedChars =
     (opts.header?.length ?? 0) +
     (opts.outro?.length ?? 0) +
-    'top'.length +
+    `top this ${windowDays}d`.length +
     'cold'.length;
-  let totalProjected = fixedChars + topPacked.value.length + coldPacked.value.length;
-  let coldValue = coldPacked.value;
+  let coldFieldValue = coldValue;
   let topValue = topPacked.value;
+  let totalProjected = fixedChars + topValue.length + coldFieldValue.length;
   if (totalProjected > EMBED_TOTAL_CHAR_CAP) {
-    // Drop cold field entirely first
-    coldValue = '';
+    coldFieldValue = '';
     totalProjected = fixedChars + topValue.length;
     if (totalProjected > EMBED_TOTAL_CHAR_CAP) {
-      // Then truncate top to fit (rare — would need extraordinarily long names)
-      const budget = EMBED_TOTAL_CHAR_CAP - fixedChars - ROW_SEPARATOR.length - OVERFLOW_TOKEN.length;
-      topValue = topValue.slice(0, Math.max(0, budget)) + ROW_SEPARATOR + OVERFLOW_TOKEN.replace('N', '?');
+      const budget = EMBED_TOTAL_CHAR_CAP - fixedChars - ROW_JOIN.length - OVERFLOW_TOKEN.length;
+      topValue = topValue.slice(0, Math.max(0, budget)) + ROW_JOIN + OVERFLOW_TOKEN.replace('N', '?');
     }
   }
 
@@ -386,38 +468,51 @@ export function buildPulseDimensionPayload(
   const fallback = `${flavor.emoji} ${flavor.name}${dimensionParen}`;
 
   const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
+
+  // UX r4 (operator 2026-05-16): snapshot as a code-block table · clean
+  // left-label / right-value form with monospace alignment.
+  if (dim.total_events > 0 || dim.top_factors.length > 0) {
+    fields.push(buildSnapshotField(dim, opts.snapshot, windowDays));
+  }
+
+  // Top factors: code-block table with header row + per-factor rows.
   if (topValue.length > 0) {
-    fields.push({ name: 'top', value: topValue });
+    const tableBlock =
+      '```\n' + renderTopFactorHeader() + '\n' + topValue + '\n```';
+    fields.push({
+      name: `top this ${windowDays}d`,
+      value: tableBlock,
+      inline: false,
+    });
   }
-  if (coldValue.length > 0) {
-    fields.push({ name: 'cold', value: coldValue });
+  if (coldFieldValue.length > 0) {
+    // Cold-factor names: flat ` · ` tag-line (they're just labels, not data rows).
+    fields.push({ name: 'cold', value: coldFieldValue, inline: false });
   }
 
-  // Header + outro flank the field block. Voice is the seasoning; card body is the meal.
-  // Voice surface gets full sanitize (em-dashes, asterisk roleplay, etc.) per
-  // sanitize.ts §2 stripVoiceDisciplineDrift + Discord underscore escape.
-  const descParts: string[] = [];
-  if (opts.header) descParts.push(sanitizeForDiscord(opts.header, { isVoice: true }));
-  if (opts.outro) descParts.push(sanitizeForDiscord(opts.outro, { isVoice: true }));
-  const description = descParts.length > 0 ? descParts.join('\n') : undefined;
+  // UX r4 doctrine (operator 2026-05-16): "divs are truth areas straight from
+  // the substrate · ruggy SHOULD NOT talk inside the UI div. if we do have him
+  // talk it should be outside of divs." The embed.description used to carry
+  // voice — wrong. Voice now lives in message.content (above the embed),
+  // joined to the zone-flavor fallback line. The embed has NO description ·
+  // it's pure substrate.
+  const voiceHeader = opts.header ? sanitizeForDiscord(opts.header, { isVoice: true }) : '';
+  const voiceOutro = opts.outro ? sanitizeForDiscord(opts.outro, { isVoice: true }) : '';
+  const voiceText = [voiceHeader, voiceOutro].filter((s) => s.length > 0).join('\n');
+  const content = voiceText ? `${fallback}\n${voiceText}` : fallback;
 
-  // Trim decisions (regression-guarded): NO footer, NO was-N, NO diversity-chip,
-  // NO field-name suffixes (fields are "top" and "cold" — bare). Dimension name
-  // lives in the fallback content line, not in the field name.
   const embed: DiscordEmbed = {
     color: ZONE_COLORS[zone],
-    ...(description ? { description } : {}),
+    // NO description · per voice-outside-divs doctrine
     ...(fields.length > 0 ? { fields } : {}),
   };
 
   // proseGate option is accepted but does NOT modify text (V1 telemetry-only contract).
-  // void-ref to satisfy strict unused-param check while documenting the V1 contract.
   void opts.proseGate;
-  // window arg is accepted for API symmetry / future cycles · NOT rendered (no field-suffix).
-  void windowDays;
+  // window arg already used above for field naming / snapshot rendering.
 
   return {
-    content: fallback,
+    content,
     embeds: [embed],
   };
 }

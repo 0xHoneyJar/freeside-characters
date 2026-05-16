@@ -65,6 +65,8 @@ export interface ComposeDigestArgs {
   draft: string;
   /** Optional override tracer (tests pass OtelTest's tracer). */
   tracer?: Tracer;
+  /** Optional dim-level snapshot data for the headline row (UX nit 2026-05-16 · dashboard parity). */
+  snapshot?: { weeklyActiveWallets?: number; coldFactorCount?: number };
 }
 
 export interface ComposeDigestResult {
@@ -181,6 +183,7 @@ export function composeDigestForZone(args: ComposeDigestArgs): ComposeDigestResu
               proseGate: validation,
               ...(voiceOn && args.voice.header ? { header: args.voice.header } : {}),
               ...(voiceOn && args.voice.outro ? { outro: args.voice.outro } : {}),
+              ...(args.snapshot ? { snapshot: args.snapshot } : {}),
             });
           },
         );
@@ -248,33 +251,46 @@ function buildLayoutArgs(args: ComposeDigestArgs): SelectLayoutShapeArgs {
 }
 
 /**
- * Shape-A renderer: minimal payload with no card body. Voice surface
- * (header/outro) is the entire post. V1 lands the simple form; the
- * silence-register module (`expression/silence-register.ts`) is the
- * V1.5 wire-point for richer "italicized stage direction" rendering.
+ * Shape-A renderer.
  *
- * UX nit 2026-05-16: previous version emitted `[bear-cave] quiet week`
- * as the content fallback — engineering jargon, broke ruggy's voice
- * illusion. Now uses the zone flavor (emoji + name) so users-with-embeds-
- * disabled still see in-character content. The dimension paren is
- * suppressed for stonehenge (cross-dim hub · self-evident).
+ * UX nit 2026-05-16 r2 (operator-asked depth): shape A used to be voice-
+ * only. operator pointed out the dashboard's dimension page shows the
+ * full breakdown even when no factor is "hot" — the data IS the body,
+ * voice is the seasoning. So now shape A ALSO routes through
+ * `buildPulseDimensionPayload` to surface the factor list + 30d snapshot
+ * row. Voice stays outside the embed via `message.content`; the embed is
+ * substrate truth only.
+ *
+ * If the dim is genuinely empty (no factors AND zero events), we fall
+ * back to the voice-only form because there's nothing to render.
  */
 function buildShapeAPayload(args: ComposeDigestArgs): DigestPayload {
   const flavor = ZONE_FLAVOR[args.zone];
-  const dimensionParen =
-    flavor.dimension === 'overall' ? '' : ` (${DIMENSION_NAME[flavor.dimension]})`;
-  const fallback = `${flavor.emoji} ${flavor.name}${dimensionParen}`;
-  const descParts: string[] = [];
-  if (args.voice.header) descParts.push(args.voice.header);
-  if (args.voice.outro) descParts.push(args.voice.outro);
-  return {
-    content: fallback,
-    embeds: [
-      {
-        ...(descParts.length > 0 ? { description: descParts.join('\n') } : {}),
-      },
-    ],
-  };
+  const dim = args.dimension;
+  const isGenuinelyEmpty =
+    dim.top_factors.length === 0 && dim.cold_factors.length === 0 && dim.total_events === 0;
+
+  if (isGenuinelyEmpty) {
+    const descParts: string[] = [];
+    if (args.voice.header) descParts.push(args.voice.header);
+    if (args.voice.outro) descParts.push(args.voice.outro);
+    const dimensionParen =
+      flavor.dimension === 'overall' ? '' : ` (${DIMENSION_NAME[flavor.dimension]})`;
+    const fallback = `${flavor.emoji} ${flavor.name}${dimensionParen}`;
+    const content = descParts.length > 0 ? `${fallback}\n${descParts.join('\n')}` : fallback;
+    return {
+      content,
+      embeds: [{}],
+    };
+  }
+
+  // Data-rich shape A: render the breakdown, keep voice as seasoning.
+  return buildPulseDimensionPayload(dim, args.zone, 30, {
+    moodEmoji: moodEmojiForFactor,
+    ...(args.voice.header ? { header: args.voice.header } : {}),
+    ...(args.voice.outro ? { outro: args.voice.outro } : {}),
+    ...(args.snapshot ? { snapshot: args.snapshot } : {}),
+  });
 }
 
 /**

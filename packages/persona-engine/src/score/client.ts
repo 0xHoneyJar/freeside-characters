@@ -18,7 +18,16 @@
  */
 
 import type { Config } from '../config.ts';
-import type { ZoneDigest, ZoneId, RawStats, NarrativeShape } from './types.ts';
+import type {
+  GetDimensionBreakdownResponse,
+  GetRecentEventsResponse,
+  PulseDimension,
+  PulseDimensionBreakdown,
+  ZoneDigest,
+  ZoneId,
+  RawStats,
+  NarrativeShape,
+} from './types.ts';
 import { ZONE_TO_DIMENSION } from './types.ts';
 
 interface McpInitResult {
@@ -167,6 +176,69 @@ export async function fetchZoneDigest(config: Config, zone: ZoneId): Promise<Zon
   );
 }
 
+export async function fetchDimensionBreakdown(
+  config: Config,
+  dimension?: PulseDimension,
+  window: 30 = 30,
+): Promise<GetDimensionBreakdownResponse> {
+  if (config.STUB_MODE && !config.MCP_KEY) {
+    const dimensions = dimension
+      ? [generateStubDimensionBreakdown(dimension)]
+      : (['og', 'nft', 'onchain'] as const).map((dim) => generateStubDimensionBreakdown(dim));
+    return {
+      dimensions,
+      schema_version: '1.1.0',
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (!config.MCP_KEY) {
+    throw new Error('MCP_KEY required for live score-mcp; or set STUB_MODE=true for synthetic data');
+  }
+
+  const url = `${config.SCORE_API_URL}/mcp`;
+  const bearer = config.SCORE_BEARER;
+  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer);
+  return mcpToolCall<GetDimensionBreakdownResponse>(
+    url,
+    config.MCP_KEY,
+    sessionId,
+    'get_dimension_breakdown',
+    { window, ...(dimension ? { dimension } : {}) },
+    bearer,
+  );
+}
+
+export async function fetchRecentEvents(
+  config: Config,
+  limit = 10,
+): Promise<GetRecentEventsResponse> {
+  if (config.STUB_MODE && !config.MCP_KEY) {
+    return {
+      events: [],
+      by_factor: [],
+      schema_version: '1.1.0',
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (!config.MCP_KEY) {
+    throw new Error('MCP_KEY required for live score-mcp; or set STUB_MODE=true for synthetic data');
+  }
+
+  const url = `${config.SCORE_API_URL}/mcp`;
+  const bearer = config.SCORE_BEARER;
+  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer);
+  return mcpToolCall<GetRecentEventsResponse>(
+    url,
+    config.MCP_KEY,
+    sessionId,
+    'get_recent_events',
+    { limit },
+    bearer,
+  );
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // Stub generator — synthetic ZoneDigest matching zerker's schema
 // (kept for STUB_MODE=true testing; not used when MCP_KEY is set)
@@ -287,6 +359,117 @@ export function generateStubZoneDigest(zone: ZoneId): ZoneDigest {
       ? null
       : 'Score-analyst narrative pipeline returned partial data this window.',
     raw_stats: rawStats,
+  };
+}
+
+export function generateStubDimensionBreakdown(dimension: PulseDimension): PulseDimensionBreakdown {
+  const now = Date.now();
+  const labels = {
+    og: 'OG',
+    nft: 'NFT',
+    onchain: 'Onchain',
+  } as const;
+  const factorIds = {
+    og: ['og:sets', 'og:articles', 'og:cubquests'],
+    nft: ['nft:mibera', 'nft:honeycomb', 'nft:fractures'],
+    onchain: ['onchain:lp_provide', 'onchain:liquid_backing', 'onchain:staking'],
+  } as const;
+  const topFactors = factorIds[dimension].map((factorId, i) => {
+    const total = Math.max(1, 14 - i * 4);
+    const previous = Math.max(1, 10 - i * 2);
+    return {
+      factor_id: factorId,
+      display_name: factorId.split(':')[1]!.replace(/_/g, ' '),
+      primary_action: null,
+      total,
+      previous,
+      delta_pct: ((total - previous) / previous) * 100,
+      delta_count: total - previous,
+      factor_stats: stubFactorStats(total, 5 + i, 70 + i * 10, now),
+    };
+  });
+  const previous = topFactors.reduce((sum, factor) => sum + factor.previous, 0);
+  const total = topFactors.reduce((sum, factor) => sum + factor.total, 0);
+  return {
+    id: dimension,
+    display_name: labels[dimension],
+    total_events: total,
+    previous_period_events: previous,
+    delta_pct: previous === 0 ? null : ((total - previous) / previous) * 100,
+    delta_count: total - previous,
+    inactive_factor_count: 2,
+    total_factor_count: topFactors.length + 2,
+    top_factors: topFactors,
+    cold_factors: [
+      {
+        factor_id: `${dimension}:quiet_corner`,
+        display_name: 'quiet corner',
+        primary_action: null,
+        total: 0,
+        previous: 0,
+        delta_pct: null,
+        delta_count: 0,
+      },
+      {
+        factor_id: `${dimension}:sleeping_bees`,
+        display_name: 'sleeping bees',
+        primary_action: null,
+        total: 0,
+        previous: 0,
+        delta_pct: null,
+        delta_count: 0,
+      },
+    ],
+  };
+}
+
+function stubFactorStats(
+  eventCount: number,
+  uniqueActors: number,
+  rank: number,
+  now: number,
+): NonNullable<PulseDimensionBreakdown['top_factors'][number]['factor_stats']> {
+  const percentile = { value: eventCount, reliable: true };
+  return {
+    history: {
+      active_days: 90,
+      last_active_date: new Date(now).toISOString().slice(0, 10),
+      stale: false,
+      no_data: false,
+      sufficiency: { p50: true, p90: true, p99: true },
+    },
+    occurrence: { active_day_frequency: 0.4, current_is_active: true },
+    magnitude: {
+      event_count: eventCount,
+      percentiles: {
+        p10: percentile,
+        p25: percentile,
+        p50: percentile,
+        p75: percentile,
+        p90: percentile,
+        p95: percentile,
+        p99: percentile,
+      },
+      current_percentile_rank: rank,
+    },
+    cohort: {
+      unique_actors: uniqueActors,
+      percentiles: {
+        p10: { value: 1, reliable: true },
+        p25: { value: 2, reliable: true },
+        p50: { value: 3, reliable: true },
+        p75: { value: 5, reliable: true },
+        p90: { value: 8, reliable: true },
+        p95: { value: 13, reliable: true },
+        p99: { value: 21, reliable: true },
+      },
+      current_percentile_rank: 70,
+    },
+    cadence: {
+      days_since_last_active: 0,
+      median_active_day_gap_days: 2,
+      current_gap_percentile_rank: 40,
+    },
   };
 }
 

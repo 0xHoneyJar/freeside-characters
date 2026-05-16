@@ -48,8 +48,12 @@ describe('buildVoiceBrief · shape A (all-quiet · the dominant case)', () => {
     expect(brief.system).toContain('you are ruggy');
     expect(brief.system).toContain('bear-cave');
     expect(brief.system).toContain('lowercase');
-    expect(brief.system).toContain('no em-dashes');
-    expect(brief.system).toContain('no corporate-bot tells');
+    // Per operator doctrine 2026-05-16: negation rules removed from prompt.
+    // (mentioning artifacts in the prompt teaches the LLM they're in scope.)
+    // The substrate's sanitize.ts::stripVoiceDisciplineDrift is the regex
+    // backstop. Prompt stays positive — assert the voice-shape we DO want.
+    expect(brief.system).toContain('warm and grounded');
+    expect(brief.system).toContain('character first');
   });
 
   test('shape-A user prompt names the quiet + provides previous-period context', () => {

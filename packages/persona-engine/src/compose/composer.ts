@@ -26,14 +26,11 @@ import { enforceCanonicalHeadline } from './headline-lock.ts';
 import { translateEmojiShortcodes } from './reply.ts';
 import { buildPromptPair } from '../persona/loader.ts';
 import { buildPostPayload, type DigestPayload } from '../deliver/embed.ts';
+import { composeDigestPost } from '../orchestrator/digest-orchestrator.ts';
 import {
   POST_TYPE_SPECS,
   type PostType,
 } from './post-types.ts';
-import {
-  isFlatWindow,
-  pickSilenceTemplate,
-} from '../expression/silence-register.ts';
 
 export interface PostComposeResult {
   zone: ZoneId;
@@ -64,6 +61,10 @@ export async function composeZonePost(
   postType: PostType = 'digest',
   opts: ComposeZonePostOpts = {},
 ): Promise<PostComposeResult | null> {
+  if (postType === 'digest') {
+    return composeDigestPost(config, character, zone);
+  }
+
   // Fetch a digest in parallel with the LLM call — the LLM gets its own
   // copy via mcp__score__get_zone_digest; this one is for embed metadata
   // (color, footer timestamp, structured payload). Cheap; same MCP call.
@@ -96,30 +97,9 @@ export async function composeZonePost(
     }),
   ]);
 
-  // Performed-silence override: only the digest post-type qualifies (pop-
-  // ins, weavers, lore_drops, questions, callouts have their own
-  // register-locked emptiness handling). Skip when the LLM produced
-  // nothing — empty rawVoice routes through the existing chunk-empty
-  // guard downstream. Skip when the character has no silence template —
-  // fall through to the LLM voice rather than emit a substrate-quiet
-  // fallback that has no register.
-  let voice: string;
-  if (postType === 'digest' && isFlatWindow(digest.raw_stats)) {
-    const silence = pickSilenceTemplate(character.id);
-    if (silence) {
-      console.log(
-        `${character.id}: flat-window detected on ${zone}/digest ` +
-          `(events=${digest.raw_stats.window_event_count ?? 0}) · ` +
-          `routing to silence-register (skipped LLM elaboration)`,
-      );
-      voice = silence;
-    } else {
-      // No silence template — fall through to LLM voice as today.
-      voice = applyHeadlineLock(rawVoice, zone, postType, character.id);
-    }
-  } else {
-    voice = applyHeadlineLock(rawVoice, zone, postType, character.id);
-  }
+  // Digest now routes through orchestrator/digest-orchestrator.ts above.
+  // Non-digest surfaces keep the legacy full-voice path.
+  let voice = applyHeadlineLock(rawVoice, zone, postType, character.id);
 
   // V0.12.0 emoji-rendering fix (2026-05-13): the digest path historically
   // bypassed `translateEmojiShortcodes`, which was only applied in the
