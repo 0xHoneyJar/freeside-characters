@@ -53,7 +53,8 @@ Reactivate `packages/persona-engine/src/deliver/embed.ts::buildPulseDimensionPay
 Per zone:
 
 1. `digest` cron fires (existing path, no cron-shape change)
-2. Fetch `get_dimension_breakdown(window: 7, dimension: <zone>)` for dim-channels; `get_community_counts(window: 7) + get_most_active_wallets(7, 5)` for stonehenge
+2. Fetch `get_dimension_breakdown(window: 30, dimension: <zone>)` for dim-channels; `get_community_counts(window: 7) + get_most_active_wallets(7, 5)` for stonehenge
+   - **r4 amendment** (2026-05-16, post-S0): dim-channel window bumped from 7 → 30 after S0 spike surfaced empty `top_factors[]` at window=7 across og/nft/onchain in current activity volume. Stonehenge stays at window=7 because community counts + most-active-wallets are not gap-affected and the 7d cadence preserves the weekly community-pulse narrative. Valid windows are `{7, 30, 90}` only (Zod literal-union; spike pinned).
 3. Schema-validate response is `schema_version: '1.0.0' | '1.1.0'`; `factor_stats` populated for live factors
 4. Run draft through prose-gate (FR-2); collect telemetry; text unchanged in V1
 5. Compose payload: deterministic card BODY + voice seasoning (header + per-row mood emoji + outro)
@@ -343,3 +344,19 @@ The full r0 design — Effect-Layer in-band gate, regenerate, silence-register f
 - issue #79 (CLOSED · OTEL DX folded into FR-6)
 - construct-effect-substrate doctrine: ECS ≡ Effect ≡ Hexagonal isomorphism · four-folder pattern · hand-port-with-drift · doc-only-then-runtime · single-effect-provide-site
 - Effect.Tracer reference: https://effect.website/docs/observability/tracing/
+
+## Amendment History
+
+### r4 — 2026-05-16 · post-S0-spike window:7 → window:30 (dim-channels only)
+
+- **Trigger**: cycle-005 S0 calibration spike (sprint-6) fired against live `score-api-production.up.railway.app/mcp` and surfaced that `get_dimension_breakdown(window: 7, ...)` returns `top_factors: []` AND `cold_factors: []` for ALL three dim-channel zones (og · nft · onchain) in current production activity volume. Probe at `window: 30` returned populated factors with full `factor_stats` envelopes matching SDD §1 byte-for-byte.
+- **Decision** (operator-routed pair-point per cycle-pattern phase-2): option **(A) amend to window:30**. Surgical scope: dim-channels only; stonehenge community-counts stays at window:7 because (a) `get_community_counts(window: 7)` returns useful data (35 active members + meaningful previous-period deltas confirmed in spike) and (b) the weekly community-pulse narrative is preserved for the cross-dim hub zone.
+- **Scope of change**: PRD §FR-1 step 2 only. SDD inherits implicitly (no embedded window literal). sprint.md S0 task description unchanged (spike already fired with both windows probed).
+- **Valid windows pinned** (S0 spike discovery): substrate accepts `window ∈ {7, 30, 90}` only — Zod literal-union; values 1 and 14 reject with MCP error -32602 `invalid_literal`. S5 E2E canary tests must use a value in the allowed set.
+- **Evidence**: `grimoires/loa/cycles/cycle-005-ruggy-leaderboard/S0-COMPLETED.md` + `grimoires/loa/a2a/sprint-6/reviewer.md` + 2026-05-16 NOTES.md entry.
+- **Downstream implications**:
+  - FR-1 leaderboard body renders against 30-day activity surface (not 7-day) — the "weekly digest" framing now means "weekly cadence, monthly data window"
+  - FR-2 prose-gate mechanical checks operate against window=30 `factor_stats` percentiles (same shape; different sample size — generally more statistical confidence at 30d)
+  - FR-3 mood-emoji rules operate against window=30 `factor_stats` thresholds (90th/95th rank thresholds in moodEmojiForFactor remain unchanged)
+  - FR-4 layout shape selector still triggers Shape A when permitted_claims is empty per zone — empty at window=30 means an actually-quiet zone, not a too-narrow-window artifact
+  - FR-6 OTEL spans capture the actual window arg as a span attribute for telemetry correlation
