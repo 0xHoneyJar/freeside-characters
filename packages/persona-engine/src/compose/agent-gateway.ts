@@ -42,6 +42,7 @@
 
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
+import { getTracer } from '../observability/otel-layer.ts';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
 import { ZONE_FLAVOR } from '../score/types.ts';
 import { generateStubZoneDigest } from '../score/client.ts';
@@ -193,70 +194,76 @@ async function invokeBedrockPlaceholder(config: Config, req: InvokeRequest): Pro
   const encodedModelId = encodeURIComponent(modelId);
   const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodedModelId}/converse`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      system: [
-        {
-          text: req.systemPrompt,
+  // cycle-006 follow-up · OTEL span around the Bedrock REST call so it
+  // shows up in any OTLP-compatible viewer (Raindrop Workshop · Honeycomb ·
+  // Grafana Cloud). The actual LLM call shape is captured: model_id, region,
+  // input/output preview, token counts. Set OTEL_EXPORTER_OTLP_ENDPOINT to
+  // route spans (default localhost:5899/v1/traces for Workshop).
+  const tracer = getTracer();
+  return tracer.startActiveSpan('bedrock.converse', async (span) => {
+    try {
+      span.setAttribute('llm.provider', 'bedrock');
+      span.setAttribute('llm.model_id', modelId);
+      span.setAttribute('llm.region', region);
+      span.setAttribute('llm.system_prompt_preview', req.systemPrompt.slice(0, 500));
+      span.setAttribute('llm.user_message_preview', req.userMessage.slice(0, 500));
+      if (req.zoneHint) span.setAttribute('zone.id', req.zoneHint);
+      if (req.postTypeHint) span.setAttribute('post.type', req.postTypeHint);
+      if (req.character?.id) span.setAttribute('character.id', req.character.id);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
         },
-      ],
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              text: req.userMessage,
-            },
+        body: JSON.stringify({
+          system: [{ text: req.systemPrompt }],
+          messages: [
+            { role: 'user', content: [{ text: req.userMessage }] },
           ],
-        },
-      ],
-      inferenceConfig: {
-        maxTokens: 1024,
-      },
-    }),
-  });
+          inferenceConfig: { maxTokens: 1024 },
+        }),
+      });
 
-  if (!response.ok) {
-    throw new Error(`bedrock converse error: ${response.status} ${await response.text()}`);
-  }
+      if (!response.ok) {
+        const errBody = await response.text();
+        span.setAttribute('error.status_code', response.status);
+        span.setAttribute('error.body_preview', errBody.slice(0, 500));
+        throw new Error(`bedrock converse error: ${response.status} ${errBody}`);
+      }
 
-  const data = (await response.json()) as {
-    output?: {
-      message?: {
-        content?: Array<{ text?: string }>;
+      const data = (await response.json()) as {
+        output?: { message?: { content?: Array<{ text?: string }> } };
+        usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
       };
-    };
-    usage?: {
-      inputTokens?: number;
-      outputTokens?: number;
-      totalTokens?: number;
-    };
-  };
 
-  const text = data.output?.message?.content
-    ?.map((part) => part.text)
-    .filter(Boolean)
-    .join('\n')
-    .trim();
+      const text = data.output?.message?.content
+        ?.map((part) => part.text)
+        .filter(Boolean)
+        .join('\n')
+        .trim();
 
-  if (!text) {
-    throw new Error(`bedrock converse returned no text: ${JSON.stringify(data)}`);
-  }
+      if (!text) {
+        throw new Error(`bedrock converse returned no text: ${JSON.stringify(data)}`);
+      }
 
-  return {
-    text,
-    meta: {
-      provider: 'bedrock',
-      modelId,
-      region,
-      usage: data.usage,
-    },
-  };
+      span.setAttribute('llm.output_preview', text.slice(0, 500));
+      span.setAttribute('llm.input_tokens', data.usage?.inputTokens ?? 0);
+      span.setAttribute('llm.output_tokens', data.usage?.outputTokens ?? 0);
+      span.setAttribute('llm.total_tokens', data.usage?.totalTokens ?? 0);
+
+      return {
+        text,
+        meta: { provider: 'bedrock', modelId, region, usage: data.usage },
+      };
+    } catch (err) {
+      span.recordException(err as Error);
+      throw err;
+    } finally {
+      span.end();
+    }
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────
