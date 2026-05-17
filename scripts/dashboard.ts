@@ -841,6 +841,13 @@ const HTML = `<!doctype html>
   .pg-payload-detail summary:hover { color: var(--accent); }
   .pg-payload-detail pre { margin: 8px 0 0; font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; color: var(--text); max-height: 320px; overflow-y: auto; }
   .pg-result { display: block; }
+  /* Copy-trace bar · operator paste-to-Loa affordance · 2026-05-17 */
+  .copy-trace-bar { display: flex; align-items: center; gap: 12px; margin: 8px 0 12px; padding: 8px 12px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 4px; }
+  .copy-trace-btn { background: var(--accent); color: var(--bg); border: none; border-radius: 4px; padding: 6px 14px; font: 600 12px -apple-system, sans-serif; cursor: pointer; transition: background 80ms ease-out; }
+  .copy-trace-btn:hover { filter: brightness(1.1); }
+  .copy-trace-btn.ok { background: oklch(70% 0.18 150); }
+  .copy-trace-btn.error { background: oklch(60% 0.22 25); color: var(--text); }
+  .copy-trace-hint { font-size: 11px; color: var(--text-dim); }
   .pg-meta { display: grid; grid-template-columns: 80px 1fr 80px 1fr; gap: 4px 16px; padding: 12px 16px; background: var(--bg-elev); border-radius: 6px; margin-bottom: 12px; font-size: 12px; }
   .pg-meta .k { color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; font-size: 10px; }
   .pg-meta .v { color: var(--text); font-family: var(--mono); }
@@ -937,6 +944,72 @@ function el(tag, props, ...children) {
 
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+// Build a "copy trace" toolbar with a button that copies the row as paste-ready Markdown.
+// Used by both the LLM-calls detail and the playground result panel.
+function buildCopyTraceBar(row) {
+  const bar = el('div', { class: 'copy-trace-bar' });
+  const btn = el('button', { class: 'copy-trace-btn', text: 'copy trace for Loa' });
+  const hint = el('span', { class: 'copy-trace-hint', text: 'paste-ready Markdown · LLM prompt + output + envelope' });
+  btn.addEventListener('click', async () => {
+    const md = formatTraceAsMarkdown(row);
+    try {
+      await navigator.clipboard.writeText(md);
+      btn.textContent = 'copied ✓';
+      btn.classList.add('ok');
+      setTimeout(() => { btn.textContent = 'copy trace for Loa'; btn.classList.remove('ok'); }, 1500);
+    } catch (err) {
+      // Clipboard write may fail without focus or permission. Fall back to alert.
+      btn.textContent = 'copy failed · see console';
+      btn.classList.add('error');
+      console.error('clipboard.writeText failed', err);
+      setTimeout(() => { btn.textContent = 'copy trace for Loa'; btn.classList.remove('error'); }, 2000);
+    }
+  });
+  bar.appendChild(btn);
+  bar.appendChild(hint);
+  return bar;
+}
+
+// Format a single LLM trace row as paste-ready Markdown · operator's primary
+// debug-handoff format · readable to humans AND parse-able by Loa.
+//
+// Implementation note: this function lives inside the outer HTML template
+// literal that defines the dashboard's inline <script>. To avoid nested-
+// template-literal escape hell (each inner backtick + interpolation needs
+// double-escape), we build the output via string concatenation.
+function formatTraceAsMarkdown(r) {
+  // Both newlines and backticks can't appear as literals inside the outer
+  // HTML template literal · construct via char codes to side-step escape-hell.
+  const NL = String.fromCharCode(10);
+  const BT = String.fromCharCode(96);
+  const FENCE = BT + BT + BT;
+  const lines = [];
+  lines.push('**LLM trace** · ' + (r.zone || '?') + ' · ' + (r.post_type || '?') + ' · ' + (r.character_id || '?'));
+  lines.push('· model ' + BT + (r.model_id || '?') + BT + ' · duration ' + fmtDuration(r.duration_ms) +
+             ' · tokens ' + (r.input_tokens || 0) + '↓ ' + (r.output_tokens || 0) + '↑');
+  lines.push('· at ' + BT + (r.emitted_at || r.at || '?') + BT + ' · run_id ' + BT + (r.run_id || '—') + BT);
+  if (r.layer || r.layer_op) {
+    lines.push('· layer ' + BT + (r.layer || '?') + BT + ' · op ' + BT + (r.layer_op || '?') + BT + ' (cycle-007 envelope)');
+  }
+  if (r.error) lines.push('· ⚠ error: ' + r.error);
+  lines.push('');
+  lines.push('## System prompt');
+  lines.push(FENCE);
+  lines.push(String(r.system_prompt || '(empty)'));
+  lines.push(FENCE);
+  lines.push('');
+  lines.push('## User message');
+  lines.push(FENCE);
+  lines.push(String(r.user_message || '(empty)'));
+  lines.push(FENCE);
+  lines.push('');
+  lines.push('## Assistant output');
+  lines.push(FENCE);
+  lines.push(String(r.output || '(empty)'));
+  lines.push(FENCE);
+  return lines.join(NL);
+}
+
 function renderTraceList() {
   const list = document.getElementById('list');
   const rows = cache.trace;
@@ -1025,6 +1098,11 @@ function renderTraceDetail() {
   if (!r) { detail.appendChild(el('div', { class: 'empty', text: 'row gone' })); return; }
   const layer = inferLayer(r, 'trace');
   const related = relatedRowsByRunOrZone(r);
+
+  // Copy-trace affordance (operator iteration 2026-05-17 · paste-to-Loa loop).
+  // Formats the LLM trace as paste-ready Markdown · clipboard write · button
+  // confirms with "copied ✓" for 1.5s then resets.
+  detail.appendChild(buildCopyTraceBar(r));
 
   // Layer-split detail · cycle-007 S5/T5.3
   const voicePanel = el('div', null);
@@ -1416,6 +1494,13 @@ function renderPlaygroundResult(target) {
       head.appendChild(el('span', { class: 'pg-trace-layer', text: (t.layer || '?') + ' · ' + (t.layer_op || '?') }));
       head.appendChild(el('span', { class: 'pg-trace-time', text: fmtTime(t.emitted_at || t.at) }));
       tr.appendChild(head);
+      // copy-trace · only the voice/bedrock-converse rows carry LLM prompt+output
+      // (other layer rows are envelope-only · system_prompt/user_message/output absent)
+      const looksLikeLlmTrace =
+        typeof t.system_prompt === 'string' && typeof t.output === 'string';
+      if (looksLikeLlmTrace) {
+        tr.appendChild(buildCopyTraceBar(t));
+      }
       tr.appendChild(el('pre', { class: 'mono', text: safeStringify(t, 800) }));
       right.appendChild(tr);
     });
