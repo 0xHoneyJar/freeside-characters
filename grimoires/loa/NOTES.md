@@ -16,6 +16,75 @@
 
 - **`docs/` ↔ `grimoires/loa/specs/legacy-imports/` duplication** — mount PR copied AGENTS.md, ARCHITECTURE.md, CIVIC-LAYER.md, MULTI-REGISTER.md, CHARACTER-AUTHORING.md into legacy-imports/ without removing originals. Follow-up cleanup: pick canonical home (likely grimoires/), rewrite intra-repo references, delete duplicates. Track as separate PR.
 
+## Decision Log — cycle-007 architectural reorient (post-Sprint-1 · 2026-05-17)
+
+Operator-initiated reorient during the cycle-007 implementation pause. Cycle-007's zone-id work shipped correctly but was ONE slice of a wider substrate-identifier-leakage pattern. This entry captures the broader framing that emerged AFTER the planning phases had already committed to zones-only scope. Durable so the next session inherits the cleave.
+
+### The 3-class cleave (operator-attested · NEW framing)
+
+cycle-007 BB-REFRAME-3 (Phase 3.5) named Class A (substrate-leakage) + Class B (medium-rendering-divergence). The post-Sprint-1 reorient refines Class A into TWO subclasses + adds Class C:
+
+| class | what | where to fix | shipped status |
+|---|---|---|---|
+| **A.1 · LOCAL substrate identifiers** | IDs defined IN freeside-characters (zones) | local registry · `domain/zone-registry.ts` + INV-12 lint | ✅ cycle-007 S1 (this cycle) |
+| **A.2 · REMOTE substrate identifiers** | IDs defined UPSTREAM (factor IDs from score-mcp) | upstream contract change · NOT a local registry | ⏳ separate cross-repo work at score-mibera |
+| **B · medium-rendering divergence** | Discord Android figure-space alignment | medium descriptor extension | ⏳ cycle-007 S3 (planned) |
+| **C · voice copy STYLE (NEW)** | verb-first prose like score dashboard ("3 miberas acquired" not "mibera_acquire: 3") | presentation copy patterns + voice doctrine | ⏳ separate cycle or TEND |
+
+Lesson: a local registry was the right shape for Class A.1. A local registry would be the WRONG shape for Class A.2 — the fix belongs upstream where the data originates. Different problem locations · different solution shapes. Don't conflate.
+
+### Factor-display 3 hypotheses (investigate before filing upstream PR)
+
+`discord-render.live.ts:75` already references `factor.displayName` field. Whatever's wrong with current factor sharing in posts is ONE of:
+
+- **(a)** score-mcp emits `displayName` but populates it with the underscore form (`"mibera_acquire"`) instead of English prose · fix: score-mcp transformation
+- **(b)** some code path in freeside-characters uses `factor.factor_id` instead of `factor.displayName` · fix: local migration analogous to zone work
+- **(c)** `displayName` is null/missing in score-mcp response and the code falls back to `factor_id` · fix: ensure score-mcp always populates
+
+NEXT-SESSION ACTION: drop a real example post + the JSON it came from. The pattern in the wild tells us which of a/b/c (or some combination) is the actual issue.
+
+### Schema-keeper architectural framing (3-layer cleave · operator-attested)
+
+Operator: freeside-score should be the keeper of schemas for the Loa ecosystem · pub-sub on schemas rather than runtime MCP discovery · agents can communicate on a single schema surface without digging into the repo. Loa-decided pushback was: don't conflate the immediate fix with the longer architectural commitment.
+
+| layer | scope | timing | commitment |
+|---|---|---|---|
+| **L1 · immediate fix** | factor.displayName contract clarified | this week · 1 PR upstream score-mibera | low risk · narrow scope |
+| **L2 · discovery layer** | freeside-score adopts butterfreezone-gen · publishes BUTTERFREEZONE.md at repo root | cycle-008 or TEND pass | low risk · proven mechanism (this session demonstrated it on freeside-characters) |
+| **L3 · schema authority role** | freeside-score named as ecosystem schema-keeper · versioning · deprecation policy · consumer registry · ADR | longer · pays off at N≥2-3 consumers | ownership commitment · not just code |
+
+butterfreezone-gen IS the publish MECHANISM (operator's "single schema surface without digging into the repo" intuition). Schema-keeper is the ROLE. The role implies the mechanism; the mechanism doesn't require committing to the role yet. Ship L1 first · prove L2 at single-consumer · only formalize L3 if 2+ consumers actually consult the published surface.
+
+### Architectural gotcha (almost cost a commit · captured for project rule)
+
+`.claude/data/` is a SYMLINK to `.loa/.claude/data/` (the Loa framework submodule). Writing project-specific data there pollutes the framework submodule across projects.
+
+**Rule for cycle-007 + future:** project-specific configuration files belong in `.claude/overrides/` (real project-local dir · Loa convention for project overrides). Framework-shared schemas/manifests go in `.claude/data/`. The cycle-007 `voice-prompt-paths.json` + schema were moved from `.claude/data/` → `.claude/overrides/` mid-session at commit time · lint script updated to point at the new path.
+
+Worth surfacing to operator as a candidate project rule (could go in CLAUDE.md or as a Loa framework-level convention if not already documented there).
+
+### 5 substrate patterns ready to distill upstream (cycle-3 of construct-effect-substrate)
+
+construct-effect-substrate was renamed to honeycomb-substrate (slug unchanged at v0.2.0 · doctrine pack at `~/Documents/GitHub/construct-effect-substrate/`). It's a doctrine pack that accretes patterns via cycles · already has cycle-1 (4-folder honeycomb + suffix-as-type + FAGAN gates) and cycle-2 (adopt-don't-invent · hand-port-with-drift · doc-only-then-runtime). cycle-007 in freeside-characters produced 5 patterns worth landing as cycle-3:
+
+1. **canonical-resolver-with-safe-variant** — strict resolver throws + safe variant catches/fallbacks + OTEL counter · API doubling pattern for substrate-identifier domain types. Origin: `domain/zone-registry.ts` cycle-007 S1.
+2. **source-side-invariant-via-ts-ast-lint** — grep-class bypasses (JS-escape · template literal · `String.fromCharCode`) require AST-level checking · pairs with SINK-side sanitizer for defense-in-depth. Origin: `scripts/lint-no-kebab-zoneid-in-voice-prompt.ts` (INV-12 · AC-RT-004).
+3. **manifest-monotonic-with-codeowners** — git-history-aware allowlist + operator-attested removal trailer · prevents narrow-then-leak PR attack class · CODEOWNERS for required-review. Origin: `scripts/lint-manifest-monotonic.sh` + `.github/CODEOWNERS` (INV-17 · AC-RT-002).
+4. **type-enforced-sole-writer** *(not yet shipped — S2 work)* — append helper signature requires `T & Envelope` · compile-time discipline replaces "enforced by vigilance." Origin planned: `appendTraceEntry` (INV-14 · BB HIGH-4).
+5. **nested-reserved-key-sanitizer** *(not yet shipped — S2 work)* — recursive renaming of attacker-controlled payload reserved keys · defends top-level invariants from nested spoof. Origin planned: `wrapTraceEntry` sanitization (INV-15 · AC-RT-005).
+
+Patterns 1-3 are ready to land now. Patterns 4-5 land after cycle-007 S2 ships in freeside-characters. Each pattern entry in the pack would carry provenance link back to cycle-007 PRD/SDD sections + freeside-characters file path that instantiates it.
+
+Task #14 captures this as next-session work. See `~/Documents/GitHub/construct-effect-substrate/{cycles,patterns,doctrine-evolution.md}` for the pack's accretion conventions.
+
+### What this reorient changes for future cycles
+
+- cycle-007 SCOPE confirmed as-is (zone-only · ship S2-S8 as planned · Class A.2 + Class C are SEPARATE cycles · DO NOT extend cycle-007)
+- cycle-008 (or naming TBD): factor-display upstream contract investigation + fix at score-mibera
+- cycle-009 (or TEND pass): verb-first voice copy doctrine + scope (which post-types? all 8?)
+- TEND pass (separate): construct-effect-substrate cycle-3 distillation (5 patterns above)
+- Project rule candidate: `.claude/overrides/` for project-specific config · `.claude/data/` for framework-shared (worth surfacing to CLAUDE.md or Loa convention docs)
+
 ## Decision Log — cycle-007 Flatline sprint review (simstim Phase 6 · 2026-05-17)
 
 3-model Flatline (Opus + GPT-5.5 + Gemini-3.1-pro · 53% agreement · 113s · $0) on 743-line sprint plan returned 19 findings: 4 HIGH_CONSENSUS + 7 DISPUTED (6 Opus=0 known empty) + 8 BLOCKERs (2 CRITICAL + 6 HIGH). Highest-volume Flatline of cycle-007 — sprint plans have more execution-ambiguity surface than PRD/SDD. 18 findings integrated · 1 LOW deferred · 1 strategic fork operator-resolved.
