@@ -10,7 +10,6 @@ import type { DigestPayload } from '../deliver/embed.ts';
 import { createScoreMcpLive } from '../live/score-mcp.live.ts';
 import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
-import { toWeaverPayload } from '../live/discord-webhook.live.ts';
 import { deriveShape } from '../domain/derive-shape.ts';
 import { ZONE_IDS } from '../score/types.ts';
 
@@ -50,5 +49,5 @@ export async function composeWeaverPost(
     : await voiceGen.generateDigestVoice(focal, { derived });
 
   const message = renderer.renderWeaver(focal, allZones, augment);
-  return { zone: focalZone, postType: 'weaver', message, payload: toWeaverPayload(message) };
+  return { zone: focalZone, postType: 'weaver', message, payload: presentation.toWeaverPayload(message) };
 }

@@ -38,6 +38,15 @@
  *   ~/vault/wiki/concepts/negative-constraint-echo.md (affirmative blueprints)
  */
 
+// cycle-007 S6/T6.1 · FR-1 SINK closure (Bug A detection · log-only V1 per SR-1).
+// detectKebabZoneIds runs at end of stripVoiceDisciplineDrift on the FINAL transformed text.
+// Hits emit a JSONL violation row via wrapTraceEntry('presentation','sanitize-violation',...)
+// for the V2 substitution-policy review trigger (IMP-001 · S6+24h evidence corpus).
+import { detectKebabZoneIds } from '../domain/zone-registry.ts';
+import { appendTraceEntry, wrapTraceEntry } from '../observability/trace-envelope.ts';
+
+const SANITIZE_VIOLATIONS_PATH = '.run/sanitize-violations.jsonl';
+
 // We escape underscores, asterisks, tildes, and pipes — but NOT backticks.
 // Backticks are intentionally used by the LLM for inline-code spans on
 // identifiers (`nft:mibera`, `0xa3...c1`), and Discord 2026 made those
@@ -284,7 +293,30 @@ export function stripVoiceDisciplineDrift(
   //  - Trim trailing comma + whitespace (artifact from em-dash transform
   //    at end of text · em-dash followed by trailing whitespace becomes
   //    `, ` per the no-peek branch · meaningless at end of text).
-  return mediumDisciplined.replace(/^[ \t]+/, '').replace(/,?\s*$/, '');
+  const final = mediumDisciplined.replace(/^[ \t]+/, '').replace(/,?\s*$/, '');
+
+  // cycle-007 S6/T6.1 · FR-1 SINK detection (LOG-ONLY V1 per SR-1).
+  // detectKebabZoneIds returns ZoneId[] hits on the FINAL post-discipline text.
+  // Fire-and-forget · violations recorded for IMP-001 V2 review trigger at S6+24h.
+  // INV-12 CI lint (S1/T1.5 AC-RT-004) already closes Bug A at SOURCE · this is the SINK-side
+  // observation that gives us evidence to decide V2 substitution policy.
+  const violations = detectKebabZoneIds(final);
+  if (violations.length > 0) {
+    // Fire-and-forget · do NOT block voice delivery on observability writes (Flatline IMP-003).
+    void appendTraceEntry(
+      SANITIZE_VIOLATIONS_PATH,
+      wrapTraceEntry('presentation', 'sanitize-violation', {
+        violations,
+        sample: final.slice(0, 200), // truncated sample for triage · full text in voice-memory anyway
+        post_type: opts?.postType,
+        medium_id: opts?.mediumId,
+      }),
+    ).catch(() => {
+      // best-effort observability · never crash sanitize pipeline
+    });
+  }
+
+  return final;
 }
 
 /**

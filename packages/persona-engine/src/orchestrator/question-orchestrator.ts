@@ -10,7 +10,6 @@ import type { DigestPayload } from '../deliver/embed.ts';
 import { createScoreMcpLive } from '../live/score-mcp.live.ts';
 import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
-import { toQuestionPayload } from '../live/discord-webhook.live.ts';
 import { deriveShape } from '../domain/derive-shape.ts';
 
 export interface QuestionPostResult {
@@ -43,5 +42,5 @@ export async function composeQuestionPost(
     : await voiceGen.generateDigestVoice(snapshot, { derived });
 
   const message = renderer.renderQuestion(snapshot, augment);
-  return { zone, postType: 'question', message, payload: toQuestionPayload(message) };
+  return { zone, postType: 'question', message, payload: presentation.toQuestionPayload(message) };
 }

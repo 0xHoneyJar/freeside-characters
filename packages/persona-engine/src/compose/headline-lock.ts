@@ -26,7 +26,9 @@
  * ZONE_FLAVOR — the codex becomes the single source of world-element truth.
  */
 
-import { ZONE_FLAVOR, type ZoneId } from '../score/types.ts';
+import { type ZoneId } from '../score/types.ts';
+// cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry.
+import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import type { PostType } from './post-types.ts';
 
 /**
@@ -70,7 +72,7 @@ export function enforceCanonicalHeadline(
 
   const lines = voice.split('\n');
   const firstLine = lines[0] ?? '';
-  const canonical = ZONE_FLAVOR[zone].emoji;
+  const canonical = ZONE_REGISTRY[zone].emoji;
 
   // Already canonical → no enforcement needed.
   if (firstLine.includes(canonical)) {

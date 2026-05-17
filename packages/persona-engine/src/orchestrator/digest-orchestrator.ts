@@ -12,7 +12,6 @@ import { createScoreMcpLive } from '../live/score-mcp.live.ts';
 import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
 import { createVoiceMemoryLive } from '../live/voice-memory.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
-import { toDigestPayload } from '../live/discord-webhook.live.ts';
 import { getTracer } from '../observability/otel-layer.ts';
 import { deriveShape } from '../domain/derive-shape.ts';
 import { formatPriorWeekHint } from './format-prior-week-hint.ts';
@@ -93,7 +92,7 @@ export async function composeDigestPost(
     : await voiceGen.generateDigestVoice(snapshot, ctx);
 
   const message = renderer.renderDigest(snapshot, augment);
-  const payload = toDigestPayload(message);
+  const payload = presentation.toDigestPayload(message);
 
   // cycle-006 S6 T6.7 · voice-memory write-after-voice-gen with sanitization.
   if (augment && augment.header) {

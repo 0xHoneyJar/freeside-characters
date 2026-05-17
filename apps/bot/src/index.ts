@@ -27,7 +27,7 @@ import {
   shutdownClient,
   exemplarStats,
   loadSystemPrompt,
-  ZONE_FLAVOR,
+  ZONE_REGISTRY,
   getWindowEventCount,
   getCodexLineCount,
   initGrailCache,
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   console.log(`characters:     ${characters.map((c) => c.displayName ?? c.id).join(' · ')} (primary: ${primary.id})`);
   console.log(`data:           ${config.STUB_MODE ? 'STUB (synthetic ZoneDigest)' : 'LIVE (score-mcp)'}`);
   console.log(`llm:            ${describeLlmMode(config)}`);
-  console.log(`zones:          ${selectedZones(config).map((z) => `${ZONE_FLAVOR[z].emoji} ${z}`).join(' · ')}`);
+  console.log(`zones:          ${selectedZones(config).map((z) => `${ZONE_REGISTRY[z].emoji} ${z}`).join(' · ')}`);
   console.log(`digest cadence: ${config.DIGEST_CADENCE}` + (config.DIGEST_CADENCE !== 'manual' ? ` · ${config.DIGEST_DAY} ${String(config.DIGEST_HOUR_UTC).padStart(2, '0')}:00 UTC` : ''));
   console.log(`pop-ins:        ${config.POP_IN_ENABLED ? `every ${config.POP_IN_INTERVAL_HOURS}h · ${config.POP_IN_PROBABILITY * 100}% chance/zone/tick` : 'disabled'}`);
   console.log(`weaver:         ${config.WEAVER_ENABLED ? `${config.WEAVER_DAY} ${String(config.WEAVER_HOUR_UTC).padStart(2, '0')}:00 UTC → ${config.WEAVER_PRIMARY_ZONE}` : 'disabled'}`);

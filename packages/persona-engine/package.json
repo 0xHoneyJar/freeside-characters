@@ -11,6 +11,7 @@
     "./orchestrator": "./src/orchestrator/index.ts",
     "./orchestrator/imagegen": "./src/orchestrator/imagegen/index.ts",
     "./score/types": "./src/score/types.ts",
+    "./score/client": "./src/score/client.ts",
     "./compose/digest": "./src/compose/digest.ts",
     "./compose/voice-brief": "./src/compose/voice-brief.ts",
     "./compose/voice-memory": "./src/compose/voice-memory.ts",

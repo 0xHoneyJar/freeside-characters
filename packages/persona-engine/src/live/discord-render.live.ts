@@ -17,12 +17,14 @@ const ZONE_COLORS = {
   'owsley-lab': 0x6f4ea1,
 } as const;
 
-const ZONE_LABEL = {
-  stonehenge: '🗿 Stonehenge',
-  'bear-cave': '🐻 Bear Cave (OG)',
-  'el-dorado': '⛏️ El Dorado (NFT)',
-  'owsley-lab': '🧪 Owsley Lab (Onchain)',
-} as const;
+// cycle-007 S1/T1.3 · ZONE_LABEL deleted — replaced by safeResolveZoneRichLabel from domain/zone-registry.ts.
+// Per Flatline SDD SKP-003 (Phase 4): callers use the safe variant which catches UnknownZoneError + emits
+// zone.resolution_failed warning + returns raw zone string as fallback (does NOT crash digest pipeline).
+import { safeResolveZoneRichLabel } from '../domain/zone-registry.ts';
+// cycle-007 S3/T3.3 · D3 + D5: medium-aware render constants via metricsForMedium.
+// digitWidthSpaceChar (U+2007 FIGURE SPACE for Discord) defends against Android `gg sans`
+// proportional-fallback regression that breaks ASCII-space monospace assumption.
+import { metricsForMedium, DISCORD_WEBHOOK_DESCRIPTOR } from '../deliver/medium-extensions.ts';
 
 const EMBED_FIELD_CHAR_CAP = 1024;
 const DEFAULT_MAX_FACTORS = 19;
@@ -40,21 +42,27 @@ function formatDeltaPct(deltaPct: number | null): string {
 }
 
 function renderSnapshotField(snapshot: DigestSnapshot): DeterministicEmbed['fields'][number] {
-  // 2026-05-16 · tighten + consistency pass per operator feedback.
-  // Drop redundant "/ 30d" suffix (header already says "30d snapshot").
-  // Tighten value column from pad8 → pad6 for less whitespace gap.
-  // Keep right-alignment so cross-row digit comparison stays readable.
-  // Label column is uniform 9-char left-padded ("events   ", "wallets  ", "w/w      ", "cold     ").
+  // cycle-007 S3/T3.3 · D5 figure-space padding (Bug B closure at CLASS level).
+  // Pad character sourced from medium descriptor · Discord uses U+2007 FIGURE SPACE
+  // (digit-width invariant across OpenType tabular figures even when Android `gg sans`
+  // proportional fallback fires · per discord.js#3030 + community-reported regression).
+  //
+  // S0/T0.2 typography spike (mechanical proxy 2026-05-17) attested U+2007 as default.
+  // S3 acceptance: operator screenshot from Discord Android shows aligned numeric column
+  // (PP-2 SOFT gate · falls back to byte-snapshot test if operator unavailable per IMP-002
+  // degraded path).
+  const metrics = metricsForMedium(DISCORD_WEBHOOK_DESCRIPTOR);
+  const PAD_CHAR = metrics.digitWidthSpaceChar;
   const PAD = 6;
-  const padLabel = (s: string) => s.padEnd(9, ' ');
+  const padLabel = (s: string) => s.padEnd(9, PAD_CHAR);
   const rows: string[] = [];
-  rows.push(`${padLabel('events')}${String(snapshot.totalEvents).padStart(PAD, ' ')}`);
+  rows.push(`${padLabel('events')}${String(snapshot.totalEvents).padStart(PAD, PAD_CHAR)}`);
   if (snapshot.activeWallets !== undefined) {
-    rows.push(`${padLabel('wallets')}${String(snapshot.activeWallets).padStart(PAD, ' ')} active`);
+    rows.push(`${padLabel('wallets')}${String(snapshot.activeWallets).padStart(PAD, PAD_CHAR)} active`);
   }
-  rows.push(`${padLabel('w/w')}${formatDeltaPct(snapshot.deltaPct).padStart(PAD, ' ')}`);
+  rows.push(`${padLabel('w/w')}${formatDeltaPct(snapshot.deltaPct).padStart(PAD, PAD_CHAR)}`);
   if (snapshot.coldFactorCount > 0) {
-    rows.push(`${padLabel('cold')}${String(snapshot.coldFactorCount).padStart(PAD, ' ')} cold`);
+    rows.push(`${padLabel('cold')}${String(snapshot.coldFactorCount).padStart(PAD, PAD_CHAR)} cold`);
   }
   return {
     name: `${snapshot.windowDays}d snapshot`,
@@ -143,7 +151,7 @@ export function renderDigest(snapshot: DigestSnapshot, augment?: VoiceAugment): 
     .join('\n');
 
   return {
-    voiceContent: voice ? `${ZONE_LABEL[snapshot.zone]}\n${voice}` : ZONE_LABEL[snapshot.zone],
+    voiceContent: voice ? `${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')}\n${voice}` : safeResolveZoneRichLabel(snapshot.zone, 'discord-render'),
     truthEmbed: {
       color: ZONE_COLORS[snapshot.zone],
       fields,
@@ -210,7 +218,7 @@ function voiceLine(augment?: VoiceAugment): string {
 
 function buildSubstrateFacts(snapshot: DigestSnapshot): ReadonlyArray<string> {
   const facts: string[] = [];
-  facts.push(`${ZONE_LABEL[snapshot.zone]} · ${snapshot.totalEvents} events / ${snapshot.windowDays}d`);
+  facts.push(`${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · ${snapshot.totalEvents} events / ${snapshot.windowDays}d`);
   if (snapshot.activeWallets !== undefined) {
     facts.push(`${snapshot.activeWallets} active wallets`);
   }
@@ -219,21 +227,21 @@ function buildSubstrateFacts(snapshot: DigestSnapshot): ReadonlyArray<string> {
 
 export function renderMicro(snapshot: DigestSnapshot, augment?: VoiceAugment): MicroMessage {
   return {
-    voiceContent: voiceLine(augment) || `${ZONE_LABEL[snapshot.zone]} · checking in`,
+    voiceContent: voiceLine(augment) || `${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · checking in`,
     truthFields: buildSubstrateFacts(snapshot),
   };
 }
 
 export function renderLoreDrop(snapshot: DigestSnapshot, augment?: VoiceAugment): LoreDropMessage {
   return {
-    voiceContent: voiceLine(augment) || `${ZONE_LABEL[snapshot.zone]} · from the codex`,
+    voiceContent: voiceLine(augment) || `${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · from the codex`,
     truthFields: buildSubstrateFacts(snapshot),
   };
 }
 
 export function renderQuestion(snapshot: DigestSnapshot, augment?: VoiceAugment): QuestionMessage {
   return {
-    voiceContent: voiceLine(augment) || `${ZONE_LABEL[snapshot.zone]} · ?`,
+    voiceContent: voiceLine(augment) || `${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · ?`,
     truthFields: buildSubstrateFacts(snapshot),
   };
 }
@@ -244,7 +252,7 @@ export function renderWeaver(
   augment?: VoiceAugment,
 ): WeaverMessage {
   const fields: DeterministicEmbed['fields'] = crossZone.slice(0, 4).map((z) => ({
-    name: ZONE_LABEL[z.zone],
+    name: safeResolveZoneRichLabel(z.zone, 'discord-render'),
     value: `\`\`\`\nevents ${String(z.totalEvents).padStart(8, ' ')} / ${z.windowDays}d\nw/w    ${formatDeltaPct(z.deltaPct).padStart(8, ' ')}\n\`\`\``,
     inline: true,
   }));
@@ -260,7 +268,7 @@ export function renderWeaver(
 
 export function renderCallout(snapshot: DigestSnapshot, augment?: VoiceAugment): CalloutMessage {
   return {
-    voiceContent: voiceLine(augment) || `🚨 ${ZONE_LABEL[snapshot.zone]} · callout`,
+    voiceContent: voiceLine(augment) || `🚨 ${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · callout`,
     truthEmbed: {
       color: 0xe74c3c,
       fields: [
@@ -275,6 +283,18 @@ export function renderCallout(snapshot: DigestSnapshot, augment?: VoiceAugment):
   };
 }
 
+// cycle-007 S7 · G-6 leak closure: presentation const exposes payload-conversion methods.
+// Orchestrators consume these via PresentationPort instead of importing to*Payload directly
+// from live/discord-webhook.live.ts (which violates the substrate-presentation seam).
+import {
+  toDigestPayload,
+  toMicroPayload,
+  toLoreDropPayload,
+  toQuestionPayload,
+  toWeaverPayload,
+  toCalloutPayload,
+} from './discord-webhook.live.ts';
+
 export const presentation = {
   renderDigest,
   renderActivityPulse,
@@ -283,4 +303,11 @@ export const presentation = {
   renderQuestion,
   renderWeaver,
   renderCallout,
+  // cycle-007 S7 · payload-conversion exposed via port (G-6 leak closure)
+  toDigestPayload,
+  toMicroPayload,
+  toLoreDropPayload,
+  toQuestionPayload,
+  toWeaverPayload,
+  toCalloutPayload,
 };

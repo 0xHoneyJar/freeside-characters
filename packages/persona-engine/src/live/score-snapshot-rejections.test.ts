@@ -50,8 +50,8 @@ afterEach(() => {
 });
 
 describe('recordRejection', () => {
-  test('appends a structured entry to .run/score-snapshot-rejections.jsonl', () => {
-    const entry = recordRejection('stonehenge', snapshotOf(), VALIDATION_BLOCK);
+  test('appends a structured entry to .run/score-snapshot-rejections.jsonl', async () => {
+    const entry = await recordRejection('stonehenge', snapshotOf(), VALIDATION_BLOCK);
     expect(entry.zone).toBe('stonehenge');
     expect(entry.reason).toBe('event-count-outlier');
     expect(entry.computed_sigma).toBe(5);
@@ -59,9 +59,9 @@ describe('recordRejection', () => {
     expect(entry.baseline_sample_count).toBe(30);
   });
 
-  test('multiple appends accumulate', () => {
-    recordRejection('stonehenge', snapshotOf(), VALIDATION_BLOCK);
-    recordRejection('bear-cave', snapshotOf('bear-cave'), VALIDATION_BLOCK);
+  test('multiple appends accumulate', async () => {
+    await recordRejection('stonehenge', snapshotOf(), VALIDATION_BLOCK);
+    await recordRejection('bear-cave', snapshotOf('bear-cave'), VALIDATION_BLOCK);
     const fs = require('node:fs');
     const content = fs.readFileSync('.run/score-snapshot-rejections.jsonl', 'utf-8');
     expect(content.split('\n').filter((l: string) => l.trim()).length).toBe(2);
@@ -73,21 +73,21 @@ describe('detectStorm', () => {
     expect(detectStorm()).toEqual([]);
   });
 
-  test('returns empty when only 1 rejection in window', () => {
-    recordRejection('stonehenge', snapshotOf(), VALIDATION_BLOCK);
+  test('returns empty when only 1 rejection in window', async () => {
+    await recordRejection('stonehenge', snapshotOf(), VALIDATION_BLOCK);
     expect(detectStorm()).toEqual([]);
   });
 
-  test('FLATLINE-SKP-002 · 2 rejections within 1h triggers storm', () => {
-    recordRejection('stonehenge', snapshotOf(), VALIDATION_BLOCK);
-    recordRejection('bear-cave', snapshotOf('bear-cave'), VALIDATION_BLOCK);
+  test('FLATLINE-SKP-002 · 2 rejections within 1h triggers storm', async () => {
+    await recordRejection('stonehenge', snapshotOf(), VALIDATION_BLOCK);
+    await recordRejection('bear-cave', snapshotOf('bear-cave'), VALIDATION_BLOCK);
     const storm = detectStorm();
     expect(storm.length).toBe(2);
     expect(storm.some((e) => e.zone === 'stonehenge')).toBe(true);
     expect(storm.some((e) => e.zone === 'bear-cave')).toBe(true);
   });
 
-  test('rejections older than 7d are pruned + don\'t count toward storm', () => {
+  test('rejections older than 7d are pruned + don\'t count toward storm', async () => {
     // Simulate an old rejection by writing directly.
     const fs = require('node:fs');
     fs.mkdirSync('.run', { recursive: true });
@@ -101,7 +101,7 @@ describe('detectStorm', () => {
     };
     fs.writeFileSync('.run/score-snapshot-rejections.jsonl', JSON.stringify(oldEntry) + '\n');
     // Add one recent — should not trigger storm alone.
-    recordRejection('bear-cave', snapshotOf('bear-cave'), VALIDATION_BLOCK);
+    await recordRejection('bear-cave', snapshotOf('bear-cave'), VALIDATION_BLOCK);
     const storm = detectStorm();
     expect(storm.length).toBe(0);
     // The old entry should have been pruned from the file.

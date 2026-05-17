@@ -50,12 +50,10 @@ export const ZONE_TO_DIMENSION = {
   'owsley-lab': 'onchain',
 } as const satisfies Record<ZoneId, ZoneDimension>;
 
-export const ZONE_FLAVOR = {
-  stonehenge: { emoji: '🗿', name: 'Stonehenge', dimension: 'overall' },
-  'bear-cave': { emoji: '🐻', name: 'Bear Cave', dimension: 'og' },
-  'el-dorado': { emoji: '⛏️', name: 'El Dorado', dimension: 'nft' },
-  'owsley-lab': { emoji: '🧪', name: 'Owsley Lab', dimension: 'onchain' },
-} as const satisfies Record<ZoneId, { emoji: string; name: string; dimension: ZoneDimension }>;
+// cycle-007 S1/T1.3 · ZONE_FLAVOR DELETED — canonical zone-display map lives at
+// packages/persona-engine/src/domain/zone-registry.ts::ZONE_REGISTRY (D1 closure).
+// Callers migrated to ZONE_REGISTRY (record access) + safeResolveZone{DisplayName,RichLabel} (with SKP-003 try/catch).
+// Per Flatline INV-12 + Red Team AC-RT-002: prevents kebab leak through canonical resolver.
 
 /**
  * Display-cased dimension names — used in prose where the dimension reads as
@@ -533,6 +531,49 @@ export interface GetMostActiveWalletsResponse {
    * the consumer transition.
    */
   schema_version: '1.0.0' | '1.1.0';
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// get_recent_badges — earnings feed (cycle-007 S8 kitchen exhibit · issue #83)
+// ──────────────────────────────────────────────────────────────────────
+
+export type BadgeType =
+  | 'pioneer'
+  | 'count'
+  | 'timing'
+  | 'streak'
+  | 'collection'
+  | 'quality'
+  | 'behavior';
+
+export type BadgeRarity =
+  | 'common'
+  | 'uncommon'
+  | 'rare'
+  | 'epic'
+  | 'legendary'
+  | 'mythic';
+
+export interface BadgeEarning {
+  badge_id: string;
+  badge_name: string;
+  badge_type: BadgeType;
+  rarity: BadgeRarity;
+  description: string | null;
+  earned_at: string;
+  wallet: string;
+}
+
+export interface GetRecentBadgesArgs {
+  badge_type?: BadgeType;
+  badge_id?: string;
+  /** 1-200, default 50. Issue #83 note: poll cadence owned by agent (no window param). */
+  limit?: number;
+}
+
+export interface GetRecentBadgesResponse {
+  earnings: BadgeEarning[];
   generated_at: string;
 }
 

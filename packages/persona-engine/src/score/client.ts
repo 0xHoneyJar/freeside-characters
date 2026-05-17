@@ -27,6 +27,10 @@ import type {
   ZoneId,
   RawStats,
   NarrativeShape,
+  GetRecentBadgesArgs,
+  GetRecentBadgesResponse,
+  BadgeRarity,
+  BadgeType,
 } from './types.ts';
 import { ZONE_TO_DIMENSION } from './types.ts';
 
@@ -205,6 +209,44 @@ export async function fetchDimensionBreakdown(
     sessionId,
     'get_dimension_breakdown',
     { window, ...(dimension ? { dimension } : {}) },
+    bearer,
+  );
+}
+
+/**
+ * fetchRecentBadges — score-mcp `get_recent_badges` tool (issue #83).
+ *
+ * Note: limit-only (no window param). Agent tracks "since last poll" via
+ * `earned_at` cursor on its own side. If earnings.length === limit, you may
+ * be missing some (bump limit or repoll faster).
+ *
+ * Per issue #83 MCP-client hygiene: tool errors surface as `isError: true`,
+ * not thrown exceptions. mcpToolCall handles that; this wrapper is parallel
+ * to fetchRecentEvents.
+ */
+export async function fetchRecentBadges(
+  config: Config,
+  args: GetRecentBadgesArgs = {},
+): Promise<GetRecentBadgesResponse> {
+  if (config.STUB_MODE && !config.MCP_KEY) {
+    return generateStubRecentBadges(args);
+  }
+
+  if (!config.MCP_KEY) {
+    throw new Error(
+      'MCP_KEY required for live get_recent_badges; or set STUB_MODE=true for synthetic data',
+    );
+  }
+
+  const url = `${config.SCORE_API_URL}/mcp`;
+  const bearer = config.SCORE_BEARER;
+  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer);
+  return mcpToolCall<GetRecentBadgesResponse>(
+    url,
+    config.MCP_KEY,
+    sessionId,
+    'get_recent_badges',
+    args as Record<string, unknown>,
     bearer,
   );
 }
@@ -533,4 +575,118 @@ function synthUUID(i: number, j: number): string {
   for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   const hex = hash.toString(16).padStart(8, '0');
   return `${hex}-0000-4000-8000-${hex}0000`;
+}
+
+/**
+ * Stub generator for get_recent_badges (cycle-007 S8 kitchen · issue #83).
+ * Deterministic-enough output for playground iteration. Honors badge_type
+ * + badge_id filters + limit (default 50, cap 200) per the production tool.
+ */
+export function generateStubRecentBadges(
+  args: GetRecentBadgesArgs = {},
+): GetRecentBadgesResponse {
+  const limit = Math.max(1, Math.min(args.limit ?? 50, 200));
+  const now = Date.now();
+  const types: BadgeType[] = [
+    'pioneer',
+    'count',
+    'timing',
+    'streak',
+    'collection',
+    'quality',
+    'behavior',
+  ];
+  const rarities: BadgeRarity[] = [
+    'common',
+    'uncommon',
+    'rare',
+    'epic',
+    'legendary',
+    'mythic',
+  ];
+  const seedEarnings: ReadonlyArray<{
+    badge_id: string;
+    badge_name: string;
+    badge_type: BadgeType;
+    rarity: BadgeRarity;
+    description: string;
+  }> = [
+    {
+      badge_id: 'behavior:hodler',
+      badge_name: 'True HODLer',
+      badge_type: 'behavior',
+      rarity: 'rare',
+      description:
+        'Acquire at least twice as much as you sell across all tracked collections',
+    },
+    {
+      badge_id: 'pioneer:first_mint_week',
+      badge_name: 'Pioneer · First Week',
+      badge_type: 'pioneer',
+      rarity: 'epic',
+      description: 'Minted within the first week of the collection going live',
+    },
+    {
+      badge_id: 'count:5_mint_burst',
+      badge_name: 'Five-Mint Burst',
+      badge_type: 'count',
+      rarity: 'common',
+      description: 'Five mints within a single 24h window',
+    },
+    {
+      badge_id: 'timing:weekend_warrior',
+      badge_name: 'Weekend Warrior',
+      badge_type: 'timing',
+      rarity: 'uncommon',
+      description: 'Active across 4+ consecutive weekends',
+    },
+    {
+      badge_id: 'streak:30_day_holder',
+      badge_name: 'Thirty-Day Streak',
+      badge_type: 'streak',
+      rarity: 'rare',
+      description: 'Held a primary asset for 30+ consecutive days without selling',
+    },
+    {
+      badge_id: 'collection:cross_set',
+      badge_name: 'Cross-Set Collector',
+      badge_type: 'collection',
+      rarity: 'legendary',
+      description: 'Owns at least one piece from every tracked collection',
+    },
+    {
+      badge_id: 'quality:floor_lifter',
+      badge_name: 'Floor Lifter',
+      badge_type: 'quality',
+      rarity: 'mythic',
+      description: 'Single transaction lifted the floor by ≥10%',
+    },
+  ];
+
+  const filtered = seedEarnings.filter((e) => {
+    if (args.badge_type && e.badge_type !== args.badge_type) return false;
+    if (args.badge_id && e.badge_id !== args.badge_id) return false;
+    return true;
+  });
+
+  const earnings = Array.from({ length: Math.min(limit, filtered.length || 1) }, (_, i) => {
+    const seed = filtered[i % Math.max(filtered.length, 1)] ?? seedEarnings[i % seedEarnings.length]!;
+    void rarities;
+    void types;
+    return {
+      badge_id: seed.badge_id,
+      badge_name: seed.badge_name,
+      badge_type: seed.badge_type,
+      rarity: seed.rarity,
+      description: seed.description,
+      // Newest first, spaced ~3 min apart for visual ordering in the playground.
+      earned_at: new Date(now - i * 3 * 60_000).toISOString(),
+      wallet: synthAddress(i, 'badge'),
+    };
+  });
+
+  return {
+    earnings,
+    generated_at: new Date().toISOString(),
+  };
 }

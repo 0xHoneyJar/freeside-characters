@@ -1,0 +1,12 @@
+{
+  "$schema": ".claude/data/voice-prompt-paths.schema.json",
+  "description": "Files/dirs whose contents reach the LLM prompt at compose-time. INV-12 lint scans these for raw kebab ZoneId literals outside zone-registry imports. Per Phase 6 SKP-001/CRITICAL: GitHub branch protection + CODEOWNERS required-review enforces operator approval for changes here. Per Phase 6 IMP-013: malformed manifest fails CI (no silent fallback). Per Red Team AC-RT-002: monotonic check prevents path-removal attacks.",
+  "paths": [
+    "packages/persona-engine/src/compose",
+    "packages/persona-engine/src/persona",
+    "packages/persona-engine/src/live/claude-sdk.live.ts"
+  ],
+  "exclude": [
+    "packages/persona-engine/src/domain/zone-registry.ts"
+  ]
+}
