@@ -15,7 +15,7 @@
 import type { Config, ZoneId } from '@freeside-characters/persona-engine';
 import {
   ALL_ZONES,
-  ZONE_FLAVOR,
+  ZONE_REGISTRY,
   getZoneChannelId,
 } from '@freeside-characters/persona-engine';
 
@@ -34,17 +34,19 @@ export function getZoneForChannel(config: Config, channelId: string): ZoneId | u
 
 /**
  * Return zone metadata (emoji + display name + dimension) for prompt-block
- * grounding. Sync read from `ZONE_FLAVOR` in `score/types.ts`.
+ * grounding. Sync read from `ZONE_REGISTRY` in `packages/persona-engine/src/domain/zone-registry.ts`.
+ *
+ * cycle-007 S1/T1.3: migrated from ZONE_FLAVOR → ZONE_REGISTRY (canonical resolver).
+ * API contract preserved · returns same `{name, dimension, emoji}` shape via field-aliasing.
  *
  * Task 1.2 decision (V1): sync constant. The async-MCP variant
  * (codex-mcp `lookup_zone`) becomes available only once chat-mode wires
- * through the orchestrator (Phase D / Sprint 3); until then, `ZONE_FLAVOR`
- * is the canonical zone-anchor source. When codex-mcp lands as a chat-mode
- * tool, callers can choose to refine this metadata at compose time —
- * environment.ts will own that decision; this accessor stays sync.
+ * through the orchestrator (Phase D / Sprint 3); until then, `ZONE_REGISTRY`
+ * is the canonical zone-anchor source.
  */
 export function getCodexAnchorForZone(
   zone: ZoneId,
 ): { name: string; dimension: string; emoji: string } {
-  return ZONE_FLAVOR[zone];
+  const record = ZONE_REGISTRY[zone];
+  return { name: record.displayName, dimension: record.dimension, emoji: record.emoji };
 }

@@ -206,8 +206,10 @@ export {
 } from './conversation/ledger.ts';
 export type { LedgerEntry } from './conversation/ledger.ts';
 
-// Score helpers — bot's CLI uses ZONE_FLAVOR for log emoji + counts
-export { ZONE_FLAVOR, getWindowEventCount, getWindowWalletCount } from './score/types.ts';
+// Score helpers — bot's CLI uses ZONE_REGISTRY for log emoji + display (cycle-007 S1/T1.3 canon rename).
+export { getWindowEventCount, getWindowWalletCount } from './score/types.ts';
+export { ZONE_REGISTRY, resolveZoneDisplayName, resolveZoneRichLabel, safeResolveZoneDisplayName, safeResolveZoneRichLabel, detectKebabZoneIds, UnknownZoneError, assertNeverZone } from './domain/zone-registry.ts';
+export type { ZoneDisplayRecord } from './domain/zone-registry.ts';
 export { getCodexLineCount } from './score/codex-context.ts';
 
 // Environment context (V0.7-A.1 Phase C — substrate awareness block)

@@ -47,7 +47,9 @@ import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-r
 import { createRaindropBedrock } from '@raindrop-ai/bedrock';
 import { writeLlmTraceEntry } from '../observability/llm-trace.ts';
 import type { ZoneDigest, ZoneId } from '../score/types.ts';
-import { ZONE_FLAVOR } from '../score/types.ts';
+// cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry (FR-1 voice prompt surface).
+// flavor.name → safeResolveZoneDisplayName(zone, 'agent-gateway') · per SDD §2.1 SKP-003.
+import { safeResolveZoneDisplayName } from '../domain/zone-registry.ts';
 import { generateStubZoneDigest } from '../score/client.ts';
 import { getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
 import type { PostType } from './post-types.ts';
@@ -388,7 +390,7 @@ function generateStubPost(req: InvokeRequest): InvokeResponse {
 }
 
 function stubDigest(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const stats = digest.raw_stats;
   const total = getWindowEventCount(stats);
   const wallets = getWindowWalletCount(stats);
@@ -397,12 +399,12 @@ function stubDigest(digest: ZoneDigest): string {
   const climbed = stats.rank_changes.climbed[0];
 
   if (!digest.narrative) {
-    return `hey ${flavor.name} team — partial snapshot this window. ${total} events confirmed, more pending. ruggy'll repost when the analyst pipeline completes.`;
+    return `hey ${zoneName} team — partial snapshot this window. ${total} events confirmed, more pending. ruggy'll repost when the analyst pipeline completes.`;
   }
 
   if (total < 100) {
     return [
-      `henlo ${flavor.name}, week check-in`,
+      `henlo ${zoneName}, week check-in`,
       ``,
       `> ${total} events · ${wallets} miberas · ${factors.length} factors moved`,
       ``,
@@ -415,7 +417,7 @@ function stubDigest(digest: ZoneDigest): string {
   const isSpike = (factors[0]?.multiplier ?? 1) > 3 || stats.spotlight !== null;
   if (isSpike) {
     return [
-      `ooga booga ${flavor.name} team, big week`,
+      `ooga booga ${zoneName} team, big week`,
       ``,
       `> ${total.toLocaleString()} events · ${wallets} miberas · ${factors.length} factors moved`,
       ``,
@@ -432,7 +434,7 @@ function stubDigest(digest: ZoneDigest): string {
   }
 
   return [
-    `yo ${flavor.name} team, week check-in`,
+    `yo ${zoneName} team, week check-in`,
     ``,
     `> ${total} events · ${wallets} miberas · ${factors.length} factors moved`,
     ``,
@@ -445,53 +447,53 @@ function stubDigest(digest: ZoneDigest): string {
 }
 
 function stubMicro(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const lead = digest.raw_stats.factor_trends[0];
   const climbed = digest.raw_stats.rank_changes.climbed[0];
 
   const opts = [
-    `yo, just peeped ${flavor.name} — ${lead ? `\`${lead.factor_id}\` is steady (${lead.current_count} events). ` : ''}${climbed ? `\`${climbed.wallet}\` quietly climbing.` : 'nothing wild but the og crew is moving.'}`,
-    `${flavor.name}'s been ${lead && lead.multiplier > 2 ? 'buzzin' : 'kinda chill'} today. ${lead ? `\`${lead.factor_id}\` carrying the load.` : 'holding pattern.'}`,
-    `quick peep at ${flavor.name} — ${getWindowEventCount(digest.raw_stats)} events, ${getWindowWalletCount(digest.raw_stats)} miberas active. ${climbed ? `solid stack from \`${climbed.wallet}\`.` : 'steady.'}`,
+    `yo, just peeped ${zoneName} — ${lead ? `\`${lead.factor_id}\` is steady (${lead.current_count} events). ` : ''}${climbed ? `\`${climbed.wallet}\` quietly climbing.` : 'nothing wild but the og crew is moving.'}`,
+    `${zoneName}'s been ${lead && lead.multiplier > 2 ? 'buzzin' : 'kinda chill'} today. ${lead ? `\`${lead.factor_id}\` carrying the load.` : 'holding pattern.'}`,
+    `quick peep at ${zoneName} — ${getWindowEventCount(digest.raw_stats)} events, ${getWindowWalletCount(digest.raw_stats)} miberas active. ${climbed ? `solid stack from \`${climbed.wallet}\`.` : 'steady.'}`,
   ];
   return opts[Math.floor(Math.random() * opts.length)] ?? opts[0]!;
 }
 
 function stubWeaver(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
-  return `noticed something across the festival this week — ${flavor.name} is buzzin (${getWindowEventCount(digest.raw_stats)} events) but the same miberas keep showing up across multiple zones. that's the og pattern: stack everywhere, not just one zone. keep a peep on the cross-zone movers.`;
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
+  return `noticed something across the festival this week — ${zoneName} is buzzin (${getWindowEventCount(digest.raw_stats)} events) but the same miberas keep showing up across multiple zones. that's the og pattern: stack everywhere, not just one zone. keep a peep on the cross-zone movers.`;
 }
 
 function stubLoreDrop(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const archetypes = ['Freetekno', 'Milady', 'Chicago Detroit', 'Acidhouse'];
   const arc = archetypes[Math.floor(Math.random() * archetypes.length)];
-  return `this week's ${flavor.name} energy feels real ${arc} — ${digest.raw_stats.factor_trends.length > 2 ? 'distributed and kinetic' : 'narrow and focused'}. the codex remembers.`;
+  return `this week's ${zoneName} energy feels real ${arc} — ${digest.raw_stats.factor_trends.length > 2 ? 'distributed and kinetic' : 'narrow and focused'}. the codex remembers.`;
 }
 
 function stubQuestion(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const opts = [
-    `ngl, ${flavor.name}'s been weirdly ${getWindowEventCount(digest.raw_stats) < 200 ? 'chill' : 'lively'} this week. anyone else see it?`,
-    `serious question — what's everyone's read on ${flavor.name} right now?`,
-    `${flavor.name} regulars: y'all noticing the same patterns ruggy is?`,
+    `ngl, ${zoneName}'s been weirdly ${getWindowEventCount(digest.raw_stats) < 200 ? 'chill' : 'lively'} this week. anyone else see it?`,
+    `serious question — what's everyone's read on ${zoneName} right now?`,
+    `${zoneName} regulars: y'all noticing the same patterns ruggy is?`,
   ];
   return opts[Math.floor(Math.random() * opts.length)] ?? opts[0]!;
 }
 
 function stubCallout(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const stats = digest.raw_stats;
   if (stats.spotlight) {
-    return `🚨 ${flavor.name} — \`${stats.spotlight.wallet}\` flagged for ${stats.spotlight.reason.replace('_', ' ')}. that's the heaviest move ruggy's logged this cycle. someone's making moves.`;
+    return `🚨 ${zoneName} — \`${stats.spotlight.wallet}\` flagged for ${stats.spotlight.reason.replace('_', ' ')}. that's the heaviest move ruggy's logged this cycle. someone's making moves.`;
   }
   const climbed = stats.rank_changes.climbed[0];
   if (climbed) {
-    return `🚨 ${flavor.name} — \`${climbed.wallet}\` jumped from #${climbed.prior_rank} → #${climbed.current_rank}. that's a ${climbed.rank_delta}-place delta in one window. worth a peek.`;
+    return `🚨 ${zoneName} — \`${climbed.wallet}\` jumped from #${climbed.prior_rank} → #${climbed.current_rank}. that's a ${climbed.rank_delta}-place delta in one window. worth a peek.`;
   }
   const factor = stats.factor_trends.find((t) => t.multiplier >= 5);
   if (factor) {
-    return `🚨 ${flavor.name} — \`${factor.factor_id}\` running at ${factor.multiplier.toFixed(1)}× baseline this window. that's well above pattern.`;
+    return `🚨 ${zoneName} — \`${factor.factor_id}\` running at ${factor.multiplier.toFixed(1)}× baseline this window. that's well above pattern.`;
   }
-  return `🚨 ${flavor.name} — anomaly check tripped but pattern is unclear. ruggy'll dig into this.`;
+  return `🚨 ${zoneName} — anomaly check tripped but pattern is unclear. ruggy'll dig into this.`;
 }

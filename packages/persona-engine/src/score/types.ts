@@ -50,12 +50,10 @@ export const ZONE_TO_DIMENSION = {
   'owsley-lab': 'onchain',
 } as const satisfies Record<ZoneId, ZoneDimension>;
 
-export const ZONE_FLAVOR = {
-  stonehenge: { emoji: '🗿', name: 'Stonehenge', dimension: 'overall' },
-  'bear-cave': { emoji: '🐻', name: 'Bear Cave', dimension: 'og' },
-  'el-dorado': { emoji: '⛏️', name: 'El Dorado', dimension: 'nft' },
-  'owsley-lab': { emoji: '🧪', name: 'Owsley Lab', dimension: 'onchain' },
-} as const satisfies Record<ZoneId, { emoji: string; name: string; dimension: ZoneDimension }>;
+// cycle-007 S1/T1.3 · ZONE_FLAVOR DELETED — canonical zone-display map lives at
+// packages/persona-engine/src/domain/zone-registry.ts::ZONE_REGISTRY (D1 closure).
+// Callers migrated to ZONE_REGISTRY (record access) + safeResolveZone{DisplayName,RichLabel} (with SKP-003 try/catch).
+// Per Flatline INV-12 + Red Team AC-RT-002: prevents kebab leak through canonical resolver.
 
 /**
  * Display-cased dimension names — used in prose where the dimension reads as

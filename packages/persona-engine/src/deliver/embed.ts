@@ -27,7 +27,10 @@ import type {
   ZoneDigest,
   ZoneId,
 } from '../score/types.ts';
-import { ZONE_FLAVOR, DIMENSION_NAME } from '../score/types.ts';
+import { DIMENSION_NAME } from '../score/types.ts';
+// cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry.
+// Note: embed.ts uses .name → migrate to .displayName via ZONE_REGISTRY.
+import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import type { ProseGateValidation } from './prose-gate.ts';
 import { POST_TYPE_SPECS, type PostType } from '../compose/post-types.ts';
 import {
@@ -114,7 +117,7 @@ export function buildPostPayload(
   }
 
   // Embedded types: digest / weaver / callout
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const flavor = ZONE_REGISTRY[digest.zone];
   const stats = digest.raw_stats;
 
   const hasSpike = stats.spotlight !== null || stats.factor_trends.some((t) => t.multiplier > 2);
@@ -166,7 +169,7 @@ export function buildPostPayload(
 }
 
 function buildFallback(digest: ZoneDigest, postType: PostType): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const flavor = ZONE_REGISTRY[digest.zone];
   const dimensionName = DIMENSION_NAME[flavor.dimension];
 
   // V0.6-D voice/v5 (operator 2026-04-30): fallback content is the line
@@ -184,10 +187,10 @@ function buildFallback(digest: ZoneDigest, postType: PostType): string {
   switch (postType) {
     case 'digest':
     case 'weaver':
-      return `${flavor.emoji} ${flavor.name}${dimensionParen}`;
+      return `${flavor.emoji} ${flavor.displayName}${dimensionParen}`;
     case 'callout':
-      return `🚨 ${flavor.name}${dimensionParen}`;
+      return `🚨 ${flavor.displayName}${dimensionParen}`;
     default:
-      return `${flavor.emoji} ${flavor.name}${dimensionParen}`;
+      return `${flavor.emoji} ${flavor.displayName}${dimensionParen}`;
   }
 }

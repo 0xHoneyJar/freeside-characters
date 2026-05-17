@@ -22,7 +22,8 @@
 
 import type { CharacterConfig } from '../types.ts';
 import type { ZoneId } from '../score/types.ts';
-import { ZONE_FLAVOR } from '../score/types.ts';
+// cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry (FR-1 voice prompt surface).
+import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import {
   ZONE_SPATIAL,
   deriveSocialDensity,
@@ -66,7 +67,7 @@ export interface BuildEnvironmentContextArgs {
  * output is ~80-120 tokens for a fully-populated block.
  */
 export function buildEnvironmentContext(args: BuildEnvironmentContextArgs): string {
-  const codexAnchor = args.zone ? ZONE_FLAVOR[args.zone] : null;
+  const codexAnchor = args.zone ? ZONE_REGISTRY[args.zone] : null;
   const profile = args.zone ? ZONE_SPATIAL[args.zone as SpatialZoneId] : null;
 
   // moment-half: derive room read inline (same helpers `mcp__rosenzu__read_room` uses)
@@ -88,7 +89,7 @@ export function buildEnvironmentContext(args: BuildEnvironmentContextArgs): stri
 
   const parts: (string | null)[] = [
     args.zone && codexAnchor
-      ? `You are in ${codexAnchor.emoji} #${args.zone} — ${codexAnchor.name} (${codexAnchor.dimension} dimension).`
+      ? `You are in ${codexAnchor.emoji} #${args.zone} — ${codexAnchor.displayName} (${codexAnchor.dimension} dimension).`
       : `You are in a Discord channel outside the codex-mapped zones.`,
     roomReadLine,
     args.otherCharactersHere && args.otherCharactersHere.length > 0

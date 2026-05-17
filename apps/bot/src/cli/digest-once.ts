@@ -21,7 +21,7 @@ import {
   deliverZoneDigest,
   getBotClient,
   shutdownClient,
-  ZONE_FLAVOR,
+  ZONE_REGISTRY,
   getWindowEventCount,
   getWindowWalletCount,
   POST_TYPE_SPECS,
@@ -70,7 +70,7 @@ async function main(): Promise<void> {
   console.log(`${primary.id}: digest-once · firing immediately`);
   console.log(`data: ${config.STUB_MODE ? 'STUB' : 'LIVE'} · llm: ${llmMode} · delivery: ${deliveryMode}`);
   console.log(`mode: ${typeMode === 'mix' ? 'MIX (random non-digest per zone)' : typeMode}`);
-  console.log(`zones: ${zones.map((z) => `${ZONE_FLAVOR[z].emoji} ${z}`).join(' · ')}`);
+  console.log(`zones: ${zones.map((z) => `${ZONE_REGISTRY[z].emoji} ${z}`).join(' · ')}`);
   console.log();
 
   if (config.DISCORD_BOT_TOKEN) {

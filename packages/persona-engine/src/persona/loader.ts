@@ -24,7 +24,10 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { ZoneId } from '../score/types.ts';
-import { ZONE_FLAVOR, DIMENSION_NAME } from '../score/types.ts';
+import { DIMENSION_NAME } from '../score/types.ts';
+// cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry per FR-1 (Bug A source-side).
+// Voice-prompt path MUST use the safe resolver per SKP-003 — UnknownZoneError caught + raw zone fallback + warn (no crash).
+import { safeResolveZoneDisplayName, ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import { loadCodexPrelude } from '../score/codex-context.ts';
 import type { PostType } from '../compose/post-types.ts';
 import type { CharacterConfig } from '../types.ts';
@@ -264,11 +267,12 @@ export function buildPrompt(args: BuildPromptArgsUnified): {
       : '(not applicable in conversation mode)';
 
   const zoneId = shape.kind === 'cron' ? shape.zoneId : 'conversation';
+  // cycle-007 FR-1: safe-resolve canonical zone display name (catches UnknownZoneError, falls back to raw zoneId + warns)
   const zoneName =
-    shape.kind === 'cron' ? ZONE_FLAVOR[shape.zoneId].name : 'this conversation';
+    shape.kind === 'cron' ? safeResolveZoneDisplayName(shape.zoneId, 'persona-loader') : 'this conversation';
   const dimensionName =
     shape.kind === 'cron'
-      ? DIMENSION_NAME[ZONE_FLAVOR[shape.zoneId].dimension]
+      ? DIMENSION_NAME[ZONE_REGISTRY[shape.zoneId].dimension]
       : 'Conversation';
 
   const inputPayloadMarker = '═══ INPUT PAYLOAD ═══';

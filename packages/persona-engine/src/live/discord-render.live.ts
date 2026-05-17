@@ -17,12 +17,10 @@ const ZONE_COLORS = {
   'owsley-lab': 0x6f4ea1,
 } as const;
 
-const ZONE_LABEL = {
-  stonehenge: '🗿 Stonehenge',
-  'bear-cave': '🐻 Bear Cave (OG)',
-  'el-dorado': '⛏️ El Dorado (NFT)',
-  'owsley-lab': '🧪 Owsley Lab (Onchain)',
-} as const;
+// cycle-007 S1/T1.3 · ZONE_LABEL deleted — replaced by safeResolveZoneRichLabel from domain/zone-registry.ts.
+// Per Flatline SDD SKP-003 (Phase 4): callers use the safe variant which catches UnknownZoneError + emits
+// zone.resolution_failed warning + returns raw zone string as fallback (does NOT crash digest pipeline).
+import { safeResolveZoneRichLabel } from '../domain/zone-registry.ts';
 
 const EMBED_FIELD_CHAR_CAP = 1024;
 const DEFAULT_MAX_FACTORS = 19;
@@ -143,7 +141,7 @@ export function renderDigest(snapshot: DigestSnapshot, augment?: VoiceAugment): 
     .join('\n');
 
   return {
-    voiceContent: voice ? `${ZONE_LABEL[snapshot.zone]}\n${voice}` : ZONE_LABEL[snapshot.zone],
+    voiceContent: voice ? `${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')}\n${voice}` : safeResolveZoneRichLabel(snapshot.zone, 'discord-render'),
     truthEmbed: {
       color: ZONE_COLORS[snapshot.zone],
       fields,
@@ -210,7 +208,7 @@ function voiceLine(augment?: VoiceAugment): string {
 
 function buildSubstrateFacts(snapshot: DigestSnapshot): ReadonlyArray<string> {
   const facts: string[] = [];
-  facts.push(`${ZONE_LABEL[snapshot.zone]} · ${snapshot.totalEvents} events / ${snapshot.windowDays}d`);
+  facts.push(`${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · ${snapshot.totalEvents} events / ${snapshot.windowDays}d`);
   if (snapshot.activeWallets !== undefined) {
     facts.push(`${snapshot.activeWallets} active wallets`);
   }
@@ -219,21 +217,21 @@ function buildSubstrateFacts(snapshot: DigestSnapshot): ReadonlyArray<string> {
 
 export function renderMicro(snapshot: DigestSnapshot, augment?: VoiceAugment): MicroMessage {
   return {
-    voiceContent: voiceLine(augment) || `${ZONE_LABEL[snapshot.zone]} · checking in`,
+    voiceContent: voiceLine(augment) || `${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · checking in`,
     truthFields: buildSubstrateFacts(snapshot),
   };
 }
 
 export function renderLoreDrop(snapshot: DigestSnapshot, augment?: VoiceAugment): LoreDropMessage {
   return {
-    voiceContent: voiceLine(augment) || `${ZONE_LABEL[snapshot.zone]} · from the codex`,
+    voiceContent: voiceLine(augment) || `${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · from the codex`,
     truthFields: buildSubstrateFacts(snapshot),
   };
 }
 
 export function renderQuestion(snapshot: DigestSnapshot, augment?: VoiceAugment): QuestionMessage {
   return {
-    voiceContent: voiceLine(augment) || `${ZONE_LABEL[snapshot.zone]} · ?`,
+    voiceContent: voiceLine(augment) || `${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · ?`,
     truthFields: buildSubstrateFacts(snapshot),
   };
 }
@@ -244,7 +242,7 @@ export function renderWeaver(
   augment?: VoiceAugment,
 ): WeaverMessage {
   const fields: DeterministicEmbed['fields'] = crossZone.slice(0, 4).map((z) => ({
-    name: ZONE_LABEL[z.zone],
+    name: safeResolveZoneRichLabel(z.zone, 'discord-render'),
     value: `\`\`\`\nevents ${String(z.totalEvents).padStart(8, ' ')} / ${z.windowDays}d\nw/w    ${formatDeltaPct(z.deltaPct).padStart(8, ' ')}\n\`\`\``,
     inline: true,
   }));
@@ -260,7 +258,7 @@ export function renderWeaver(
 
 export function renderCallout(snapshot: DigestSnapshot, augment?: VoiceAugment): CalloutMessage {
   return {
-    voiceContent: voiceLine(augment) || `🚨 ${ZONE_LABEL[snapshot.zone]} · callout`,
+    voiceContent: voiceLine(augment) || `🚨 ${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · callout`,
     truthEmbed: {
       color: 0xe74c3c,
       fields: [
