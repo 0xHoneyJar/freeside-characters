@@ -30,7 +30,10 @@ import {
   type ZoneId,
   ZONE_REGISTRY,
 } from '@freeside-characters/persona-engine';
-import { generateStubRecentBadges } from '@freeside-characters/persona-engine/score/client';
+import {
+  fetchRecentBadges,
+  generateStubRecentBadges,
+} from '@freeside-characters/persona-engine/score/client';
 import type { GetRecentBadgesResponse } from '@freeside-characters/persona-engine/score/types';
 import { loadCharacter } from '../character-loader.ts';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync } from 'node:fs';
@@ -204,19 +207,24 @@ async function runCompose(parsed: ParsedArgs, character: ReturnType<typeof loadC
   };
 }
 
-function runRecentBadges(parsed: ParsedArgs) {
+async function runRecentBadges(parsed: ParsedArgs): Promise<{
+  kind: 'recent_badges';
+  badges: GetRecentBadgesResponse;
+  draft_voice: string;
+}> {
   // V1 exhibit: pull stub or live data, format a simple narrative template.
   // No orchestrator yet — the playground IS the iteration surface where the
   // operator decides what the orchestrator should look like.
+  //
+  // 2026-05-17 operator iteration: live mode wired to real score-mcp via
+  // fetchRecentBadges. Production tool returns real earnings · path B (gateway
+  // route is per-LLM-call · score-mcp is a separate substrate · MCP_KEY auths
+  // the score-api production railway directly).
   const config = loadConfig();
-  const stub = config.STUB_MODE || !config.MCP_KEY;
-  const badges = stub
+  const useStub = config.STUB_MODE || !config.MCP_KEY;
+  const badges: GetRecentBadgesResponse = useStub
     ? generateStubRecentBadges({ limit: 8 })
-    : (() => {
-        throw new Error(
-          'recent_badges live mode not yet wired — STUB_MODE only for cycle-007 S8 kitchen',
-        );
-      })();
+    : await fetchRecentBadges(config, { limit: 8 });
   const rarityRank: Record<string, number> = {
     common: 1,
     uncommon: 2,
@@ -271,7 +279,7 @@ async function main(): Promise<void> {
 
   try {
     if (parsed.postType === 'recent_badges') {
-      result = runRecentBadges(parsed);
+      result = await runRecentBadges(parsed);
     } else {
       result = await runCompose(parsed, character);
     }

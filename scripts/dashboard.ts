@@ -299,24 +299,28 @@ async function handlePlaygroundFire(req: Request): Promise<Response> {
       childEnv.LLM_PROVIDER = process.env.LLM_PROVIDER ?? 'auto';
       // Live-mode env allowlist (explicit · no wildcard inheritance).
       const LIVE_PASSTHROUGH = [
-        // Anthropic-direct path
+        // PATH B (operator-preferred 2026-05-17) · freeside agent-gateway
+        // routes LLM calls through the railway · railway holds Bedrock auth ·
+        // operator's local .env carries ONLY the gateway key + URL ·
+        // NO raw AWS creds extracted from production.
+        'FREESIDE_API_KEY',
+        'FREESIDE_BASE_URL',
+        'FREESIDE_AGENT_MODEL',
+        // Anthropic-direct path (alternative · requires raw API key locally)
         'ANTHROPIC_API_KEY',
         'ANTHROPIC_MODEL',
-        // Freeside-gateway path
-        'FREESIDE_API_KEY',
-        'FREESIDE_AGENT_MODEL',
-        'FREESIDE_API_URL',
-        // Score-MCP (production railway data)
-        'MCP_KEY',
-        'SCORE_API_URL',
-        'SCORE_BEARER',
-        // Bedrock (AWS path · production railway uses this · operator note)
+        // Bedrock-direct path (alternative · requires raw AWS creds OR bearer)
+        'AWS_BEARER_TOKEN_BEDROCK',
         'AWS_ACCESS_KEY_ID',
         'AWS_SECRET_ACCESS_KEY',
         'AWS_SESSION_TOKEN',
         'AWS_REGION',
         'AWS_DEFAULT_REGION',
         'BEDROCK_MODEL_ID',
+        // Score-MCP (production railway data · gateway-independent · separate substrate)
+        'MCP_KEY',
+        'SCORE_API_URL',
+        'SCORE_BEARER',
         // OpenTelemetry
         'OTEL_EXPORTER_OTLP_ENDPOINT',
         'OTEL_EXPORTER_OTLP_HEADERS',
