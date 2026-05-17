@@ -93,6 +93,8 @@ export function resolveFactorLabel(factor: PulseDimensionFactor): string {
 const ARROW_UP = '↑';
 const ARROW_DOWN = '↓';
 const DASH = '—';
+const NEUTRAL = ' '; // operator feedback 2026-05-17: em-dash on zero reads as
+                    // "negative-ish" · drop sign entirely · just show "0%" or "0"
 
 export interface DeltaFmt {
   readonly sign: string;
@@ -103,16 +105,18 @@ export interface DeltaFmt {
  * Format a delta for display. Honest-delta posture:
  * - previous = 0 (delta_pct === null) → return ±N events
  * - delta_pct !== 0 → return sign + percentage (1 decimal under 100, integer at/above)
- * - delta_pct === 0 → return em-dash + "0%"
+ * - delta_pct === 0 → return NEUTRAL (no sign) + "0%" · operator-pushback closure
  */
 export function fmtDelta(deltaPct: number | null, deltaCount: number): DeltaFmt {
   if (deltaPct === null) {
-    if (deltaCount === 0) return { sign: DASH, value: '0' };
+    // null pct + 0 count = both periods had zero activity · render as flat 0%
+    // (dashboard would render em-dash here · operator pushback: neutral is cleaner)
+    if (deltaCount === 0) return { sign: NEUTRAL, value: '0%' };
     const sign = deltaCount > 0 ? ARROW_UP : ARROW_DOWN;
     const value = `${deltaCount > 0 ? '+' : ''}${deltaCount}`;
     return { sign, value };
   }
-  if (deltaPct === 0) return { sign: DASH, value: '0%' };
+  if (deltaPct === 0) return { sign: NEUTRAL, value: '0%' };
   const sign = deltaPct > 0 ? ARROW_UP : ARROW_DOWN;
   const abs = Math.abs(deltaPct);
   const rounded = abs >= 100 ? `${Math.round(deltaPct)}%` : `${deltaPct.toFixed(1)}%`;
@@ -121,6 +125,11 @@ export function fmtDelta(deltaPct: number | null, deltaCount: number): DeltaFmt 
     deltaPct > 0 && !rounded.startsWith('+') ? `+${rounded}` : rounded;
   return { sign, value };
 }
+
+// Keep DASH exported for callers that want the explicit em-dash semantics
+// (e.g., visually-loud "this section is empty"). NEUTRAL is the new default
+// for zero-deltas inside fmtDelta.
+export { DASH };
 
 // ──────────────────────────────────────────────────────────────────────
 // Table formatting for embed-field code blocks
@@ -141,13 +150,19 @@ function formatActiveFactorTable(
     count: String(f.total),
     delta: fmtDelta(f.delta_pct, f.delta_count),
   }));
+  // Pad every column to the widest value across rows. Operator feedback
+  // 2026-05-17: "spacing for the tables must be appropriate and consistent
+  // every single time" · 3-column rigid alignment fixes the wobble.
   const labelW = Math.max(...rows.map((r) => r.label.length));
   const countW = Math.max(...rows.map((r) => r.count.length));
+  const deltaValueW = Math.max(...rows.map((r) => r.delta.value.length));
   return rows
     .map((r) => {
       const label = r.label.padEnd(labelW);
       const count = r.count.padStart(countW);
-      const delta = `${r.delta.sign} ${r.delta.value}`;
+      // Single-char sign + space + right-padded value · keeps both columns
+      // visually anchored even when one row is "↑ +520%" and the next is "  0%".
+      const delta = `${r.delta.sign} ${r.delta.value.padStart(deltaValueW)}`;
       return `${label}  ${count}  ${delta}`;
     })
     .join('\n');
@@ -201,11 +216,17 @@ export interface BuildDimensionPulseOpts {
 /**
  * Build ONE dimension embed (single dim card · matches /dimension/{id} layout).
  *
- * Title:   "OG ↑ +7.8%"
- * Desc:    "**152**\nevents / 7d · 1/2 factors"
- * Fields:  "Most active this 7d" + (optional) "Went quiet · active prior, 0 this 7d"
- * Footer:  "zone: bear-cave · 5 of 18 factors · 2026-05-17 · See all 18 →"
+ * Operator-refined 2026-05-17 (V2 layout):
+ *   Title:   "NFT  ↑ +7.8%"            (delta-driven · 0% reads neutral with no sign)
+ *   Desc:    "**152**"                 (hero number only · subtitle moved to footer)
+ *   Fields:  "Most active this 7d" + (optional) "Went quiet · ..."
+ *   Footer:  "events / 7d · 1/2 factors · zone: el-dorado"  (low-signal context · simple)
+ *
+ * env-configurable for future-me:
+ *   DIM_CARD_VERBOSE=1 → restore the V1 verbose footer (See-all · date · old layout)
  */
+const VERBOSE = process.env.DIM_CARD_VERBOSE === '1';
+
 export function buildDimensionPulseEmbed(
   breakdown: PulseDimensionBreakdown,
   opts: BuildDimensionPulseOpts,
@@ -216,11 +237,15 @@ export function buildDimensionPulseEmbed(
   const topLimit = opts.topFactorsLimit ?? 5;
   const coldLimit = opts.coldFactorsLimit ?? 5;
 
-  const title = `${breakdown.display_name}  ${delta.sign} ${delta.value}`;
-  const description = [
-    `**${breakdown.total_events}**`,
-    `events / ${opts.windowDays}d · ${activeCount}/${breakdown.total_factor_count} factors`,
-  ].join('\n');
+  // Title · sign + space + value. NEUTRAL sign for zero is a single space ·
+  // tightens to "NFT  0%" (no em-dash) per operator feedback.
+  const titleSign = delta.sign.trim().length === 0 ? '' : `${delta.sign} `;
+  const title = `${breakdown.display_name}  ${titleSign}${delta.value}`.replace(/\s+/g, ' ').trim();
+
+  // Description · hero number only by default (V2). VERBOSE restores subtitle inline.
+  const description = VERBOSE
+    ? `**${breakdown.total_events}**\nevents / ${opts.windowDays}d · ${activeCount}/${breakdown.total_factor_count} factors`
+    : `**${breakdown.total_events}**`;
 
   const fields: DiscordEmbed['fields'] = [];
 
@@ -254,16 +279,19 @@ export function buildDimensionPulseEmbed(
     });
   }
 
-  // Footer
-  const isoDate = opts.generatedAt.slice(0, 10);
-  const footerParts: string[] = [
-    `zone: ${opts.zone}`,
-    `${Math.min(topFactors.length, breakdown.total_factor_count)} of ${breakdown.total_factor_count} factors`,
-    isoDate,
-  ];
-  if (breakdown.total_factor_count > topFactors.length) {
-    footerParts.push(`See all ${breakdown.total_factor_count} →`);
-  }
+  // Footer · simplistic by default (V2): hero subtitle + zone. Drops See-all + date.
+  // VERBOSE adds them back.
+  const subtitle = `events / ${opts.windowDays}d · ${activeCount}/${breakdown.total_factor_count} factors`;
+  const footerParts: string[] = VERBOSE
+    ? [
+        `zone: ${opts.zone}`,
+        `${Math.min(topFactors.length, breakdown.total_factor_count)} of ${breakdown.total_factor_count} factors`,
+        opts.generatedAt.slice(0, 10),
+        ...(breakdown.total_factor_count > topFactors.length
+          ? [`See all ${breakdown.total_factor_count} →`]
+          : []),
+      ]
+    : [subtitle, `zone: ${opts.zone}`];
 
   return {
     color,

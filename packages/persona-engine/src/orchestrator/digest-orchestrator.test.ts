@@ -110,10 +110,14 @@ describe('composeDigestPost · pulse path (cycle-007 S8 r4)', () => {
     expect(result.payload.embeds).toHaveLength(1);
 
     const embed = result.payload.embeds[0]!;
-    expect(embed.title).toBe('NFT  ↑ +7.8%');
-    expect(embed.description).toContain('**152**');
-    expect(embed.description).toContain('events / 7d');
-    expect(embed.description).toContain('1/2 factors');
+    // V2 layout (2026-05-17 operator refinement):
+    //   - title is single-space collapsed (no double-space)
+    //   - description is hero-only
+    //   - subtitle moved to footer
+    expect(embed.title).toBe('NFT ↑ +7.8%');
+    expect(embed.description).toBe('**152**');
+    expect(embed.footer!.text).toContain('events / 7d');
+    expect(embed.footer!.text).toContain('1/2 factors');
     // Fields: Most active + Went quiet
     expect(embed.fields).toHaveLength(2);
     expect(embed.fields![0].name).toBe('Most active this 7d');
@@ -122,7 +126,7 @@ describe('composeDigestPost · pulse path (cycle-007 S8 r4)', () => {
     expect(embed.fields![1].value).toContain('Minted Fractures');
     expect(embed.fields![1].value).toContain('was 1');
     expect(embed.footer!.text).toContain('zone: el-dorado');
-    expect(embed.footer!.text).toContain('2026-05-17');
+    // V2 simplistic footer · date dropped by default (DIM_CARD_VERBOSE=1 restores it)
   });
 
   test('cross-dim zone (stonehenge) produces 3 embeds in canonical order', async () => {
