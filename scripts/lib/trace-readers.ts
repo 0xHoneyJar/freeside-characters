@@ -77,12 +77,54 @@ const CANDIDATE_RUN_DIRS = () => {
   return [resolve(root, 'apps/bot/.run'), resolve(root, '.run')];
 };
 
-function resolveExistingPath(...segments: string[]): string {
+/**
+ * Resolve a path segment against the candidate .run/ dirs (apps/bot/.run/ first,
+ * project-root .run/ second; override via `TRACE_RUN_DIR`). Returns the first
+ * existing match, or the first candidate when nothing exists (so callers can
+ * short-circuit on `existsSync(path) === false`).
+ *
+ * Exported per cycle-007 S5/T5.1 so dashboard.ts can deduplicate the reader
+ * infrastructure that previously lived in both files.
+ */
+export function resolveTraceFilePath(...segments: string[]): string {
   for (const base of CANDIDATE_RUN_DIRS()) {
     const p = resolve(base, ...segments);
     if (existsSync(p)) return p;
   }
   return resolve(CANDIDATE_RUN_DIRS()[0]!, ...segments);
+}
+
+// Internal alias preserved for the rest of this module.
+const resolveExistingPath = resolveTraceFilePath;
+
+/**
+ * Read a JSONL file and parse each non-empty line as the caller's T. Malformed
+ * lines are dropped silently (IMP-012 reader-tolerance). Returns [] when the
+ * file does not exist.
+ *
+ * Use this when you need raw shapes (e.g., dashboard's per-endpoint contracts);
+ * for envelope-aware reading use the `readLatest` / `readByLayer` / `readVoice`
+ * helpers below.
+ *
+ * Exported per cycle-007 S5/T5.1 (deduplication target).
+ */
+export function readJsonl<T>(absPath: string): T[] {
+  if (!existsSync(absPath)) return [];
+  try {
+    const text = readFileSync(absPath, 'utf-8');
+    const out: T[] = [];
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        out.push(JSON.parse(line) as T);
+      } catch {
+        /* malformed line · skip · IMP-012 tolerance */
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────
