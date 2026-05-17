@@ -4,6 +4,103 @@
   "active_cycle": "cycle-006-substrate-presentation",
   "cycles": [
     {
+      "id": "cycle-007-agent-debuggability",
+      "label": "agent debuggability through medium-aware substrate-presentation layering (dashboard as force function · D1-D6 + FR-1/FR-2 closure of cycle-006 canary bugs)",
+      "status": "active",
+      "created_at": "2026-05-17T00:00:00Z",
+      "prd": "grimoires/loa/cycles/cycle-007-agent-debuggability/prd.md",
+      "sdd": "grimoires/loa/cycles/cycle-007-agent-debuggability/sdd.md",
+      "sprint_plan": "grimoires/loa/cycles/cycle-007-agent-debuggability/sprint.md",
+      "target_branch": "feat/cycle-007-agent-debuggability",
+      "depends_on": [
+        "cycle-006-substrate-presentation MERGED 2026-05-16 (3324a8d on main · ledger candidate)",
+        "@0xhoneyjar/medium-registry@^0.2.0 (consumed unchanged · local extension at deliver/medium-extensions.ts)",
+        "trace dashboard substrate at localhost:3001 (cycle-006 deliverable)"
+      ],
+      "decisions_frozen": [
+        "D1-zone-registry",
+        "D2-trace-envelope",
+        "D3-medium-extensions",
+        "D4-trace-cli",
+        "D5-figure-space-padding",
+        "D6-bugs-as-FRs"
+      ],
+      "operator_attested_phase_1": {
+        "OP-Q1_branch": "cut feat/cycle-007-agent-debuggability from origin/main NOW",
+        "OP-Q2_envelope": "forward-only (no migration of pre-cycle-007 traces)",
+        "OP-Q3_cli_surface": "5 subcommands: trace:latest, trace:layer, trace:get, trace:voice, trace:explain",
+        "OP-Q4_dashboard_sse": "SSE behind LOA_DASH_SSE=1 flag (default 2s poll) · loa-decided per operator deferral"
+      },
+      "sprint_estimate": {
+        "sprints": 9,
+        "tasks": 31,
+        "days": "7-8",
+        "loc_net": "+1320"
+      },
+      "red_team_phase_45": {
+        "executed_at": "2026-05-17",
+        "verdict": "operator-attested Loa-decide-all + AC-RT-004 FORK accepted (TS-AST lint rewrite). 5 ACs integrated. 1 quick-fix. 4 deferred-as-V2-visions.",
+        "grounding_failure_note": "Opus=0 on all 10 (known cheval-headless empty per feedback_multimodel_via_clis . same shape as cycle-006 RT) . GPT+Gemini cross-scored as primary signal",
+        "ac_integration": {
+          "AC-RT-001": {
+            "sprint": "S5",
+            "task": "T5.5",
+            "score": 780,
+            "title": "DNS rebinding bypass of SSE localhost bind",
+            "counter": "bearer token + Host header check (INV-16)"
+          },
+          "AC-RT-002": {
+            "sprint": "S1",
+            "task": "T1.6",
+            "score": 760,
+            "title": "INV-12 manifest narrowing in PR",
+            "counter": "monotonic check + CODEOWNERS + git-history-aware lint (INV-17)"
+          },
+          "AC-RT-003": {
+            "sprint": [
+              "S4",
+              "S5"
+            ],
+            "task": [
+              "T4.4",
+              "T5.4"
+            ],
+            "score": 740,
+            "title": "ANSI escape injection via trace:explain human format",
+            "counter": "scripts/lib/safe-render.ts strips C0/C1 (INV-18)"
+          },
+          "AC-RT-004": {
+            "sprint": "S1",
+            "task": "T1.5",
+            "score": 700,
+            "title": "INV-12 lint bypass via JS string escapes",
+            "counter": "TS-AST scanner rewrite (PRAISE-3 holds . operator FORK-attested)"
+          },
+          "AC-RT-005": {
+            "sprint": "S2",
+            "task": "extend wrapTraceEntry",
+            "score": 420,
+            "title": "Nested layer field spoof",
+            "counter": "sanitizeNestedReservedKeys (INV-15)"
+          }
+        },
+        "quick_fix": {
+          "ATK-007": {
+            "score": 580,
+            "title": "Symlink-inside-repo exfil",
+            "counter": "strict FREESIDE_CHARACTERS_TRACE_FILES allowlist + LOA_TRACE_TEST_MODE=1 gate"
+          }
+        },
+        "deferred_v2": [
+          "ATK-003 Cyrillic homoglyph (670)",
+          "ATK-005 findRepoRoot TOCTOU (510)",
+          "ATK-008 JSON bomb structural (430)",
+          "ATK-010 SSE reconnect storm (380 mostly closed by AC-RT-001)"
+        ],
+        "attack_log": ".run/redteam-sdd-cycle-007.log (run id rt-1778988389-8bf58521)"
+      }
+    },
+    {
       "id": "cycle-006-substrate-presentation",
       "label": "substrate-presentation refactor (complete the seam · per-post-type orchestrators · voice-memory production-wired · daily-pulse · 4 Red Team ACs)",
       "status": "candidate",

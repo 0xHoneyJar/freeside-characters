@@ -16,6 +16,190 @@
 
 - **`docs/` ↔ `grimoires/loa/specs/legacy-imports/` duplication** — mount PR copied AGENTS.md, ARCHITECTURE.md, CIVIC-LAYER.md, MULTI-REGISTER.md, CHARACTER-AUTHORING.md into legacy-imports/ without removing originals. Follow-up cleanup: pick canonical home (likely grimoires/), rewrite intra-repo references, delete duplicates. Track as separate PR.
 
+## Decision Log — cycle-007 Flatline sprint review (simstim Phase 6 · 2026-05-17)
+
+3-model Flatline (Opus + GPT-5.5 + Gemini-3.1-pro · 53% agreement · 113s · $0) on 743-line sprint plan returned 19 findings: 4 HIGH_CONSENSUS + 7 DISPUTED (6 Opus=0 known empty) + 8 BLOCKERs (2 CRITICAL + 6 HIGH). Highest-volume Flatline of cycle-007 — sprint plans have more execution-ambiguity surface than PRD/SDD. 18 findings integrated · 1 LOW deferred · 1 strategic fork operator-resolved.
+
+**2 CRITICAL closed**:
+- **SKP-001/CRITICAL #1 (850) XSS via sanitizeForTerminal**: I conflated terminal-control-byte stripping with HTML-escape. Dashboard MUST use `.textContent` (NEVER `.innerHTML`) for streamed payload strings. Added `sanitizeForBrowser` HTML-escape function + XSS test fixtures (script tag · SVG onload · attribute injection · javascript: URLs). Real bug in my plan.
+- **SKP-001/CRITICAL #2 (850) CODEOWNERS via signed-off-by trailer not reliable**: Forgeable locally. Real fix: GitHub branch protection + CODEOWNERS required-reviews. CI keeps only mechanical monotonic check. New operator-action: configure GitHub branch protection BEFORE S1 close. Captured as ledger field `operator_action_pending: github_branch_protection`.
+
+**1 strategic fork operator-resolved**: SKP-002 SSE auth bootstrap. Query-param token approach was leaky (DevTools, proxy logs, browser history). **Operator chose minimal cookie bootstrap** (HttpOnly + SameSite=Strict, no Secure for localhost HTTP, set on first GET / via separate `/api/auth` REST call · EventSource uses `withCredentials: true`). ~25 LoC vs original ~10 query-param. Closes URL token leakage class. Single-tab developer model clean.
+
+**6 HIGH BLOCKERs auto-applied**:
+- SKP-003 (720) Concurrent async write interleaving in `appendTraceEntry` · added in-memory promise-chain mutex (~15 LoC · NOT a file lock · single-process invariant preserved)
+- SKP-001 (720) S0/T0.2 Discord webhook channel verification · **directly confirmed by operator memory `feedback_env_channel_world_mismatch` (2026-05-16) — DISCORD_CHANNEL_* may lie about guild** · spike script MUST call Discord API GET /channels/{id} BEFORE posting · assert guild_id matches TEST_GUILD_ID_ALLOWLIST constant
+- SKP-002 (760) Duplicate of cookie-bootstrap fork above
+- SKP-007 (720) TS-AST lint scope incomplete (lint catches string-literal + template + char-code · MAY miss object-property access · runtime imports · JSON config data) · counter via defense-in-depth SINK-side prompt-inspection tests at S2/S6
+- SKP-003 (760) Dashboard ANSI strip ≠ HTML escape · duplicate of CRITICAL XSS above
+
+**4 HIGH_CONSENSUS auto-applied**:
+- IMP-001 (800) LoC budget arithmetic fix (running total was off-by-20 missing T2.5 reader-tolerance fixture)
+- IMP-002 (885) **operator-attestation degraded/blocking path explicit** · 5 pair-points formalized (SOFT-degraded for S0/T0.2 · S3 mobile · S5 visual · HARD-blocking for S8 E2E · S8 canary)
+- IMP-003 (800) Shared-file ordering: discord-render.live.ts touched by S1+S3 · sequence enforced
+- IMP-004 (810) INV-13 schema-freeze CI enforcement test (diff against main · `schema_version` bump required for changes)
+
+**7 DISPUTED (Opus=0 known) auto-applied** (1 deferred):
+- IMP-009 (480 LOW) screenshot retention → deferred to S8 cleanup line
+- IMP-010 (840) runtime manifest test for INV-12 lint · explicit in T1.5 acceptance
+- IMP-011 (880) **CRITICAL pair-points for operator-ACs** · formalized as 5 PP gates (SOFT/HARD classification) · /run sprint-plan halts and surfaces at each
+- IMP-012 (910) **CRITICAL schema-file creation tasks** · 4 schemas added as explicit creation tasks (T0.2 t02-decision · T1.6 voice-prompt-paths · T2.1 trace-envelope · T4.4 trace-explain-output)
+- IMP-013 (700) S7 disjointness clarified · zero file overlap with S2/S3/S6 confirmed
+- IMP-014 (760) INV-to-task traceability matrix added as new sprint plan section
+- IMP-015 (780) Canary attestation gating · S8/T8.5 ledger flip BLOCKS until T8.4 attested
+
+**Composition observation (operator-attention)**: 4-stage quality gate flow (PRD-Flatline → BB-design → SDD-Flatline → RT-SDD → Sprint-Flatline) caught 14 + 16 + 14 + 5+2 + 18 = 69 actionable findings on cycle-007 documents I authored myself. Each stage adds different signal: PRD-Flatline catches contract gaps · BB catches frame/craft issues · SDD-Flatline catches correctness issues · Red Team catches adversarial classes · Sprint-Flatline catches execution-ambiguity. **The composition is the substrate cycle-007 itself ARGUES FOR** (compose-when-available pattern · cycle-006 lesson reinforced).
+
+**INV count final**: 18 (3 from cycle-006 + 4 cycle-006 inherited + 8 added across 4 quality gates · INV-12 through INV-18 + INV-15).
+
+**Tasks total**: 35 explicit tasks · ~+1795 net LoC (vs PRD §10 estimate +1370 · +425 from all quality gates · within MEDIUM-to-LARGE tolerance).
+
+**Pair-points formalized** (per IMP-011): PP-1 S0/T0.2 (SOFT) · PP-2 S3-close (SOFT) · PP-3 S5/T5.4 (SOFT) · PP-4 S8/T8.2 E2E (HARD · BLOCKS cycle close) · PP-5 S8/T8.4 canary (HARD · BLOCKS ledger flip).
+
+Full Flatline sprint JSON archived at `.run/flatline-sprint-cycle-007.log`.
+
+## Decision Log — cycle-007 Red Team SDD security design (simstim Phase 4.5 · 2026-05-17)
+
+3-model Red Team (Opus + GPT-5.5 + Gemini-3.1-pro · standard mode · 397s · $0) returned 10 adversarial attacks against 1003-line SDD. Grounding-failure flag fired (Opus=0 on all 10 · known cheval-headless empty per `feedback_multimodel_via_clis`) — same shape as cycle-006 Red Team where 4 ACs were operator-attested despite the same flag. GPT+Gemini cross-scored substantive attacks with concrete citations · treated as primary signal per cycle-006 precedent.
+
+**3 THEORETICAL ≥700 integrated as ACs:**
+- **AC-RT-001 (780)** DNS Rebinding Bypass of SSE Localhost Bind — operator visits attacker page that DNS-rebinds to 127.0.0.1 · Origin check insufficient. Counter: bearer token + Host header validation. Added INV-16. → S5/T5.5
+- **AC-RT-002 (760)** INV-12 Manifest Narrowing in PR — attacker removes path from `.claude/data/voice-prompt-paths.json` while adding kebab literal in de-listed file · the BB HIGH-3 manifest-allowlist defense BECAME the attack vector. Counter: monotonic check + CODEOWNERS + git-history-aware lint. Added INV-17. → S1/T1.6
+- **AC-RT-003 (740)** ANSI Escape Injection via trace:explain Human Format — CVE-2003-0063 family · operator-trust collapse. Counter: scripts/lib/safe-render.ts strips C0/C1 + OSC 8 plain-text. Added INV-18. → S4 + S5
+
+**1 CREATIVE_ONLY 700 integrated as AC (operator-attested FORK):**
+- **AC-RT-004 (700)** INV-12 Lint Bypass via JS String-Literal Escapes. Grep cannot catch `'el-dorado'` or template-concat. **Operator FORK-accepted: rewrite lint as TS-AST scanner using TypeScript compiler API (already in deps · PRAISE-3 holds).** Cost ~80-120 LoC. → S1/T1.5 rewrite
+
+**2 CREATIVE_ONLY quick-fixes integrated:**
+- **AC-RT-005 (420)** Nested layer field spoof → `sanitizeNestedReservedKeys` in wrapTraceEntry. INV-15. → S2 extend.
+- **ATK-007 (580)** Symlink exfil via trace:explain --file → strict FREESIDE_CHARACTERS_TRACE_FILES membership + LOA_TRACE_TEST_MODE=1 gate. → S4 path containment.
+
+**4 CREATIVE_ONLY deferred to V2 visions:**
+- ATK-003 (670) Cyrillic homoglyph · SDD already documents gap · UTS #39 skeleton is V2
+- ATK-005 (510) findRepoRoot TOCTOU · operator-trust env · sentinel-file pinning is V2
+- ATK-008 (430) JSON bomb structural · 1MB byte cap holds typical · structural-budget parser is V2
+- ATK-010 (380) SSE reconnect storm · mostly closed by AC-RT-001 bearer token
+
+**INV deltas**: 14 → 18 total (INV-15 nested-key sanitizer · INV-16 bearer token + Host check · INV-17 manifest monotonic · INV-18 ANSI safe-render).
+
+**Loa observations**:
+- Grounding-halt false-negative is the third recurrence (cycle-006 RT · cycle-007 PRD-Flatline DISPUTED · cycle-007 RT). `feedback_multimodel_via_clis` memory holds. Worth filing as Loa framework feedback: runtime should fire grounding-halt only when ALL models score 0.
+- **AC-RT-002 is the highest-craft attack**: BB HIGH-3 manifest defense becomes attack vector. Defense-in-depth becomes attack surface when defense itself is mutable. Counter compounds rather than retreats.
+- **AC-RT-003 shifts threat model**: trace CLI no longer "safe because operator-only" · "safe because we sanitize." Operator-trust is not transitive.
+- **AC-RT-004 closes symmetric gap**: BB HIGH-4 + Flatline SKP-001/HIGH both surfaced INV-14 audit grep weakness · this RT attack proves same class applies to INV-12. AST-based scanner is principled answer. Open question: should INV-14 audit also migrate to AST? (cycle-008+ work).
+- **3-reviewer composition (BB design + Flatline SDD + Red Team) caught 5+14+5 = 24 actionable issues** in a single SDD that I (Loa) authored. None existed when I wrote it. Compose-when-available pattern is high-signal · this is the dialectical loop the framework was built for.
+
+Cycle-007 ledger entry updated with `red_team_phase_45` block matching cycle-006 format.
+
+Full Red Team JSON archived at `.run/redteam-sdd-cycle-007.log` (run id `rt-1778988389-8bf58521`).
+
+## Decision Log — cycle-007 Flatline SDD review (simstim Phase 4 · 2026-05-17)
+
+3-model Flatline (Opus + GPT-5.5 + Gemini-3.1-pro · 73% agreement · 111s · $0) on the 855-line BB-amended SDD: 5 HIGH_CONSENSUS + 4 DISPUTED + 6 BLOCKERs (1 CRITICAL + 5 HIGH). All 14 actionable findings auto-applied — NO genuine architectural forks surfaced (per operator latitude · Loa-decide-all pattern reaffirmed).
+
+**Highest-value finding** = **SKP-001/CRITICAL (850)**: INV-12 lint script had a literal false-negative — condition `head -50 $file | grep -q $zone && continue` skipped the WHOLE FILE if registry imported and zone mentioned in first 50 lines. A developer could import the registry then leak `"el-dorado"` literal on line 60 — INV-12 would silently pass. Fixed: skip ONLY the import-statement line · flag literals on all other lines. Without Flatline, this would have shipped broken. The CRITICAL finding caught a literal false-negative I wrote myself when authoring the lint sketch in Phase 3.
+
+**SKP-002/HIGH (720) metricsForMedium spec/test contradiction**: I authored test `metricsForMedium(unknownMedium) === CLI_EXTENDED` while ALSO authoring the spec to throw `UnsupportedMediumError` (BB MEDIUM-5 amendment). Tests and spec contradicted each other mid-cycle. Flatline caught this · tests realigned to assert throw + CLI_DESCRIPTOR fixture. Lesson: cross-review reveals mid-cycle drift before implementation locks it in.
+
+**BB + Flatline compose**: BB found INV-14 grep-enforcement gap as a HIGH SKP-001 (720). The two reviewers reinforce each other — BB at REFRAME tier surfaces frame issues · Flatline at ADVERSARIAL tier surfaces correctness issues · together they cover both. PRAISE-3 (no-new-deps) held: hardened audit script via more grep patterns + module-import discipline check · AST-level enforcement deferred to V2.
+
+**Other HIGH amendments auto-applied**:
+- IMP-001 + SKP-002 (895/780): STDIN streaming + 1MB byte-count + malformed JSON exit (closes memory-exhaustion DoS surface in trace:explain)
+- IMP-002 (845): ReDoS benchmark test for detectKebabZoneIds — 10K pathological input <50ms
+- IMP-003 (795): appendTraceEntry semantics documented (best-effort · no fsync · no locking · single-process)
+- IMP-005 (855): SSE explicit `127.0.0.1` bind + Origin check + reject non-localhost (closes cross-origin trace exfiltration)
+- IMP-007 (765): CI-wired INV-14 audit at S2
+- SKP-003/HIGH (750): callers wrap UnknownZoneError in try/catch + safe fallback `<zone-id>` raw string + OTEL counter — preserves IMP-011 throw-at-resolver while preventing pipeline crash
+- SKP-001/HIGH (760): trace:explain on .jsonl requires `--line N | --run-id Y | --latest` row selector (explainRow is single-row contract)
+
+**DISPUTED accepted per cycle-006 pattern** (Opus=0 known): IMP-012 explicit findRepoRoot algorithm · IMP-013 manifest-fallback discipline · IMP-014 JSON Schema for T0.2 decision-capture.
+
+**1 DEFERRED**: IMP-015 (560/650 LOW) SSE log rotation — single-developer surface · V2.
+
+**INV deltas**: 14 → 14 (Phase 4 hardens existing INVs · no new INVs).
+
+SDD grew 855 → 1100+ lines from Phase 4 amendments (~250 lines of explicit security/operability semantics).
+
+Full Flatline JSON archived at `.run/flatline-sdd-cycle-007.log`.
+
+## Decision Log — cycle-007 Bridgebuilder design review on SDD (simstim Phase 3.5 · 2026-05-17)
+
+BB design-review (Loa-embodied · "Connection Mode" prioritizing REFRAME + SPECULATION + PRAISE) returned 22 findings on the 719-line SDD: 0 CRITICAL · 5 HIGH · 5 MEDIUM · 3 REFRAME · 3 SPECULATION · 4 PRAISE · 2 VISION · weighted score 35.
+
+**3 REFRAMEs surfaced as HITL forks · operator accepted all 3 as accept-minor:**
+- **BB-REFRAME-1 (dashboard frame)**: dashboard is the WITNESS to layer discipline · the force functions are INV-12 + envelope + CLI. Operator chose accept-minor → text amends to SDD §1 + PRD §1.2 naming the frame correctly. NO scope change (S5 keeps SSE T5.5). Insight preserved for future cycles: substrate load-bearing, UI is celebration.
+- **BB-REFRAME-2 (richLabel location)**: zone-registry.ts in domain/ softens cycle-006 INV-1 because richLabel ('⛏️ El Dorado (NFT)') is Discord-shaped. Operator chose accept-minor → keep in domain/ for cycle-007 + add comment naming trade-off + cycle-008 follow-up task to extract resolveZoneRichLabel to presentation/zone-display.ts when Telegram lands.
+- **BB-REFRAME-3 (Bug A vs Bug B framing)**: PRD's unified "medium-aware layering" frame conflates Class A (substrate-leakage · not Discord-specific) with Class B (medium-divergence · Discord-specific). Operator chose accept-minor → PRD §1.1 names the two classes + shared DX substrate explicitly. Future cycles inherit cleaner ontology.
+
+**5 HIGH auto-applied (Loa decisions):**
+- **BB-HIGH-1** trace:explain --file path containment (realpath + repo-root + allowlist) — closes attacker-paste-arbitrary-file surface
+- **BB-HIGH-2** detectKebabZoneIds NFKC + Unicode dash substitution — closes 'el‐dorado' / 'el—dorado' bypass (same pattern as Loa cycle-098 sprint-7 cypherpunk HIGH-2 L7 SOUL)
+- **BB-HIGH-3** INV-12 lint manifest-based (`.claude/data/voice-prompt-paths.json`) — cycle-008 inheritance without lint script change
+- **BB-HIGH-4** INV-14 NEW: type-enforced JSONL append (`appendTraceEntry<T extends TraceEnvelope>`) — cycle-006 "enforced by types, not vigilance" lesson extended to observability layer. Operator FORK-accepted this — adds ~20 LoC at S2 but closes vigilance gap permanently
+- **BB-HIGH-5** ajv schema-validation snapshot test for trace:explain output — schema drift detected at S4 acceptance
+
+**5 MEDIUM auto-applied:** reader-scan V2 doc · SSE max-clients=5 + 60s heartbeat · SSE payload truncation 500ch · T0.2 structured decision-capture block · metricsForMedium throws on unregistered.
+
+**3 SPECULATION deferred as vision entries** (`grimoires/loa/visions/vision-001/002/003`): trace envelope → Loa primitive · OTEL-bridge · color-encodes-layer doctrine.
+
+**2 VISION auto-captured** (`grimoires/loa/visions/vision-004/005`): "Dashboards are witnesses to force functions, not force functions themselves" · "Two-bug pair as catalyst not cause — substrate hardening framing."
+
+**4 PRAISE celebrated** (no doc change): SOURCE+SINK split for Bug A (compose-when-available · Stripe idempotency-key pattern) · UnknownZoneError + assertNeverZone (Rust-style exhaustiveness) · zero new npm deps (supply-chain hygiene) · operator-attested visual fixtures over headless-browser diffing (craft-over-tooling).
+
+**INV deltas**: 11 → 14 total (added INV-12 CI lint Phase 2 · INV-13 schema freeze Phase 2 · INV-14 type-enforced append Phase 3.5).
+
+**Loa observation**: BB-embodied review reproduces same-shape findings as multi-model Flatline + adds REFRAME-class findings Flatline doesn't surface (Flatline scores raw correctness · BB scores framing + craft). Composition is high-signal — running both Phase 2 + Phase 3.5 catches 2 different classes of gaps. Pattern compounds across cycles.
+
+Full BB review prose at `.run/bridge-reviews/design-review-cycle-007.md` (1100+ lines · dual-stream: 22 findings JSON + insights prose with FAANG parallels, metaphors, teachable moments). Parsed findings JSON at `.run/bridge-reviews/design-review-cycle-007.json`.
+
+## Decision Log — cycle-007 Flatline PRD review (simstim Phase 2 · 2026-05-17)
+
+3-model Flatline (Opus + GPT-5.5 + Gemini-3.1-pro · 83% agreement · 116s · $0 cheval) returned 6 HIGH_CONSENSUS + 2 DISPUTED + 6 BLOCKERs (5 unique · 1 CRITICAL + 4 HIGH). Opus scored 0 on both DISPUTED (known cheval-headless empty per `feedback_multimodel_via_clis` · cycle-006 pattern · GPT+Gemini >800 both → integrate).
+
+**Auto-integrated (8 HIGH/DISPUTED · no decision needed):**
+- IMP-001 (820) · calendarize V2-1 substitution policy review to S6+24h (not perpetual deferral)
+- IMP-002 (845) · `detectKebabZoneIds` false-positive allowlist: `:emoji:` syntax, code blocks, URLs, markdown links
+- IMP-003 (870) · INV-13: `trace:explain` JSON schema FROZEN at v1 · `.claude/data/trace-explain-output.schema.json` is the contract
+- IMP-004 (800) · **INV-12: CI lint guard blocks kebab ZoneId literals in voice-prompt-producing files** · runs on every PR · S1 acceptance gate
+- IMP-005 (730) · S5/T5.5 acceptance covers default-path + enabled-path + rollback-path for SSE flag
+- IMP-006 (820) · FR-2.4 hardened: byte-snapshot + ASCII-space-negative + codepoint assertion
+- IMP-011 (850 GPT/Gem) · `resolveZoneDisplayName` MUST throw `UnknownZoneError` (TS-exhaustiveness AND runtime)
+- IMP-012 (820 GPT/Gem) · S2 reader-tolerance fixture: pre-envelope + post-envelope rows, reader returns `layer: 'unknown'` for former
+
+**BLOCKERs accepted with PRD amendments (5 unique):**
+- SKP-001/CRITICAL (870) · S2/S8 acceptance narrowed to explicit freeside-characters-owned allowlist (excludes Loa-owned `.run/audit.jsonl`, filters by `emitted_at >= cutoff`). Avoids cycle-gate that can't run deterministically.
+- SKP-002/HIGH (780) · `trace:explain` redesigned: STDIN-first (`pbpaste | bun run trace:explain` canonical), `--file <path>` alt, positional-arg REJECTED with usage error. Closes shell-quoting brokenness on day one.
+- SKP-002/HIGH (760) · `' '.length === 1` insufficient · test uses `' '` literal + `codePointAt(0) === 0x2007` + byte snapshot. Closes ASCII-vs-U+2007 indistinguishability.
+- **SKP-001/HIGH (750)** ×2 — OP-Q5 Phase 2 FORK · operator chose **hold log-only + add CI guard**. Rationale: SR-1 build-doc decision honored at SINK · SOURCE-side closed by INV-12 CI lint · G-1 language amended to acknowledge ≤24h user-visibility window (NO over-claim). Alternative was V1 auto-substitute which would override build doc — operator chose disciplined compose.
+- **SKP-003/HIGH (710)** — OP-Q6 Phase 2 FORK · operator chose **add S0/T0.2 Discord Android typography spike** BEFORE S3 commits. Rationale: U+2007 fix relies on typography theory · empirical validation cheap (half-day) · same S0-spike pattern as cycle-006. Generates fixture across U+2007 / U+2008 / U+00A0 / code-block alts · operator visually picks working char.
+
+**Scope deltas:** Sprints unchanged (S0-S8 = 9 sprints). Task count 31 → 32 (S0 grows from 1 task to 2: T0.1 zone-registry + T0.2 typography). Net LoC ~+1320 → ~+1370. Two new INVs (INV-12 CI lint · INV-13 schema freeze).
+
+**Loa observation (operator-attentioned):** Flatline 3-model consensus with Opus-empty-but-GPT+Gemini-strong-agreement is the same shape as cycle-006 PR review · pattern compounds: `feedback_multimodel_via_clis` memory entry still load-bearing · DISPUTED severity > 800 from non-empty models is high-signal even with one model out.
+
+Full Flatline JSON archived at `.run/flatline-prd-cycle-007.log`.
+
+## Decision Log — cycle-007 PRD authoring (simstim Phase 1 · 2026-05-17)
+
+Simstim cycle started for cycle-007-agent-debuggability (`simstim-20260516-6f5c6d18`). Cut `feat/cycle-007-agent-debuggability` from `origin/main` @ `3324a8d` (cycle-006 merge). Cycle-007 registered in ledger as `active`. PRD written to `grimoires/loa/cycles/cycle-007-agent-debuggability/prd.md` + mirrored to top-level `grimoires/loa/prd.md`.
+
+Inputs (already authored before this session): `grimoires/loa/specs/arch-cycle-007-agent-debuggability.md` (D1-D6) + `enhance-cycle-007-agent-debuggability.md` (build doc · 9 sprints · 30 tasks · sprint sequence). PRD HARDENS those into contract — does not replace.
+
+ARCH (Ostrom) + craft (Alexander) lens for plan. Loa surfaced 4 forks (3 with strong leans, 1 genuine ambiguity); operator decided:
+
+- **OP-Q1 (branch)** · cut from main NOW · accepted Loa lean. Rationale: Ostrom boundary-as-governance · claim scope early.
+- **OP-Q2 (envelope retroactive?)** · forward-only · accepted Loa lean. Rationale: honors INV-6 (backwards compat) · cycle-006 traces stay raw · readers tolerate absent fields.
+- **OP-Q3 (CLI surface)** · 5 subcommands as proposed (`trace:latest, trace:layer, trace:get, trace:voice, trace:explain`) · accepted Loa lean. Rationale: intent-clarity over surface-economy · matches arch D4.
+- **OP-Q4 (dashboard SSE in V1?)** · operator deferred ("your call · no opinion") · Loa decided **SSE behind `LOA_DASH_SSE=1` flag** (default 2s poll). Rationale: Alexander craft preserved (color-flash for opt-in) · Barth ships safe default · Ostrom governance via env gate. Cost: +1 task at S5/T5.5 (~+100 LoC). Pushback acknowledged: this was the genuinely ambiguous fork in Phase 1 — SSE craft argument vs Barth scope-fence — env-flag is the compose-when-available compromise.
+
+Build doc self-resolved 2 open questions: SR-1 (`detectKebabZoneIds` log-only V1) · SR-2 (freeside-mediums upstream propose AT cycle close).
+
+Working clone: `/Users/zksoju/Documents/GitHub/freeside-characters` (Documents/GitHub). Kickoff target was `/Users/zksoju/bonfire/freeside-characters`. Dual-clone topology (APFS clones / hardlinks per memory) — operator syncs to bonfire via existing topology. PRD content identical in both clones if hardlinked; verify before BB design review at Phase 3.5.
+
+Scope: 9 sprints · **31 tasks** (was 30 per arch · +1 for S5/T5.5 SSE-flag) · ~+1320 net LoC · 7-8 working days. Matches arch's MEDIUM-to-LARGE estimate.
+
+Next: Phase 2 Flatline PRD review (multi-model adversarial · HITL mode for DISPUTED/BLOCKER).
+
 ## Decision Log — cycle-006 Red Team (Phase 4.5 · 2026-05-16)
 
 Red Team scored 4 THEORETICAL attacks (770-880) against SDD. Grounding-halt false-negative (Opus primary scored 0 across all 10 — known cheval-headless intermittent-empty per `feedback_multimodel_via_clis`; GPT+Gemini scored 770-880 with concrete file/section citations). Per "Loa you decide for all" — operator-attested all 4 as S1 acceptance criteria.
