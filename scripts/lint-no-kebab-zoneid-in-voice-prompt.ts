@@ -57,12 +57,31 @@ const REPO_ROOT = process.cwd();
 // submodule (.loa/.claude/data/) · project-specific data belongs in .claude/overrides/ which is
 // real-project-local directory (Loa convention for project overrides).
 const MANIFEST_PATH = join(REPO_ROOT, '.claude/overrides/voice-prompt-paths.json');
+// BB round-3 INV17-PATH-MISMATCH closure (2026-05-17): defense-in-depth against
+// ambiguous-source-of-truth where an attacker plants .claude/data/voice-prompt-paths.json
+// to confuse downstream tooling. The lint is canon on .claude/overrides/ but a
+// hostile commit could try to make CODEOWNERS-protected .claude/data/ the path
+// some readers reference. Fail-closed if both shadow files exist.
+const LEGACY_MANIFEST_PATH = join(REPO_ROOT, '.claude/data/voice-prompt-paths.json');
 const ZONE_REGISTRY_PATH = 'packages/persona-engine/src/domain/zone-registry.ts';
 
 // Loaded from manifest · escape regex meta-chars defensively (ZoneIds are kebab-safe today but future-proof)
 let ZONE_ID_SET: Set<string> = new Set();
 
 function loadManifest(): Manifest {
+  // BB round-3 INV17-PATH-MISMATCH guard: refuse-to-load if both canonical and
+  // shadow manifest exist · ambiguous source of truth is a bypass attack vector.
+  try {
+    readFileSync(LEGACY_MANIFEST_PATH);
+    // If we reach here, the legacy path exists — that's the attack surface.
+    console.error(
+      `[INV-12 lint] ERROR: ambiguous-source-of-truth · both ${MANIFEST_PATH} and ${LEGACY_MANIFEST_PATH} exist · refusing to load (BB round-3 INV17-PATH-MISMATCH guard · delete one or surface for operator review)`,
+    );
+    process.exit(2);
+  } catch {
+    /* legacy path absent · canonical-only · proceed */
+  }
+
   let raw: string;
   try {
     raw = readFileSync(MANIFEST_PATH, 'utf8');

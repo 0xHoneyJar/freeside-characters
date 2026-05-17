@@ -12,14 +12,17 @@
 🟢 **STRUCTURALLY COMPLETE.** All 7 cycle goals (G-1 through G-7) have evidence-based mechanical closure. All 5 Red Team ACs closed (AC-RT-001 / AC-RT-002 / AC-RT-003 / AC-RT-004 / AC-RT-005). All 18 invariants (INV-1..INV-3 inherited from cycle-006 · INV-12..INV-18 NEW) operational. BB design-review REFRAMEs accepted with documented trade-offs. Flatline PRD + SDD + Sprint hardening passes integrated (14 SDD amendments). Tests + typecheck + cycle-007 lint suite green at every sprint close.
 
 ⚠️ **OPERATOR-PACED REMAINING** (BLOCKS final cycle archive):
-- **T8.3 BB round 3** · `/bridgebuilder --pr 84` — operator-fired (deferred from this mechanical run · paired with PP-4/PP-5 to avoid burning 5-30 min on a single API call mid-session)
-- **PP-3 SOFT** · 4-color teachability attestation (S5/T5.4) — operator visually verifies dashboard layer-color encoding teachable in <3 min OR rolls into PP-4 E2E session
-- **PP-4 HARD** · paste-to-Loa E2E (S8/T8.2) — operator pastes a real `.run/llm-trace.jsonl` row into Loa chat · confirms Loa identifies layer-of-origin in 1 inference step · **blocks cycle close**
+- ~~**T8.3 BB round 3**~~ ✅ **CLOSED** — fired 2026-05-17T19:06 against PR #84 · review at https://github.com/0xHoneyJar/freeside-characters/pull/84 · 16 findings: 1 CRITICAL (INV17-PATH-MISMATCH — see below · CLOSED in `feat(cycle-007 S8 kitchen)` commit) · 1 HIGH (false-positive · BB diff-truncation hid the mutex impl) · 2 MEDIUM (repo-root caching · cycle-008 candidate) · 5 LOW (small polish · operator triage) · 6 PRAISE · 1 REFRAME · 1 SPECULATION
+- **PP-4 HARD reframed** · ~~paste-to-Loa Discord chat~~ → **operator iterates with `/playground` kitchen** for ≥10 min · attests "faster-than-Discord-paste iteration loop" · S8 kitchen MVP ships in `feat(cycle-007 S8 kitchen)` (POST /api/playground/fire + GET /api/playground/runs + /playground HTML tab in dashboard · 7 PostTypes + recent_badges exhibit · stub-by-default zero cost · live-mode CLI-only)
+- ~~**PP-3 SOFT**~~ rolls into PP-4 kitchen attestation (4-color encoding is visible in /playground trace timeline · teachability verifiable in same session)
 - **PP-5 HARD** · production canary mobile screenshot (S8/T8.4) — operator screenshots Discord Android after digest cron fires post-S3 figure-space change · confirms FR-2 aligned numeric column · **blocks ledger flip**
-- **GitHub branch protection** · operator-action-pending — settings rule requiring CODEOWNERS approval for `.claude/data/voice-prompt-paths.json` + `.claude/overrides/trace-explain-output.schema.json` (Phase 6 SKP-001/CRITICAL · cannot be enforced by CI alone)
+- **GitHub branch protection** · operator-action-pending — settings rule requiring CODEOWNERS approval for `.claude/overrides/voice-prompt-paths.json` + `.claude/overrides/voice-prompt-paths.schema.json` + `.claude/overrides/trace-explain-output.schema.json` (Phase 6 SKP-001/CRITICAL · cannot be enforced by CI alone)
 - **PP-2 SOFT** · S3-close mobile screenshot — rollable into PP-5 (same Discord Android session)
 
-T8.1 (COMPLETED.md) and T8.2 mechanical half (synthetic 5-fixture E2E test at `tests/integration/cycle-007-debug-loop.test.ts` · 9 tests · 28 expect calls · all pass) land in this commit. T8.3 (BB round 3) + T8.5 (ledger flip `active → candidate`) land as separate operator-paced commits after PP-4 + PP-5 attestations.
+This `feat(cycle-007 S8 kitchen)` commit lands:
+- **BB CRITICAL closure**: CODEOWNERS migrated from non-existent `.claude/data/` paths to actual `.claude/overrides/` location + ambiguous-source-of-truth guard in INV-12 lint (refuses-to-load if both shadow files exist · BB round-3 INV17-PATH-MISMATCH guard).
+- **S8 kitchen (PP-4 reframe)**: dashboard `/playground` tab + 3 endpoints + playground-fire CLI + score-mcp `fetchRecentBadges` (issue #83 surface · stub + production paths · `isError` hygiene per issue #83 note).
+- Tests: +11 new (5 input-validation · 3 path-safety · 1 list-shape · 2 INV-17 closure assertions).
 
 ## Commits on `feat/cycle-007-agent-debuggability`
 

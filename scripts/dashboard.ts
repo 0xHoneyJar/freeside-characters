@@ -30,9 +30,9 @@
 // Enable SSE:    LOA_DASH_SSE=1 bun run scripts/dashboard.ts
 // Disable auth:  DASHBOARD_AUTH=0 (NOT recommended · only for test fixtures)
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { randomUUID, timingSafeEqual, createHash } from 'node:crypto';
+import { randomUUID, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import {
   resolveTraceFilePath,
   readJsonl,
@@ -135,6 +135,162 @@ function readBaselines(): BaselineEntry[] {
 
 function readViolations(): ViolationEntry[] {
   return readJsonl<ViolationEntry>(resolveTraceFilePath('sanitize-violations.jsonl')).reverse();
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Playground (cycle-007 S8 kitchen) · POST /fire spawns playground-fire CLI
+// in apps/bot which composes via stub score-mcp + stub voice. Operator
+// iterates on agent behavior in browser instead of via Discord paste.
+// ──────────────────────────────────────────────────────────────────────
+
+const PLAYGROUND_RUNS_DIR = resolve(process.cwd(), '.run', 'playground');
+// Whitelisted PostTypes the playground supports. Kept inline rather than
+// imported from persona-engine to keep dashboard.ts free of orchestrator deps.
+const PLAYGROUND_POST_TYPES = new Set([
+  'digest',
+  'micro',
+  'lore_drop',
+  'question',
+  'weaver',
+  'callout',
+  'recent_badges',
+]);
+const PLAYGROUND_ZONES = new Set(['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab']);
+const PLAYGROUND_CHARACTER_RE = /^[a-z0-9-]{1,32}$/;
+const PLAYGROUND_FIRE_TIMEOUT_MS = 30_000;
+
+interface PlaygroundFireRequest {
+  post_type?: string;
+  zone?: string;
+  character?: string;
+  live?: boolean;
+}
+
+interface PlaygroundRun {
+  run_id: string;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  inputs: Record<string, unknown>;
+  result: unknown;
+  traces: unknown[];
+  error: string | null;
+}
+
+function readPlaygroundRuns(): PlaygroundRun[] {
+  if (!existsSync(PLAYGROUND_RUNS_DIR)) return [];
+  const entries: PlaygroundRun[] = [];
+  for (const file of readdirSync(PLAYGROUND_RUNS_DIR)) {
+    if (!file.endsWith('.json')) continue;
+    try {
+      const body = readFileSync(resolve(PLAYGROUND_RUNS_DIR, file), 'utf-8');
+      entries.push(JSON.parse(body) as PlaygroundRun);
+    } catch {
+      // skip malformed
+    }
+  }
+  // Newest first by started_at.
+  entries.sort((a, b) => (b.started_at > a.started_at ? 1 : -1));
+  return entries;
+}
+
+function readPlaygroundRun(runId: string): PlaygroundRun | null {
+  if (!/^[a-z0-9-]{6,64}$/.test(runId)) return null;
+  const path = resolve(PLAYGROUND_RUNS_DIR, `${runId}.json`);
+  // Path containment defense — even though runId is regex-validated, double-check.
+  if (!path.startsWith(PLAYGROUND_RUNS_DIR + '/')) return null;
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8')) as PlaygroundRun;
+  } catch {
+    return null;
+  }
+}
+
+async function handlePlaygroundFire(req: Request): Promise<Response> {
+  let body: PlaygroundFireRequest;
+  try {
+    body = (await req.json()) as PlaygroundFireRequest;
+  } catch {
+    return new Response(JSON.stringify({ error: 'invalid-json' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+  }
+
+  const postType = String(body.post_type ?? '');
+  const zone = String(body.zone ?? '');
+  const character = String(body.character ?? 'ruggy');
+  const live = body.live === true;
+
+  if (!PLAYGROUND_POST_TYPES.has(postType)) {
+    return jsonError(400, `unsupported post_type: "${postType}"`);
+  }
+  if (!PLAYGROUND_ZONES.has(zone)) {
+    return jsonError(400, `unsupported zone: "${zone}"`);
+  }
+  if (!PLAYGROUND_CHARACTER_RE.test(character)) {
+    return jsonError(400, `invalid character: "${character}"`);
+  }
+  if (live) {
+    // Defensive: live mode burns real API quota + posts to .run/llm-trace.
+    // V1 kitchen does not enable it from the web surface — operator must
+    // use the CLI with --live explicitly. Return 403 to surface the gate.
+    return jsonError(403, 'live-mode-cli-only · run with `bun playground:fire --live` from CLI');
+  }
+
+  const runId = `pg-${randomBytes(6).toString('hex')}`;
+  const args = [
+    'run',
+    'apps/bot/src/cli/playground-fire.ts',
+    '--run-id',
+    runId,
+    '--post-type',
+    postType,
+    '--zone',
+    zone,
+    '--character',
+    character,
+  ];
+
+  // Bun.spawn argv is an array · NEVER composed into a string · no shell metas concern.
+  // Each value is already whitelisted above.
+  const proc = Bun.spawn(['bun', ...args], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { ...process.env },
+  });
+
+  // Bounded wait.
+  const timeout = new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), PLAYGROUND_FIRE_TIMEOUT_MS));
+  const completed = proc.exited.then(() => 'completed' as const);
+  const outcome = await Promise.race([completed, timeout]);
+  if (outcome === 'timeout') {
+    proc.kill();
+    return jsonError(504, `playground-fire timed out after ${PLAYGROUND_FIRE_TIMEOUT_MS}ms`);
+  }
+
+  // Read the run JSON — runner persisted it before exit. exitCode 0 = success,
+  // 2 = runtime failure (still persisted with error: field), 1 = invalid args.
+  if (proc.exitCode === 1) {
+    const errText = await new Response(proc.stderr).text();
+    return jsonError(400, `playground-fire validation failed: ${errText.slice(0, 200)}`);
+  }
+  const run = readPlaygroundRun(runId);
+  if (!run) {
+    return jsonError(500, 'playground-fire wrote no run file');
+  }
+  return new Response(JSON.stringify(run), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  });
+}
+
+function jsonError(status: number, message: string): Response {
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -417,6 +573,43 @@ const HTML = `<!doctype html>
   details summary { cursor: pointer; color: var(--text-dim); font-size: 12px; font-family: var(--mono); }
   details[open] summary { color: var(--accent); margin-bottom: 8px; }
   details pre { margin-top: 8px; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+  /* Playground · cycle-007 S8 kitchen */
+  .pg-form { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px; padding: 16px 20px; margin-bottom: 20px; }
+  .pg-form h2 { font-size: 13px; font-weight: 500; color: var(--text-dim); letter-spacing: 0.4px; text-transform: uppercase; margin: 0 0 12px; }
+  .pg-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 12px 16px; align-items: end; }
+  .pg-form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
+  .pg-form select, .pg-form input { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 7px 10px; color: var(--text); font: 13px var(--mono); }
+  .pg-form select:focus, .pg-form input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+  .pg-actions { display: flex; gap: 8px; }
+  .pg-form button { background: var(--accent); color: var(--bg); border: none; border-radius: 4px; padding: 8px 16px; font: 600 13px -apple-system, sans-serif; cursor: pointer; }
+  .pg-form button.pg-refire { background: var(--bg); color: var(--text-dim); border: 1px solid var(--border); }
+  .pg-form button:disabled { opacity: 0.5; cursor: wait; }
+  .pg-form button:hover:not(:disabled) { filter: brightness(1.1); }
+  .pg-hint { font-size: 11px; color: var(--text-dim); margin-top: 10px; line-height: 1.45; }
+  .pg-meta { display: grid; grid-template-columns: 80px 1fr 80px 1fr; gap: 4px 16px; padding: 12px 16px; background: var(--bg-elev); border-radius: 6px; margin-bottom: 12px; font-size: 12px; }
+  .pg-meta .k { color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; font-size: 10px; }
+  .pg-meta .v { color: var(--text); font-family: var(--mono); }
+  .pg-meta .v.mono { font-size: 11px; }
+  .pg-error { background: rgba(220, 80, 80, 0.08); border: 1px solid rgba(220, 80, 80, 0.3); border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; }
+  .pg-error h3 { margin: 0 0 6px; color: rgba(220, 80, 80, 0.9); font-size: 12px; letter-spacing: 0.5px; }
+  .pg-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 1100px) { .pg-cols { grid-template-columns: 1fr; } }
+  .pg-col h3 { font-size: 11px; color: var(--text-dim); letter-spacing: 0.4px; text-transform: uppercase; margin: 0 0 8px; }
+  .pg-voice, .pg-payload { background: var(--bg-elev); border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; border-left: 3px solid var(--layer-voice); }
+  .pg-payload { border-left-color: var(--layer-presentation); }
+  .pg-voice .k, .pg-payload .k { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+  .pg-voice pre, .pg-payload pre { margin: 0; font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; color: var(--text); max-height: 280px; overflow-y: auto; }
+  .pg-stat { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+  .pg-trace { background: var(--bg-elev); border-radius: 4px; padding: 8px 12px; margin-bottom: 6px; border-left: 3px solid var(--border); }
+  .pg-trace.layer-substrate { border-left-color: var(--layer-substrate); }
+  .pg-trace.layer-voice { border-left-color: var(--layer-voice); }
+  .pg-trace.layer-presentation { border-left-color: var(--layer-presentation); }
+  .pg-trace.layer-medium-render { border-left-color: var(--layer-medium-render); }
+  .pg-trace.layer-orchestrator { border-left-color: var(--layer-orchestrator, var(--accent)); }
+  .pg-trace-head { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
+  .pg-trace-layer { color: var(--text); font-family: var(--mono); }
+  .pg-trace-time { color: var(--text-dim); }
+  .pg-trace pre { margin: 0; font: 11px var(--mono); white-space: pre-wrap; word-break: break-word; color: var(--text-dim); max-height: 200px; overflow-y: auto; }
 </style>
 </head>
 <body>
@@ -428,6 +621,7 @@ const HTML = `<!doctype html>
     <div class="tab" data-view="rejections">RT-008 rejections</div>
     <div class="tab" data-view="violations">sanitize violations</div>
     <div class="tab" data-view="baselines">baselines</div>
+    <div class="tab" data-view="playground">playground</div>
   </div>
   <div class="status"><span class="dot"></span><span id="conn">connected</span> · <span id="count">0</span> rows · <span id="mode">poll</span></div>
 </header>
@@ -439,7 +633,10 @@ const HTML = `<!doctype html>
 const SSE_ENABLED = ${SSE_ENABLED ? 'true' : 'false'};
 let currentView = 'trace';
 let currentIdx = null;
-let cache = { trace: [], memory: {}, rejections: [], violations: [], baselines: [] };
+let cache = { trace: [], memory: {}, rejections: [], violations: [], baselines: [], playground: [] };
+let selectedPlaygroundIdx = null;
+let lastPlaygroundInputs = { post_type: 'recent_badges', zone: 'el-dorado', character: 'ruggy' };
+let playgroundBusy = false;
 
 // Layer inference per source. cycle-007 envelope (layer field) takes precedence
 // when present; otherwise we use shape-based defaults that match the row's
@@ -705,6 +902,222 @@ function renderBaselines() {
   detail.appendChild(p);
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Playground · cycle-007 S8 kitchen
+// ──────────────────────────────────────────────────────────────────────
+
+const PLAYGROUND_POST_TYPES = ['digest', 'micro', 'lore_drop', 'question', 'weaver', 'callout', 'recent_badges'];
+const PLAYGROUND_ZONES = ['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab'];
+
+async function firePlayground(inputs) {
+  if (playgroundBusy) return;
+  playgroundBusy = true;
+  document.getElementById('count').textContent = 'firing…';
+  try {
+    const res = await fetch('/api/playground/fire', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(inputs),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'unknown' }));
+      alert('fire failed: ' + (err.error || res.statusText));
+      return;
+    }
+    lastPlaygroundInputs = inputs;
+    const runs = await fetch('/api/playground/runs', { credentials: 'same-origin' }).then((r) => r.json());
+    cache.playground = runs;
+    selectedPlaygroundIdx = 0;
+    renderPlaygroundList();
+    renderPlaygroundDetail();
+  } catch (err) {
+    alert('fire error: ' + (err && err.message ? err.message : err));
+  } finally {
+    playgroundBusy = false;
+    document.getElementById('count').textContent = cache.playground.length + ' runs';
+  }
+}
+
+function renderPlaygroundList() {
+  const list = document.getElementById('list');
+  const runs = cache.playground;
+  document.getElementById('count').textContent = runs.length + ' runs';
+  clear(list);
+  if (!runs.length) {
+    list.appendChild(el('div', { class: 'empty', text: 'no playground runs yet · fire one on the right →' }));
+    return;
+  }
+  runs.forEach((r, i) => {
+    const resultKind = r.result && r.result.kind ? r.result.kind : 'pending';
+    const layer = resultKind === 'recent_badges' ? 'substrate' : 'voice';
+    const row = el('div', {
+      class: 'run layer-' + layer + (r.error ? ' error' : '') + (i === selectedPlaygroundIdx ? ' active' : ''),
+      dataset: { idx: String(i) },
+    });
+    const head = el('div', { class: 'run-head' });
+    head.appendChild(el('span', { class: 'run-zone', text: r.inputs.zone + ' / ' + r.inputs.post_type }));
+    head.appendChild(el('span', { class: 'run-time', text: fmtTime(r.started_at) }));
+    row.appendChild(head);
+    row.appendChild(el('div', { class: 'run-meta', text:
+      r.inputs.mode + ' · ' + fmtDuration(r.duration_ms) + ' · ' + (r.traces ? r.traces.length : 0) + ' traces' + (r.error ? ' · ERROR' : '')
+    }));
+    row.addEventListener('click', () => { selectedPlaygroundIdx = i; renderPlaygroundList(); renderPlaygroundDetail(); });
+    list.appendChild(row);
+  });
+}
+
+function renderPlaygroundDetail() {
+  const detail = document.getElementById('detail');
+  clear(detail);
+
+  // Picker form (always visible · sticky-top feel)
+  const form = el('div', { class: 'pg-form' });
+  form.appendChild(el('h2', { text: 'kitchen · fire a post · stubbed by default · zero cost' }));
+  const grid = el('div', { class: 'pg-form-grid' });
+
+  const postLabel = el('label', { text: 'post type' });
+  const postSelect = el('select', { id: 'pg-post-type' });
+  PLAYGROUND_POST_TYPES.forEach((pt) => {
+    const opt = el('option', { value: pt, text: pt });
+    if (pt === lastPlaygroundInputs.post_type) opt.selected = true;
+    postSelect.appendChild(opt);
+  });
+  postLabel.appendChild(postSelect);
+
+  const zoneLabel = el('label', { text: 'zone' });
+  const zoneSelect = el('select', { id: 'pg-zone' });
+  PLAYGROUND_ZONES.forEach((z) => {
+    const opt = el('option', { value: z, text: z });
+    if (z === lastPlaygroundInputs.zone) opt.selected = true;
+    zoneSelect.appendChild(opt);
+  });
+  zoneLabel.appendChild(zoneSelect);
+
+  const charLabel = el('label', { text: 'character' });
+  const charInput = el('input', { id: 'pg-character', type: 'text', value: lastPlaygroundInputs.character, pattern: '[a-z0-9-]{1,32}' });
+  charLabel.appendChild(charInput);
+
+  const fireBtn = el('button', { class: 'pg-fire', text: playgroundBusy ? 'firing…' : 'fire' });
+  fireBtn.disabled = playgroundBusy;
+  fireBtn.addEventListener('click', () => firePlayground({
+    post_type: postSelect.value, zone: zoneSelect.value, character: charInput.value,
+  }));
+
+  const refireBtn = el('button', { class: 'pg-refire', text: 're-fire last' });
+  refireBtn.disabled = playgroundBusy || !lastPlaygroundInputs.post_type;
+  refireBtn.addEventListener('click', () => firePlayground(lastPlaygroundInputs));
+
+  grid.appendChild(postLabel);
+  grid.appendChild(zoneLabel);
+  grid.appendChild(charLabel);
+  const actions = el('div', { class: 'pg-actions' });
+  actions.appendChild(fireBtn);
+  actions.appendChild(refireBtn);
+  grid.appendChild(actions);
+  form.appendChild(grid);
+
+  form.appendChild(el('div', { class: 'pg-hint', text:
+    'stub mode (default): score-mcp returns synthetic data · LLM provider returns canned voice · zero API cost · Discord delivery suppressed. for real LLM, run "bun playground:fire --live --post-type X --zone Y" from CLI.'
+  }));
+
+  detail.appendChild(form);
+
+  // Result panel (only when a run is selected)
+  if (selectedPlaygroundIdx == null) {
+    detail.appendChild(el('div', { class: 'empty', text: 'pick or fire a run to inspect the pipeline' }));
+    return;
+  }
+  const run = cache.playground[selectedPlaygroundIdx];
+  if (!run) {
+    detail.appendChild(el('div', { class: 'empty', text: 'selected run not found' }));
+    return;
+  }
+
+  // Top metadata row
+  const meta = el('div', { class: 'pg-meta' });
+  meta.appendChild(el('span', { class: 'k', text: 'run' }));
+  meta.appendChild(el('span', { class: 'v mono', text: run.run_id }));
+  meta.appendChild(el('span', { class: 'k', text: 'mode' }));
+  meta.appendChild(el('span', { class: 'v', text: run.inputs.mode }));
+  meta.appendChild(el('span', { class: 'k', text: 'duration' }));
+  meta.appendChild(el('span', { class: 'v', text: fmtDuration(run.duration_ms) }));
+  meta.appendChild(el('span', { class: 'k', text: 'started' }));
+  meta.appendChild(el('span', { class: 'v', text: fmtTime(run.started_at) }));
+  detail.appendChild(meta);
+
+  if (run.error) {
+    const errPanel = el('div', { class: 'pg-error' });
+    errPanel.appendChild(el('h3', { text: 'ERROR' }));
+    errPanel.appendChild(el('pre', { text: run.error }));
+    detail.appendChild(errPanel);
+  }
+
+  // Two-column: voice/result on left · tool-call timeline on right
+  const cols = el('div', { class: 'pg-cols' });
+  const left = el('div', { class: 'pg-col' });
+  const right = el('div', { class: 'pg-col' });
+
+  left.appendChild(el('h3', { text: 'voice / result' }));
+  if (run.result && run.result.kind === 'compose') {
+    const voiceBlock = el('div', { class: 'pg-voice' });
+    voiceBlock.appendChild(el('div', { class: 'k', text: 'composed voice' }));
+    voiceBlock.appendChild(el('pre', { text: run.result.voice || '(empty)' }));
+    left.appendChild(voiceBlock);
+
+    const payloadBlock = el('div', { class: 'pg-payload' });
+    payloadBlock.appendChild(el('div', { class: 'k', text: 'payload (would-deliver)' }));
+    payloadBlock.appendChild(el('pre', { class: 'mono', text: safeStringify(run.result.payload, 4000) }));
+    left.appendChild(payloadBlock);
+
+    left.appendChild(el('div', { class: 'pg-stat', text:
+      'zone ' + run.result.zone + ' · post_type ' + run.result.post_type + ' · digest window events: ' + (run.result.digest_window_event_count ?? '?')
+    }));
+  } else if (run.result && run.result.kind === 'recent_badges') {
+    const draft = el('div', { class: 'pg-voice' });
+    draft.appendChild(el('div', { class: 'k', text: 'draft voice (template · no orchestrator yet)' }));
+    draft.appendChild(el('pre', { text: run.result.draft_voice }));
+    left.appendChild(draft);
+
+    const badges = el('div', { class: 'pg-payload' });
+    badges.appendChild(el('div', { class: 'k', text: 'get_recent_badges response · ' + run.result.badges.earnings.length + ' earnings' }));
+    badges.appendChild(el('pre', { class: 'mono', text: safeStringify(run.result.badges, 4000) }));
+    left.appendChild(badges);
+  } else if (run.result && run.result.kind === 'skipped') {
+    left.appendChild(el('div', { class: 'pg-stat', text: 'skipped: ' + run.result.reason }));
+  } else {
+    left.appendChild(el('div', { class: 'empty', text: 'no result' }));
+  }
+
+  right.appendChild(el('h3', { text: 'trace timeline · ' + (run.traces ? run.traces.length : 0) + ' rows' }));
+  if (!run.traces || !run.traces.length) {
+    right.appendChild(el('div', { class: 'empty', text: 'no traces emitted (stub voice may not write llm-trace)' }));
+  } else {
+    run.traces.forEach((t) => {
+      const tr = el('div', { class: 'pg-trace layer-' + (t.layer || 'unknown') });
+      const head = el('div', { class: 'pg-trace-head' });
+      head.appendChild(el('span', { class: 'pg-trace-layer', text: (t.layer || '?') + ' · ' + (t.layer_op || '?') }));
+      head.appendChild(el('span', { class: 'pg-trace-time', text: fmtTime(t.emitted_at || t.at) }));
+      tr.appendChild(head);
+      tr.appendChild(el('pre', { class: 'mono', text: safeStringify(t, 800) }));
+      right.appendChild(tr);
+    });
+  }
+
+  cols.appendChild(left);
+  cols.appendChild(right);
+  detail.appendChild(cols);
+}
+
+function safeStringify(value, maxLen) {
+  try {
+    const s = JSON.stringify(value, null, 2);
+    return s && s.length > maxLen ? s.slice(0, maxLen) + '\n…[truncated]' : s;
+  } catch {
+    return String(value);
+  }
+}
+
 function render() {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === currentView));
   if (currentView === 'trace') { renderTraceList(); renderTraceDetail(); }
@@ -712,18 +1125,20 @@ function render() {
   else if (currentView === 'rejections') renderRejections();
   else if (currentView === 'violations') renderViolations();
   else if (currentView === 'baselines') renderBaselines();
+  else if (currentView === 'playground') { renderPlaygroundList(); renderPlaygroundDetail(); }
 }
 
 async function refresh() {
   try {
-    const [trace, memory, rejections, violations, baselines] = await Promise.all([
+    const [trace, memory, rejections, violations, baselines, playground] = await Promise.all([
       fetch('/api/llm-trace', { credentials: 'same-origin' }).then((r) => r.json()),
       fetch('/api/voice-memory', { credentials: 'same-origin' }).then((r) => r.json()),
       fetch('/api/rejections', { credentials: 'same-origin' }).then((r) => r.json()),
       fetch('/api/violations', { credentials: 'same-origin' }).then((r) => r.json()),
       fetch('/api/baselines', { credentials: 'same-origin' }).then((r) => r.json()),
+      fetch('/api/playground/runs', { credentials: 'same-origin' }).then((r) => r.json()),
     ]);
-    cache = { trace, memory, rejections, violations, baselines };
+    cache = { trace, memory, rejections, violations, baselines, playground };
     render();
     document.getElementById('conn').textContent = 'connected';
   } catch (err) {
@@ -994,6 +1409,13 @@ const server = Bun.serve({
     if (path === '/api/rejections' && req.method === 'GET') return jsonResponse(readRejections());
     if (path === '/api/baselines' && req.method === 'GET') return jsonResponse(readBaselines());
     if (path === '/api/violations' && req.method === 'GET') return jsonResponse(readViolations());
+    if (path === '/api/playground/runs' && req.method === 'GET') return jsonResponse(readPlaygroundRuns());
+    if (path === '/api/playground/fire' && req.method === 'POST') return handlePlaygroundFire(req);
+    if (path === '/api/playground/run' && req.method === 'GET') {
+      const id = url.searchParams.get('id') ?? '';
+      const run = readPlaygroundRun(id);
+      return run ? jsonResponse(run) : new Response('not found', { status: 404 });
+    }
     if (path === '/sse' && req.method === 'GET') return handleSse(req);
 
     return new Response('not found', { status: 404 });

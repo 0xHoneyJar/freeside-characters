@@ -535,6 +535,49 @@ export interface GetMostActiveWalletsResponse {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// get_recent_badges — earnings feed (cycle-007 S8 kitchen exhibit · issue #83)
+// ──────────────────────────────────────────────────────────────────────
+
+export type BadgeType =
+  | 'pioneer'
+  | 'count'
+  | 'timing'
+  | 'streak'
+  | 'collection'
+  | 'quality'
+  | 'behavior';
+
+export type BadgeRarity =
+  | 'common'
+  | 'uncommon'
+  | 'rare'
+  | 'epic'
+  | 'legendary'
+  | 'mythic';
+
+export interface BadgeEarning {
+  badge_id: string;
+  badge_name: string;
+  badge_type: BadgeType;
+  rarity: BadgeRarity;
+  description: string | null;
+  earned_at: string;
+  wallet: string;
+}
+
+export interface GetRecentBadgesArgs {
+  badge_type?: BadgeType;
+  badge_id?: string;
+  /** 1-200, default 50. Issue #83 note: poll cadence owned by agent (no window param). */
+  limit?: number;
+}
+
+export interface GetRecentBadgesResponse {
+  earnings: BadgeEarning[];
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Pulse error envelopes (shared with all 4 tools)
 // ──────────────────────────────────────────────────────────────────────
 //

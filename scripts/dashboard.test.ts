@@ -461,3 +461,126 @@ describe('AC-T5.5-B · poll-suppression when SSE connects', () => {
     expect(text).toMatch(/es\.onerror[\s\S]*?startFullPoll\(\)/);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// Playground · cycle-007 S8 kitchen MVP · POST /api/playground/fire validation
+// ──────────────────────────────────────────────────────────────────────
+
+describe('Playground · input validation', () => {
+  let s: Spawned;
+  beforeAll(async () => { s = await spawnDashboard(); });
+  afterAll(() => killSpawn(s));
+
+  async function fire(body: Record<string, unknown>): Promise<Response> {
+    return fetch(`${s.baseUrl}/api/playground/fire`, {
+      method: 'POST',
+      headers: { 'x-loa-dash-token': FIXTURE_TOKEN, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('invalid JSON body → 400', async () => {
+    const r = await fetch(`${s.baseUrl}/api/playground/fire`, {
+      method: 'POST',
+      headers: { 'x-loa-dash-token': FIXTURE_TOKEN, 'content-type': 'application/json' },
+      body: '{not-json',
+    });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toBe('invalid-json');
+  });
+
+  test('unsupported post_type → 400', async () => {
+    const r = await fire({ post_type: 'evil', zone: 'el-dorado', character: 'ruggy' });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toMatch(/unsupported post_type/);
+  });
+
+  test('unsupported zone → 400', async () => {
+    const r = await fire({ post_type: 'digest', zone: 'fake-zone', character: 'ruggy' });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toMatch(/unsupported zone/);
+  });
+
+  test('invalid character (shell-meta) → 400', async () => {
+    const r = await fire({ post_type: 'digest', zone: 'el-dorado', character: '; rm -rf /' });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toMatch(/invalid character/);
+  });
+
+  test('live=true → 403 with CLI-only message', async () => {
+    const r = await fire({ post_type: 'digest', zone: 'el-dorado', character: 'ruggy', live: true });
+    expect(r.status).toBe(403);
+    expect((await r.json()).error).toMatch(/live-mode-cli-only/);
+  });
+});
+
+describe('Playground · GET /api/playground/run path safety', () => {
+  let s: Spawned;
+  beforeAll(async () => { s = await spawnDashboard(); });
+  afterAll(() => killSpawn(s));
+
+  async function get(id: string): Promise<Response> {
+    return fetch(`${s.baseUrl}/api/playground/run?id=${encodeURIComponent(id)}`, {
+      headers: { 'x-loa-dash-token': FIXTURE_TOKEN },
+    });
+  }
+
+  test('path-traversal id (../../etc/passwd) → 404 (regex rejects · never resolves)', async () => {
+    const r = await get('../../etc/passwd');
+    expect(r.status).toBe(404);
+    expect(await r.text()).toBe('not found');
+  });
+
+  test('valid id format but no such run → 404', async () => {
+    const r = await get('pg-doesnotexist123');
+    expect(r.status).toBe(404);
+  });
+
+  test('id with shell metas → 404', async () => {
+    const r = await get('pg-abc; rm -rf /');
+    expect(r.status).toBe(404);
+  });
+});
+
+describe('Playground · GET /api/playground/runs (list)', () => {
+  let s: Spawned;
+  beforeAll(async () => { s = await spawnDashboard(); });
+  afterAll(() => killSpawn(s));
+
+  test('empty playground dir → empty list', async () => {
+    const r = await fetch(`${s.baseUrl}/api/playground/runs`, {
+      headers: { 'x-loa-dash-token': FIXTURE_TOKEN },
+    });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    // The test fixture spawns a fresh runDir per spawn but the playground dir
+    // is process-cwd-relative · may contain runs from prior tests on this repo.
+    // The contract is "returns an array" · not "always empty".
+    expect(Array.isArray(body)).toBe(true);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// INV-17 PATH-MISMATCH closure · BB round-3 CRITICAL (2026-05-17)
+// Ambiguous-source-of-truth guard in scripts/lint-no-kebab-zoneid-in-voice-prompt.ts
+// ──────────────────────────────────────────────────────────────────────
+
+describe('INV-17 · ambiguous-source-of-truth guard (BB round-3 CRITICAL closure)', () => {
+  test('lint script source references the canonical .claude/overrides/ path', async () => {
+    const script = await Bun.file(
+      resolve(import.meta.dir, 'lint-no-kebab-zoneid-in-voice-prompt.ts'),
+    ).text();
+    expect(script).toMatch(/MANIFEST_PATH\s*=\s*join\(REPO_ROOT,\s*['"]\.claude\/overrides\/voice-prompt-paths\.json['"]\)/);
+    expect(script).toMatch(/LEGACY_MANIFEST_PATH\s*=\s*join\(REPO_ROOT,\s*['"]\.claude\/data\/voice-prompt-paths\.json['"]\)/);
+    expect(script).toMatch(/ambiguous-source-of-truth/);
+  });
+
+  test('CODEOWNERS protects .claude/overrides/ paths (the actual disk location)', async () => {
+    const codeowners = await Bun.file(resolve(import.meta.dir, '..', '.github', 'CODEOWNERS')).text();
+    expect(codeowners).toMatch(/\.claude\/overrides\/voice-prompt-paths\.json/);
+    expect(codeowners).toMatch(/\.claude\/overrides\/voice-prompt-paths\.schema\.json/);
+    expect(codeowners).toMatch(/\.claude\/overrides\/trace-explain-output\.schema\.json/);
+    // The pre-fix legacy paths should NOT be present (they don't exist on disk).
+    expect(codeowners).not.toMatch(/^\.claude\/data\/voice-prompt-paths\.json/m);
+  });
+});
