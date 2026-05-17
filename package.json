@@ -19,6 +19,11 @@
     "lint:manifest-monotonic": "bash scripts/lint-manifest-monotonic.sh",
     "lint:append-discipline": "bash scripts/audit-jsonl-append-discipline.sh",
     "lint:cycle-007": "bun run lint:zone-source && bash scripts/lint-manifest-monotonic.sh && bash scripts/audit-jsonl-append-discipline.sh",
+    "trace:latest": "bun run scripts/trace.ts latest",
+    "trace:get": "bun run scripts/trace.ts get",
+    "trace:layer": "bun run scripts/trace.ts layer",
+    "trace:voice": "bun run scripts/trace.ts voice",
+    "trace:explain": "bun run scripts/trace.ts explain",
     "digest:once": "bun run --cwd apps/bot digest:once"
   },
   "devDependencies": {
