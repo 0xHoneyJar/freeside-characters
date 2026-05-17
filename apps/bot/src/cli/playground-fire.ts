@@ -250,10 +250,13 @@ async function main(): Promise<void> {
   if (!parsed.live) {
     process.env.STUB_MODE = 'true';
     process.env.LLM_PROVIDER = 'stub';
-    // Make Discord delivery a no-op — playground never writes to channels.
-    delete process.env.DISCORD_BOT_TOKEN;
-    delete process.env.DISCORD_WEBHOOK_URL;
   }
+  // Belt-and-suspenders (operator iteration 2026-05-17): the dashboard's env
+  // allowlist scrubs DISCORD_* before spawn · this delete is a defense-in-depth
+  // fail-closed in case anyone spawns playground-fire directly with inherited env.
+  // Playground NEVER posts to a Discord channel regardless of mode.
+  delete process.env.DISCORD_BOT_TOKEN;
+  delete process.env.DISCORD_WEBHOOK_URL;
 
   if (!existsSync(PLAYGROUND_DIR)) {
     mkdirSync(PLAYGROUND_DIR, { recursive: true });

@@ -507,10 +507,17 @@ describe('Playground · input validation', () => {
     expect((await r.json()).error).toMatch(/invalid character/);
   });
 
-  test('live=true → 403 with CLI-only message', async () => {
-    const r = await fire({ post_type: 'digest', zone: 'el-dorado', character: 'ruggy', live: true });
-    expect(r.status).toBe(403);
-    expect((await r.json()).error).toMatch(/live-mode-cli-only/);
+  test('live=true is accepted (operator iteration 2026-05-17 · no longer 403)', async () => {
+    // Live mode without ANTHROPIC_API_KEY in test env will fail downstream, but
+    // the dashboard endpoint must accept the request (200/500 path) rather than
+    // reject it at the gate. The 403 "live-mode-cli-only" of the original SEC-001
+    // closure was replaced by env-allowlist passthrough + the existing semaphore.
+    const r = await fire({ post_type: 'recent_badges', zone: 'stonehenge', character: 'ruggy', live: true });
+    // Either 200 (subprocess succeeded · returned recent_badges stub data even in
+    // live mode since fetchRecentBadges falls back to stub when MCP_KEY absent)
+    // OR 500 (subprocess failed on missing creds) · NEVER 403.
+    expect(r.status).not.toBe(403);
+    expect([200, 500, 504].includes(r.status)).toBe(true);
   });
 });
 
@@ -564,6 +571,35 @@ describe('Playground · GET /api/playground/runs (list)', () => {
 // INV-17 PATH-MISMATCH closure · BB round-3 CRITICAL (2026-05-17)
 // Ambiguous-source-of-truth guard in scripts/lint-no-kebab-zoneid-in-voice-prompt.ts
 // ──────────────────────────────────────────────────────────────────────
+
+// ──────────────────────────────────────────────────────────────────────
+// Playground · live-mode env passthrough (operator iteration 2026-05-17)
+// Discord delivery env vars NEVER pass · belt-and-suspenders in both layers
+// ──────────────────────────────────────────────────────────────────────
+
+describe('Playground · env passthrough invariants', () => {
+  test('dashboard source: DISCORD_BOT_TOKEN never in childEnv allowlist', async () => {
+    const text = await Bun.file(DASHBOARD_SCRIPT).text();
+    // The live-mode passthrough block must NOT list DISCORD_BOT_TOKEN or DISCORD_WEBHOOK_URL.
+    // Find the LIVE_PASSTHROUGH array contents and assert no Discord vars present.
+    const passthroughMatch = text.match(/const\s+LIVE_PASSTHROUGH\s*=\s*\[([\s\S]*?)\];/);
+    expect(passthroughMatch).not.toBeNull();
+    const body = passthroughMatch![1];
+    expect(body).not.toMatch(/DISCORD_BOT_TOKEN/);
+    expect(body).not.toMatch(/DISCORD_WEBHOOK_URL/);
+    // Sanity: it DOES list at least one expected live-mode var.
+    expect(body).toMatch(/ANTHROPIC_API_KEY/);
+    expect(body).toMatch(/MCP_KEY/);
+  });
+
+  test('playground-fire.ts: deletes Discord delivery env regardless of mode', async () => {
+    const text = await Bun.file(
+      resolve(import.meta.dir, '..', 'apps', 'bot', 'src', 'cli', 'playground-fire.ts'),
+    ).text();
+    expect(text).toMatch(/delete\s+process\.env\.DISCORD_BOT_TOKEN/);
+    expect(text).toMatch(/delete\s+process\.env\.DISCORD_WEBHOOK_URL/);
+  });
+});
 
 // ──────────────────────────────────────────────────────────────────────
 // Bootstrap UX · Accept-header negotiated response (browser HTML vs JSON)

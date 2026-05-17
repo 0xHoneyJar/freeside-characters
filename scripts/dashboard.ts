@@ -242,13 +242,6 @@ async function handlePlaygroundFire(req: Request): Promise<Response> {
   if (!PLAYGROUND_CHARACTER_RE.test(character)) {
     return jsonError(400, `invalid character: "${character}"`);
   }
-  if (live) {
-    // Defensive: live mode burns real API quota + posts to .run/llm-trace.
-    // V1 kitchen does not enable it from the web surface — operator must
-    // use the CLI with --live explicitly. Return 403 to surface the gate.
-    return jsonError(403, 'live-mode-cli-only · run with `bun playground:fire --live` from CLI');
-  }
-
   // BB-4 SEC-001 closure (2026-05-17): semaphore on concurrent subprocess spawns.
   // Auth is identity-gate only · this is the resource-budget gate.
   if (activeFireCount >= MAX_CONCURRENT_FIRES) {
@@ -281,23 +274,69 @@ async function handlePlaygroundFire(req: Request): Promise<Response> {
       '--character',
       character,
     ];
+    if (live) args.push('--live');
 
     // Bun.spawn argv is an array · NEVER composed into a string · no shell metas concern.
     // Each value is already whitelisted above.
     //
     // BB-4 SEC-002 closure (2026-05-17): explicit env allowlist. Same shape as
-    // L3 LOA_L3_PHASE_ENV_PASSTHROUGH. Refuses to inherit ANTHROPIC_API_KEY /
-    // MCP_KEY / DISCORD_BOT_TOKEN — playground is stub-only by design and a
-    // future log-on-error regression must NOT have access to those secrets.
+    // L3 LOA_L3_PHASE_ENV_PASSTHROUGH. Discord delivery env vars NEVER pass
+    // regardless of mode — playground does not deliver to channels.
+    //
+    // Live mode (operator iteration 2026-05-17): pass through LLM/MCP/score/OTEL
+    // + AWS env vars (Bedrock auth lives in AWS_*) when operator explicitly
+    // checked the live checkbox. The semaphore (SEC-001) still caps concurrent
+    // spawns at MAX_CONCURRENT_FIRES so accidental quota-burn is bounded.
     const childEnv: Record<string, string> = {
       PATH: process.env.PATH ?? '',
       HOME: process.env.HOME ?? '',
       NODE_ENV: process.env.NODE_ENV ?? 'development',
-      STUB_MODE: 'true',
-      LLM_PROVIDER: 'stub',
-      // DASHBOARD_PORT is informational for log lines · not auth-bearing.
       DASHBOARD_PORT: String(PORT),
     };
+    if (live) {
+      // Stub mode OFF when operator opts in · provider auto-resolves from creds.
+      childEnv.STUB_MODE = 'false';
+      childEnv.LLM_PROVIDER = process.env.LLM_PROVIDER ?? 'auto';
+      // Live-mode env allowlist (explicit · no wildcard inheritance).
+      const LIVE_PASSTHROUGH = [
+        // Anthropic-direct path
+        'ANTHROPIC_API_KEY',
+        'ANTHROPIC_MODEL',
+        // Freeside-gateway path
+        'FREESIDE_API_KEY',
+        'FREESIDE_AGENT_MODEL',
+        'FREESIDE_API_URL',
+        // Score-MCP (production railway data)
+        'MCP_KEY',
+        'SCORE_API_URL',
+        'SCORE_BEARER',
+        // Bedrock (AWS path · production railway uses this · operator note)
+        'AWS_ACCESS_KEY_ID',
+        'AWS_SECRET_ACCESS_KEY',
+        'AWS_SESSION_TOKEN',
+        'AWS_REGION',
+        'AWS_DEFAULT_REGION',
+        'BEDROCK_MODEL_ID',
+        // OpenTelemetry
+        'OTEL_EXPORTER_OTLP_ENDPOINT',
+        'OTEL_EXPORTER_OTLP_HEADERS',
+        'OTEL_SERVICE_NAME',
+        'SERVICE_VERSION',
+        // Knobs that influence compose behavior (read-only configuration)
+        'LEADERBOARD_MAX_FACTORS',
+        'PROSE_GATE_ON_VIOLATION',
+        'MOOD_EMOJI_DISABLED',
+        'CHARACTERS',
+      ];
+      for (const key of LIVE_PASSTHROUGH) {
+        if (process.env[key]) childEnv[key] = String(process.env[key]);
+      }
+      // Discord delivery NEVER passes — defense-in-depth · playground-fire.ts
+      // also defensively deletes these in the child process.
+    } else {
+      childEnv.STUB_MODE = 'true';
+      childEnv.LLM_PROVIDER = 'stub';
+    }
     const proc = Bun.spawn(['bun', ...args], {
       stdout: 'pipe',
       stderr: 'pipe',
@@ -768,7 +807,7 @@ const HTML = `<!doctype html>
   /* Playground · cycle-007 S8 kitchen */
   .pg-form { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px; padding: 16px 20px; margin-bottom: 20px; }
   .pg-form h2 { font-size: 13px; font-weight: 500; color: var(--text-dim); letter-spacing: 0.4px; text-transform: uppercase; margin: 0 0 12px; }
-  .pg-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 12px 16px; align-items: end; }
+  .pg-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: end; }
   .pg-form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
   .pg-form select, .pg-form input { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 7px 10px; color: var(--text); font: 13px var(--mono); }
   .pg-form select:focus, .pg-form input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
@@ -778,6 +817,30 @@ const HTML = `<!doctype html>
   .pg-form button:disabled { opacity: 0.5; cursor: wait; }
   .pg-form button:hover:not(:disabled) { filter: brightness(1.1); }
   .pg-hint { font-size: 11px; color: var(--text-dim); margin-top: 10px; line-height: 1.45; }
+  /* Live mode toggle · the gate between zero-cost stub and real LLM/MCP */
+  .pg-live-label { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; flex-direction: row; flex-wrap: wrap; }
+  .pg-live-label input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+  .pg-live-subtext { font-size: 11px; color: var(--text-dim); }
+  .pg-live-subtext.warn { color: oklch(72% 0.14 30); font-weight: 500; }
+  /* Discord embed mockup · faithful-enough for voice iteration */
+  .pg-discord { margin-bottom: 16px; max-width: 600px; }
+  .pg-discord-content { color: var(--text); font-size: 14px; line-height: 1.5; white-space: pre-wrap; margin-bottom: 8px; word-break: break-word; }
+  .pg-discord-embed { background: #2b2d31; border-left: 4px solid #5865f2; border-radius: 4px; padding: 12px 16px; margin-bottom: 4px; max-width: 520px; }
+  .pg-discord-author { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #e3e5e8; margin-bottom: 4px; font-weight: 500; }
+  .pg-discord-author-icon { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; }
+  .pg-discord-title { font-weight: 600; font-size: 15px; color: #f2f3f5; margin-bottom: 6px; line-height: 1.3; }
+  .pg-discord-description { font-size: 14px; color: #dbdee1; line-height: 1.5; white-space: pre-wrap; margin-bottom: 6px; }
+  .pg-discord-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .pg-discord-field-name { font-weight: 600; font-size: 13px; color: #f2f3f5; margin-bottom: 2px; }
+  .pg-discord-field-value { font-size: 13px; color: #dbdee1; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  .pg-discord-footer { font-size: 11px; color: #949ba4; margin-top: 8px; line-height: 1.4; }
+  .pg-md-code { background: #1e1f22; border: 1px solid #2a2c30; border-radius: 4px; padding: 8px 10px; font: 12px/1.4 var(--mono); color: #dbdee1; white-space: pre; overflow-x: auto; margin: 4px 0; }
+  /* Collapsible raw-payload detail · keeps the embed prominent · raw on-demand */
+  .pg-payload-detail { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; margin-bottom: 12px; }
+  .pg-payload-detail summary { cursor: pointer; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; padding: 4px 0; }
+  .pg-payload-detail summary:hover { color: var(--accent); }
+  .pg-payload-detail pre { margin: 8px 0 0; font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; color: var(--text); max-height: 320px; overflow-y: auto; }
+  .pg-result { display: block; }
   .pg-meta { display: grid; grid-template-columns: 80px 1fr 80px 1fr; gap: 4px 16px; padding: 12px 16px; background: var(--bg-elev); border-radius: 6px; margin-bottom: 12px; font-size: 12px; }
   .pg-meta .k { color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; font-size: 10px; }
   .pg-meta .v { color: var(--text); font-family: var(--mono); }
@@ -827,7 +890,7 @@ let currentView = 'trace';
 let currentIdx = null;
 let cache = { trace: [], memory: {}, rejections: [], violations: [], baselines: [], playground: [] };
 let selectedPlaygroundIdx = null;
-let lastPlaygroundInputs = { post_type: 'recent_badges', zone: 'el-dorado', character: 'ruggy' };
+let lastPlaygroundInputs = { post_type: 'recent_badges', zone: 'el-dorado', character: 'ruggy', live: false };
 let playgroundBusy = false;
 
 // Layer inference per source. cycle-007 envelope (layer field) takes precedence
@@ -1159,13 +1222,46 @@ function renderPlaygroundList() {
   });
 }
 
+// renderPlaygroundDetail · cycle-007 S8 r3 (operator iteration 2026-05-17):
+//   * Form built ONCE on view-enter · persisted across 2s polls so user
+//     selections, scroll position, and form focus survive refresh cycles
+//   * Result panel re-rendered on cache update OR selection change
+//   * Live mode toggle wired · checkbox triggers warning + sends live:true
+//   * Discord embed mock renders the payload as Discord WOULD render it
+//     (color stripe, fields, footer, code-blocks) · iterating on voice
+//     no longer requires posting to a Discord channel
 function renderPlaygroundDetail() {
   const detail = document.getElementById('detail');
-  clear(detail);
+  let form = detail.querySelector('.pg-form');
+  let resultPanel = detail.querySelector('.pg-result');
 
-  // Picker form (always visible · sticky-top feel)
+  if (!form) {
+    // First entry to playground tab (or returning from another view): build form once.
+    clear(detail);
+    form = buildPlaygroundForm();
+    detail.appendChild(form);
+    resultPanel = el('div', { class: 'pg-result' });
+    detail.appendChild(resultPanel);
+  }
+
+  // Update the fire button's disabled state (busy flips during a fire).
+  const fireBtn = form.querySelector('button.pg-fire');
+  if (fireBtn) {
+    fireBtn.disabled = playgroundBusy;
+    fireBtn.textContent = playgroundBusy ? 'firing…' : 'fire';
+  }
+  const refireBtn = form.querySelector('button.pg-refire');
+  if (refireBtn) refireBtn.disabled = playgroundBusy || !lastPlaygroundInputs.post_type;
+
+  // Re-render only the result panel. Form state (selects, character input,
+  // live checkbox, scroll position) is preserved across this call.
+  clear(resultPanel);
+  renderPlaygroundResult(resultPanel);
+}
+
+function buildPlaygroundForm() {
   const form = el('div', { class: 'pg-form' });
-  form.appendChild(el('h2', { text: 'kitchen · fire a post · stubbed by default · zero cost' }));
+  form.appendChild(el('h2', { text: 'kitchen · fire a post · iterate quickly · no Discord delivery' }));
   const grid = el('div', { class: 'pg-form-grid' });
 
   const postLabel = el('label', { text: 'post type' });
@@ -1175,6 +1271,11 @@ function renderPlaygroundDetail() {
     if (pt === lastPlaygroundInputs.post_type) opt.selected = true;
     postSelect.appendChild(opt);
   });
+  // Persist user choice across polls · the bug we just closed was that without
+  // this 'change' listener, every 2s refresh reset the select to the value of
+  // lastPlaygroundInputs (which only updated on fire). Now intermediate
+  // selections survive even before they're fired.
+  postSelect.addEventListener('change', () => { lastPlaygroundInputs.post_type = postSelect.value; });
   postLabel.appendChild(postSelect);
 
   const zoneLabel = el('label', { text: 'zone' });
@@ -1184,49 +1285,68 @@ function renderPlaygroundDetail() {
     if (z === lastPlaygroundInputs.zone) opt.selected = true;
     zoneSelect.appendChild(opt);
   });
+  zoneSelect.addEventListener('change', () => { lastPlaygroundInputs.zone = zoneSelect.value; });
   zoneLabel.appendChild(zoneSelect);
 
   const charLabel = el('label', { text: 'character' });
   const charInput = el('input', { id: 'pg-character', type: 'text', value: lastPlaygroundInputs.character, pattern: '[a-z0-9-]{1,32}' });
+  charInput.addEventListener('input', () => { lastPlaygroundInputs.character = charInput.value; });
   charLabel.appendChild(charInput);
 
-  const fireBtn = el('button', { class: 'pg-fire', text: playgroundBusy ? 'firing…' : 'fire' });
-  fireBtn.disabled = playgroundBusy;
+  // Live mode checkbox · operator-paced gate · explicit warning when checked
+  const liveLabel = el('label', { class: 'pg-live-label', text: 'live mode' });
+  const liveBox = el('input', { id: 'pg-live', type: 'checkbox' });
+  if (lastPlaygroundInputs.live) liveBox.checked = true;
+  const liveSubtext = el('span', { class: 'pg-live-subtext', text: '' });
+  function updateLiveSubtext() {
+    liveSubtext.textContent = liveBox.checked
+      ? '⚠ burns real LLM/MCP API quota · Discord delivery still suppressed'
+      : 'stub mode · zero cost · canned voice + synthetic score data';
+    liveSubtext.className = 'pg-live-subtext' + (liveBox.checked ? ' warn' : '');
+  }
+  liveBox.addEventListener('change', () => {
+    lastPlaygroundInputs.live = liveBox.checked;
+    updateLiveSubtext();
+  });
+  updateLiveSubtext();
+  liveLabel.appendChild(liveBox);
+  liveLabel.appendChild(liveSubtext);
+
+  const fireBtn = el('button', { class: 'pg-fire', text: 'fire' });
   fireBtn.addEventListener('click', () => firePlayground({
-    post_type: postSelect.value, zone: zoneSelect.value, character: charInput.value,
+    post_type: postSelect.value,
+    zone: zoneSelect.value,
+    character: charInput.value,
+    live: liveBox.checked,
   }));
 
   const refireBtn = el('button', { class: 'pg-refire', text: 're-fire last' });
-  refireBtn.disabled = playgroundBusy || !lastPlaygroundInputs.post_type;
   refireBtn.addEventListener('click', () => firePlayground(lastPlaygroundInputs));
 
   grid.appendChild(postLabel);
   grid.appendChild(zoneLabel);
   grid.appendChild(charLabel);
+  grid.appendChild(liveLabel);
   const actions = el('div', { class: 'pg-actions' });
   actions.appendChild(fireBtn);
   actions.appendChild(refireBtn);
   grid.appendChild(actions);
   form.appendChild(grid);
 
-  form.appendChild(el('div', { class: 'pg-hint', text:
-    'stub mode (default): score-mcp returns synthetic data · LLM provider returns canned voice · zero API cost · Discord delivery suppressed. for real LLM, run "bun playground:fire --live --post-type X --zone Y" from CLI.'
-  }));
+  return form;
+}
 
-  detail.appendChild(form);
-
-  // Result panel (only when a run is selected)
+function renderPlaygroundResult(target) {
   if (selectedPlaygroundIdx == null) {
-    detail.appendChild(el('div', { class: 'empty', text: 'pick or fire a run to inspect the pipeline' }));
+    target.appendChild(el('div', { class: 'empty', text: 'pick a run from the sidebar or fire one above' }));
     return;
   }
   const run = cache.playground[selectedPlaygroundIdx];
   if (!run) {
-    detail.appendChild(el('div', { class: 'empty', text: 'selected run not found' }));
+    target.appendChild(el('div', { class: 'empty', text: 'selected run not found' }));
     return;
   }
 
-  // Top metadata row
   const meta = el('div', { class: 'pg-meta' });
   meta.appendChild(el('span', { class: 'k', text: 'run' }));
   meta.appendChild(el('span', { class: 'v mono', text: run.run_id }));
@@ -1236,45 +1356,50 @@ function renderPlaygroundDetail() {
   meta.appendChild(el('span', { class: 'v', text: fmtDuration(run.duration_ms) }));
   meta.appendChild(el('span', { class: 'k', text: 'started' }));
   meta.appendChild(el('span', { class: 'v', text: fmtTime(run.started_at) }));
-  detail.appendChild(meta);
+  target.appendChild(meta);
 
   if (run.error) {
     const errPanel = el('div', { class: 'pg-error' });
     errPanel.appendChild(el('h3', { text: 'ERROR' }));
     errPanel.appendChild(el('pre', { text: run.error }));
-    detail.appendChild(errPanel);
+    target.appendChild(errPanel);
   }
 
-  // Two-column: voice/result on left · tool-call timeline on right
   const cols = el('div', { class: 'pg-cols' });
   const left = el('div', { class: 'pg-col' });
   const right = el('div', { class: 'pg-col' });
 
-  left.appendChild(el('h3', { text: 'voice / result' }));
+  left.appendChild(el('h3', { text: 'discord preview · voice · raw payload' }));
   if (run.result && run.result.kind === 'compose') {
+    // 1. Discord-mock embed render — what the operator would see in Discord
+    left.appendChild(el('div', { class: 'k', text: 'discord render preview' }));
+    left.appendChild(renderDiscordEmbed(run.result.payload));
+
+    // 2. Composed voice string (the LLM output before embed-wrapping)
     const voiceBlock = el('div', { class: 'pg-voice' });
-    voiceBlock.appendChild(el('div', { class: 'k', text: 'composed voice' }));
+    voiceBlock.appendChild(el('div', { class: 'k', text: 'composed voice (LLM output)' }));
     voiceBlock.appendChild(el('pre', { text: run.result.voice || '(empty)' }));
     left.appendChild(voiceBlock);
 
-    const payloadBlock = el('div', { class: 'pg-payload' });
-    payloadBlock.appendChild(el('div', { class: 'k', text: 'payload (would-deliver)' }));
-    payloadBlock.appendChild(el('pre', { class: 'mono', text: safeStringify(run.result.payload, 4000) }));
-    left.appendChild(payloadBlock);
+    // 3. Raw payload (collapsed by default · the structured-schema view)
+    const det = el('details', { class: 'pg-payload-detail' });
+    det.appendChild(el('summary', { text: 'raw payload (would-deliver to Discord webhook)' }));
+    det.appendChild(el('pre', { class: 'mono', text: safeStringify(run.result.payload, 6000) }));
+    left.appendChild(det);
 
     left.appendChild(el('div', { class: 'pg-stat', text:
-      'zone ' + run.result.zone + ' · post_type ' + run.result.post_type + ' · digest window events: ' + (run.result.digest_window_event_count ?? '?')
+      'zone ' + run.result.zone + ' · post_type ' + run.result.post_type + ' · window events: ' + (run.result.digest_window_event_count ?? '?')
     }));
   } else if (run.result && run.result.kind === 'recent_badges') {
     const draft = el('div', { class: 'pg-voice' });
-    draft.appendChild(el('div', { class: 'k', text: 'draft voice (template · no orchestrator yet)' }));
+    draft.appendChild(el('div', { class: 'k', text: 'draft voice (template · iterate on this · no orchestrator yet)' }));
     draft.appendChild(el('pre', { text: run.result.draft_voice }));
     left.appendChild(draft);
 
-    const badges = el('div', { class: 'pg-payload' });
-    badges.appendChild(el('div', { class: 'k', text: 'get_recent_badges response · ' + run.result.badges.earnings.length + ' earnings' }));
-    badges.appendChild(el('pre', { class: 'mono', text: safeStringify(run.result.badges, 4000) }));
-    left.appendChild(badges);
+    const det = el('details', { class: 'pg-payload-detail' });
+    det.appendChild(el('summary', { text: 'get_recent_badges response · ' + run.result.badges.earnings.length + ' earnings · raw' }));
+    det.appendChild(el('pre', { class: 'mono', text: safeStringify(run.result.badges, 6000) }));
+    left.appendChild(det);
   } else if (run.result && run.result.kind === 'skipped') {
     left.appendChild(el('div', { class: 'pg-stat', text: 'skipped: ' + run.result.reason }));
   } else {
@@ -1283,7 +1408,7 @@ function renderPlaygroundDetail() {
 
   right.appendChild(el('h3', { text: 'trace timeline · ' + (run.traces ? run.traces.length : 0) + ' rows' }));
   if (!run.traces || !run.traces.length) {
-    right.appendChild(el('div', { class: 'empty', text: 'no traces emitted (stub voice may not write llm-trace)' }));
+    right.appendChild(el('div', { class: 'empty', text: 'no traces (stub voice may not write llm-trace · live mode populates this)' }));
   } else {
     run.traces.forEach((t) => {
       const tr = el('div', { class: 'pg-trace layer-' + (t.layer || 'unknown') });
@@ -1298,7 +1423,104 @@ function renderPlaygroundDetail() {
 
   cols.appendChild(left);
   cols.appendChild(right);
-  detail.appendChild(cols);
+  target.appendChild(cols);
+}
+
+// Discord embed mock · cycle-007 S8 r3 · operator iteration surface
+// Renders payload { content, embeds: [...] } the way Discord WOULD render it.
+// Faithful-enough for voice/embed iteration · not pixel-perfect Discord.
+function renderDiscordEmbed(payload) {
+  const wrap = el('div', { class: 'pg-discord' });
+  if (!payload || typeof payload !== 'object') {
+    wrap.appendChild(el('div', { class: 'empty', text: '(no payload)' }));
+    return wrap;
+  }
+
+  if (payload.content) {
+    const content = el('div', { class: 'pg-discord-content' });
+    appendMarkdown(content, String(payload.content));
+    wrap.appendChild(content);
+  }
+
+  const embeds = Array.isArray(payload.embeds) ? payload.embeds : [];
+  embeds.forEach((embed) => {
+    const embedEl = el('div', { class: 'pg-discord-embed' });
+    if (typeof embed.color === 'number' && Number.isFinite(embed.color)) {
+      const hex = '#' + Math.max(0, Math.min(0xffffff, embed.color)).toString(16).padStart(6, '0');
+      embedEl.style.borderLeftColor = hex;
+    }
+
+    if (embed.author && embed.author.name) {
+      const auth = el('div', { class: 'pg-discord-author' });
+      if (embed.author.icon_url) {
+        const iconEl = el('img', { class: 'pg-discord-author-icon' });
+        iconEl.alt = '';
+        iconEl.src = String(embed.author.icon_url);
+        auth.appendChild(iconEl);
+      }
+      auth.appendChild(el('span', { text: String(embed.author.name) }));
+      embedEl.appendChild(auth);
+    }
+
+    if (embed.title) {
+      embedEl.appendChild(el('div', { class: 'pg-discord-title', text: String(embed.title) }));
+    }
+
+    if (embed.description) {
+      const desc = el('div', { class: 'pg-discord-description' });
+      appendMarkdown(desc, String(embed.description));
+      embedEl.appendChild(desc);
+    }
+
+    const fields = Array.isArray(embed.fields) ? embed.fields : [];
+    if (fields.length) {
+      const fieldsEl = el('div', { class: 'pg-discord-fields' });
+      fields.forEach((f) => {
+        const fieldEl = el('div', { class: 'pg-discord-field' + (f.inline ? ' inline' : '') });
+        fieldEl.appendChild(el('div', { class: 'pg-discord-field-name', text: String(f.name || '') }));
+        const v = el('div', { class: 'pg-discord-field-value' });
+        appendMarkdown(v, String(f.value || ''));
+        fieldEl.appendChild(v);
+        fieldsEl.appendChild(fieldEl);
+      });
+      embedEl.appendChild(fieldsEl);
+    }
+
+    if (embed.footer && embed.footer.text) {
+      embedEl.appendChild(el('div', { class: 'pg-discord-footer', text: String(embed.footer.text) }));
+    }
+
+    wrap.appendChild(embedEl);
+  });
+
+  if (!payload.content && !embeds.length) {
+    wrap.appendChild(el('div', { class: 'empty', text: '(payload has no content or embeds)' }));
+  }
+
+  return wrap;
+}
+
+// Tiny markdown tokenizer for Discord-style render. Handles triple-backtick code
+// blocks (the most common in mibera payloads, used for 30d-snapshot tables).
+// Bold/italic are deliberately NOT implemented — risk of misrendering substrate
+// text outweighs the visual gain at this iteration depth.
+function appendMarkdown(parent, text) {
+  if (!text) return;
+  // Greedy match on triple-backtick fenced blocks (Discord-compatible · optional
+  // language tag is captured but rendered as-is in the code block).
+  const codeBlockRe = /\`\`\`([^\\n]*)\\n?([\\s\\S]*?)\`\`\`/g;
+  let lastIdx = 0;
+  let m;
+  while ((m = codeBlockRe.exec(text)) !== null) {
+    if (m.index > lastIdx) {
+      parent.appendChild(document.createTextNode(text.slice(lastIdx, m.index)));
+    }
+    parent.appendChild(el('pre', { class: 'pg-md-code', text: m[2] }));
+    lastIdx = m.index + m[0].length;
+  }
+  if (lastIdx < text.length) {
+    parent.appendChild(document.createTextNode(text.slice(lastIdx)));
+  }
 }
 
 function safeStringify(value, maxLen) {
