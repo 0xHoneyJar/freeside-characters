@@ -162,7 +162,13 @@ const PLAYGROUND_POST_TYPES = new Set([
 ]);
 const PLAYGROUND_ZONES = new Set(['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab']);
 const PLAYGROUND_CHARACTER_RE = /^[a-z0-9-]{1,32}$/;
-const PLAYGROUND_FIRE_TIMEOUT_MS = 30_000;
+const PLAYGROUND_FIRE_TIMEOUT_MS = 60_000;
+
+// Live mode routing (operator constraint 2026-05-17 "we can NOT extract the API keys")
+// railway run injects production env into the subprocess at spawn time · secrets stay
+// on the railway side · operator's local .env / shell env never holds Bedrock auth.
+// Override service name via env if your railway service isn't named "freeside characters".
+const PLAYGROUND_RAILWAY_SERVICE = process.env.PLAYGROUND_RAILWAY_SERVICE ?? 'freeside characters';
 
 interface PlaygroundFireRequest {
   post_type?: string;
@@ -279,14 +285,20 @@ async function handlePlaygroundFire(req: Request): Promise<Response> {
     // Bun.spawn argv is an array · NEVER composed into a string · no shell metas concern.
     // Each value is already whitelisted above.
     //
-    // BB-4 SEC-002 closure (2026-05-17): explicit env allowlist. Same shape as
-    // L3 LOA_L3_PHASE_ENV_PASSTHROUGH. Discord delivery env vars NEVER pass
-    // regardless of mode — playground does not deliver to channels.
+    // Live mode routing (operator constraint 2026-05-17 · "we can NOT extract the
+    // API keys"): when live=true, spawn via `railway run --service <prod-service>`
+    // which fetches the production env at execution time and injects it into the
+    // subprocess. Secrets stay on railway · operator's local .env never holds
+    // Bedrock auth · the bridge is the railway CLI session (a logged-in operator
+    // is its own auth surface · no per-secret extraction).
     //
-    // Live mode (operator iteration 2026-05-17): pass through LLM/MCP/score/OTEL
-    // + AWS env vars (Bedrock auth lives in AWS_*) when operator explicitly
-    // checked the live checkbox. The semaphore (SEC-001) still caps concurrent
-    // spawns at MAX_CONCURRENT_FIRES so accidental quota-burn is bounded.
+    // Stub mode keeps the original Bun.spawn shape with the minimum-env allowlist
+    // (BB-4 SEC-002 closure preserved for the stub path).
+    //
+    // Discord delivery env (DISCORD_BOT_TOKEN · DISCORD_WEBHOOK_URL) is deleted
+    // unconditionally by playground-fire.ts at process entry · belt-and-suspenders
+    // against any future regression where railway DOES inject those vars.
+    let spawnArgv: string[];
     const childEnv: Record<string, string> = {
       PATH: process.env.PATH ?? '',
       HOME: process.env.HOME ?? '',
@@ -294,54 +306,26 @@ async function handlePlaygroundFire(req: Request): Promise<Response> {
       DASHBOARD_PORT: String(PORT),
     };
     if (live) {
-      // Stub mode OFF when operator opts in · provider auto-resolves from creds.
-      childEnv.STUB_MODE = 'false';
-      childEnv.LLM_PROVIDER = process.env.LLM_PROVIDER ?? 'auto';
-      // Live-mode env allowlist (explicit · no wildcard inheritance).
-      const LIVE_PASSTHROUGH = [
-        // PATH B (operator-preferred 2026-05-17) · freeside agent-gateway
-        // routes LLM calls through the railway · railway holds Bedrock auth ·
-        // operator's local .env carries ONLY the gateway key + URL ·
-        // NO raw AWS creds extracted from production.
-        'FREESIDE_API_KEY',
-        'FREESIDE_BASE_URL',
-        'FREESIDE_AGENT_MODEL',
-        // Anthropic-direct path (alternative · requires raw API key locally)
-        'ANTHROPIC_API_KEY',
-        'ANTHROPIC_MODEL',
-        // Bedrock-direct path (alternative · requires raw AWS creds OR bearer)
-        'AWS_BEARER_TOKEN_BEDROCK',
-        'AWS_ACCESS_KEY_ID',
-        'AWS_SECRET_ACCESS_KEY',
-        'AWS_SESSION_TOKEN',
-        'AWS_REGION',
-        'AWS_DEFAULT_REGION',
-        'BEDROCK_MODEL_ID',
-        // Score-MCP (production railway data · gateway-independent · separate substrate)
-        'MCP_KEY',
-        'SCORE_API_URL',
-        'SCORE_BEARER',
-        // OpenTelemetry
-        'OTEL_EXPORTER_OTLP_ENDPOINT',
-        'OTEL_EXPORTER_OTLP_HEADERS',
-        'OTEL_SERVICE_NAME',
-        'SERVICE_VERSION',
-        // Knobs that influence compose behavior (read-only configuration)
-        'LEADERBOARD_MAX_FACTORS',
-        'PROSE_GATE_ON_VIOLATION',
-        'MOOD_EMOJI_DISABLED',
-        'CHARACTERS',
+      // railway run picks up auth from ~/.railway · child receives full prod env
+      // (130+ vars in current freeside-characters production service). Override
+      // the service name via PLAYGROUND_RAILWAY_SERVICE env if needed.
+      spawnArgv = [
+        'railway',
+        'run',
+        '--service',
+        PLAYGROUND_RAILWAY_SERVICE,
+        '--',
+        'bun',
+        ...args,
       ];
-      for (const key of LIVE_PASSTHROUGH) {
-        if (process.env[key]) childEnv[key] = String(process.env[key]);
-      }
-      // Discord delivery NEVER passes — defense-in-depth · playground-fire.ts
-      // also defensively deletes these in the child process.
+      // Don't override STUB_MODE / LLM_PROVIDER here · railway run injects the
+      // production values which already set these for live operation.
     } else {
+      spawnArgv = ['bun', ...args];
       childEnv.STUB_MODE = 'true';
       childEnv.LLM_PROVIDER = 'stub';
     }
-    const proc = Bun.spawn(['bun', ...args], {
+    const proc = Bun.spawn(spawnArgv, {
       stdout: 'pipe',
       stderr: 'pipe',
       env: childEnv,

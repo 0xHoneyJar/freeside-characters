@@ -577,22 +577,30 @@ describe('Playground · GET /api/playground/runs (list)', () => {
 // Discord delivery env vars NEVER pass · belt-and-suspenders in both layers
 // ──────────────────────────────────────────────────────────────────────
 
-describe('Playground · env passthrough invariants', () => {
-  test('dashboard source: DISCORD_BOT_TOKEN never in childEnv allowlist', async () => {
+describe('Playground · live mode invariants (railway run injection · 2026-05-17)', () => {
+  test('dashboard source: live mode spawns via `railway run --service` (no local key extraction)', async () => {
     const text = await Bun.file(DASHBOARD_SCRIPT).text();
-    // The live-mode passthrough block must NOT list DISCORD_BOT_TOKEN or DISCORD_WEBHOOK_URL.
-    // Find the LIVE_PASSTHROUGH array contents and assert no Discord vars present.
-    const passthroughMatch = text.match(/const\s+LIVE_PASSTHROUGH\s*=\s*\[([\s\S]*?)\];/);
-    expect(passthroughMatch).not.toBeNull();
-    const body = passthroughMatch![1];
-    expect(body).not.toMatch(/DISCORD_BOT_TOKEN/);
-    expect(body).not.toMatch(/DISCORD_WEBHOOK_URL/);
-    // Sanity: it DOES list at least one expected live-mode var.
-    expect(body).toMatch(/ANTHROPIC_API_KEY/);
-    expect(body).toMatch(/MCP_KEY/);
+    // The live-mode spawn shape must use `railway run` so secrets stay on railway.
+    expect(text).toMatch(/spawnArgv\s*=\s*\[\s*['"]railway['"]\s*,\s*['"]run['"]/);
+    // Service name must come from a configurable constant · not hardcoded twice.
+    expect(text).toMatch(/PLAYGROUND_RAILWAY_SERVICE/);
+    // childEnv for live mode must NOT inherit ANY production secret from process.env ·
+    // railway run is the canonical injection point.
+    const liveBlockMatch = text.match(/if\s*\(live\)\s*\{([\s\S]*?)\}\s*else\s*\{/);
+    expect(liveBlockMatch).not.toBeNull();
+    const liveBlock = liveBlockMatch![1];
+    expect(liveBlock).not.toMatch(/ANTHROPIC_API_KEY/);
+    expect(liveBlock).not.toMatch(/AWS_BEARER_TOKEN_BEDROCK/);
+    expect(liveBlock).not.toMatch(/AWS_ACCESS_KEY_ID/);
+    expect(liveBlock).not.toMatch(/MCP_KEY/);
+    expect(liveBlock).not.toMatch(/DISCORD_BOT_TOKEN/);
+    expect(liveBlock).not.toMatch(/DISCORD_WEBHOOK_URL/);
   });
 
   test('playground-fire.ts: deletes Discord delivery env regardless of mode', async () => {
+    // railway run injects ALL production env including DISCORD_BOT_TOKEN. The child
+    // process MUST defensively delete those vars at entry so composeForCharacter
+    // never sees them · playground is read-only · no channel post regardless of mode.
     const text = await Bun.file(
       resolve(import.meta.dir, '..', 'apps', 'bot', 'src', 'cli', 'playground-fire.ts'),
     ).text();
