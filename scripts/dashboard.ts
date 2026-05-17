@@ -30,7 +30,7 @@
 // Enable SSE:    LOA_DASH_SSE=1 bun run scripts/dashboard.ts
 // Disable auth:  DASHBOARD_AUTH=0 (NOT recommended · only for test fixtures)
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import {
@@ -144,6 +144,11 @@ function readViolations(): ViolationEntry[] {
 // ──────────────────────────────────────────────────────────────────────
 
 const PLAYGROUND_RUNS_DIR = resolve(process.cwd(), '.run', 'playground');
+// BB-4 SEC-001 closure (2026-05-17): cap concurrent subprocess spawns. Auth ≠ DoS gate.
+// An authed user with the cookie could otherwise fire 100 parallel 30s subprocesses
+// and burn the machine's process budget. Stripe-style semaphore with 429-on-overflow.
+const MAX_CONCURRENT_FIRES = Number(process.env.DASHBOARD_PLAYGROUND_MAX_CONCURRENT ?? 2);
+let activeFireCount = 0;
 // Whitelisted PostTypes the playground supports. Kept inline rather than
 // imported from persona-engine to keep dashboard.ts free of orchestrator deps.
 const PLAYGROUND_POST_TYPES = new Set([
@@ -197,11 +202,16 @@ function readPlaygroundRuns(): PlaygroundRun[] {
 function readPlaygroundRun(runId: string): PlaygroundRun | null {
   if (!/^[a-z0-9-]{6,64}$/.test(runId)) return null;
   const path = resolve(PLAYGROUND_RUNS_DIR, `${runId}.json`);
-  // Path containment defense — even though runId is regex-validated, double-check.
-  if (!path.startsWith(PLAYGROUND_RUNS_DIR + '/')) return null;
   if (!existsSync(path)) return null;
+  // BB-4 SEC-003 closure (2026-05-17): realpath-canonicalize both sides and require
+  // the resolved path lives inside the resolved runs-dir. Prefix-string check alone
+  // works today against the regex but a one-char regex relaxation reopens traversal.
+  // Defense-in-depth = canonicalize.
   try {
-    return JSON.parse(readFileSync(path, 'utf-8')) as PlaygroundRun;
+    const realRunsDir = realpathSync(PLAYGROUND_RUNS_DIR);
+    const realPath = realpathSync(path);
+    if (!realPath.startsWith(realRunsDir + '/')) return null;
+    return JSON.parse(readFileSync(realPath, 'utf-8')) as PlaygroundRun;
   } catch {
     return null;
   }
@@ -239,51 +249,140 @@ async function handlePlaygroundFire(req: Request): Promise<Response> {
     return jsonError(403, 'live-mode-cli-only · run with `bun playground:fire --live` from CLI');
   }
 
-  const runId = `pg-${randomBytes(6).toString('hex')}`;
-  const args = [
-    'run',
-    'apps/bot/src/cli/playground-fire.ts',
-    '--run-id',
-    runId,
-    '--post-type',
-    postType,
-    '--zone',
-    zone,
-    '--character',
-    character,
-  ];
-
-  // Bun.spawn argv is an array · NEVER composed into a string · no shell metas concern.
-  // Each value is already whitelisted above.
-  const proc = Bun.spawn(['bun', ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env },
-  });
-
-  // Bounded wait.
-  const timeout = new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), PLAYGROUND_FIRE_TIMEOUT_MS));
-  const completed = proc.exited.then(() => 'completed' as const);
-  const outcome = await Promise.race([completed, timeout]);
-  if (outcome === 'timeout') {
-    proc.kill();
-    return jsonError(504, `playground-fire timed out after ${PLAYGROUND_FIRE_TIMEOUT_MS}ms`);
+  // BB-4 SEC-001 closure (2026-05-17): semaphore on concurrent subprocess spawns.
+  // Auth is identity-gate only · this is the resource-budget gate.
+  if (activeFireCount >= MAX_CONCURRENT_FIRES) {
+    return new Response(
+      JSON.stringify({
+        error: `too-many-fires · max ${MAX_CONCURRENT_FIRES} concurrent · retry shortly`,
+      }),
+      {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Retry-After': '5',
+        },
+      },
+    );
   }
+  activeFireCount++;
 
-  // Read the run JSON — runner persisted it before exit. exitCode 0 = success,
-  // 2 = runtime failure (still persisted with error: field), 1 = invalid args.
-  if (proc.exitCode === 1) {
-    const errText = await new Response(proc.stderr).text();
-    return jsonError(400, `playground-fire validation failed: ${errText.slice(0, 200)}`);
+  try {
+    const runId = `pg-${randomBytes(6).toString('hex')}`;
+    const args = [
+      'run',
+      'apps/bot/src/cli/playground-fire.ts',
+      '--run-id',
+      runId,
+      '--post-type',
+      postType,
+      '--zone',
+      zone,
+      '--character',
+      character,
+    ];
+
+    // Bun.spawn argv is an array · NEVER composed into a string · no shell metas concern.
+    // Each value is already whitelisted above.
+    //
+    // BB-4 SEC-002 closure (2026-05-17): explicit env allowlist. Same shape as
+    // L3 LOA_L3_PHASE_ENV_PASSTHROUGH. Refuses to inherit ANTHROPIC_API_KEY /
+    // MCP_KEY / DISCORD_BOT_TOKEN — playground is stub-only by design and a
+    // future log-on-error regression must NOT have access to those secrets.
+    const childEnv: Record<string, string> = {
+      PATH: process.env.PATH ?? '',
+      HOME: process.env.HOME ?? '',
+      NODE_ENV: process.env.NODE_ENV ?? 'development',
+      STUB_MODE: 'true',
+      LLM_PROVIDER: 'stub',
+      // DASHBOARD_PORT is informational for log lines · not auth-bearing.
+      DASHBOARD_PORT: String(PORT),
+    };
+    const proc = Bun.spawn(['bun', ...args], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: childEnv,
+    });
+
+    // Bounded wait.
+    const timeout = new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), PLAYGROUND_FIRE_TIMEOUT_MS));
+    const completed = proc.exited.then(() => 'completed' as const);
+    const outcome = await Promise.race([completed, timeout]);
+    if (outcome === 'timeout') {
+      // BB-4 QUAL-001 closure (2026-05-17): capture bounded stderr before kill
+      // so the 504 response carries a diagnostic snippet. Without this the
+      // operator triaging a hung playground sees an opaque timeout.
+      const stderrSnippet = await readStreamBounded(proc.stderr, 4096, 200);
+      proc.kill();
+      return jsonError(
+        504,
+        `playground-fire timed out after ${PLAYGROUND_FIRE_TIMEOUT_MS}ms` +
+          (stderrSnippet ? ` · stderr: ${stderrSnippet}` : ''),
+      );
+    }
+
+    // Read the run JSON — runner persisted it before exit. exitCode 0 = success,
+    // 2 = runtime failure (still persisted with error: field), 1 = invalid args.
+    if (proc.exitCode === 1) {
+      const errText = (await readStreamBounded(proc.stderr, 4096, 200)) ?? '';
+      return jsonError(400, `playground-fire validation failed: ${errText.slice(0, 200)}`);
+    }
+    const run = readPlaygroundRun(runId);
+    if (!run) {
+      // BB-4 QUAL-001: capture stderr context for the no-file-written failure mode.
+      const errText = (await readStreamBounded(proc.stderr, 4096, 200)) ?? '';
+      return jsonError(500, `playground-fire wrote no run file${errText ? ` · stderr: ${errText.slice(0, 200)}` : ''}`);
+    }
+    return new Response(JSON.stringify(run), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+  } finally {
+    activeFireCount--;
   }
-  const run = readPlaygroundRun(runId);
-  if (!run) {
-    return jsonError(500, 'playground-fire wrote no run file');
+}
+
+/**
+ * Bounded stderr reader for subprocess diagnostic capture (BB-4 QUAL-001).
+ * Reads up to maxBytes within timeoutMs · returns null if stream is closed
+ * or read errors. Does NOT throw · used in error/timeout paths.
+ */
+async function readStreamBounded(
+  stream: ReadableStream<Uint8Array> | null,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<string | null> {
+  if (!stream) return null;
+  const decoder = new TextDecoder();
+  const reader = stream.getReader();
+  let total = 0;
+  const chunks: string[] = [];
+  const deadline = Date.now() + timeoutMs;
+  try {
+    while (Date.now() < deadline && total < maxBytes) {
+      const remaining = deadline - Date.now();
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<{ done: true; value: undefined }>((r) =>
+          setTimeout(() => r({ done: true, value: undefined }), remaining),
+        ),
+      ]);
+      if (result.done || !result.value) break;
+      const text = decoder.decode(result.value);
+      const allowance = maxBytes - total;
+      chunks.push(text.length > allowance ? text.slice(0, allowance) : text);
+      total += text.length;
+    }
+  } catch {
+    /* read error → return what we have */
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* already released */
+    }
   }
-  return new Response(JSON.stringify(run), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
-  });
+  return chunks.length ? chunks.join('').trim() : null;
 }
 
 function jsonError(status: number, message: string): Response {
@@ -1112,7 +1211,7 @@ function renderPlaygroundDetail() {
 function safeStringify(value, maxLen) {
   try {
     const s = JSON.stringify(value, null, 2);
-    return s && s.length > maxLen ? s.slice(0, maxLen) + '\n…[truncated]' : s;
+    return s && s.length > maxLen ? s.slice(0, maxLen) + '\\n…[truncated]' : s;
   } catch {
     return String(value);
   }
