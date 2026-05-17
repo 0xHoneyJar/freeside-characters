@@ -348,22 +348,34 @@ async function handlePlaygroundFire(req: Request): Promise<Response> {
       );
     }
 
-    // Read the run JSON — runner persisted it before exit. exitCode 0 = success,
-    // 2 = runtime failure (still persisted with error: field), 1 = invalid args.
+    // Read the run JSON FIRST — runner persists it on BOTH success and runtime
+    // failure paths (only parseArgs failure or fatal crashes skip the write).
+    //
+    // 2026-05-17 operator-iteration fix: `railway run` collapses inner exit
+    // codes (subprocess exit 2 → outer exit 1), so the previous "exit 1 =
+    // validation failed" branch mislabeled runtime errors as parse errors.
+    // The run JSON is the source of truth · we surface it whenever present.
+    const run = readPlaygroundRun(runId);
+    if (run) {
+      // Success path OR runtime-failure-with-persisted-error · both 200 ·
+      // client inspects run.error to render success-vs-failure.
+      return new Response(JSON.stringify(run), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    }
+    // No run JSON written · diagnose from stderr + exit code.
+    const errText = (await readStreamBounded(proc.stderr, 4096, 200)) ?? '';
     if (proc.exitCode === 1) {
-      const errText = (await readStreamBounded(proc.stderr, 4096, 200)) ?? '';
+      // parseArgs failure path · runner exited before writing the run JSON.
+      // (Note: railway-run also collapses inner-exit-2 to outer-exit-1, but
+      // those would have written the run file · so absence here means parseArgs.)
       return jsonError(400, `playground-fire validation failed: ${errText.slice(0, 200)}`);
     }
-    const run = readPlaygroundRun(runId);
-    if (!run) {
-      // BB-4 QUAL-001: capture stderr context for the no-file-written failure mode.
-      const errText = (await readStreamBounded(proc.stderr, 4096, 200)) ?? '';
-      return jsonError(500, `playground-fire wrote no run file${errText ? ` · stderr: ${errText.slice(0, 200)}` : ''}`);
-    }
-    return new Response(JSON.stringify(run), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    });
+    return jsonError(
+      500,
+      `playground-fire wrote no run file (exit ${proc.exitCode})${errText ? ` · stderr: ${errText.slice(0, 200)}` : ''}`,
+    );
   } finally {
     activeFireCount--;
   }
