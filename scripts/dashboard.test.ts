@@ -304,6 +304,48 @@ describe('AC-RT-010 · reconnect-storm · per-token cap of 1 + evict prior', () 
       ctls.forEach((c) => c.abort());
     } finally { killSpawn(s); }
   });
+
+  // sprint-5 r2 review ISSUE-2 · strengthen the eviction proof. Verify the
+  // PRIOR connection's reader receives done:true (controller.close propagated)
+  // after a new same-token connection arrives. Without this, the original
+  // 5-success test only proves no-503 but doesn't prove eviction happened.
+  test('opening a second same-token connection closes the first connection\'s stream', async () => {
+    const s = await spawnDashboard({ LOA_DASH_SSE: '1' });
+    try {
+      const firstCtl = new AbortController();
+      const first = await fetch(`${s.baseUrl}/sse`, {
+        headers: { 'x-loa-dash-token': FIXTURE_TOKEN, accept: 'text/event-stream' },
+        signal: firstCtl.signal,
+      });
+      expect(first.status).toBe(200);
+      const firstReader = first.body!.getReader();
+      // Consume the hello chunk so we know the stream is fully alive.
+      const hello = await Promise.race([
+        firstReader.read(),
+        Bun.sleep(1_000).then(() => null),
+      ]);
+      expect(hello).not.toBeNull();
+
+      // Open a second connection with the same token. The server must evict
+      // the first connection before accepting the second.
+      const secondCtl = new AbortController();
+      const second = await fetch(`${s.baseUrl}/sse`, {
+        headers: { 'x-loa-dash-token': FIXTURE_TOKEN, accept: 'text/event-stream' },
+        signal: secondCtl.signal,
+      });
+      expect(second.status).toBe(200);
+
+      // The PRIOR reader should see done=true within a reasonable window.
+      const evictionProof = await Promise.race([
+        firstReader.read(),
+        Bun.sleep(2_000).then(() => ({ done: false, value: undefined }) as unknown as ReadableStreamReadResult<Uint8Array>),
+      ]);
+      expect(evictionProof.done).toBe(true);
+
+      firstCtl.abort();
+      secondCtl.abort();
+    } finally { killSpawn(s); }
+  }, 10_000);
 });
 
 // ──────────────────────────────────────────────────────────────────────
@@ -383,5 +425,23 @@ describe('T5.1 · dashboard consumes trace-readers (no duplicate path/readJsonl)
       // Should NOT define a local readJsonl helper (that's now imported).
       expect(text.match(/function readJsonl/g)).toBeNull();
     });
+  });
+});
+
+// sprint-5 r2 review ISSUE-1 · poll-suppression wiring
+describe('AC-T5.5-B · poll-suppression when SSE connects', () => {
+  test('client-side wires startNonTracePoll in SSE.onopen + startFullPoll in SSE.onerror', async () => {
+    const text = await Bun.file(DASHBOARD_SCRIPT).text();
+    // Both poll helpers must be defined.
+    expect(text).toMatch(/function startNonTracePoll\(\)/);
+    expect(text).toMatch(/function startFullPoll\(\)/);
+    // refreshNonTraceTabs must exclude /api/llm-trace from its endpoint list.
+    expect(text).toMatch(/async function refreshNonTraceTabs/);
+    const nonTraceFn = text.slice(text.indexOf('async function refreshNonTraceTabs'));
+    const nonTraceBody = nonTraceFn.slice(0, nonTraceFn.indexOf('\n}'));
+    expect(nonTraceBody.includes('/api/llm-trace')).toBe(false);
+    // SSE.onopen → startNonTracePoll · SSE.onerror → startFullPoll.
+    expect(text).toMatch(/es\.onopen\s*=\s*\(\)\s*=>\s*\{[\s\S]*?startNonTracePoll\(\)/);
+    expect(text).toMatch(/es\.onerror[\s\S]*?startFullPoll\(\)/);
   });
 });

@@ -336,6 +336,77 @@ grep -nE "function readJsonl|function resolveExistingPath|const CANDIDATE_RUN_DI
 
 ## Open Questions for Reviewer
 
-1. **Poll-suppression**: Should the client suppress the 2s poll when SSE is connected? Current design is "belt + suspenders." If yes, ~10 LoC client-side change.
+1. ~~**Poll-suppression**~~: **RESOLVED in r2.** Client now switches to `refreshNonTraceTabs` (4-endpoint poll, no `/api/llm-trace`) when SSE connects, restores full poll on SSE disconnect. Wired via `es.onopen` + `es.onerror`. Source-grep guard in `dashboard.test.ts`.
 2. **/api/violations tab**: This was additive scope. Is the surfacing of S6's audit trail in the dashboard wanted, or should it be deferred to a follow-up?
 3. **PP-3 visual attestation**: Defer to S8 cycle close (consistent with PP-1 / PP-2 pattern)?
+
+---
+
+## Feedback Addressed (r2 iteration · 2026-05-17)
+
+Engineer-feedback at `grimoires/loa/a2a/cycle-007-sprint-5/engineer-feedback.md` flagged 2 blocking + 5 non-blocking concerns. r2 commit addresses 5 of 7 below.
+
+### 🔴 ISSUE-1 (BLOCKING) · Poll-suppression — RESOLVED
+
+**Fix**: Added `refreshNonTraceTabs()` (4-endpoint poll, no `/api/llm-trace`) + `startFullPoll()` / `startNonTracePoll()` helpers + wired SSE `onopen` → `startNonTracePoll`, `onerror` → `startFullPoll`. Per-tab UI still renders incremental SSE updates for llm-trace; other 4 tabs keep their 2s refresh cadence.
+
+- `scripts/dashboard.ts` — new `refreshNonTraceTabs` function + `pollHandle`/`startFullPoll`/`startNonTracePoll` helpers.
+- `scripts/dashboard.ts::attachSse` — wires SSE state transitions to poll cadence.
+- `scripts/dashboard.test.ts::AC-T5.5-B` — new source-grep test guards the wiring + asserts `refreshNonTraceTabs` excludes `/api/llm-trace`.
+
+**AC-T5.5-B status:** ⚠ Partial → **✓ Met** in r2.
+
+### 🔴 ISSUE-2 (BLOCKING) · AC-RT-010 eviction proof — RESOLVED
+
+**Fix**: New test that opens connection A, consumes hello chunk, opens connection B with same token, then reads A's reader and asserts `done: true` (proves controller.close propagated to the consumer side).
+
+- `scripts/dashboard.test.ts::AC-RT-010` — added "opening a second same-token connection closes the first connection's stream" test (2s eviction-window budget).
+
+**AC-T5.5-F evidence:** Strengthened.
+
+### 🟡 ISSUE-3 (Non-blocking) · `lastSeenRunIds` FIFO cap — RESOLVED
+
+**Fix**: Added `SEEN_RUN_ID_CAP = 50_000` (shrink-to 40_000 on overflow). New `rememberRunId(id)` helper performs FIFO eviction by Set-insertion-order when cap exceeded.
+
+- `scripts/dashboard.ts:572-587` — bounded `lastSeenRunIds` via `rememberRunId`.
+
+### 🟡 ISSUE-4 (Non-blocking) · `tokenFingerprint` SHA-256 — RESOLVED
+
+**Fix**: Switched from `raw.slice(-12)` (last-12-char suffix · information-leak class) to `createHash('sha256').update(raw).digest('hex').slice(0, 12)` (pre-image-resistant).
+
+- `scripts/dashboard.ts:215-223` — SHA-256-based fingerprint.
+
+### 🟡 ISSUE-5 (Non-blocking) · Cookie Path=/ — ACCEPTED AS-IS
+
+**Disposition**: HTML page lives at `/`, cookie must reach it. Adding a 2-cookie split for HTML vs API would add complexity without meaningful defense gain at this scope. Documented in feedback as low-priority architecture note for future cycles.
+
+### 🟡 ISSUE-6 (Non-blocking) · Origin check on all auth-gated routes — RESOLVED
+
+**Fix**: Lifted the `originAllowed(req)` check from /sse-handler to the perimeter `Bun.serve.fetch()` handler. All cross-origin requests to any auth-gated route now reject at the perimeter (before auth check).
+
+- `scripts/dashboard.ts:631-636` — perimeter Origin gate.
+
+### 🟡 ISSUE-7 (Non-blocking) · 401 vs 403 status code split — ACCEPTED AS-IS
+
+**Disposition**: RFC 7235 semantics are correct (401 = credentials missing, 403 = forbidden despite credentials). Documented in AC-T5.5-E as a sprint-amendment proposal. Operator can request a uniform-403 amendment at S8 close if desired.
+
+---
+
+## r2 verification
+
+```bash
+$ bun test scripts/dashboard.test.ts
+# 17 pass · 0 fail · 51 expect() calls · 4.6s
+
+$ bun test
+# 1022 pass · 1 skip · 0 fail · 2620 expect() calls · 5s
+
+$ bun run lint:cycle-007
+# INV-12 ✓ · INV-17 ✓ (manifest not on origin/main yet) · INV-14 ✓
+
+$ bunx tsc --noEmit (against scripts/dashboard.ts + scripts/dashboard.test.ts)
+# exit 0
+```
+
+**r2 LoC delta** (vs r1): `+102 / -33` across `scripts/dashboard.ts` + `scripts/dashboard.test.ts`.
+

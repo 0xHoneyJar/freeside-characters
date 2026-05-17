@@ -32,7 +32,7 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual, createHash } from 'node:crypto';
 import {
   resolveTraceFilePath,
   readJsonl,
@@ -219,14 +219,15 @@ const sseClients = new Map<string, SseClient>();
 const encoder = new TextEncoder();
 
 function tokenFingerprint(req: Request): string {
-  // Stable per-token fingerprint without revealing the token. Used to detect
-  // "same token, new connection" so we can evict the prior connection per AC-RT-010.
+  // Stable per-token fingerprint that NEVER leaks token material. SHA-256 → 12 hex chars.
+  // Same token always produces the same fingerprint (eviction key for AC-RT-010); different
+  // tokens collide only with cryptographic improbability. Pre-image resistance closes the
+  // information-leak class if the fingerprint surfaces in logs (sprint-5 r2 review ISSUE-4).
   const headerToken = req.headers.get('x-loa-dash-token');
   const cookieToken = parseCookie(req, COOKIE_NAME);
   const raw = headerToken ?? cookieToken ?? '';
-  // The token itself is high-entropy random; a substring suffix is sufficient
-  // to fingerprint without serving as an oracle.
-  return raw.slice(-12);
+  if (!raw) return '';
+  return createHash('sha256').update(raw).digest('hex').slice(0, 12);
 }
 
 function evictSameTokenConnections(fingerprint: string): number {
@@ -721,6 +722,35 @@ async function refresh() {
   }
 }
 
+// Sprint-5 r2 ISSUE-1 (AC-T5.5-B) · when SSE owns the llm-trace channel, skip
+// it here so we honor the spec's "poll cadence suppressed" requirement. The
+// other 4 endpoints still poll because SSE only carries new llm-trace rows.
+async function refreshNonTraceTabs() {
+  try {
+    const [memory, rejections, violations, baselines] = await Promise.all([
+      fetch('/api/voice-memory', { credentials: 'same-origin' }).then((r) => r.json()),
+      fetch('/api/rejections', { credentials: 'same-origin' }).then((r) => r.json()),
+      fetch('/api/violations', { credentials: 'same-origin' }).then((r) => r.json()),
+      fetch('/api/baselines', { credentials: 'same-origin' }).then((r) => r.json()),
+    ]);
+    cache = { ...cache, memory, rejections, violations, baselines };
+    render();
+    document.getElementById('conn').textContent = 'connected';
+  } catch (err) {
+    document.getElementById('conn').textContent = 'reconnecting…';
+  }
+}
+
+let pollHandle = null;
+function startFullPoll() {
+  if (pollHandle != null) clearInterval(pollHandle);
+  pollHandle = setInterval(refresh, 2000);
+}
+function startNonTracePoll() {
+  if (pollHandle != null) clearInterval(pollHandle);
+  pollHandle = setInterval(refreshNonTraceTabs, 2000);
+}
+
 function flashRowByRunId(rid) {
   if (!rid) return;
   document.querySelectorAll('.run').forEach((row) => {
@@ -736,6 +766,11 @@ function attachSse() {
   const es = new EventSource('/sse', { withCredentials: true });
   document.getElementById('mode').textContent = 'live';
   document.querySelector('.status').classList.add('live');
+  es.onopen = () => {
+    // Sprint-5 r2 ISSUE-1 (AC-T5.5-B) · SSE owns the llm-trace channel; suppress
+    // the llm-trace half of the poll cadence. Other tabs keep their 2s refresh.
+    startNonTracePoll();
+  };
   es.onmessage = (ev) => {
     try {
       const event = JSON.parse(ev.data);
@@ -750,15 +785,17 @@ function attachSse() {
   es.onerror = () => {
     document.getElementById('conn').textContent = 'sse disconnected';
     document.getElementById('mode').textContent = 'poll';
+    document.querySelector('.status').classList.remove('live');
     try { es.close(); } catch {}
-    // After error, fall back to polling. The next /sse open is on next refresh cycle.
+    // After error, restore the full poll cadence (llm-trace + others).
+    startFullPoll();
   };
 }
 
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => { currentView = t.dataset.view; currentIdx = null; render(); }));
 
 refresh();
-setInterval(refresh, 2000);
+startFullPoll();
 attachSse();
 </script>
 </body>
@@ -769,7 +806,24 @@ attachSse();
 // SSE broadcast loop · poll the trace files, emit new rows
 // ──────────────────────────────────────────────────────────────────────
 
+// FIFO-capped seen-set · prevents unbounded growth in long-running dashboards
+// (sprint-5 r2 review ISSUE-3). Insertion order is preserved by Set so we can
+// drop the oldest entries when the cap is hit.
+const SEEN_RUN_ID_CAP = 50_000;
+const SEEN_RUN_ID_SHRINK_TO = 40_000;
 const lastSeenRunIds = new Set<string>();
+function rememberRunId(id: string): void {
+  if (lastSeenRunIds.has(id)) return;
+  lastSeenRunIds.add(id);
+  if (lastSeenRunIds.size <= SEEN_RUN_ID_CAP) return;
+  // Re-seat: keep the most-recent SEEN_RUN_ID_SHRINK_TO entries by insertion order.
+  const drop = lastSeenRunIds.size - SEEN_RUN_ID_SHRINK_TO;
+  let i = 0;
+  for (const k of lastSeenRunIds) {
+    if (i++ < drop) lastSeenRunIds.delete(k);
+    else break;
+  }
+}
 let sseLoopHandle: ReturnType<typeof setInterval> | null = null;
 let primeSseSeen = true; // first scan only seeds the set (no replay flood)
 
@@ -782,7 +836,7 @@ function sseScanTick(): void {
   if (primeSseSeen) {
     for (const r of rows) {
       const id = r.run_id || `${r.at}:${r.model_id}`;
-      lastSeenRunIds.add(id);
+      rememberRunId(id);
     }
     primeSseSeen = false;
     return;
@@ -792,7 +846,7 @@ function sseScanTick(): void {
   for (const r of rows) {
     const id = r.run_id || `${r.at}:${r.model_id}`;
     if (lastSeenRunIds.has(id)) break;
-    lastSeenRunIds.add(id);
+    rememberRunId(id);
     fresh.push(r);
   }
   // Emit oldest-first so the UI prepends in correct order.
@@ -883,6 +937,14 @@ const server = Bun.serve({
     // that route to 127.0.0.1 with their own Host: header.
     if (AUTH_ENABLED && !hostAllowed(req)) {
       return new Response('forbidden-host', { status: 403 });
+    }
+
+    // sprint-5 r2 ISSUE-6 · belt-and-suspenders Origin check on all auth-gated
+    // routes. SameSite=Strict already blocks cross-site cookies; this is a
+    // perimeter check so cross-origin requests with a stolen header token also
+    // can't reach the auth-gated surface.
+    if (AUTH_ENABLED && !originAllowed(req)) {
+      return new Response('forbidden-origin', { status: 403 });
     }
 
     // Cookie bootstrap · Phase 6 SKP-002. Caller provides X-Loa-Dash-Token
