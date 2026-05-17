@@ -57,7 +57,8 @@ export async function fetchValidatedDigestSnapshot(config: Config, zone: ZoneId)
   }
 
   // REJECTED — record + emit telemetry + return neutered.
-  const entry = recordRejection(zone, snapshot, validation);
+  // cycle-007 S2/T2.3 · recordRejection now async (INV-14 appendTraceEntry promise).
+  const entry = await recordRejection(zone, snapshot, validation);
 
   const tracer = getTracer();
   tracer.startActiveSpan('score.snapshot.implausible', (span) => {

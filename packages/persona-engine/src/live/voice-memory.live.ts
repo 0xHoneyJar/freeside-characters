@@ -20,7 +20,10 @@
 //     the past; forgetUser removes all entries matching `user_id`.
 //   - Schema validation on read + write via Zod.
 
-import { appendFile, readFile, mkdir, writeFile, readdir, unlink, stat } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, readdir, unlink, stat } from 'node:fs/promises';
+// cycle-007 S2/T2.3 · migrate to INV-14 appendTraceEntry (BB HIGH-4 type-enforced sole writer).
+// Direct fs.appendFile calls on .jsonl files in packages/persona-engine/src/ are forbidden after S2.
+import { appendTraceEntry, wrapTraceEntry } from '../observability/trace-envelope.ts';
 import { dirname, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import {
@@ -164,7 +167,9 @@ export function createVoiceMemoryLive(opts: VoiceMemoryLiveOpts = {}): VoiceMemo
     const work = prev.then(async () => {
       await mkdir(dirname(path), { recursive: true });
       await recordPid();
-      await appendFile(path, JSON.stringify(validation.data) + '\n');
+      // cycle-007 S2/T2.3 · INV-14: appendTraceEntry sole writer + envelope wrap (voice/memory-write).
+      // Per-key mutex (prev.then) preserved · trace-envelope mutex composes underneath.
+      await appendTraceEntry(path, wrapTraceEntry('voice', 'memory-write', validation.data));
     });
     myChain = { chain: work };
     keyLocks.set(lockKey, myChain);
@@ -218,14 +223,14 @@ export function createVoiceMemoryLive(opts: VoiceMemoryLiveOpts = {}): VoiceMemo
     // Audit log.
     if (removedCount > 0) {
       try {
-        await mkdir(dirname(deletionsLog), { recursive: true });
-        await appendFile(
+        // cycle-007 S2/T2.3 · INV-14: appendTraceEntry sole writer + envelope wrap (voice/memory-forget).
+        await appendTraceEntry(
           deletionsLog,
-          JSON.stringify({
+          wrapTraceEntry('voice', 'memory-forget', {
             at: clock().toISOString(),
             user_id: userId,
             removed_count: removedCount,
-          }) + '\n',
+          }),
         );
       } catch {
         // best-effort audit; do not throw

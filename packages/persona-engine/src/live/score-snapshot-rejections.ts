@@ -3,11 +3,12 @@
 // produces a structured Decision Log entry; >1 rejection per 24h triggers a
 // storm alert (caller surfaces as OTEL `score.snapshot.fallback_storm`).
 
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import type { DigestSnapshot } from '../domain/digest-snapshot.ts';
 import type { ZoneId } from '../score/types.ts';
 import type { PlausibilityValidation } from '../domain/validate-snapshot-plausibility.ts';
+// cycle-007 S2/T2.3 · migrate to INV-14 appendTraceEntry (BB HIGH-4 type-enforced sole writer).
+import { appendTraceEntry, wrapTraceEntry } from '../observability/trace-envelope.ts';
 
 const REJECTIONS_PATH = '.run/score-snapshot-rejections.jsonl';
 const STORM_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -25,11 +26,11 @@ export interface RejectionEntry {
   readonly snapshot_total_events: number;
 }
 
-export function recordRejection(
+export async function recordRejection(
   zone: ZoneId,
   snapshot: DigestSnapshot,
   validation: PlausibilityValidation,
-): RejectionEntry {
+): Promise<RejectionEntry> {
   const entry: RejectionEntry = {
     zone,
     rejected_at: new Date().toISOString(),
@@ -40,8 +41,9 @@ export function recordRejection(
     snapshot_generated_at: snapshot.generatedAt,
     snapshot_total_events: snapshot.totalEvents,
   };
-  mkdirSync(dirname(REJECTIONS_PATH), { recursive: true });
-  appendFileSync(REJECTIONS_PATH, JSON.stringify(entry) + '\n');
+  // cycle-007 S2/T2.3 · INV-14: appendTraceEntry sole writer + envelope wrap (substrate/snapshot-rejection).
+  // Function is now async to honor INV-14 contract · score-mcp.live.ts callsite updated to await.
+  await appendTraceEntry(REJECTIONS_PATH, wrapTraceEntry('substrate', 'snapshot-rejection', entry));
   return entry;
 }
 

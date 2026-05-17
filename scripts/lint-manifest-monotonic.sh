@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-MANIFEST_PATH=".claude/data/voice-prompt-paths.json"
+MANIFEST_PATH=".claude/overrides/voice-prompt-paths.json"
 
 if [[ ! -f "$MANIFEST_PATH" ]]; then
   echo "[INV-17] WARNING: $MANIFEST_PATH missing — skipping monotonic check (bootstrap state)"

@@ -17,7 +17,8 @@
     "lint:seam": "bash scripts/audit-substrate-presentation-seam.sh",
     "lint:zone-source": "bun run scripts/lint-no-kebab-zoneid-in-voice-prompt.ts",
     "lint:manifest-monotonic": "bash scripts/lint-manifest-monotonic.sh",
-    "lint:cycle-007": "bun run lint:zone-source && bash scripts/lint-manifest-monotonic.sh",
+    "lint:append-discipline": "bash scripts/audit-jsonl-append-discipline.sh",
+    "lint:cycle-007": "bun run lint:zone-source && bash scripts/lint-manifest-monotonic.sh && bash scripts/audit-jsonl-append-discipline.sh",
     "digest:once": "bun run --cwd apps/bot digest:once"
   },
   "devDependencies": {

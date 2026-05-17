@@ -8,8 +8,10 @@
 // writes via O_APPEND atomicity (each line fits in PIPE_BUF for typical
 // digest payloads ≤ 4KB; large payloads truncated to LLM_TRACE_MAX_BYTES).
 
-import { appendFile, mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
+// cycle-007 S2/T2.3 · migrate to INV-14 appendTraceEntry (BB HIGH-4 type-enforced sole writer).
+// Direct fs.appendFile calls in packages/persona-engine/src/ are forbidden after S2 close (INV-14).
+import { appendTraceEntry, wrapTraceEntry } from './trace-envelope.ts';
 
 const LLM_TRACE_PATH = '.run/llm-trace.jsonl';
 const LLM_TRACE_MAX_BYTES = 16384; // 16KB per line cap
@@ -61,19 +63,30 @@ export async function writeLlmTraceEntry(entry: LlmTraceEntry): Promise<void> {
   if (process.env.LLM_TRACE_DISABLED === '1') return;
   try {
     const path = resolve(LLM_TRACE_PATH);
-    await mkdir(dirname(path), { recursive: true });
     const clean: LlmTraceEntry = {
       ...entry,
       system_prompt: truncate(entry.system_prompt, 8192),
       user_message: truncate(entry.user_message, 4096),
       output: truncate(entry.output, 4096),
     };
-    const line = JSON.stringify(clean);
-    // Hard cap per-line to keep dashboard parser happy under PIPE_BUF.
-    const capped = line.length > LLM_TRACE_MAX_BYTES
-      ? `${line.slice(0, LLM_TRACE_MAX_BYTES - 32)}"...truncated"}`
-      : line;
-    await appendFile(path, capped + '\n');
+    // Pre-cap the JSON-stringified line to honor PIPE_BUF · then envelope-wrap.
+    // We materialize the capped payload as an object by re-parsing the cap-string when needed;
+    // for the envelope path we just wrap the clean object · per-line cap remains best-effort.
+    // cycle-007 S2 · INV-14: appendTraceEntry is the SOLE permitted JSONL writer in this package.
+    const wrapped = wrapTraceEntry('voice', 'bedrock-converse', clean);
+    const line = JSON.stringify(wrapped);
+    if (line.length > LLM_TRACE_MAX_BYTES) {
+      // Re-wrap with a truncated payload to stay under PIPE_BUF · preserves envelope shape.
+      const truncated: LlmTraceEntry = {
+        ...clean,
+        output: truncate(clean.output, 2048),
+        user_message: truncate(clean.user_message, 2048),
+        system_prompt: truncate(clean.system_prompt, 4096),
+      };
+      await appendTraceEntry(path, wrapTraceEntry('voice', 'bedrock-converse', truncated));
+    } else {
+      await appendTraceEntry(path, wrapped);
+    }
   } catch {
     // swallow — observability never blocks delivery
   }

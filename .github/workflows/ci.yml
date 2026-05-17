@@ -1,0 +1,87 @@
+# Continuous Integration · cycle-007 S1/T1.6 finish
+#
+# Wires the cycle-007 invariant-enforcement scripts into a single CI workflow.
+# All steps run on every push to main + every pull request targeting main.
+#
+# Quality-gate provenance:
+# - Flatline PRD IMP-004 (Phase 2 · 800): INV-12 CI lint guard for kebab-zoneid leakage
+# - Flatline SDD IMP-007 (Phase 4 · 765): audit script CI-integration (defense in depth for INV-14)
+# - Red Team AC-RT-002 (Phase 4.5 · 760): manifest monotonic check (INV-17)
+# - Phase 6 SKP-001/CRITICAL (850): CI does mechanical monotonic only · CODEOWNERS
+#   required-reviews enforced by GitHub branch protection (operator-action item)
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Fetch full history so lint-manifest-monotonic.sh can walk origin/main.
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '>=1.1.0'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck (persona-engine + apps/bot)
+        run: bun run typecheck
+
+      - name: Test (full persona-engine suite)
+        run: bun run --cwd packages/persona-engine test
+
+  cycle-007-invariants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # required for lint-manifest-monotonic.sh git-history walk
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '>=1.1.0'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # INV-12 · TS-AST lint · cycle-007 S1/T1.5 · AC-RT-004
+      # Catches kebab ZoneId literals in voice-prompt-producing files (5 bypass classes:
+      # plain literal · \uXXXX escape · template-literal concat · String.fromCharCode chain · concat).
+      - name: INV-12 source-side kebab-zone-id lint
+        run: bun run lint:zone-source
+
+      # INV-17 · manifest monotonic check · cycle-007 S1/T1.6 · AC-RT-002
+      # Prevents narrow-then-leak PR attack class against .claude/overrides/voice-prompt-paths.json
+      # (CODEOWNERS required-review enforced at GitHub branch-protection layer · operator-action).
+      - name: INV-17 manifest monotonic check
+        run: bash scripts/lint-manifest-monotonic.sh
+
+      # cycle-006 INV-1 · substrate-presentation seam audit (preserved from prior cycle)
+      - name: cycle-006 substrate-presentation seam audit
+        run: bash scripts/audit-substrate-presentation-seam.sh
+
+      # INV-14 · JSONL append-discipline audit · cycle-007 S2/T2.4 · BB HIGH-4 closure
+      # Enforces appendTraceEntry as the sole JSONL writer in packages/persona-engine/src/.
+      # Code review + the type system (T & TraceEnvelope contract) are the primary defenses;
+      # this lexical audit is defense-in-depth (catches simple bypass classes per Phase 6 SKP-001/HIGH).
+      - name: INV-14 JSONL append-discipline audit
+        run: bash scripts/audit-jsonl-append-discipline.sh
