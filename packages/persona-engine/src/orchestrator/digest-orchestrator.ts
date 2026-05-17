@@ -2,10 +2,9 @@ import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { ZoneDigest, ZoneId, RawStats } from '../score/types.ts';
 import type { DigestSnapshot } from '../domain/digest-snapshot.ts';
-import type { VoiceAugment } from '../domain/voice-augment.ts';
 import type { DigestPayload } from '../deliver/embed.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
-import type { VoiceGenPort, VoiceGenContext } from '../ports/voice-gen.port.ts';
+import type { VoiceGenPort } from '../ports/voice-gen.port.ts';
 import type { PresentationPort } from '../ports/presentation.port.ts';
 import type { VoiceMemoryPort } from '../ports/voice-memory.port.ts';
 import { createScoreMcpLive } from '../live/score-mcp.live.ts';
@@ -13,14 +12,7 @@ import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
 import { createVoiceMemoryLive } from '../live/voice-memory.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
 import { getTracer } from '../observability/otel-layer.ts';
-import { deriveShape } from '../domain/derive-shape.ts';
-import { formatPriorWeekHint } from './format-prior-week-hint.ts';
-import { sanitizeMemoryText } from '../domain/voice-memory-sanitize.ts';
-import { keyForDigest } from '../domain/voice-memory-keys.ts';
-import {
-  VOICE_MEMORY_SCHEMA_VERSION,
-  type VoiceMemoryEntry,
-} from '../domain/voice-memory-entry.ts';
+import { buildDimensionPulsePayload } from '../deliver/dimension-pulse-payload.ts';
 
 export interface DigestPostResult {
   readonly zone: ZoneId;
@@ -37,8 +29,32 @@ export interface DigestOrchestratorDeps {
   readonly voiceMemory?: VoiceMemoryPort;
 }
 
-const TTL_DAYS = 90;
+// Default pulse window · cycle-007 S8 r4 (operator pivot 2026-05-17):
+// digests fire weekly · score-dashboard's WoW window. score-dashboard's
+// FETCH_MIN_DAYS=14 floor (commit 80d715f) ensures 7d has a prior period
+// to compare against.
+const PULSE_WINDOW_DAYS = 7;
 
+/**
+ * composeDigestPost — voiceless dashboard-mirror digest (cycle-007 S8 r4).
+ *
+ * Operator pivot 2026-05-17: digests are NOT a voice moment. They surface the
+ * score-dashboard per-dimension card layout faithfully · no LLM call · no
+ * ruggy narrative · ruggy's character lives in micro/weaver/lore_drop/question/
+ * callout posts (the conversational moments).
+ *
+ * Behavior:
+ *   - Fetches raw PulseDimensionBreakdown from score-mcp (window=7d)
+ *   - For per-dim zones: one embed with that dimension's card
+ *   - For stonehenge (overall): 3 embeds in canonical [og, nft, onchain] order
+ *   - No voice gen, no voice-memory read/write, no derived shape (the dashboard
+ *     mirror doesn't need the cycle-006 derived shape · it consumes raw breakdowns
+ *     and applies score-dashboard formatting rules directly)
+ *
+ * The `voice`/`augment`/`derived` ports remain in DigestOrchestratorDeps for
+ * test injection compatibility but are not invoked. DigestPostResult.voice is
+ * always empty string.
+ */
 export async function composeDigestPost(
   config: Config,
   character: CharacterConfig,
@@ -46,100 +62,98 @@ export async function composeDigestPost(
   deps: DigestOrchestratorDeps = {},
 ): Promise<DigestPostResult> {
   const score = deps.score ?? createScoreMcpLive(config);
-  const voiceGen = deps.voice ?? createClaudeSdkLive(config, character);
-  const renderer = deps.presentation ?? presentation;
-  const voiceMemory = deps.voiceMemory ?? createVoiceMemoryLive();
+  // Resolve other deps even if unused · ensures shape parity with prior callers
+  // that may inject mocks. voice/presentation/voiceMemory are constructed but
+  // intentionally unused in the pulse path.
+  void (deps.voice ?? createClaudeSdkLive(config, character));
+  void (deps.presentation ?? presentation);
+  void (deps.voiceMemory ?? createVoiceMemoryLive());
 
-  const snapshot = await score.fetchDigestSnapshot(zone);
-
-  // cycle-006 S1 T1.6 · canonical shape derivation upstream of voice-gen.
-  const derived = deriveShape({ snapshot, crossZone: [snapshot] });
-
-  // cycle-006 S6 T6.7 · voice-memory read-before-voice-gen.
-  // S8 NFR-5 · OTEL `voice_memory.read` event emitted via tracer span.
-  // Fail-safe: any read failure → empty prior hint, never blocks the post.
-  const streamKey = keyForDigest(zone);
   const tracer = getTracer();
-  let priorWeekHint = '';
-  let priorFound = false;
-  try {
-    const prior = await voiceMemory.readRecent('digest', streamKey, 1);
-    priorFound = prior.length > 0;
-    if (priorFound) {
-      priorWeekHint = formatPriorWeekHint({
-        entry: { header: prior[0]!.header, outro: prior[0]!.outro },
-        stream: 'digest',
-        key: streamKey,
-      });
-    }
-  } catch {
-    // swallow — voice-memory is non-critical for post delivery
-  }
-  // S8 T8.1 · OTEL emission for NFR-5 voice-memory observability.
-  tracer.startActiveSpan('voice_memory.read', (span) => {
+  const { generatedAt, breakdowns } = await score.fetchDimensionBreakdowns({
+    zone,
+    windowDays: PULSE_WINDOW_DAYS,
+  });
+
+  tracer.startActiveSpan('dimension_pulse.fetch', (span) => {
     try {
-      span.setAttribute('stream', 'digest');
-      span.setAttribute('key', streamKey);
-      span.setAttribute('found', priorFound);
+      span.setAttribute('zone', zone);
+      span.setAttribute('window_days', PULSE_WINDOW_DAYS);
+      span.setAttribute('breakdown_count', breakdowns.length);
     } finally {
       span.end();
     }
   });
 
-  const ctx: VoiceGenContext = { derived, priorWeekHint };
-  const augment: VoiceAugment | undefined = config.VOICE_DISABLED
-    ? undefined
-    : await voiceGen.generateDigestVoice(snapshot, ctx);
+  const payload = buildDimensionPulsePayload(breakdowns, {
+    zone,
+    windowDays: PULSE_WINDOW_DAYS,
+    generatedAt,
+  });
 
-  const message = renderer.renderDigest(snapshot, augment);
-  const payload = presentation.toDigestPayload(message);
-
-  // cycle-006 S6 T6.7 · voice-memory write-after-voice-gen with sanitization.
-  if (augment && augment.header) {
-    const now = new Date();
-    const expiry = new Date(now.getTime() + TTL_DAYS * 24 * 60 * 60 * 1000);
-    const entry: VoiceMemoryEntry = {
-      schema_version: VOICE_MEMORY_SCHEMA_VERSION,
-      at: now.toISOString(),
-      stream: 'digest',
-      zone,
-      key: streamKey,
-      header: sanitizeMemoryText(augment.header).slice(0, 280),
-      outro: sanitizeMemoryText(augment.outro ?? '').slice(0, 280),
-      key_numbers: {
-        total_events: snapshot.totalEvents,
-        previous_period_events: snapshot.previousPeriodEvents,
-        permitted_factor_names: derived.permittedFactors.map((f) => f.displayName),
-      },
-      use_label: 'background_only',
-      expiry: expiry.toISOString(),
-      signed_by: `agent:${character.id ?? 'claude'}`,
-    };
-    let writeOk = false;
-    try {
-      const writeResult = await voiceMemory.appendEntry('digest', entry);
-      writeOk = writeResult.ok;
-    } catch {
-      // swallow — write failure should never block delivery (SDD §6.1)
-    }
-    // S8 T8.1 · OTEL emission for NFR-5 voice-memory observability.
-    tracer.startActiveSpan('voice_memory.write', (span) => {
-      try {
-        span.setAttribute('stream', 'digest');
-        span.setAttribute('key', streamKey);
-        span.setAttribute('ok', writeOk);
-      } finally {
-        span.end();
-      }
-    });
-  }
+  // Synthesize a DigestSnapshot from the first breakdown (or aggregated for
+  // overall) · keeps DigestPostResult.digest stable for downstream consumers
+  // that inspect raw_stats / score / etc. (No domain change · just adapter.)
+  const snapshot: DigestSnapshot = synthesizeSnapshot(zone, generatedAt, breakdowns);
 
   return {
     zone,
     postType: 'digest',
     digest: snapshotToZoneDigest(snapshot),
-    voice: augment ? [augment.header, augment.outro].filter(Boolean).join('\n') : '',
+    voice: '',
     payload,
+  };
+}
+
+function synthesizeSnapshot(
+  zone: ZoneId,
+  generatedAt: string,
+  breakdowns: ReadonlyArray<import('../score/types.ts').PulseDimensionBreakdown>,
+): DigestSnapshot {
+  const totalEvents = breakdowns.reduce((s, b) => s + b.total_events, 0);
+  const previousPeriodEvents = breakdowns.reduce((s, b) => s + b.previous_period_events, 0);
+  const dimension = breakdowns.length === 1 ? breakdowns[0]!.id : 'overall';
+  const displayName = breakdowns.length === 1 ? breakdowns[0]!.display_name : 'Overall';
+  return {
+    zone,
+    dimension,
+    displayName,
+    windowDays: PULSE_WINDOW_DAYS,
+    generatedAt,
+    totalEvents,
+    previousPeriodEvents,
+    deltaPct:
+      previousPeriodEvents === 0
+        ? null
+        : ((totalEvents - previousPeriodEvents) / previousPeriodEvents) * 100,
+    deltaCount: totalEvents - previousPeriodEvents,
+    activeWallets: 0, // not exposed in raw breakdown · derive-shape is not used in pulse path
+    coldFactorCount: breakdowns.reduce((s, b) => s + b.inactive_factor_count, 0),
+    totalFactorCount: breakdowns.reduce((s, b) => s + b.total_factor_count, 0),
+    topFactors: breakdowns.flatMap((b) =>
+      b.top_factors.map((f) => ({
+        factorId: f.factor_id,
+        displayName: f.display_name,
+        primaryAction: f.primary_action,
+        total: f.total,
+        previous: f.previous,
+        deltaPct: f.delta_pct,
+        deltaCount: f.delta_count,
+        ...(f.factor_stats ? { factorStats: f.factor_stats } : {}),
+      })),
+    ),
+    coldFactors: breakdowns.flatMap((b) =>
+      b.cold_factors.map((f) => ({
+        factorId: f.factor_id,
+        displayName: f.display_name,
+        primaryAction: f.primary_action,
+        total: f.total,
+        previous: f.previous,
+        deltaPct: f.delta_pct,
+        deltaCount: f.delta_count,
+        ...(f.factor_stats ? { factorStats: f.factor_stats } : {}),
+      })),
+    ),
   };
 }
 

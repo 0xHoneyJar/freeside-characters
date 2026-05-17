@@ -61,6 +61,12 @@ export interface DigestPayload {
 
 export interface DiscordEmbed {
   color?: number;
+  /**
+   * Optional embed title · bold, ~24px, single line, max 256 chars.
+   * cycle-007 S8 r4: added for dimension-pulse mirror (score-dashboard format).
+   * Existing voiced-digest renderers do not set this · backwards compatible.
+   */
+  title?: string;
   description?: string;
   fields?: Array<{ name: string; value: string; inline?: boolean }>;
   footer?: { text: string };

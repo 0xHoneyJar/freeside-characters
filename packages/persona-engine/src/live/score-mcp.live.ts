@@ -7,6 +7,7 @@ import {
   ZONE_TO_DIMENSION,
   type PulseDimensionBreakdown,
   type ZoneId,
+  type PulseDimension,
 } from '../score/types.ts';
 import type { DigestSnapshot, DigestFactorSnapshot } from '../domain/digest-snapshot.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
@@ -15,6 +16,10 @@ import { readBaseline, appendBaseline } from './score-baselines.ts';
 import { recordRejection, detectStorm } from './score-snapshot-rejections.ts';
 import { getTracer } from '../observability/otel-layer.ts';
 
+// Canonical dimension order for the cross-dim (stonehenge) view · matches
+// score-dashboard's home page column order at src/app/(cm-shell)/page.tsx:75-77.
+const CROSS_DIM_ORDER: ReadonlyArray<PulseDimension> = ['og', 'nft', 'onchain'];
+
 export function createScoreMcpLive(config: Config): ScoreFetchPort {
   return {
     fetchDigestSnapshot: (zone) => fetchValidatedDigestSnapshot(config, zone),
@@ -22,8 +27,28 @@ export function createScoreMcpLive(config: Config): ScoreFetchPort {
       const response = await fetchRecentEvents(config, limit);
       return { generatedAt: response.generated_at, events: response.events };
     },
+    fetchDimensionBreakdowns: async ({ zone, windowDays }) => {
+      const targetDim = ZONE_TO_DIMENSION[zone];
+      // Per-dim zones request one dimension · stonehenge (overall) requests all.
+      const response =
+        targetDim === 'overall'
+          ? await fetchDimensionBreakdown(config, undefined, windowDays)
+          : await fetchDimensionBreakdown(config, targetDim, windowDays);
+      // Preserve canonical order [og, nft, onchain] for the cross-dim case ·
+      // the API may return any order.
+      const byId = new Map(response.dimensions.map((d) => [d.id, d]));
+      const breakdowns =
+        targetDim === 'overall'
+          ? (CROSS_DIM_ORDER.map((id) => byId.get(id)).filter(
+              (d): d is PulseDimensionBreakdown => d !== undefined,
+            ))
+          : response.dimensions;
+      return { generatedAt: response.generated_at, breakdowns };
+    },
   };
 }
+
+export { CROSS_DIM_ORDER };
 
 /**
  * Fetch a digest snapshot from score-mcp AND validate it against the

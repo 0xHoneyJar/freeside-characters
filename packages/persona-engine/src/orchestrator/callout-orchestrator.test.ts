@@ -29,6 +29,7 @@ function snapshotOf(zone: 'stonehenge' = 'stonehenge'): DigestSnapshot {
 const mockScore: ScoreFetchPort = {
   fetchDigestSnapshot: async (zone) => snapshotOf(zone as 'stonehenge'),
   fetchActivityPulse: async () => ({ generatedAt: 'x', events: [] }),
+  fetchDimensionBreakdowns: async () => ({ generatedAt: 'x', breakdowns: [] }),
 };
 
 const STUB_CONFIG = { VOICE_DISABLED: false, FREESIDE_AGENT_MODEL: 'mock' } as unknown as Config;

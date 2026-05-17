@@ -21,6 +21,10 @@ export function createScoreMcpMock(fixtures: Partial<Record<ZoneId, DigestSnapsh
         timestamp: '2026-05-16T00:00:00.000Z',
       })),
     }),
+    fetchDimensionBreakdowns: async () => ({
+      generatedAt: '2026-05-16T00:00:00.000Z',
+      breakdowns: [],
+    }),
   };
 }
 

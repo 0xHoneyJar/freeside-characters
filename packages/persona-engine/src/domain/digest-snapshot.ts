@@ -17,7 +17,7 @@ export interface DigestSnapshot {
   readonly zone: ZoneId;
   readonly dimension: DigestSnapshotDimension;
   readonly displayName: string;
-  readonly windowDays: 30;
+  readonly windowDays: 7 | 30 | 90;
   readonly generatedAt: string;
   readonly totalEvents: number;
   readonly previousPeriodEvents: number;

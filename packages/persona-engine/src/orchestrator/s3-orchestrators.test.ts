@@ -37,6 +37,7 @@ function mockScore(): ScoreFetchPort {
   return {
     fetchDigestSnapshot: async (zone) => snapshotOf(zone),
     fetchActivityPulse: async () => ({ generatedAt: '2026-05-15T00:00:00Z', events: [] }),
+    fetchDimensionBreakdowns: async () => ({ generatedAt: '2026-05-15T00:00:00Z', breakdowns: [] }),
   };
 }
 
@@ -119,6 +120,7 @@ describe('composeWeaverPost', () => {
         return snapshotOf(zone);
       },
       fetchActivityPulse: async () => ({ generatedAt: 'x', events: [] }),
+      fetchDimensionBreakdowns: async () => ({ generatedAt: 'x', breakdowns: [] }),
     };
     const result = await composeWeaverPost(STUB_CONFIG, STUB_CHARACTER, 'owsley-lab', {
       score,

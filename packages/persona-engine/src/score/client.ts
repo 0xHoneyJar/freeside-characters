@@ -183,7 +183,10 @@ export async function fetchZoneDigest(config: Config, zone: ZoneId): Promise<Zon
 export async function fetchDimensionBreakdown(
   config: Config,
   dimension?: PulseDimension,
-  window: 30 = 30,
+  // cycle-007 S8 r4 (operator pivot 2026-05-17): opened window type to 7|30|90
+  // for the dashboard-aligned pulse digest. score-mcp accepts all three; the
+  // 7d path landed on score-dashboard side via 80d715f (FETCH_MIN_DAYS=14 floor).
+  window: 7 | 30 | 90 = 30,
 ): Promise<GetDimensionBreakdownResponse> {
   if (config.STUB_MODE && !config.MCP_KEY) {
     const dimensions = dimension
