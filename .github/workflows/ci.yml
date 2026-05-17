@@ -75,9 +75,11 @@ jobs:
       - name: INV-17 manifest monotonic check
         run: bash scripts/lint-manifest-monotonic.sh
 
-      # cycle-006 INV-1 · substrate-presentation seam audit (preserved from prior cycle)
-      - name: cycle-006 substrate-presentation seam audit
-        run: bash scripts/audit-substrate-presentation-seam.sh
+      # cycle-006 INV-1 + cycle-007 S7 G-6 closure: substrate-presentation seam audit
+      # --strict-composer enforces no to*Payload imports from live/discord-webhook in orchestrator/*
+      # (cycle-007 S7 routes all orchestrators through PresentationPort instead).
+      - name: substrate-presentation seam audit (strict-composer · cycle-007 S7)
+        run: bash scripts/audit-substrate-presentation-seam.sh --strict-composer
 
       # INV-14 · JSONL append-discipline audit · cycle-007 S2/T2.4 · BB HIGH-4 closure
       # Enforces appendTraceEntry as the sole JSONL writer in packages/persona-engine/src/.

@@ -283,6 +283,18 @@ export function renderCallout(snapshot: DigestSnapshot, augment?: VoiceAugment):
   };
 }
 
+// cycle-007 S7 · G-6 leak closure: presentation const exposes payload-conversion methods.
+// Orchestrators consume these via PresentationPort instead of importing to*Payload directly
+// from live/discord-webhook.live.ts (which violates the substrate-presentation seam).
+import {
+  toDigestPayload,
+  toMicroPayload,
+  toLoreDropPayload,
+  toQuestionPayload,
+  toWeaverPayload,
+  toCalloutPayload,
+} from './discord-webhook.live.ts';
+
 export const presentation = {
   renderDigest,
   renderActivityPulse,
@@ -291,4 +303,11 @@ export const presentation = {
   renderQuestion,
   renderWeaver,
   renderCallout,
+  // cycle-007 S7 · payload-conversion exposed via port (G-6 leak closure)
+  toDigestPayload,
+  toMicroPayload,
+  toLoreDropPayload,
+  toQuestionPayload,
+  toWeaverPayload,
+  toCalloutPayload,
 };

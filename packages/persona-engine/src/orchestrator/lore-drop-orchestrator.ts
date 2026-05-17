@@ -10,7 +10,6 @@ import type { DigestPayload } from '../deliver/embed.ts';
 import { createScoreMcpLive } from '../live/score-mcp.live.ts';
 import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
-import { toLoreDropPayload } from '../live/discord-webhook.live.ts';
 import { deriveShape } from '../domain/derive-shape.ts';
 
 export interface LoreDropPostResult {
@@ -43,5 +42,5 @@ export async function composeLoreDropPost(
     : await voiceGen.generateDigestVoice(snapshot, { derived });
 
   const message = renderer.renderLoreDrop(snapshot, augment);
-  return { zone, postType: 'lore_drop', message, payload: toLoreDropPayload(message) };
+  return { zone, postType: 'lore_drop', message, payload: presentation.toLoreDropPayload(message) };
 }

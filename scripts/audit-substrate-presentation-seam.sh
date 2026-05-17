@@ -4,7 +4,14 @@
 # any violation. Closes BB design-review F-003 (single-renderer invariant).
 
 set -euo pipefail
-ROOT="${1:-packages/persona-engine/src}"
+
+# Skip flag args when resolving ROOT positional.
+ROOT="packages/persona-engine/src"
+for arg in "$@"; do
+  [[ "$arg" == --* ]] && continue
+  ROOT="$arg"
+  break
+done
 EXIT=0
 
 # Renderer cannot import voice modules.
@@ -45,6 +52,31 @@ if [[ -f "${ROOT}/compose/composer.ts" ]]; then
       EXIT=1
     else
       echo "WARN: composer.ts still contains business logic (S4 finalization pending)" >&2
+    fi
+  fi
+fi
+
+# cycle-007 S7 · G-6 leak closure: orchestrators MUST NOT import to*Payload from live/discord-webhook.
+# They route through PresentationPort instead (presentation.toDigestPayload etc).
+# Strict mode (LOA_SEAM_AUDIT_STRICT_COMPOSER=1 OR --strict-composer flag) fails the build;
+# default warns to allow incremental migration. After cycle-007 S7 close, strict mode becomes default.
+STRICT_COMPOSER=0
+for arg in "$@"; do
+  [[ "$arg" == "--strict-composer" ]] && STRICT_COMPOSER=1
+done
+[[ "${LOA_SEAM_AUDIT_STRICT_COMPOSER:-0}" == "1" ]] && STRICT_COMPOSER=1
+
+if [[ -d "${ROOT}/orchestrator" ]]; then
+  leaks=$(grep -lE "to[A-Z][a-zA-Z]+Payload.*from.*live/discord-webhook" "${ROOT}"/orchestrator/*.ts 2>/dev/null || true)
+  if [[ -n "$leaks" ]]; then
+    if [[ "$STRICT_COMPOSER" == "1" ]]; then
+      echo "FAIL: orchestrator files import to*Payload from live/discord-webhook directly (G-6 leak)" >&2
+      echo "$leaks" >&2
+      echo "Fix: route through PresentationPort (presentation.toDigestPayload etc)" >&2
+      EXIT=1
+    else
+      echo "WARN: orchestrator files import to*Payload from live/discord-webhook directly (G-6 leak · use --strict-composer to enforce)" >&2
+      echo "$leaks" >&2
     fi
   fi
 fi

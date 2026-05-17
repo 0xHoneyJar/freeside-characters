@@ -10,7 +10,6 @@ import type { DigestPayload } from '../deliver/embed.ts';
 import { createScoreMcpLive } from '../live/score-mcp.live.ts';
 import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
-import { toCalloutPayload } from '../live/discord-webhook.live.ts';
 import { deriveShape } from '../domain/derive-shape.ts';
 
 export interface CalloutPostResult {
@@ -60,7 +59,7 @@ export async function composeCalloutPost(
     zone,
     postType: 'callout',
     message,
-    payload: toCalloutPayload(message),
+    payload: presentation.toCalloutPayload(message),
     ...(deps.triggerId ? { triggerId: deps.triggerId } : {}),
   };
 }
