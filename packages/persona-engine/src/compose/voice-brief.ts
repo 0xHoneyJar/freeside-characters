@@ -23,6 +23,7 @@
 import type { ZoneId, FactorStats } from '../score/types.ts';
 import type { LayoutShape } from '../domain/derive-shape.ts';
 import type { ProseGateViolation } from '../deliver/prose-gate.ts';
+import { safeResolveZoneDisplayName } from '../domain/zone-registry.ts';
 
 const ZONE_VOICE_CONTEXT: Record<ZoneId, string> = {
   stonehenge:
@@ -84,6 +85,12 @@ export interface VoiceBrief {
  */
 export function buildVoiceBrief(input: VoiceBriefInput): VoiceBrief {
   const zoneCtx = ZONE_VOICE_CONTEXT[input.zone];
+  // cycle-007 S8 follow-up (operator 2026-05-17): resolve kebab → display name
+  // BEFORE interpolating into the LLM prompt. INV-12 catches literal kebab
+  // strings · but `${input.zone}` is a runtime value · the static lint can't
+  // see it. The fix is at the interpolation site · the LLM sees "El Dorado"
+  // not "el-dorado" · prevents the kebab from echoing back in voice output.
+  const zoneDisplay = safeResolveZoneDisplayName(input.zone, 'voice-brief');
 
   // VOICE PROMPT DOCTRINE (operator 2026-05-16):
   // Negation rules in prompts CAUSE the artifact they forbid — mentioning
@@ -92,10 +99,10 @@ export function buildVoiceBrief(input: VoiceBriefInput): VoiceBrief {
   // the regex backstop that strips em-dashes / asterisk-roleplay / closing
   // signoffs at output. Prompt stays POSITIVE: describe the voice we want,
   // not the artifacts we don't.
-  const baseSystem = `you are ruggy, a warm and grounded bear narrator. you are the keeper of ${input.zone}. ${zoneCtx}.
+  const baseSystem = `you are ruggy, a warm and grounded bear narrator. you are the keeper of ${zoneDisplay}. ${zoneCtx}.
 
 voice:
-- lowercase. proper nouns may carry the substrate's casing when present.
+- lowercase prose · proper nouns (zone names like "${zoneDisplay}", factor names, character handles) MUST preserve their canonical casing. never lowercase them.
 - speak naturally. one sentence. specific. one number max — the data list renders separately, you don't need to enumerate.
 - you'd rather sit with a slow week than fake energy. sit with what is.
 - character first. warmth, observation, slight humor. nothing performative.
@@ -112,7 +119,7 @@ this week's shape: ALL QUIET. across the past ${input.windowDays} days, ${input.
 you may:
 - acknowledge the quiet. NAME it. don't apologize for it.
 - reflect on the cadence. compare to the previous period (${input.previousPeriodEvents} events) if it feels relevant.
-- evoke ${input.zone}'s atmosphere. the bears may be sleeping. the honey may be brewing. the lab may be cooling.
+- evoke ${zoneDisplay}'s atmosphere. the bears may be sleeping. the honey may be brewing. the lab may be cooling.
 - offer something for next week's wait. a noticing. a fragment.
 
 you must NOT:

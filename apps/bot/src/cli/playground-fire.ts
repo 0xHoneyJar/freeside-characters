@@ -233,12 +233,25 @@ async function runRecentBadges(parsed: ParsedArgs): Promise<{
     legendary: 5,
     mythic: 6,
   };
-  const top3 = [...badges.earnings]
-    .sort((a, b) => (rarityRank[b.rarity] ?? 0) - (rarityRank[a.rarity] ?? 0))
-    .slice(0, 3);
+  // Operator iteration 2026-05-17: "says 8 new badges but only lists 3"
+  // was confusing · count + listing must agree.
+  // Sort by rarity DESC · render ALL earnings (up to a sensible cap).
+  // Wallet display: short-hash format `0xab12…cdef`.
+  const SHOW_LIMIT = Math.min(badges.earnings.length, 12);
+  const sorted = [...badges.earnings].sort(
+    (a, b) => (rarityRank[b.rarity] ?? 0) - (rarityRank[a.rarity] ?? 0),
+  );
+  const visible = sorted.slice(0, SHOW_LIMIT);
+  const hidden = badges.earnings.length - SHOW_LIMIT;
+  const header =
+    badges.earnings.length === 1
+      ? `1 new badge earned:`
+      : hidden > 0
+        ? `${badges.earnings.length} new badges earned · showing top ${SHOW_LIMIT} by rarity:`
+        : `${badges.earnings.length} new badges earned:`;
   const lines = [
-    `${badges.earnings.length} new badges earned · top by rarity:`,
-    ...top3.map(
+    header,
+    ...visible.map(
       (b) => `· ${b.badge_name} (${b.rarity}) — ${b.wallet.slice(0, 6)}…${b.wallet.slice(-4)}`,
     ),
     parsed.zone === 'stonehenge' ? 'the leaderboard tilted today.' : '',

@@ -20,7 +20,7 @@ const ZONE_COLORS = {
 // cycle-007 S1/T1.3 · ZONE_LABEL deleted — replaced by safeResolveZoneRichLabel from domain/zone-registry.ts.
 // Per Flatline SDD SKP-003 (Phase 4): callers use the safe variant which catches UnknownZoneError + emits
 // zone.resolution_failed warning + returns raw zone string as fallback (does NOT crash digest pipeline).
-import { safeResolveZoneRichLabel } from '../domain/zone-registry.ts';
+import { safeResolveZoneRichLabel, safeResolveZoneDisplayName } from '../domain/zone-registry.ts';
 // cycle-007 S3/T3.3 · D3 + D5: medium-aware render constants via metricsForMedium.
 // digitWidthSpaceChar (U+2007 FIGURE SPACE for Discord) defends against Android `gg sans`
 // proportional-fallback regression that breaks ASCII-space monospace assumption.
@@ -60,7 +60,7 @@ function renderSnapshotField(snapshot: DigestSnapshot): DeterministicEmbed['fiel
   if (snapshot.activeWallets !== undefined) {
     rows.push(`${padLabel('wallets')}${String(snapshot.activeWallets).padStart(PAD, PAD_CHAR)} active`);
   }
-  rows.push(`${padLabel('w/w')}${formatDeltaPct(snapshot.deltaPct).padStart(PAD, PAD_CHAR)}`);
+  rows.push(`${padLabel('change')}${formatDeltaPct(snapshot.deltaPct).padStart(PAD, PAD_CHAR)}`);
   if (snapshot.coldFactorCount > 0) {
     rows.push(`${padLabel('cold')}${String(snapshot.coldFactorCount).padStart(PAD, PAD_CHAR)} cold`);
   }
@@ -155,7 +155,7 @@ export function renderDigest(snapshot: DigestSnapshot, augment?: VoiceAugment): 
     truthEmbed: {
       color: ZONE_COLORS[snapshot.zone],
       fields,
-      footer: { text: `digest · generated at ${snapshot.generatedAt} · zone:${snapshot.zone}` },
+      footer: { text: `digest · generated at ${snapshot.generatedAt} · zone:${safeResolveZoneDisplayName(snapshot.zone, 'discord-render-footer')}` },
     },
   };
 }
@@ -253,7 +253,7 @@ export function renderWeaver(
 ): WeaverMessage {
   const fields: DeterministicEmbed['fields'] = crossZone.slice(0, 4).map((z) => ({
     name: safeResolveZoneRichLabel(z.zone, 'discord-render'),
-    value: `\`\`\`\nevents ${String(z.totalEvents).padStart(8, ' ')} / ${z.windowDays}d\nw/w    ${formatDeltaPct(z.deltaPct).padStart(8, ' ')}\n\`\`\``,
+    value: `\`\`\`\nevents ${String(z.totalEvents).padStart(8, ' ')} / ${z.windowDays}d\nchange   ${formatDeltaPct(z.deltaPct).padStart(8, ' ')}\n\`\`\``,
     inline: true,
   }));
   return {
@@ -274,11 +274,11 @@ export function renderCallout(snapshot: DigestSnapshot, augment?: VoiceAugment):
       fields: [
         {
           name: 'snapshot',
-          value: `\`\`\`\nevents ${snapshot.totalEvents} / ${snapshot.windowDays}d\nw/w    ${formatDeltaPct(snapshot.deltaPct)}\n\`\`\``,
+          value: `\`\`\`\nevents ${snapshot.totalEvents} / ${snapshot.windowDays}d\nchange   ${formatDeltaPct(snapshot.deltaPct)}\n\`\`\``,
           inline: false,
         },
       ],
-      footer: { text: `callout · ${snapshot.generatedAt} · zone:${snapshot.zone}` },
+      footer: { text: `callout · ${snapshot.generatedAt} · zone:${safeResolveZoneDisplayName(snapshot.zone, 'discord-render-footer')}` },
     },
   };
 }

@@ -46,7 +46,10 @@ describe('buildVoiceBrief · shape A (all-quiet · the dominant case)', () => {
       previousPeriodEvents: 26,
     });
     expect(brief.system).toContain('you are ruggy');
-    expect(brief.system).toContain('bear-cave');
+    // cycle-007 S8 follow-up 2026-05-17: kebab → display-name in voice prompt ·
+    // LLM sees "Bear Cave" not "bear-cave" · prevents kebab echo in voice output.
+    expect(brief.system).toContain('Bear Cave');
+    expect(brief.system).not.toContain('bear-cave');
     expect(brief.system).toContain('lowercase');
     // Per operator doctrine 2026-05-16: negation rules removed from prompt.
     // (mentioning artifacts in the prompt teaches the LLM they're in scope.)
