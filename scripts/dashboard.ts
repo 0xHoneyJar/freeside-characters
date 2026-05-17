@@ -171,7 +171,16 @@ function parseCookie(req: Request, name: string): string | null {
     const eq = part.indexOf('=');
     if (eq === -1) continue;
     const k = part.slice(0, eq).trim();
-    if (k === name) return decodeURIComponent(part.slice(eq + 1).trim());
+    if (k === name) {
+      // r3 audit · malformed `%` sequences would otherwise throw URIError, which
+      // bubbles to the fetch handler and could be exploited for a single-request
+      // DoS. Treat malformed values as no-credential.
+      try {
+        return decodeURIComponent(part.slice(eq + 1).trim());
+      } catch {
+        return null;
+      }
+    }
   }
   return null;
 }
@@ -828,30 +837,38 @@ let sseLoopHandle: ReturnType<typeof setInterval> | null = null;
 let primeSseSeen = true; // first scan only seeds the set (no replay flood)
 
 function sseScanTick(): void {
-  if (sseClients.size === 0) {
-    primeSseSeen = true;
-    return;
-  }
-  const rows = readLlmTrace();
-  if (primeSseSeen) {
+  // r3 audit · containment for the scan loop. If readLlmTrace / sanitize /
+  // broadcast throws (corrupted file, fs error, payload weirdness), the
+  // exception otherwise bubbles to setInterval and can crash the process.
+  // Log + continue; the next tick will retry.
+  try {
+    if (sseClients.size === 0) {
+      primeSseSeen = true;
+      return;
+    }
+    const rows = readLlmTrace();
+    if (primeSseSeen) {
+      for (const r of rows) {
+        const id = r.run_id || `${r.at}:${r.model_id}`;
+        rememberRunId(id);
+      }
+      primeSseSeen = false;
+      return;
+    }
+    // Newest first → walk until we hit a seen id; everything before is fresh.
+    const fresh: LlmTraceEntry[] = [];
     for (const r of rows) {
       const id = r.run_id || `${r.at}:${r.model_id}`;
+      if (lastSeenRunIds.has(id)) break;
       rememberRunId(id);
+      fresh.push(r);
     }
-    primeSseSeen = false;
-    return;
-  }
-  // Newest first → walk until we hit a seen id; everything before is fresh.
-  const fresh: LlmTraceEntry[] = [];
-  for (const r of rows) {
-    const id = r.run_id || `${r.at}:${r.model_id}`;
-    if (lastSeenRunIds.has(id)) break;
-    rememberRunId(id);
-    fresh.push(r);
-  }
-  // Emit oldest-first so the UI prepends in correct order.
-  for (const row of fresh.reverse()) {
-    broadcastSse({ type: 'new-row', row: shapeRowForSse(row) });
+    // Emit oldest-first so the UI prepends in correct order.
+    for (const row of fresh.reverse()) {
+      broadcastSse({ type: 'new-row', row: shapeRowForSse(row) });
+    }
+  } catch (err) {
+    console.warn('[dashboard] sseScanTick error:', err instanceof Error ? err.message : String(err));
   }
 }
 

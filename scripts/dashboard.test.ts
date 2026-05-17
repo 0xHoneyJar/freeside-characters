@@ -158,6 +158,22 @@ describe('AC-RT-001 · token + host validation', () => {
     const r = await fetch(`${s.baseUrl}/api/llm-trace`, { headers: { cookie } });
     expect(r.status).toBe(200);
   });
+
+  // r3 audit · malformed cookie value with bare `%` would otherwise throw
+  // URIError out of decodeURIComponent → 500 propagates to the fetch handler.
+  test('malformed cookie value (bare `%`) does not crash · returns 401', async () => {
+    const r = await fetch(`${s.baseUrl}/api/llm-trace`, {
+      headers: { cookie: 'loa_dash_token=%' },
+    });
+    expect(r.status).toBe(401);
+  });
+
+  test('malformed cookie value (invalid hex sequence) does not crash · returns 401', async () => {
+    const r = await fetch(`${s.baseUrl}/api/llm-trace`, {
+      headers: { cookie: 'loa_dash_token=%ZZ' },
+    });
+    expect(r.status).toBe(401);
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────
