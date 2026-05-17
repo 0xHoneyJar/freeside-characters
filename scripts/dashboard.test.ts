@@ -565,6 +565,52 @@ describe('Playground · GET /api/playground/runs (list)', () => {
 // Ambiguous-source-of-truth guard in scripts/lint-no-kebab-zoneid-in-voice-prompt.ts
 // ──────────────────────────────────────────────────────────────────────
 
+// ──────────────────────────────────────────────────────────────────────
+// Bootstrap UX · Accept-header negotiated response (browser HTML vs JSON)
+// Post-merge follow-up · operator hit raw JSON in browser when navigating to /
+// ──────────────────────────────────────────────────────────────────────
+
+describe('Bootstrap response · Accept-header negotiation', () => {
+  let s: Spawned;
+  beforeAll(async () => { s = await spawnDashboard(); });
+  afterAll(() => killSpawn(s));
+
+  test('Accept: text/html → HTML bootstrap form with paste-token input', async () => {
+    const r = await fetch(s.baseUrl, { headers: { accept: 'text/html' } });
+    expect(r.status).toBe(401);
+    expect(r.headers.get('content-type')).toMatch(/text\/html/);
+    const body = await r.text();
+    expect(body).toMatch(/<!doctype html>/i);
+    expect(body).toMatch(/dashboard auth bootstrap/);
+    expect(body).toMatch(/<input id="t"/);
+    expect(body).toMatch(/<button id="go"/);
+    // The form must POST to /api/auth via fetch · NOT GET with token-in-URL
+    // (which Phase 6 SKP-002 explicitly rejected).
+    expect(body).toMatch(/fetch\('\/api\/auth'/);
+    expect(body).toMatch(/method:\s*'POST'/);
+    expect(body).not.toMatch(/\/api\/auth\?token=/);
+  });
+
+  test('Accept: application/json → JSON envelope unchanged (scripted-caller contract)', async () => {
+    const r = await fetch(s.baseUrl, { headers: { accept: 'application/json' } });
+    expect(r.status).toBe(401);
+    expect(r.headers.get('content-type')).toMatch(/application\/json/);
+    const body = await r.json();
+    expect(body.error).toBe('auth-required');
+    expect(typeof body.bootstrap_curl).toBe('string');
+  });
+
+  test('No Accept header → JSON (curl-default safe path)', async () => {
+    // node:fetch always sends Accept · use a barebones request via Bun's API.
+    const r = await fetch(s.baseUrl);
+    // Bun.fetch defaults Accept: */* · the html negotiation only fires when
+    // text/html is explicitly listed, not on wildcards. Verify JSON returns.
+    expect(r.status).toBe(401);
+    const body = await r.json();
+    expect(body.error).toBe('auth-required');
+  });
+});
+
 describe('INV-17 · ambiguous-source-of-truth guard (BB round-3 CRITICAL closure)', () => {
   test('lint script source references the canonical .claude/overrides/ path', async () => {
     const script = await Bun.file(

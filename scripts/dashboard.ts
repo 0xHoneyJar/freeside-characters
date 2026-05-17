@@ -450,7 +450,100 @@ function authenticated(req: Request): boolean {
   return false;
 }
 
-function bootstrapHelpResponse(): Response {
+function bootstrapHelpResponse(req?: Request): Response {
+  // Negotiate response shape via Accept header. Browser navigation sends
+  // Accept: text/html — return a usable paste-token-here form so the operator
+  // can bootstrap the cookie WITHOUT leaving the page (the previous JSON
+  // response left browser users staring at raw JSON).
+  // curl / fetch / API clients sending Accept: application/json (or anything
+  // not matching */text/html) still get the JSON envelope so the bootstrap_curl
+  // contract is unchanged for scripted callers.
+  const wantsHtml = req?.headers.get('accept')?.includes('text/html') ?? false;
+
+  if (wantsHtml) {
+    // Bootstrap form: paste token → submit → POST /api/auth (same origin · sets
+    // HttpOnly cookie · then redirect to /). The form value is sent via fetch
+    // so the X-Loa-Dash-Token header path stays canonical (no token-in-URL).
+    const html = `<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>freeside · dashboard auth bootstrap</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0d0e10; --bg-elev:#16181c; --border:#2a2d33; --text:#e4e6eb; --text-dim:#8b8f96; --accent:#c9a44c; --error:#dc5050; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,'Inter',sans-serif; min-height:100%; }
+  body { display:grid; place-items:center; padding:40px 20px; }
+  main { width:100%; max-width:520px; background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:32px; }
+  h1 { font-size:18px; font-weight:500; margin:0 0 6px; color:var(--accent); letter-spacing:0.3px; }
+  p { font-size:12px; line-height:1.6; color:var(--text-dim); margin:0 0 18px; }
+  label { display:block; font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
+  input { width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:10px 12px; color:var(--text); font:13px 'JetBrains Mono','SF Mono',ui-monospace,monospace; }
+  input:focus { outline:1px solid var(--accent); border-color:var(--accent); }
+  button { width:100%; margin-top:14px; background:var(--accent); color:var(--bg); border:none; border-radius:4px; padding:10px 16px; font:600 13px -apple-system,sans-serif; cursor:pointer; }
+  button:hover { filter:brightness(1.1); }
+  button:disabled { opacity:0.5; cursor:wait; }
+  .hint { font-size:11px; color:var(--text-dim); margin-top:18px; line-height:1.55; }
+  .hint code { font-family:'JetBrains Mono','SF Mono',ui-monospace,monospace; background:var(--bg); padding:1px 6px; border-radius:3px; }
+  .status { margin-top:14px; font-size:12px; min-height:18px; }
+  .status.error { color:var(--error); }
+  .status.ok { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>freeside · dashboard auth bootstrap</h1>
+  <p>paste the <code>LOA_DASH_TOKEN</code> printed to stderr at server start. the token sets an HttpOnly cookie scoped to this origin · subsequent requests are auto-authenticated.</p>
+  <label for="t">LOA_DASH_TOKEN</label>
+  <input id="t" type="password" autocomplete="off" autofocus placeholder="paste token here">
+  <button id="go">set cookie + open dashboard</button>
+  <div id="status" class="status"></div>
+  <div class="hint">
+    cli alternative: <code>curl -i -X POST -H 'X-Loa-Dash-Token: &lt;token&gt;' http://localhost:${PORT}/api/auth</code>
+  </div>
+</main>
+<script>
+(function(){
+  var input = document.getElementById('t');
+  var btn = document.getElementById('go');
+  var status = document.getElementById('status');
+  function setStatus(msg, kind){ status.className = 'status ' + (kind||''); status.textContent = msg; }
+  async function submit(){
+    var token = (input.value||'').trim();
+    if (!token) { setStatus('paste the token first', 'error'); return; }
+    btn.disabled = true;
+    setStatus('verifying…', '');
+    try {
+      var res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'X-Loa-Dash-Token': token },
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        setStatus('cookie set · redirecting…', 'ok');
+        location.replace('/');
+      } else {
+        setStatus('invalid token (status ' + res.status + ')', 'error');
+        btn.disabled = false;
+      }
+    } catch (err) {
+      setStatus('network error: ' + (err && err.message ? err.message : String(err)), 'error');
+      btn.disabled = false;
+    }
+  }
+  btn.addEventListener('click', submit);
+  input.addEventListener('keydown', function(e){ if (e.key === 'Enter') submit(); });
+})();
+</script>
+</body>
+</html>`;
+    return new Response(html, {
+      status: 401,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
+  }
+
+  // Canonical JSON envelope · scripted callers / API explorers
   const body = JSON.stringify({
     error: 'auth-required',
     hint: 'copy the LOA_DASH_TOKEN printed to stderr at server start',
@@ -1497,7 +1590,7 @@ const server = Bun.serve({
 
     // All other endpoints require auth (when AUTH_ENABLED).
     if (AUTH_ENABLED && !authenticated(req)) {
-      return bootstrapHelpResponse();
+      return bootstrapHelpResponse(req);
     }
 
     if (path === '/' && req.method === 'GET') {
