@@ -269,3 +269,40 @@ After re-implementation, /review-sprint sprint-5 re-runs and (assuming the 2 blo
 ## What I would say to the engineer in 3 sentences
 
 > Strong implementation — the defense-in-depth layering is exactly right. Two items missed: poll-suppression was in the AC text and got argued-around rather than implemented, and the AC-RT-010 test verifies "no failure" without verifying "eviction happened." Both are small fixes; iterate, re-run, and we ship.
+
+---
+
+# r2 Approval (2026-05-17 · post-iteration)
+
+**Verdict:** **All good**
+
+Sprint 5 has been reviewed and approved after r2 iteration. Both blocking concerns (ISSUE-1 poll-suppression + ISSUE-2 AC-RT-010 eviction proof) are resolved. Three of five non-blocking items addressed (ISSUE-3 FIFO cap, ISSUE-4 SHA-256 fingerprint, ISSUE-6 perimeter Origin check). Two documented as accepted-as-is (ISSUE-5 Cookie Path scope, ISSUE-7 401/403 split — surfaced to operator for S8 amendment).
+
+**r2 verification (commit 8e3c642):**
+- `bun test scripts/dashboard.test.ts` → 17 pass · 0 fail · 51 expect() calls
+- `bun test` (full repo) → 1022 pass · 1 skip · 0 fail · 2620 expect() calls
+- `bun run lint:cycle-007` → INV-12 · INV-17 · INV-14 all green
+- `bunx tsc --noEmit` → exit 0 on both modified files
+
+**AC table after r2:**
+
+| AC | Status | Change |
+|---|---|---|
+| T5.1 | ✓ Met | unchanged |
+| T5.2-A/B/C | ✓ Met | unchanged |
+| T5.3-A/B | ✓ Met | unchanged |
+| T5.3-C | ⏸ Deferred (PP-3 SOFT) | unchanged · S8 gate |
+| T5.4-A | ⏸ Deferred (PP-1 precedent) | unchanged · S8 gate |
+| T5.4-B | ⏸ Deferred (PP-3 SOFT) | unchanged · S8 gate |
+| T5.4-C | ✓ Met | unchanged |
+| T5.5-A | ✓ Met | unchanged |
+| **T5.5-B** | ⚠ Partial → **✓ Met** | r2 ISSUE-1 fix |
+| T5.5-C | ✓ Met | unchanged |
+| T5.5-D | ✓ Met | unchanged |
+| T5.5-E | ✓ Met (with documented 401/403 split) | unchanged |
+| **T5.5-F** | ✓ Met (evidence strengthened) | r2 ISSUE-2 eviction proof |
+| T5.5-G | ⚠ Partial (structural proof) | unchanged · acceptable |
+| T5.5-H | ✓ Met | unchanged |
+| T5.5-I | ✓ Met | unchanged |
+
+**Ready for /audit-sprint sprint-5.**
