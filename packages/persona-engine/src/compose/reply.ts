@@ -33,7 +33,8 @@ import { resolveQuery } from '../observability/raindrop-instrumentation.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { ZoneId } from '../score/types.ts';
-import { buildReplyPromptPair } from '../persona/loader.ts';
+import { Effect } from 'effect';
+import { buildPrompt, BuildPromptError } from '../persona/loader.ts';
 import {
   buildEnvironmentContext,
   type RecentMessage,
@@ -203,18 +204,40 @@ export async function composeReply(
   });
   const voiceGrimoire = renderVoiceCard(voiceCard);
 
-  const { systemPrompt, userMessage } = buildReplyPromptPair({
-    character: args.character,
-    prompt: args.prompt,
-    authorUsername: args.authorUsername,
-    history: history.map((h) => ({
-      role: h.role,
-      authorUsername: h.authorUsername,
-      content: h.content,
-    })),
-    environmentContext,
-    voiceGrimoire,
-  });
+  // cycle-008 T2.8 · direct Effect-shaped buildPrompt (per Flatline FR-10).
+  // BuildPromptError propagates via Promise rejection · structural/invariant
+  // errors surface to caller's runtime error handler · INPUT errors halt this
+  // reply with structured trace (logged via Effect.tapError below).
+  const { systemPrompt, userMessage } = await Effect.runPromise(
+    buildPrompt({
+      character: args.character,
+      shape: {
+        kind: 'reply',
+        transcript: history.map((h) => ({
+          role: h.role,
+          authorUsername: h.authorUsername,
+          content: h.content,
+        })),
+        authorUsername: args.authorUsername,
+        userPrompt: args.prompt,
+      },
+      environmentContext,
+      voiceGrimoire,
+      // chat-mode: cycle-008 args (activeFactors / priorWeekHint) deliberately
+      // undefined · buildPrompt skips cron-arg validation for shape.kind === 'reply'.
+    }).pipe(
+      Effect.tapError((err) =>
+        Effect.sync(() => {
+          if (err instanceof BuildPromptError) {
+            console.error(
+              `[reply] BuildPromptError category=${BuildPromptError.categoryFor(err.kind)} kind=${err.kind}`,
+              err.detail ?? '',
+            );
+          }
+        }),
+      ),
+    ),
+  );
 
   // Routing decision: orchestrator (full MCP scope) vs naive (V0.7-A.0
   // single-turn). Decided per call by `CHAT_MODE` + provider resolution.

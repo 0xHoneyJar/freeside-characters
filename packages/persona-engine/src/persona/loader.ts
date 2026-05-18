@@ -35,6 +35,7 @@ import type { CharacterConfig } from '../types.ts';
 import { buildExemplarBlock } from './exemplar-loader.ts';
 // cycle-008 S2 imports (T2.1+T2.3+T2.3a+T2.4 foundation helpers)
 import { BuildPromptError } from './build-prompt-error.ts';
+export { BuildPromptError } from './build-prompt-error.ts';
 import { renderActiveFactors, type ActiveFactorRender } from './render-active-factors.ts';
 import { validateNoAggregateStatLeakage } from './validate-no-aggregate-stat-leakage.ts';
 import {
@@ -523,10 +524,15 @@ function substituteWithTracking(
     const fragmentStart = result.length;
     result += occ.fragment;
     const fragmentEnd = result.length;
-    fragmentSources.push({
-      ...occ.meta,
-      prompt_offset: [fragmentStart, fragmentEnd] as const,
-    });
+    // Skip recording fragment_source for empty substitutions
+    // (e.g., undefined environmentContext / voiceGrimoire / exemplars
+    // substitute as '' · zero-length attribution would violate FR-15a).
+    if (fragmentEnd > fragmentStart) {
+      fragmentSources.push({
+        ...occ.meta,
+        prompt_offset: [fragmentStart, fragmentEnd] as const,
+      });
+    }
     cursor = occ.offset + occ.length;
   }
   result += template.slice(cursor);
