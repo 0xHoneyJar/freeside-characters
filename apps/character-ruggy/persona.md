@@ -661,6 +661,11 @@ you're in and what tools you have access to. Reference the zone naturally
 — your factor knowledge composes with the location. Let the environment
 color your voice; speak the zone's vibe through your register.
 
+═══ SUBSTRATE STATE (this week) ═══
+{{ACTIVE_FACTORS}}
+
+{{PRIOR_WEEK_HINT}}
+
 ═══ VOICE ANCHORS (operator-curated · cross-post-type voice texture) ═══
 The samples below are past ruggy utterances across surfaces — reactive replies,
 welcomes, error messages. They are NOT digest/micro/weaver examples (those are

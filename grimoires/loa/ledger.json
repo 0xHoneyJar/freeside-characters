@@ -1,12 +1,47 @@
 {
   "version": "1.0.0",
   "next_sprint_number": 21,
-  "active_cycle": "cycle-006-substrate-presentation",
+  "active_cycle": "cycle-008-persona-substrate",
   "cycles": [
+    {
+      "id": "cycle-008-persona-substrate",
+      "label": "persona-as-substrate · cron path migration to canonical buildPrompt + Effect-TS + per-layer observability (absorbs cycle-007 pair-points)",
+      "status": "active",
+      "created_at": "2026-05-18T04:30:00Z",
+      "prd": "grimoires/loa/cycles/cycle-008-persona-substrate/prd.md",
+      "sdd": "grimoires/loa/cycles/cycle-008-persona-substrate/sdd.md",
+      "sprint_plan": "grimoires/loa/cycles/cycle-008-persona-substrate/sprint.md",
+      "target_branch": "feat/cycle-008-persona-substrate",
+      "depends_on": [
+        "cycle-007-agent-debuggability candidate 2026-05-17 (structural mechanical close · pair-points absorbed)",
+        "Effect-TS ^3.21.2 (packages/persona-engine deps)"
+      ],
+      "absorbed_from_cycle_007_pair_points": {
+        "PP-4_kitchen_playground": "operator iterates /playground >=10 min · attests faster-than-paste loop",
+        "PP-5_mobile_canary": "operator screenshots Discord Android post-digest-cron firing",
+        "PP-2_PP-3_mobile_render": "roll into PP-5 screenshot session",
+        "github_branch_protection": "CODEOWNERS rule on .claude/overrides/voice-prompt-paths.json + voice-prompt-paths.schema.json + trace-explain-output.schema.json",
+        "cycle_007_ledger_flip_to_archived": "deferred to cycle-008 close · single ledger sweep at S8"
+      },
+      "session_artifacts_pre_simstim": {
+        "s0_spike": "grimoires/loa/cycles/cycle-008-persona-substrate/spike-builder-diff.md (authored 2026-05-17)",
+        "s1_persona_edit": "apps/character-ruggy/persona.md (placeholder insertion landed 2026-05-17)",
+        "memory_entries": [
+          "feedback-ruggy-voice-principle",
+          "feedback-governance-voice-separation",
+          "feedback-effect-ts-new-surfaces",
+          "project-persona-authorship",
+          "project-straylight-continuity-candidate",
+          "project-cron-post-types-pruning"
+        ]
+      }
+    },
     {
       "id": "cycle-007-agent-debuggability",
       "label": "agent debuggability through medium-aware substrate-presentation layering (dashboard as force function · D1-D6 + FR-1/FR-2 closure of cycle-006 canary bugs)",
-      "status": "active",
+      "status": "candidate",
+      "candidate_at": "2026-05-18T04:30:00Z",
+      "candidate_note": "structurally complete (T8.1 COMPLETED.md + T8.2 E2E + T8.3 BB-3 + S8 kitchen MVP). Pair-points PP-2/PP-3/PP-4/PP-5 + GitHub branch protection + ledger archive flip absorbed by cycle-008-persona-substrate at its close.",
       "created_at": "2026-05-17T00:00:00Z",
       "prd": "grimoires/loa/cycles/cycle-007-agent-debuggability/prd.md",
       "sdd": "grimoires/loa/cycles/cycle-007-agent-debuggability/sdd.md",
