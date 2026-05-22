@@ -166,19 +166,25 @@ function loadFragment(personaPath: string, postType: PostType): string {
 
 /** Brief output-instruction string per post type. */
 function outputInstruction(postType: PostType): string {
+  // cycle-008 T3.3 · cron posts are single-turn with substrate data pre-fetched
+  // into the prompt. Reinforce no-tools at the instruction layer (persona.md's
+  // REWRITE ARCHITECTURE section scopes the tool list to interactive chat; this
+  // is belt-and-braces against tool-call leakage on the canonical voice path).
+  const cronNoTools =
+    'No tools in this scheduled post. The substrate data is already in your prompt; emit ZERO tool calls, narrate directly. ';
   switch (postType) {
     case 'digest':
-      return 'Write the weekly digest now. Stay groovy.';
+      return cronNoTools + 'Write the weekly digest now. Stay groovy.';
     case 'micro':
-      return 'Surface the one observation now. Casual, no greeting, no closing — just the thing you noticed.';
+      return cronNoTools + 'Surface the one observation now. Casual, no greeting, no closing — just the thing you noticed.';
     case 'weaver':
-      return 'Write the weaver observation now — name the cross-zone connection (or honestly say no pattern jumped out).';
+      return cronNoTools + 'Write the weaver observation now — name the cross-zone connection (or honestly say no pattern jumped out).';
     case 'lore_drop':
-      return 'Write the lore-anchored observation now. Light, head-nod-to-regulars register.';
+      return cronNoTools + 'Write the lore-anchored observation now. Light, head-nod-to-regulars register.';
     case 'question':
-      return 'Ask the question now. One question, anchored in the data, low-pressure.';
+      return cronNoTools + 'Ask the question now. One question, anchored in the data, low-pressure.';
     case 'callout':
-      return 'Write the callout now. Lead with 🚨 + the zone. Calm voice over alarm-shaped data.';
+      return cronNoTools + 'Write the callout now. Lead with 🚨 + the zone. Calm voice over alarm-shaped data.';
     case 'reply':
       // V0.7-A.2: chat-mode reply instruction. Mirrors the
       // CONVERSATION_OUTPUT_INSTRUCTION used by buildReplyPromptPair —
