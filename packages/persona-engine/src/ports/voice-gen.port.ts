@@ -1,6 +1,7 @@
 import type { DigestSnapshot } from '../domain/digest-snapshot.ts';
 import type { VoiceAugment } from '../domain/voice-augment.ts';
 import type { DerivedShape } from '../domain/derive-shape.ts';
+import type { CronPostType } from '../compose/post-types.ts';
 
 /**
  * cycle-006 S1 T1.6 · voice-gen port now accepts `ctx` carrying the derived
@@ -16,6 +17,14 @@ export interface VoiceGenContext {
    * undefined when no prior memory exists for this stream/key.
    */
   readonly priorWeekHint?: string;
+  /**
+   * cycle-008 T3.3 · the cron post type this voice is for (micro/lore_drop/
+   * question/weaver/callout). Selects the persona.md fragment in the canonical
+   * (buildPrompt) path. Defaults to 'micro' when absent. Ignored by the legacy
+   * (buildVoiceBrief) path. CronPostType (excludes 'reply' — chat goes through
+   * compose/reply.ts, never this port).
+   */
+  readonly postType?: CronPostType;
 }
 
 export interface VoiceGenPort {

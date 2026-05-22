@@ -52,7 +52,7 @@ export async function composeCalloutPost(
   const derived = deriveShape({ snapshot, crossZone: [snapshot] });
   const augment: VoiceAugment | undefined = config.VOICE_DISABLED
     ? undefined
-    : await voiceGen.generateDigestVoice(snapshot, { derived });
+    : await voiceGen.generateDigestVoice(snapshot, { derived, postType: 'callout' });
 
   const message = renderer.renderCallout(snapshot, augment);
   return {

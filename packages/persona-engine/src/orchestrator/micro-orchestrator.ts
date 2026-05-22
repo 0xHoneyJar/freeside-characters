@@ -39,7 +39,7 @@ export async function composeMicroPost(
   const derived = deriveShape({ snapshot, crossZone: [snapshot] });
   const augment: VoiceAugment | undefined = config.VOICE_DISABLED
     ? undefined
-    : await voiceGen.generateDigestVoice(snapshot, { derived });
+    : await voiceGen.generateDigestVoice(snapshot, { derived, postType: 'micro' });
 
   const message = renderer.renderMicro(snapshot, augment);
   return { zone, postType: 'micro', message, payload: presentation.toMicroPayload(message) };
