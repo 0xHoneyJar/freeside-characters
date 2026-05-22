@@ -57,6 +57,15 @@ const ZONE_COLORS: Record<ZoneId, number> = {
 export interface DigestPayload {
   content: string;
   embeds: DiscordEmbed[];
+  /**
+   * cycle-008 T3.9 · optional follow-up message — the "two-beat" delivery:
+   * beat 1 = the agent voice in `content`, beat 2 = the bold data billboard
+   * here. When present, delivery sends `content`/`embeds` first, then this as a
+   * SEPARATE Discord message so voice and substrate read as distinct surfaces
+   * (not the muddy middle that "reads too bot"). Absent on single-message
+   * payloads — fully backwards-compatible.
+   */
+  secondary?: { content: string; embeds: DiscordEmbed[] };
 }
 
 export interface DiscordEmbed {
