@@ -13,7 +13,9 @@
 
 ## 1 · Overview
 
-Cycle-008 ships in 9 sprints. Two have already landed pre-/simstim (mechanical work) · seven remain (S2-S8). Total estimated effort: ~5-6 days mechanical + operator-paced attestation gates (OP-G2 · OP-G3 · PP-5 · cycle-007 absorption ceremony).
+Cycle-008 ships in **10 sprints** (was 9 · amendment 2026-05-22 adds S9). Two have already landed pre-/simstim (mechanical work) · S2-S8 remain · S9 added by amendment. Total estimated effort: ~6.5-7.5 days mechanical + operator-paced attestation gates (OP-G2 · OP-G3 · OP-G4 · PP-5 · cycle-007 absorption ceremony).
+
+> **Amendment 2026-05-22 (active)**: amends S3 with T3.0 (FR-43 score-api-types) · T3.8 (FR-38 cadence-honest data surface) · T3.9 (FR-39 two-beat billboard renderer · locked spec), and adds new sprint **S9** (FR-40/41/42 RLHF preference loop · billboard-preview-first lead slice). Source: `grimoires/loa/cycles/cycle-008-persona-substrate/amendment-voice-fidelity-gaps.md`. Two-beat won the manual preference loop (`preference-log.jsonl`).
 
 ### 1.1 · Sprint matrix
 
@@ -22,33 +24,40 @@ Cycle-008 ships in 9 sprints. Two have already landed pre-/simstim (mechanical w
 | S0 | sprint-0 | sprint-21 | Structural diff spike + reframe rounds | ✅ LANDED pre-/simstim | RESEARCH | 1 (spike doc + 4 reframe iterations) | ½ | LOW |
 | S1 | sprint-1 | sprint-22 | Persona.md placeholder insertion | ✅ LANDED pre-/simstim | TEMPLATE | 1 (5 lines added to apps/character-ruggy/persona.md) | ¼ | LOW |
 | S2 | sprint-2 | sprint-23 | buildPrompt Effect-TS migration + render helpers + runtime guards | PLANNED | CORE | 9 tasks | 1-1½ | MEDIUM (regression fence load-bearing) |
-| S3 | sprint-3 | sprint-24 | Cron orchestrator migration + flag + score-mcp schema gate | PLANNED | INTEGRATION | 7 tasks | 1 | MEDIUM (RF-002 source-swap verification gate) |
+| S3 | sprint-3 | sprint-24 | Cron orchestrator migration + flag + score-mcp schema gate (+ T3.0/T3.8/T3.9 amendment) | PLANNED | INTEGRATION | 10 tasks | 1½-2 | MEDIUM (RF-002 source-swap + type-surface swap + delivery split) |
 | S4 | sprint-4 | sprint-25 | Trace schema v2 + fragment_sources[] + redaction architecture | PLANNED | OBSERVABILITY | 8 tasks | 1 | MEDIUM (two-pass offset + lock atomicity) |
 | S5 | sprint-5 | sprint-26 | Anthropic-SDK trace capture + outcome classification + stream hooks | PLANNED | OBSERVABILITY | 6 tasks | ½ | LOW |
 | S6 | sprint-6 | sprint-27 | /tweak Tweakpane kitchen tab + layered enforcement | PLANNED | KITCHEN | 7 tasks | 1 | MEDIUM (new dep + UI work + 3-layer auth) |
 | S7 | sprint-7 | sprint-28 | middot-detector + sanitize-violations integration | PLANNED | QUALITY | 4 tasks | ½ | LOW |
 | S8 | sprint-8 | sprint-29 | Cycle close + cycle-007 pair-points absorption + vault doctrine | PLANNED | CEREMONY | 8 tasks | ½ mechanical + operator-paced | MEDIUM (OP-G2/OP-G3/PP-5 attestation timing) |
+| S9 | sprint-9 | sprint-30 | RLHF preference loop · billboard-preview-first lead slice (FR-40/41/42) | PLANNED · amendment | RLHF | 6 tasks | 1½ | MEDIUM (new preview UI + JSONL persist + fidelity parity) |
 
-**Total**: 9 sprints · 52 tasks · ~5-6 days mechanical + operator-paced ceremony. Cycle-007 absorption ceremony folds into S8.
+**Total**: 10 sprints · 61 tasks · ~6.5-7.5 days mechanical + operator-paced ceremony. Cycle-007 absorption ceremony folds into S8. S9 executes BEFORE S8's close ceremony (it's the instrument that unblocks the S3 craft work) — S8 T8.8 close sweep accounts for S9.
 
 ### 1.2 · Dependency graph
 
 ```
 S0 ✅ → S1 ✅ → S2 ─┬─→ S3 ─┬─→ S4 ──┬─→ S5 ─→ ┐
                    │       │        │           │
-                   │       │        │           ├─→ S8 close
-                   │       │        │           │
-                   │       │        └─→ S6 ────┤
-                   │       │                    │
-                   │       └─→ S7 ─────────────┘
+                   │       │        │           ├─→ S9 ─→ S8 close
+                   │       │        │           │   ↑
+                   │       │        └─→ S6 ────┤   │ (S9 reuses S6 dashboard
+                   │       │                    │   │  + INV-10 + embed preview;
+                   │       └─→ S7 ─────────────┘   │  S5 trace-row shape;
+                   │                                   │  S3 T3.9 render path)
                    │
                    └─ FR-15a invariant validation function is IMPLEMENTED in S2 T2.3a
                       (moved from S4 T4.3 per Flatline-Sprint IMP-001 dependency-contradiction fix 2026-05-18)
                       so buildPrompt (T2.5) can call it at substitution time.
                       Schema rendering + dashboard breadcrumbs stay in S4 (T4.4 / T4.8).
+
+  Amendment 2026-05-22 — S3 internal ordering: T3.0 (score-api-types) runs BEFORE T3.1
+  (so the schema gate validates against the package schema). T3.8 (cadence-honest data)
+  feeds T3.9 (two-beat billboard · the "since last" hero comes from T3.8).
+  S9 (RLHF preview loop) DEPENDS ON S5 + S6 + S3 T3.9, and EXECUTES BEFORE S8 close.
 ```
 
-S2 is the linchpin. S4-S7 parallelize after S3 lands. S8 absorbs all upstream + cycle-007 pair-points. Note: the previous version of this graph implied FR-15a validation flows from S4 back into S2 (circular). Resolved by moving the validation function implementation upstream into S2 (T2.3a) where it's first consumed; S4 owns the schema + renderer concerns only.
+S2 is the linchpin. S4-S7 parallelize after S3 lands. **S9 depends on S5 (trace shape) + S6 (dashboard surface) + S3 T3.9 (render path the preview mirrors), and runs BEFORE S8's close ceremony** — it's the instrument that unblocks the FR-38/39 craft work, so its preview surface ships first and the craft lands through it. S8 absorbs all upstream + cycle-007 pair-points + the S9 sweep. Note: the previous version of this graph implied FR-15a validation flows from S4 back into S2 (circular). Resolved by moving the validation function implementation upstream into S2 (T2.3a) where it's first consumed; S4 owns the schema + renderer concerns only.
 
 ### 1.3 · Critical-path summary (post-Flatline + BB + RT integrations)
 
@@ -181,6 +190,12 @@ S2 is the linchpin. S4-S7 parallelize after S3 lands. S8 absorbs all upstream + 
 
 ### Tasks
 
+- **T3.0** · **Adopt `@0xhoneyjar/score-api-types@0.6.0` (type-only)** → **[G-10]** (FR-43 · amendment 2026-05-22 · Fork D→D1 · runs BEFORE T3.1)
+  - Files: `apps/bot/package.json` (or `packages/persona-engine/package.json`) add devDep + `packages/persona-engine/src/score/types.ts` (verified **613 LoC** at amendment time · NOT 206) + imports into `packages/persona-engine/src/ports/score-fetch.port.ts` (verified path under `ports/`, NOT `score/`)
+  - LOC: ~+30 / -120 net (delete-leaning — hand-roll types replaced by `import type`)
+  - Acceptance: (a) `bun add -D @0xhoneyjar/score-api-types@0.6.0` resolves; (b) **type-only** adoption (`import type` — zero runtime, no zod loaded); (c) data shapes import INTO the existing local `score-fetch.port.ts`; (d) `MostActiveWalletEntry` stays LOCAL (not in package until cycle-029); (e) names in >1 entity (e.g. `DimensionSummary`) are **deep-import only** (`@0xhoneyjar/score-api-types/entities/<name>`), NOT the flat root barrel; (f) `bun run typecheck` green after swap; (g) package JSON Schema (`/json/<entity>.v1.json`) noted for T3.1 to consume as its verification source.
+  - **Runs BEFORE T3.1** so the schema-verification gate validates against the package schema instead of hand-sampling.
+
 - **T3.1** · **score-mcp schema CONTRACT verification gate** (Flatline IMP-001 + SKP-001 CRITICAL 880 + SKP-004 HIGH 710 + Flatline-Sprint IMP-002 880 · pre-implementation)
   - Files: read score-mcp schema/types (no edits) + write verification report + fixture tests
   - LOC: ~+80 (test fixtures) · report at `grimoires/loa/cycles/cycle-008-persona-substrate/s3-schema-verification.md`
@@ -223,11 +238,27 @@ S2 is the linchpin. S4-S7 parallelize after S3 lands. S8 absorbs all upstream + 
   - Acceptance per PRD §7: zero kebab-form zone IDs · zero em-dashes · zero spelled-aggregate numbers · digits as digits · no aggregate-stat citation in any of 4 zone outputs
   - REMEDIATION if FAIL: roll back LOA_PROMPT_BUILDER to 'legacy' · file regression in cycle-008 issue tracker with failing trace row · halt cycle close · loop back to T3.3 root-cause
 
+- **T3.8** · **Cadence-honest data surface** → **[G-10]** (FR-38 · amendment 2026-05-22 · Fork A: separate data-read from voice as independently-tweakable surfaces)
+  - Files: `packages/persona-engine/src/live/discord-render.live.ts` (`buildSubstrateFacts`/`renderMicro`) + `packages/persona-engine/src/compose/voice-memory.ts` (per-zone state read for "since last" delta) + new fixture in `evals/snapshots/`
+  - LOC: ~+70
+  - Acceptance: (a) card hero shows a fresh **"since last post" delta** computed from `voice-memory.ts` per-zone state; (b) **licensing/factor-density logic unchanged** — still 30d (`live/score-mcp.live.ts:164,195` per cycle-005 r4); (c) **two-clocks closed** — digest (`PULSE_WINDOW_DAYS=7` · `digest-orchestrator.ts:36`) + micro (`windowDays=30`) report the SAME clock; (d) 30d figure, if shown, labeled rolling context (clearly secondary); (e) type-guard fallback — missing per-zone state degrades headline to 30d-rolling-labeled (never a wrong fresh number); (f) byte-snapshot regression fixture in `evals/snapshots/`.
+  - Note: the voice-half (ruggy citing aggregate stats in prose) is already covered by S3's buildPrompt migration + stats-out-of-voice. T3.8 is ONLY the card/data surface.
+
+- **T3.9** · **Two-beat billboard renderer** → **[G-10]** (FR-39 · amendment 2026-05-22 · LOCKED SPEC brief §7.5 · Fork B billboard reframe · two-beat won `preference-log.jsonl`)
+  - File: `packages/persona-engine/src/live/discord-webhook.live.ts` (`plainToPayload` at `:30` currently joins voice+facts into one message)
+  - LOC: ~+90
+  - Acceptance: (a) delivery emits **two sequential Pattern-B webhook sends** (neither pings on pop-in/digest cadence); (b) **Beat 1 — the agent** (`voiceContent`): 1–2 short lowercase lines, ZERO numbers (stats-out-of-voice); (c) **Beat 2 — the billboard** (`truthFields`): zone header + cadence-honest data (FR-38 "since last" hero + 30d-rolling secondary + wallets warm + state), rendered as **bold text with U+2007 FIGURE-SPACE column alignment** (technique proven `live/discord-render.live.ts:54` `metrics.digitWidthSpaceChar`), NOT a code block (code blocks ignore `**bold**`; bold was the explicit ask); (d) `message.content` ALWAYS populated (Discord-as-Material fallback); (e) underscore-escape preserved (`deliver/sanitize.ts`); (f) byte-snapshot fixture in `evals/snapshots/`.
+  - **Open micro-decisions deferred to S9 preview surface (do NOT block T3.9)**: keep `30d rolling` row at all · exact label wording · separator between beats · all-quiet vs active register.
+  - **Craft flag to push back on**: bold-figure-space depends on figure-space rendering (validated cycle-007 S3); code-block would be bulletproof-monospace but un-bold. Recommendation stands on bold because bold was the explicit ask.
+
 ### S3 acceptance gates
 
 - All cycle-007 lint suite green (`bun run lint:cycle-007`)
 - `bun test` 1068+ baseline maintained
+- T3.0 typecheck green after score-api-types swap (FR-43)
 - T3.1 verification report attests score-mcp field availability
+- T3.8 cadence-honest data surface byte-snapshot fixture green (FR-38)
+- T3.9 two-beat billboard byte-snapshot fixture green + `message.content` fallback verified (FR-39)
 - OP-G2 PASS attestation in NOTES.md or PR comment
 
 ---
@@ -470,7 +501,8 @@ S2 is the linchpin. S4-S7 parallelize after S3 lands. S8 absorbs all upstream + 
 - **T8.8** · `grimoires/loa/ledger.json` flips (LAST · after all attestations + BB-3 PASS · per Flatline-Sprint SKP-004 HIGH 740 ordering)
   - File: `grimoires/loa/ledger.json`
   - LOC: ~+5 / -3
-  - Acceptance: cycle-008 status active → candidate · cycle-007 status candidate → archived · cycle-007 archived_at timestamp added · `next_sprint_number` advances 21 → 30 · commit lands as FINAL cycle-008 close PR commit · ALL upstream gates (T8.3 PP-5 PASS · T8.4 prod flip · T8.5 PP-2/3 · T8.6 branch protection · T8.7 BB-3 PASS) cleared FIRST
+  - Acceptance: cycle-008 status active → candidate · cycle-007 status candidate → archived · cycle-007 archived_at timestamp added · `next_sprint_number` advances 21 → **31** (was 30 · amendment 2026-05-22 adds S9 = global sprint-30, so close advances past it) · S9 included in the close sweep · commit lands as FINAL cycle-008 close PR commit · ALL upstream gates (S9 OP-G4 · T8.3 PP-5 PASS · T8.4 prod flip · T8.5 PP-2/3 · T8.6 branch protection · T8.7 BB-3 PASS) cleared FIRST
+  - **Registration-gap reconciliation (amendment 2026-05-22)**: cycle-008 S0–S8 were never registered in `ledger.json` `cycles[].sprints[]` and no beads epics existed at amendment time. The amendment registers ALL of cycle-008 (S0–S9) in the ledger `sprints[]` array + creates beads epics. T8.8 is the final flip on top of that now-complete registration.
 
 ### S8 acceptance gates
 
@@ -483,17 +515,70 @@ S2 is the linchpin. S4-S7 parallelize after S3 lands. S8 absorbs all upstream + 
 
 ---
 
+## 10b · S9 · RLHF preference loop · billboard-preview-first lead slice [PLANNED · amendment 2026-05-22]
+
+**Status**: PLANNED (added by amendment 2026-05-22 · `amendment-voice-fidelity-gaps.md` status: active)
+**Global sprint #**: sprint-30 (next after cycle-008's sprint-21..29 · close-gate now advances `next_sprint_number` 21→31)
+**Estimate**: ~1½ days (FR-41 ~1d UI+persist · FR-40 ~¼d fan-out · FR-42 ~½d promote-to-evals)
+**Risk tier**: MEDIUM (new preview UI + JSONL persistence + fidelity-parity with production render)
+**Depends on**: S5 (trace-row shape for candidate capture) · S6 (`--tweak` CLI + dashboard surface + INV-10 oklch + embed preview reused) · S3 T3.9 (the two-beat render path that the preview must mirror at fidelity)
+**Sequencing note**: per amendment §7.3/§7.6, the **preview surface is the FIRST thing S9 ships** — it's the instrument that unblocks the FR-38/39 craft work (which lands *through* it with side-by-side evidence). S9 executes BEFORE S8's close ceremony (ledger flip / COMPLETED.md) despite holding the highest global sprint number; S8 T8.8 must account for S9 in the close sweep.
+
+### Tasks
+
+- **T9.1** · **Billboard preview surface (the lead slice · iteration-speed unlock)** → **[G-10]** (FR-41 core)
+  - File: `scripts/dashboard.ts` (new preview view · reuses S6 T6.5 embed-preview component + INV-10 oklch palette)
+  - LOC: ~+180
+  - Acceptance: (a) renders any **zone + state + snapshot** in N candidate presentations **side-by-side at Discord fidelity** — real bold, ~40-char mobile wrap, webhook avatar; (b) reuses the SAME `plainToPayload`/figure-space render path as production (FR-39) — NOT a re-implementation (one render function, two callers); (c) renders against the real owsley-lab snapshot shape (`events_30d` · `since_last` · `active_wallets` · state) per `preference-log.jsonl` reference record; (d) localhost-bound + LOA_DASH_AUTH bearer (cycle-007 INV-16) + LOA_TWEAKPANE_ENABLED gate (inherits S6 3-layer enforcement).
+
+- **T9.2** · **Generate-N candidate fan-out** → **[G-10]** (FR-40 · capture)
+  - File: `apps/bot/src/cli/playground-fire.ts` (extend S6's `--tweak <json>` into `--fire-n <N>`)
+  - LOC: ~+60
+  - Acceptance: (a) `--fire-n N` renders the SAME input in N candidates varying seed and/or a named format-fragment variant in ONE action; (b) each candidate captured as an S5-shaped trace row (`outcome` classified per T5.2) grouped by a `batch_id`; (c) first slice targets layout/format (billboard look), voice variance is a follow-on flag; (d) `--fire-n 1` is equivalent to the existing single-fire (backward compatible).
+
+- **T9.3** · **Pick + annotate → preference record** → **[G-10]** (FR-41 · elicitation + persistence)
+  - File: `scripts/dashboard.ts` (pick/rank + annotation UI) + `grimoires/loa/cycles/cycle-008-persona-substrate/preference-log.jsonl` (append target · verified present · schema `rlhf-preference-v0`)
+  - LOC: ~+90
+  - Acceptance: (a) operator picks a winner OR ranks the batch + writes a free-text annotation; (b) record appended to `preference-log.jsonl` matching the existing `rlhf-preference-v0` schema (`{ts, loop, zone, state, snapshot, candidates[], chosen, ranking, annotation, elicited_by, operator, schema}`); (c) records structured as preference-pairs/rankings (RLHF-ready) not just "winner picked"; (d) mirrors `compose/voice-memory.ts` zero-infra JSONL pattern (no DB · per CLAUDE.md "Don't do: add a database").
+
+- **T9.4** · **Backpressure — promote winner to eval set** → **[G-10]** (FR-42 · the close)
+  - File: `evals/snapshots/` (verified dir · promote target) + a small promote script (`scripts/promote-preference.ts` or equivalent)
+  - LOC: ~+70
+  - Acceptance: (a) a picked+annotated winner promotes to `evals/snapshots/` as a byte-snapshot golden case (the existing regression substrate FR-38/39 fixtures live in); (b) annotations accumulate as a labeled corpus; (c) the next prompt/format edit is validated against the operator's own past picks (regression signal); (d) corpus structured for the cycle-009 LLM-as-judge to consume (Fork C → C3 · judge bootstrapped from picks · NOT built this cycle).
+
+- **T9.5** · **S9 tests** → **[G-10]**
+  - File: preference-persistence + batch-grouping + promote-to-evals test files (locations per implementer)
+  - LOC: ~+140
+  - Acceptance: (a) batch grouping by `batch_id` tested; (b) preference record append validates against `rlhf-preference-v0` schema; (c) promote-to-evals writes a valid `evals/snapshots/` fixture; (d) fidelity-parity test: preview render === production `plainToPayload` render for the same input (no divergence).
+
+- **T9.6** · **OP-G4 end-to-end RLHF loop attestation** (HARD operator-paced gate · mirrors cycle-007 PP-4 paste-to-Loa shape)
+  - Operator fires a fan-out batch (`--fire-n`), picks a winner side-by-side, annotates, promotes one to `evals/snapshots/` — the full FR-40→41→42 loop self-served.
+  - Acceptance: written attestation in NOTES.md or PR comment that the self-serve loop is faster than the manual loop fired 2026-05-22 (§7.4) AND a new `preference-log.jsonl` record landed via the tool (not by hand).
+  - REMEDIATION if FAIL: if loop slower-than-manual → open `s9-preview-ergonomics` cycle-009 issue · S9 functional value (FR-38/39 lands through it) still ships · cycle-008 still closes.
+
+### S9 acceptance gates
+
+- `bun test` green (new preference-persistence + batch-grouping + promote-to-evals + fidelity-parity tests)
+- `bun run typecheck` clean
+- Preview surface renders N candidates side-by-side at Discord fidelity (no console errors)
+- A new `preference-log.jsonl` record lands via the tool (OP-G4)
+- At least one winner promoted to `evals/snapshots/` end-to-end
+- 3-layer enforcement inherited (localhost · LOA_DASH_AUTH · LOA_TWEAKPANE_ENABLED)
+
+---
+
 ## 11 · Verification matrix per sprint
 
 | Sprint | Tests | Lint | Build | Manual |
 |---|---|---|---|---|
 | S2 | loader.test.ts (10 scenarios) | typecheck + cycle-007 lint | bun install + check | chat-mode regression fixture |
-| S3 | + cron migration tests + flag parse tests | typecheck + cycle-007 lint | bun install + check | OP-G2 live voice attestation |
+| S3 | + cron migration tests + flag parse tests + T3.0 typecheck + T3.8/T3.9 byte-snapshot fixtures | typecheck + cycle-007 lint | bun install (score-api-types v0.6.0) + check | OP-G2 live voice attestation |
 | S4 | + trace envelope tests + redaction tests + rotation concurrency | typecheck | bun install + check | trace:explain renders source-map · dashboard breadcrumbs render |
 | S5 | + agent-gateway tests + error-classify tests | typecheck | bun install + check | /ruggy slash command + chat-mode reply both trace |
 | S6 | (UI tests · operator manual) | typecheck | bun install (tweakpane v4) | OP-G3 teachability attestation |
 | S7 | + sanitize.test.ts (4 heuristics) | typecheck | bun install + check | dashboard sanitize-violations tab renders |
-| S8 | (none new · all prior green) | typecheck | bun install + check | COMPLETED.md + vault doctrine + ledger flip + PP-5 mobile + BB-3 approval |
+| S9 | + preference-persist + batch-group + promote-to-evals + fidelity-parity tests | typecheck | bun install + check | OP-G4 end-to-end RLHF loop · new preference-log record via tool |
+| S8 | (none new · all prior green) | typecheck | bun install + check | COMPLETED.md + vault doctrine + ledger flip + PP-5 mobile + BB-3 approval (+ S9 swept) |
 
 ---
 
@@ -518,26 +603,50 @@ S2 is the linchpin. S4-S7 parallelize after S3 lands. S8 absorbs all upstream + 
 
 Each sprint registers in `grimoires/loa/ledger.json` cycle-008 entry with `global_number` assigned from `next_sprint_number` starting at 21.
 
+> **Registration-gap reconciliation (amendment 2026-05-22)**: cycle-008's `sprints[]` array was NEVER populated in `ledger.json` (the cycle entry had metadata but no sprint registrations) and no beads epics existed. This amendment registers ALL of cycle-008 (S0–S9) in the ledger + creates the beads epics. The block below is the canonical registration applied to `ledger.json`.
+
 ```json
 {
   "id": "cycle-008-persona-substrate",
   "sprints": [
-    { "local_id": "sprint-0", "global_number": 21, "title": "Structural diff spike", "status": "completed", "scope": "RESEARCH" },
-    { "local_id": "sprint-1", "global_number": 22, "title": "Persona.md placeholder insertion", "status": "completed", "scope": "TEMPLATE" },
+    { "local_id": "sprint-0", "global_number": 21, "title": "Structural diff spike + reframe rounds", "status": "completed", "scope": "RESEARCH", "task_count": 1 },
+    { "local_id": "sprint-1", "global_number": 22, "title": "Persona.md placeholder insertion", "status": "completed", "scope": "TEMPLATE", "task_count": 1 },
     { "local_id": "sprint-2", "global_number": 23, "title": "buildPrompt Effect-TS + render helpers + runtime guards", "status": "planned", "scope": "CORE", "task_count": 9, "risk_tier": "MEDIUM" },
-    { "local_id": "sprint-3", "global_number": 24, "title": "Cron orchestrator migration + flag + score-mcp schema gate", "status": "planned", "scope": "INTEGRATION", "task_count": 7, "risk_tier": "MEDIUM" },
+    { "local_id": "sprint-3", "global_number": 24, "title": "Cron orchestrator migration + flag + score-mcp schema gate (+ T3.0/T3.8/T3.9 amendment)", "status": "planned", "scope": "INTEGRATION", "task_count": 10, "risk_tier": "MEDIUM" },
     { "local_id": "sprint-4", "global_number": 25, "title": "Trace schema v2 + fragment_sources + redaction architecture", "status": "planned", "scope": "OBSERVABILITY", "task_count": 8, "risk_tier": "MEDIUM" },
     { "local_id": "sprint-5", "global_number": 26, "title": "Anthropic-SDK trace capture + outcome classification + stream hooks", "status": "planned", "scope": "OBSERVABILITY", "task_count": 6, "risk_tier": "LOW" },
     { "local_id": "sprint-6", "global_number": 27, "title": "/tweak Tweakpane kitchen tab + layered enforcement", "status": "planned", "scope": "KITCHEN", "task_count": 7, "risk_tier": "MEDIUM" },
     { "local_id": "sprint-7", "global_number": 28, "title": "middot-detector + sanitize-violations integration", "status": "planned", "scope": "QUALITY", "task_count": 4, "risk_tier": "LOW" },
-    { "local_id": "sprint-8", "global_number": 29, "title": "Cycle close + cycle-007 absorption + vault doctrine", "status": "planned", "scope": "CEREMONY", "task_count": 8, "risk_tier": "MEDIUM", "is_final": true }
+    { "local_id": "sprint-8", "global_number": 29, "title": "Cycle close + cycle-007 absorption + vault doctrine", "status": "planned", "scope": "CEREMONY", "task_count": 8, "risk_tier": "MEDIUM", "is_final": true },
+    { "local_id": "sprint-9", "global_number": 30, "title": "RLHF preference loop · billboard-preview-first lead slice (FR-40/41/42)", "status": "planned", "scope": "RLHF", "task_count": 6, "risk_tier": "MEDIUM", "added_by": "amendment-2026-05-22" }
   ],
-  "next_sprint_number_after_cycle_008": 30
+  "next_sprint_number_after_cycle_008": 31
 }
 ```
 
-T8.7 advances `next_sprint_number` to 30 in the ledger at cycle close.
+T8.8 advances `next_sprint_number` 21 → **31** in the ledger at cycle close (was 30 · S9 = global sprint-30 added by amendment). S9 executes before S8's close ceremony but holds the highest global number; the close sweep includes it.
 
 ---
 
-End of cycle-008 sprint plan r1. Ready for Phase 6 (Flatline Sprint multi-model review).
+## Appendix C · Goal → task traceability
+
+PRD goals G-1..G-9 map to S0–S8 (unchanged · see PRD §2). The amendment adds **G-10** (voice-fidelity iteration unblocked · RLHF preference loop) mapping to the amendment tasks:
+
+| Goal | Contributing tasks |
+|---|---|
+| G-1 Cron-digest → buildPrompt | T3.3 |
+| G-2 Governance-vs-voice separation | T1.1 · T2.2 · T2.3 · T2.4 · T3.3 |
+| G-3 buildPrompt returns Effect | T2.1 · T2.5 · T2.6 · T2.7 · T2.8 |
+| G-4 Trace envelope v2 + fragment_sources[] | T4.1 · T4.2 · T2.3a · T4.4 · T4.7 · T4.8 |
+| G-5 Anthropic-SDK trace capture | T5.1..T5.6 |
+| G-6 /tweak Tweakpane kitchen tab | T6.1..T6.7 |
+| G-7 middot-detector | T7.1..T7.4 |
+| G-8 persona-as-substrate vault doctrine | T8.1 |
+| G-9 cycle-007 pair-points absorbed | T8.3 · T8.4 · T8.5 · T8.6 · T8.7 · T8.8 |
+| **G-10 voice-fidelity iteration unblocked (RLHF loop)** | **T3.0 (FR-43) · T3.8 (FR-38) · T3.9 (FR-39) · T9.1..T9.6 (FR-40/41/42)** |
+
+E2E goal validation: G-10's end-to-end loop attestation is OP-G4 (S9 T9.6) — fire fan-out → pick → annotate → promote-to-evals, self-served, with a new `preference-log.jsonl` record landing via the tool.
+
+---
+
+End of cycle-008 sprint plan r1 + amendment 2026-05-22. Ready for Phase 6 (Flatline Sprint multi-model review).

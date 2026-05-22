@@ -1303,4 +1303,62 @@ All resolved in PRD §13. Reproduced here for SDD self-containment:
 
 ---
 
-End of cycle-008 SDD r1. Ready for Phase 3.5 (Bridgebuilder SDD if enabled) → Phase 4 (Flatline SDD multi-model review).
+## 10 · Amendment 2026-05-22 · voice-fidelity + RLHF preference loop (FR-38..43)
+
+> **Source**: `grimoires/loa/cycles/cycle-008-persona-substrate/amendment-voice-fidelity-gaps.md` (status: active). FR-38/39/43 amend S3; FR-40/41/42 form new sprint S9. All code paths below verified by read on 2026-05-22 (corrections noted inline).
+
+### 10.1 · FR-43 · score-api-types adoption (S3 T3.0)
+
+- **Target**: `packages/persona-engine/src/score/types.ts` (verified **613 LoC** at 2026-05-22 — amendment brief's "206 LoC" was stale).
+- **Approach**: type-only adoption via `import type { … } from '@0xhoneyjar/score-api-types'`. Zero runtime — no zod loaded. Data shapes import INTO the **existing local port** at `packages/persona-engine/src/ports/score-fetch.port.ts` (verified path — NOT `src/score/score-fetch.port.ts`; the port lives under `ports/`).
+- **Constraints (verbatim, issue #85 comment)**: `MostActiveWalletEntry` stays local (not in package until cycle-029); names that live in >1 entity (e.g. `DimensionSummary`) are **deep-import only** (`@0xhoneyjar/score-api-types/entities/<name>`), never the flat root barrel.
+- **Verification interplay**: the package's JSON Schema (`/json/<entity>.v1.json`, permanent `$id`) feeds T3.1's score-mcp schema verification gate (Fork D → D1: T3.0 lands before T3.1 so the gate validates against the package schema rather than hand-sampling).
+- **Acceptance**: `bun run typecheck` stays green after the type-surface swap; `MostActiveWalletEntry` + deep-import `DimensionSummary` regression-guarded.
+
+### 10.2 · FR-38 · cadence-honest data surface (S3 T3.8)
+
+- **Separation requirement (Fork A operator decision)**: the *data-read* and the *voice* become independently-tweakable surfaces. The licensing window (decides what's worth narrating · stays 30d for factor density per cycle-005 r4 · `live/score-mcp.live.ts:164,195`) is separated from the reporting headline (the number the reader sees).
+- **Hero number**: a fresh "since last post" delta computed from `compose/voice-memory.ts` per-zone state (verified present). The 30d figure, if retained, is labeled rolling context — clearly secondary.
+- **Two-clocks close**: digest path uses `PULSE_WINDOW_DAYS=7` (`digest-orchestrator.ts:36`) while micro renders `windowDays=30` (`live/discord-render.live.ts` `buildSubstrateFacts`→`renderMicro`). FR-38 makes digest + micro report the same clock.
+- **Acceptance**: (a) card headline reflects cadence window OR since-last-post delta; (b) licensing/factor-density logic unchanged (still 30d); (c) digest + micro report the same clock; (d) byte-snapshot regression fixture in `evals/snapshots/` (verified dir exists).
+
+### 10.3 · FR-39 · two-beat billboard renderer (S3 T3.9 · LOCKED SPEC)
+
+Current delivery collapses voice + substrate into one message: `plainToPayload` (`live/discord-webhook.live.ts:30`) builds `content` as `[message.voiceContent, factsLine].filter(Boolean).join('\n')` where `factsLine = message.truthFields.join(' · ')` (verified `:31-33`). FR-39 splits this into two sequential Pattern-B webhook sends (neither pings on pop-in/digest cadence):
+
+- **Beat 1 — the agent** (`voiceContent`): 1–2 short lowercase lines, **zero numbers** (stats-out-of-voice). All-quiet register example:
+  > the lab's quiet today.
+  > i'll keep the lamp on.
+- **Beat 2 — the billboard** (`truthFields`, **bold**): zone header + cadence-honest data.
+  ```
+  🧪 OWSLEY LAB · onchain
+  since last       +0          ← FR-38 hero: fresh delta (voice-memory per-zone state)
+  30d rolling     352          ← rolling context, clearly secondary
+  wallets warm     15
+  state      all quiet
+  ```
+
+- **Craft sub-decision (locked · flag to push back on)**: Beat 2 renders as **bold text with U+2007 FIGURE-SPACE column alignment**, NOT a Discord code block. Rationale: code blocks give guaranteed monospace but **ignore `**bold**`**; bold was the explicit operator ask. The figure-space technique is already proven at `live/discord-render.live.ts:54` (verified — `PAD_CHAR = metrics.digitWidthSpaceChar`, U+2007 default attested in S0/T0.2 typography spike for Android `gg sans` tabular safety). Tradeoff: bold-figure-space depends on figure-space rendering (validated cycle-007 S3); code-block would be bulletproof-monospace but un-bold.
+- **Billboard reframe (Fork B)**: this supersedes the narrow "two messages" framing. The cron route renders as a clean data **Billboard** (digest) OR an **Event-spotlight** pop-in; **chat** (`/ruggy`, mentions) is ruggy-the-agent. Each surface unmistakably itself. Convergence with `project-cron-post-types-pruning`: digest→Billboard, pop-in→Event-spotlight; weaver/lore_drop/question/callout become prune candidates.
+- **Acceptance**: (a) delivery emits two messages; (b) Beat 2 bold via figure-space; (c) `message.content` always populated (Discord-as-Material fallback per CLAUDE.md); (d) underscore-escape preserved (`deliver/sanitize.ts`); (e) byte-snapshot fixture in `evals/snapshots/`.
+- **Open micro-decisions (defer to S9 preview surface, do NOT block T3.9)**: keep the `30d rolling` row at all? · exact label wording · separator between beats · all-quiet vs active-state register.
+
+### 10.4 · FR-40/41/42 · the RLHF preference loop (S9)
+
+- **FR-40 fan-out (capture)**: extend S6's `--tweak <json>` (`apps/bot/src/cli/playground-fire.ts`) into a `--fire-n` mode — same input (zone+state+snapshot), N candidates varying seed and/or a named format-fragment variant, grouped by a `batch_id`. Each candidate captured as an S5-shaped trace row (`outcome` classified). First slice is layout/format (billboard look), then voice.
+- **FR-41 elicitation**: dashboard (`scripts/dashboard.ts`) renders a batch's N candidates side-by-side at **Discord fidelity** (real bold · ~40-char mobile wrap · webhook avatar · reuse INV-10 oklch + embed preview from S6 T6.5). Operator picks/ranks + writes a free-text annotation. Persist as a preference record to `grimoires/loa/cycles/cycle-008-persona-substrate/preference-log.jsonl` (verified present · schema `rlhf-preference-v0`). Records structured as preference-pairs/rankings (RLHF-ready). The manual loop fired 2026-05-22 (amendment §7.4) is the reference shape: candidates `[scoreboard, two-beat, event-spotlight, ticker-tile]` → chosen `two-beat`.
+- **FR-42 backpressure (close)**: a picked+annotated winner promotes to `evals/snapshots/` as a golden case (verified dir). Annotations accumulate as a labeled corpus — the calibration signal for the **cycle-009 LLM-as-judge** (Fork C → C3: human loop now, judge bootstrapped from picks in cycle-009).
+- **S9 lead slice (the iteration-speed unlock)**: the billboard preview surface is the FIRST thing S9 ships, turning the manual loop into a self-serve tool. This is why S9 leads the amendment delivery despite landing as the highest global sprint number — the instrument unblocks the FR-38/39 craft work, which lands *through* it with side-by-side evidence.
+
+### 10.5 · SDD-specific risks (amendment)
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| score-api-types deep-import paths (`/entities/<name>`) don't resolve or package not published at 0.6.0 | Medium | T3.0 verifies `bun add -D @0xhoneyjar/score-api-types@0.6.0` resolves + deep-import typechecks BEFORE the type-surface swap; FR-43 acceptance gates on green typecheck |
+| FR-39 figure-space bold un-aligns on a Discord client that renders U+2007 non-tabular | Low | Already validated cycle-007 S3 + S0/T0.2 spike; byte-snapshot fixture + PP-5-style mobile screenshot at S9 attestation catches regression |
+| FR-38 "since last" delta drifts if voice-memory per-zone state is reset/missing | Medium | Type-guard + fallback: missing per-zone state → headline degrades to 30d-rolling-labeled (never shows a wrong fresh number); negative test fixture |
+| S9 self-serve preview diverges from real Discord delivery (fidelity gap) | Medium | Preview reuses the SAME `plainToPayload`/figure-space render path as production (FR-39), not a re-implementation; one render function, two callers (production webhook + preview) |
+
+---
+
+End of cycle-008 SDD r1 + amendment 2026-05-22. Ready for Phase 3.5 (Bridgebuilder SDD if enabled) → Phase 4 (Flatline SDD multi-model review).
