@@ -46,7 +46,7 @@ export async function composeWeaverPost(
 
   const augment: VoiceAugment | undefined = config.VOICE_DISABLED
     ? undefined
-    : await voiceGen.generateDigestVoice(focal, { derived });
+    : await voiceGen.generateDigestVoice(focal, { derived, postType: 'weaver' });
 
   const message = renderer.renderWeaver(focal, allZones, augment);
   return { zone: focalZone, postType: 'weaver', message, payload: presentation.toWeaverPayload(message) };

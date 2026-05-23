@@ -1,0 +1,30 @@
+schema_version: "1.0.0"
+character: ruggy
+post_type: micro
+zone: stonehenge
+canonical: true
+captured_at: "2026-05-14T19:40:21Z"
+captured_by: agent
+capture_id: s0-20260514-194021-stonehenge-micro
+provenance:
+  bot_commit_sha: ca0034d
+  adapter: "stub-direct (LLM_PROVIDER=stub · STUB_MODE=true · delivery=DRY-RUN)"
+  trigger: "POST_TYPE=micro ZONES=stonehenge bun run digest:once (forced DRY-RUN)"
+input:
+  zone_digest_payload: synthetic
+  window_event_count: 131
+  window_wallet_count: 28
+output:
+  deterministic_surface:
+    content_populated: true
+    has_embed: false
+    tool_call_trace: []
+    no_leak_checks:
+      tool_markup_leak: false
+      raw_emoji_shortcode: false
+  rendered_prose: |
+    quick peep at Stonehenge, 131 events, 28 miberas active. solid stack from `0xaf13101b…` (synthetic stub wallet).
+environment:
+  LLM_PROVIDER: stub
+  STUB_MODE: true
+  delivery: DRY-RUN

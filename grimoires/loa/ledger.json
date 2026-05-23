@@ -1,12 +1,158 @@
 {
   "version": "1.0.0",
   "next_sprint_number": 21,
-  "active_cycle": "cycle-006-substrate-presentation",
+  "active_cycle": "cycle-008-persona-substrate",
   "cycles": [
+    {
+      "id": "cycle-008-persona-substrate",
+      "label": "persona-as-substrate · cron path migration to canonical buildPrompt + Effect-TS + per-layer observability (absorbs cycle-007 pair-points)",
+      "status": "active",
+      "created_at": "2026-05-18T04:30:00Z",
+      "prd": "grimoires/loa/cycles/cycle-008-persona-substrate/prd.md",
+      "sdd": "grimoires/loa/cycles/cycle-008-persona-substrate/sdd.md",
+      "sprint_plan": "grimoires/loa/cycles/cycle-008-persona-substrate/sprint.md",
+      "target_branch": "feat/cycle-008-persona-substrate",
+      "depends_on": [
+        "cycle-007-agent-debuggability candidate 2026-05-17 (structural mechanical close · pair-points absorbed)",
+        "Effect-TS ^3.21.2 (packages/persona-engine deps)"
+      ],
+      "absorbed_from_cycle_007_pair_points": {
+        "PP-4_kitchen_playground": "operator iterates /playground >=10 min · attests faster-than-paste loop",
+        "PP-5_mobile_canary": "operator screenshots Discord Android post-digest-cron firing",
+        "PP-2_PP-3_mobile_render": "roll into PP-5 screenshot session",
+        "github_branch_protection": "CODEOWNERS rule on .claude/overrides/voice-prompt-paths.json + voice-prompt-paths.schema.json + trace-explain-output.schema.json",
+        "cycle_007_ledger_flip_to_archived": "deferred to cycle-008 close · single ledger sweep at S8"
+      },
+      "session_artifacts_pre_simstim": {
+        "s0_spike": "grimoires/loa/cycles/cycle-008-persona-substrate/spike-builder-diff.md (authored 2026-05-17)",
+        "s1_persona_edit": "apps/character-ruggy/persona.md (placeholder insertion landed 2026-05-17)",
+        "memory_entries": [
+          "feedback-ruggy-voice-principle",
+          "feedback-governance-voice-separation",
+          "feedback-effect-ts-new-surfaces",
+          "project-persona-authorship",
+          "project-straylight-continuity-candidate",
+          "project-cron-post-types-pruning"
+        ]
+      },
+      "amendment": {
+        "id": "amendment-voice-fidelity-gaps",
+        "status": "active",
+        "promoted_at": "2026-05-22",
+        "source": "grimoires/loa/cycles/cycle-008-persona-substrate/amendment-voice-fidelity-gaps.md",
+        "summary": "FR-38 cadence-honest data surface (S3 T3.8) + FR-39 two-beat billboard renderer (S3 T3.9 · locked spec) + FR-43 score-api-types adoption (S3 T3.0) + FR-40/41/42 RLHF preference loop (new S9). G-10 added. Two-beat won the manual preference loop (preference-log.jsonl · schema rlhf-preference-v0).",
+        "registration_gap_reconciled": "cycle-008 S0-S9 were never registered in ledger sprints[] and no beads epics existed; this amendment populated sprints[] (below) + created beads epics."
+      },
+      "sprints": [
+        {
+          "local_id": "sprint-0",
+          "global_number": 21,
+          "title": "Structural diff spike + reframe rounds",
+          "status": "completed",
+          "scope": "RESEARCH",
+          "task_count": 1,
+          "epic_bead": "bd-1ul"
+        },
+        {
+          "local_id": "sprint-1",
+          "global_number": 22,
+          "title": "Persona.md placeholder insertion",
+          "status": "completed",
+          "scope": "TEMPLATE",
+          "task_count": 1,
+          "epic_bead": "bd-n76"
+        },
+        {
+          "local_id": "sprint-2",
+          "global_number": 23,
+          "title": "buildPrompt Effect-TS + render helpers + runtime guards",
+          "status": "planned",
+          "scope": "CORE",
+          "task_count": 9,
+          "risk_tier": "MEDIUM",
+          "epic_bead": "bd-1aa"
+        },
+        {
+          "local_id": "sprint-3",
+          "global_number": 24,
+          "title": "Cron orchestrator migration + flag + score-mcp schema gate (+ T3.0/T3.8/T3.9 amendment)",
+          "status": "planned",
+          "scope": "INTEGRATION",
+          "task_count": 10,
+          "risk_tier": "MEDIUM",
+          "epic_bead": "bd-3li"
+        },
+        {
+          "local_id": "sprint-4",
+          "global_number": 25,
+          "title": "Trace schema v2 + fragment_sources + redaction architecture",
+          "status": "planned",
+          "scope": "OBSERVABILITY",
+          "task_count": 8,
+          "risk_tier": "MEDIUM",
+          "epic_bead": "bd-3jh"
+        },
+        {
+          "local_id": "sprint-5",
+          "global_number": 26,
+          "title": "Anthropic-SDK trace capture + outcome classification + stream hooks",
+          "status": "planned",
+          "scope": "OBSERVABILITY",
+          "task_count": 6,
+          "risk_tier": "LOW",
+          "epic_bead": "bd-g4v"
+        },
+        {
+          "local_id": "sprint-6",
+          "global_number": 27,
+          "title": "/tweak Tweakpane kitchen tab + layered enforcement",
+          "status": "planned",
+          "scope": "KITCHEN",
+          "task_count": 7,
+          "risk_tier": "MEDIUM",
+          "epic_bead": "bd-2y6"
+        },
+        {
+          "local_id": "sprint-7",
+          "global_number": 28,
+          "title": "middot-detector + sanitize-violations integration",
+          "status": "planned",
+          "scope": "QUALITY",
+          "task_count": 4,
+          "risk_tier": "LOW",
+          "epic_bead": "bd-1vm"
+        },
+        {
+          "local_id": "sprint-8",
+          "global_number": 29,
+          "title": "Cycle close + cycle-007 absorption + vault doctrine",
+          "status": "planned",
+          "scope": "CEREMONY",
+          "task_count": 8,
+          "risk_tier": "MEDIUM",
+          "is_final": true,
+          "epic_bead": "bd-1qy"
+        },
+        {
+          "local_id": "sprint-9",
+          "global_number": 30,
+          "title": "RLHF preference loop · billboard-preview-first lead slice (FR-40/41/42)",
+          "status": "planned",
+          "scope": "RLHF",
+          "task_count": 6,
+          "risk_tier": "MEDIUM",
+          "added_by": "amendment-2026-05-22",
+          "epic_bead": "bd-13y"
+        }
+      ],
+      "next_sprint_number_after_cycle_008": 31
+    },
     {
       "id": "cycle-007-agent-debuggability",
       "label": "agent debuggability through medium-aware substrate-presentation layering (dashboard as force function · D1-D6 + FR-1/FR-2 closure of cycle-006 canary bugs)",
-      "status": "active",
+      "status": "candidate",
+      "candidate_at": "2026-05-18T04:30:00Z",
+      "candidate_note": "structurally complete (T8.1 COMPLETED.md + T8.2 E2E + T8.3 BB-3 + S8 kitchen MVP). Pair-points PP-2/PP-3/PP-4/PP-5 + GitHub branch protection + ledger archive flip absorbed by cycle-008-persona-substrate at its close.",
       "created_at": "2026-05-17T00:00:00Z",
       "prd": "grimoires/loa/cycles/cycle-007-agent-debuggability/prd.md",
       "sdd": "grimoires/loa/cycles/cycle-007-agent-debuggability/sdd.md",

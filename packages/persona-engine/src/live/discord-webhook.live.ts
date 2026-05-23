@@ -27,12 +27,34 @@ export function toDigestPayload(message: DigestMessage): DigestPayload {
 // lore_drop, question) join voice + facts into message.content (no embeds[]).
 // Embed-bearing variants (weaver, callout) follow toDigestPayload pattern.
 
+/**
+ * cycle-008 T3.9 · two-beat delivery. Beat 1 = the agent voice (`voiceContent`).
+ * Beat 2 = the data billboard (`truthFields`), each line BOLD. The two ship as
+ * SEPARATE Discord messages (via `DigestPayload.secondary`) so voice and
+ * substrate read as distinct surfaces — not the muddy middle that "reads too bot".
+ *
+ * Bold is per-line (`**…**`) because markdown bold does not span newlines; the
+ * U+2007 figure-space column alignment baked into `truthFields` by
+ * `buildSubstrateFacts` survives inside bold (figure-space is digit-width there
+ * too). NOT a code block — code blocks ignore `**bold**`, and bold was the
+ * explicit operator ask.
+ *
+ * `content` is ALWAYS populated (Discord-as-Material fallback): when voice is
+ * absent the billboard becomes the primary single message (no `secondary`).
+ */
 function plainToPayload(message: PlainMessage): DigestPayload {
-  const factsLine = message.truthFields.join(' · ');
-  const content = message.voiceContent
-    ? [message.voiceContent, factsLine].filter(Boolean).join('\n')
-    : factsLine;
-  return { content, embeds: [] };
+  const billboard = message.truthFields
+    .filter((line) => line.length > 0)
+    .map((line) => `**${line}**`)
+    .join('\n');
+  if (!message.voiceContent) {
+    return { content: billboard || '·', embeds: [] };
+  }
+  return {
+    content: message.voiceContent,
+    embeds: [],
+    secondary: { content: billboard, embeds: [] },
+  };
 }
 
 function embedToPayload(message: EmbedMessage): DigestPayload {

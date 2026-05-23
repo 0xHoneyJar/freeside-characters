@@ -1,1083 +1,1364 @@
-# cycle-007 · agent debuggability through medium-aware substrate-presentation layering · SDD
+# cycle-008 · persona-as-substrate · SDD
 
-> Companion to `grimoires/loa/prd.md`. PRD = WHAT + WHY. SDD = HOW.
-> **Cycle**: cycle-007 · agent-debuggability
-> **Date**: 2026-05-17
-> **Status**: candidate (post `/architect`)
-> **Predecessor**: cycle-006 SDD at `grimoires/loa/cycles/cycle-006-substrate-presentation/sdd.md` (substrate-presentation seam established · honeycomb pattern in production)
-> **Branch target**: `feat/cycle-007-agent-debuggability` (cut from `origin/main` @ `3324a8d` · 2026-05-16)
-> **Persona**: ARCH (Ostrom) + craft lens (Alexander) for plan · BARTH for implement
-
----
-
-## 1. System Overview
-
-> **Framing (BB REFRAME-1 · 2026-05-17 · accept-minor)**: The DASHBOARD is the WITNESS to layer discipline · the FORCE FUNCTIONS are **INV-12 (CI lint at SOURCE)** + **trace envelope (universal layer tagging · type-enforced per HIGH-4)** + **agent CLI surface (paste-to-Loa)**. The dashboard makes the substrate legible — it doesn't enforce it. This distinction matters: substrate is load-bearing · UI is the celebration. S5 dashboard work is craft-polish, not cycle-spine.
-
-Cycle-007 extends the cycle-006 honeycomb (`domain/ports/live/mock/orchestrator`) with three new substrates:
-
-1. **Zone-display canonical registry** at `domain/zone-registry.ts` — a single source of truth for ZoneId → display-name + emoji + rich-label resolution. Replaces dual registries (`ZONE_FLAVOR` + `ZONE_LABEL`). Includes the sanitizer primitive `detectKebabZoneIds(text)` for SINK-side leak detection. SOURCE-side leak prevention enforced by a new CI lint (`scripts/lint-no-kebab-zoneid-in-voice-prompt.sh` · INV-12).
-2. **Trace envelope** at `observability/trace-envelope.ts` — a 3-field additive wrapper (`layer + layer_op + emitted_at`) applied to every JSONL writer in `packages/persona-engine/src/`. Forward-only — cycle-006 traces remain raw and readers tolerate absent fields.
-3. **Medium-aware presentation knobs** at `deliver/medium-extensions.ts` — locally-owned extension of `@0xhoneyjar/medium-registry@^0.2.0`'s `MediumCapability` adding `codeBlockMonoCharWidth`, `digitWidthSpaceChar` (U+2007 for Discord), `mobileProportionalWrap`, `emojiWidthInMonospace`, `codeBlockMobileFallbackRisk`. Renderers consult via `metricsForMedium(medium)` instead of hardcoded constants.
-
-Plus two surfaces consuming the new substrates:
-
-4. **Agent-first trace CLI** at `scripts/trace.ts` (5 subcommands: `latest`, `layer`, `get`, `voice`, `explain`) sharing readers with the dashboard via `scripts/lib/trace-readers.ts`. The `trace:explain` subcommand reads from STDIN (per Flatline SKP-002) and emits a stable v1 JSON schema (per IMP-003 · INV-13).
-5. **Dashboard UI extension** at `scripts/dashboard.ts` — 4-color border encoding (oklch · per Alexander spec), detail-panel layer split, and SSE-behind-flag (`LOA_DASH_SSE=1`) layer-color flash on new event.
-
-Cycle-006 orchestrator-port leak closure (G-6) is a mechanical cleanup happening in S7 — orchestrators stop importing `to*Payload` from `live/discord-webhook.live.ts` and route through `PresentationPort`.
-
-```mermaid
-flowchart TB
-  subgraph Substrate[SUBSTRATE LAYER]
-    SC[score-mcp.live.ts] --> ENV1[wrapTraceEntry<br/>substrate · score-fetch]
-    DRV[domain/derive-shape.ts] --> ENV2[wrapTraceEntry<br/>substrate · shape-derivation]
-  end
-
-  subgraph Voice[VOICE LAYER]
-    VM1[voice-memory.live.ts::readRecent] --> ENV3[wrapTraceEntry<br/>voice · memory-read]
-    AGW[compose/agent-gateway.ts] --> ENV4[wrapTraceEntry<br/>voice · bedrock-converse]
-    AGW -.uses.-> ZR[domain/zone-registry.ts<br/>resolveZoneDisplayName]
-    VM2[voice-memory.live.ts::appendEntry] --> ENV5[wrapTraceEntry<br/>voice · memory-write]
-  end
-
-  subgraph Presentation[PRESENTATION LAYER]
-    SAN[deliver/sanitize.ts] -.uses.-> ZR
-    SAN --> ENV6[wrapTraceEntry<br/>presentation · sanitize]
-    DRD[discord-render.live.ts] -.uses.-> ZR
-    DRD -.uses.-> MEX[deliver/medium-extensions.ts<br/>metricsForMedium]
-    DRD --> ENV7[wrapTraceEntry<br/>presentation · render-digest]
-  end
-
-  subgraph MediumRender[MEDIUM-RENDER LAYER]
-    DWB[discord-webhook.live.ts] --> ENV8[wrapTraceEntry<br/>medium-render · discord-webhook]
-  end
-
-  Substrate --> Voice
-  Voice --> Presentation
-  Presentation --> MediumRender
-  MediumRender --> DISC[Discord client<br/>mobile/desktop]
-
-  subgraph TraceSurface[TRACE READ SURFACE]
-    JSONL[apps/bot/.run/*.jsonl<br/>layer-tagged]
-    READERS[scripts/lib/trace-readers.ts]
-    CLI[scripts/trace.ts<br/>5 subcommands]
-    DASH[scripts/dashboard.ts<br/>localhost:3001<br/>layer-color UI + SSE-flag]
-  end
-
-  ENV1 & ENV2 & ENV3 & ENV4 & ENV5 & ENV6 & ENV7 & ENV8 --> JSONL
-  JSONL --> READERS
-  READERS --> CLI & DASH
-
-  subgraph CI[CI ENFORCEMENT]
-    LINT[scripts/lint-no-kebab-zoneid-in-voice-prompt.sh<br/>INV-12 · Bug A SOURCE closure]
-    AUDIT[scripts/audit-substrate-presentation-seam.sh<br/>strict-composer · G-6 closure]
-  end
-
-  ZR -.compile-blocks.-> LINT
-  DRD -.compile-blocks.-> AUDIT
-```
-
-### Key seam invariants (preserved from cycle-006 + extended)
-
-| ID | invariant (carried from cycle-006) | cycle-007 extension |
-|---|---|---|
-| INV-1 | `live/discord-render.live.ts` must NOT import `live/claude-sdk.live.ts` or `compose/voice-brief.ts` | unchanged · still enforced by audit script |
-| INV-2 | `domain/digest-message.ts::DeterministicEmbed` has NO `description` field | unchanged |
-| INV-3 | Every orchestrator returns a domain message type | unchanged · S7 cleanup completes the closure |
-| **INV-12 (NEW)** | Voice-prompt-producing files (manifest at `.claude/data/voice-prompt-paths.json` per BB HIGH-3) MUST NOT contain raw kebab ZoneId string literals outside `domain/zone-registry.ts` imports | Flatline IMP-004 · S1 acceptance gate · CI lint |
-| **INV-13 (NEW)** | `trace:explain` JSON output schema FROZEN at v1 — changes require explicit `schema_version` bump · validated via ajv against `.claude/data/trace-explain-output.schema.json` at S4 acceptance (BB HIGH-5) | Flatline IMP-003 · `.claude/data/trace-explain-output.schema.json` |
-| **INV-14 (NEW)** | `appendTraceEntry` is the SOLE permitted JSONL append helper in `packages/persona-engine/src/` · direct `Bun.write` / `fs.appendFile` calls on `.jsonl` paths in this package are forbidden · type signature requires `T & TraceEnvelope` enforcing compile-time discipline | BB HIGH-4 · S2 acceptance · audit script `scripts/audit-jsonl-append-discipline.sh` |
-| **INV-15 (NEW)** | `wrapTraceEntry` recursively sanitizes nested reserved keys (`layer`, `layer_op`, `emitted_at` → `payload_*` prefix) · enforced by JSON schema at `.claude/data/trace-envelope.schema.json` validated by `appendTraceEntry` before write · prevents attacker-controlled payload field spoofing | Red Team AC-RT-005 (ATK-009 · 420 quick-fix) · S2 acceptance |
-| **INV-16 (NEW)** | Dashboard SSE + REST endpoints require per-session bearer token (`LOA_DASH_TOKEN` printed to stderr at server start) via `X-Loa-Dash-Token` header AND Host header validation (`Host: 127.0.0.1:3001` or `Host: localhost:3001`) · 403 on miss · closes DNS-rebinding attack class | Red Team AC-RT-001 (ATK-001 · 780) · S5 acceptance |
-| **INV-17 (NEW)** | INV-12 manifest (`.claude/data/voice-prompt-paths.json`) is path-monotonic across git history on main · `scripts/lint-manifest-monotonic.sh` CI-enforced · CODEOWNERS entry requires operator review for any change · git-history-aware variant of INV-12 lint scans paths EVER in the manifest | Red Team AC-RT-002 (ATK-002 · 760) · S1 acceptance |
-| **INV-18 (NEW)** | Trace CLI human-format output sanitizes payload string values via `scripts/lib/safe-render.ts::sanitizeForTerminal` (strips C0/C1 control bytes + OSC 8 hyperlinks rendered as `[url]` plain-text) · ANSI emitted ONLY by the printer itself · prevents terminal escape injection (CVE-2003-0063 family) | Red Team AC-RT-003 (ATK-006 · 740) · S4 + S5 acceptance |
+> **Companion to** `grimoires/loa/prd.md`. PRD = WHAT + WHY. SDD = HOW.
+> **Cycle**: cycle-008-persona-substrate
+> **Date**: 2026-05-18 (/simstim Phase 3 output · ready for Phase 3.5 / 4 review)
+> **Mode**: ARCH (Ostrom) + craft lens (Alexander)
+> **Audience**: Loa-embodied engineer about to land cycle-008 in code, plus reviewers (BB / Flatline)
+> **Status**: r1 · pre Flatline SDD review
+> **Inherits invariants**: cycle-007 INV-12 (kebab lint) · INV-13 (trace envelope) · INV-14 (typed appendTraceEntry) · INV-16 (LOA_DASH_AUTH bearer) · INV-17 (schema CODEOWNERS) · INV-18 (safe-render C0/C1 strip)
 
 ---
 
-## 2. Component Specifications
+## 0 · Reframe applied 2026-05-18 · BB review round 1 · RF-002 accept-major
 
-### 2.1 `packages/persona-engine/src/domain/zone-registry.ts` (NEW · ~120 LoC)
+Mid-Phase-3.5 reframe: **the cycle-005 prose-gate is bypassed at the prompt layer in cycle-008 scope**. Operator-chosen path (Option β · smallest blast radius):
 
-**Purpose**: canonical map ZoneId → display + rich-label + sanitizer primitive. Replaces `score/types.ts::ZONE_FLAVOR` and `live/discord-render.live.ts::ZONE_LABEL`.
+- Cron call-site (`claude-sdk.live.ts`) fetches factor data from `ZoneDigest.factor_trends[]` (or equivalent unfiltered substrate path · actual field name verified during S3) instead of `derived.permittedFactors[]` (cycle-005 gate output).
+- The cycle-005 prose-gate code stays alive at the substrate layer for OTHER consumers (dashboard, future analyses) but its filter output is no longer consumed by buildPrompt.
+- `ActiveFactorRender` shape unchanged · `{{ACTIVE_FACTORS}}` placeholder unchanged · `renderActiveFactors` unchanged.
+- Just the SOURCE of the factor list changes (from gated to ungated).
+- INV-PS-7 (stats-out-of-voice) + NFR-9 (runtime stat-leakage guard) protect against the hallucination class the gate used to filter. Defense-in-depth at prompt-layer; gate provides a different layer (substrate transparency for other consumers).
 
-> **BB REFRAME-2 disposition (accept-minor)**: `richLabel` is Discord-specific (emoji + parenthetical dimension) and arguably belongs in `presentation/`. Cycle-007 keeps it in `domain/` to avoid mid-cycle refactor cost. Trade-off accepted: cycle-006 INV-1 (domain MUST NOT depend on presentation details) softens for `richLabel` specifically. **Cycle-008 follow-up task** filed: extract `resolveZoneRichLabel` + `richLabel` field to `packages/persona-engine/src/presentation/zone-display.ts` when Telegram adapter lands. Until then, `richLabel` documented as "Discord-shaped" by convention.
+Reframe rationale: cycle-008 INV-PS-7 makes the hallucination class the cycle-005 gate prevents structurally impossible. Ruggy literally cannot speak the magnitudes the gate filters. The gate as prompt-layer middleware was defense against a threat eliminated by another invariant. Cycle-010+ vision in PRD §10.4 is partially realized via this Option β change.
 
-**Imports**:
-```typescript
-import { ZONE_IDS, type ZoneId, type ZoneDimension } from '../score/types.ts';
+Rework count: 1 of 2 max. Re-run BB review TBD post-rework.
+
+---
+
+## 1 · Architecture overview
+
+### 1.1 · The 5-layer substrate that buildPrompt assembles
+
+```
+                                          AUDIENCE
+  ┌────────────────────────────────────────────┐
+  │ persona.md template                        │   operator (zksoju)
+  │   ═══ FESTIVAL ZONES ═══                   │   authors voice rules,
+  │   ═══ ENVIRONMENT ═══                      │   zone context, fragments
+  │   ═══ SUBSTRATE STATE ═══   (NEW · S1)     │
+  │   ═══ VOICE ANCHORS ═══                    │
+  │   ═══ CODEX ANCHORS ═══                    │
+  │   ═══ EXEMPLARS ═══                        │
+  │   ═══ THIS POST ═══                        │
+  │   ═══ MOVEMENT POLICY ═══                  │
+  │   ═══ MIBERA CODEX ═══                     │
+  │   ═══ INPUT PAYLOAD ═══                    │
+  │   (per-post-type fragments below)          │
+  └─────────────────┬──────────────────────────┘
+                    ▼
+  ┌────────────────────────────────────────────┐
+  │ buildPrompt(args): Effect<Result, Err, R> │   substrate layer ·
+  │ ─ loads template + voice-anchors + codex   │   loader.ts:237
+  │ ─ substitutes 12 base placeholders         │
+  │ ─ NEW: substitutes {{ACTIVE_FACTORS}}      │   cycle-008
+  │ ─ NEW: substitutes {{PRIOR_WEEK_HINT}}     │   substitutions
+  │ ─ NEW: validates stat-leakage guard (NFR-9)│
+  │ ─ NEW: appends JSON output schema (cron)   │   code-suffix
+  │ ─ NEW: appends LOCK suffix (cron)          │   code-suffix
+  │ ─ NEW: populates fragment_sources[]        │   trace prep
+  │ ─ returns systemPrompt + userMessage       │
+  └─────────────────┬──────────────────────────┘
+                    ▼
+  ┌────────────────────────────────────────────┐
+  │ generateDigestVoice (claude-sdk.live.ts)   │   call-site
+  │ ─ Effect.runPromise(Effect.gen(...))       │   layer · S3
+  │ ─ Effect.tapError → BuildPromptError       │   migrates
+  │ ─ invoke via agent-gateway                 │
+  │ ─ parseVoiceResponse                       │
+  │ ─ sanitize (existing)                      │
+  │ ─ NEW: detectAiArtifacts (S7)              │
+  └─────────────────┬──────────────────────────┘
+                    ▼
+  ┌────────────────────────────────────────────┐
+  │ agent-gateway.ts::invoke                   │   transport layer
+  │ ─ bedrock (line 187) · already traced      │
+  │ ─ anthropic-sdk (line 147) · NEW trace     │   S5 adds
+  │   - outcome: success/timeout/error/exception │  spans here
+  │   - stream-completion hook                 │
+  └─────────────────┬──────────────────────────┘
+                    ▼
+  ┌────────────────────────────────────────────┐
+  │ apps/bot/.run/llm-trace.jsonl              │   trace sink
+  │ ─ schema v2 (fragment_sources[] optional)  │
+  │ ─ redaction policy (NFR-8)                 │
+  │ ─ rotation 100MB / 30d default             │
+  └────────────────────────────────────────────┘
 ```
 
-**Public API**:
-```typescript
-export class UnknownZoneError extends Error {
-  constructor(public readonly attemptedZone: string) {
-    super(`Zone "${attemptedZone}" not in ZONE_REGISTRY (expected one of: ${ZONE_IDS.join(', ')})`);
-    this.name = 'UnknownZoneError';
+### 1.2 · Tech stack (no new deps in S2-S5, S7-S8 · S6 adds tweakpane)
+
+- **Runtime**: Bun ≥1.1
+- **Language**: TypeScript strict
+- **LLM**: `@anthropic-ai/claude-agent-sdk` via `agent-gateway.ts` (Bedrock direct + Anthropic SDK transports)
+- **Effect-TS**: `effect@^3.21.2` (already in `packages/persona-engine/package.json` · heavy use in `ambient/*` + `compose/llm-gateway/*`)
+- **Schema validation**: ajv (already used at `.claude/overrides/trace-explain-output.schema.json`)
+- **OTel**: `@opentelemetry/api` (already in agent-gateway · bedrock span pattern at line 201)
+- **Discord write side**: `discord.js` Gateway + per-character webhooks (unchanged)
+- **Schedule**: `node-cron` (unchanged)
+- **NEW · S6 only**: `tweakpane@^4.x` (kitchen-only · operator-confirmed)
+
+### 1.3 · Sprint → component matrix
+
+| Sprint | Files touched | Module | Lines (est) |
+|---|---|---|---|
+| S2 | `packages/persona-engine/src/persona/loader.ts` | buildPrompt + helpers + error class | +120 / -40 |
+| S2 | `packages/persona-engine/src/persona/loader.test.ts` | equivalence + negative scenarios | +180 / 0 |
+| S2 | `packages/persona-engine/src/persona/render-active-factors.ts` (NEW) | private render helper | +40 / 0 |
+| S2 | `packages/persona-engine/src/compose/reply.ts` (chat call-site) | Effect.runPromise wrapper | +15 / -5 |
+| S3 | `packages/persona-engine/src/live/claude-sdk.live.ts` | cron migration + Effect boundary | +35 / -25 |
+| S3 | `packages/persona-engine/src/config.ts` | LOA_PROMPT_BUILDER flag + parse | +20 / 0 |
+| S3 | `packages/persona-engine/src/compose/voice-brief.ts` | `@deprecated` marker | +3 / 0 |
+| S4 | `packages/persona-engine/src/observability/trace-envelope.ts` | schema v2 fragment_sources[] | +40 / 0 |
+| S4 | `packages/persona-engine/src/persona/loader.ts` | fragment_sources[] population in buildPrompt | +50 / 0 |
+| S4 | `.claude/overrides/trace-explain-output.schema.json` | ajv schema v1 → v2 | +30 / 0 |
+| S4 | `scripts/trace.ts` | trace:explain renders source-map | +25 / 0 |
+| S4 | `scripts/dashboard.ts` | LLM-calls tab fragment_sources breadcrumbs | +60 / 0 |
+| S5 | `packages/persona-engine/src/compose/agent-gateway.ts::invokeAnthropicSdk` | span wrap + outcome field + stream hook | +60 / 0 |
+| S5 | `packages/persona-engine/src/observability/trace-envelope.ts` | outcome field + redaction helpers | +30 / 0 |
+| S6 | `apps/bot/package.json` | tweakpane v4 dep | +1 / 0 |
+| S6 | `scripts/dashboard.ts` | /tweak tab + 5 folders + live-fire | +250 / 0 |
+| S6 | `apps/bot/src/cli/playground-fire.ts` | --tweak <json> flag | +30 / 0 |
+| S7 | `packages/persona-engine/src/deliver/sanitize.ts` | detectAiArtifacts + 4 heuristics | +80 / 0 |
+| S7 | `packages/persona-engine/src/deliver/sanitize.test.ts` | fixture tests | +60 / 0 |
+| S7 | `scripts/dashboard.ts` | sanitize-violations tab additions | +30 / 0 |
+| S8 | `grimoires/loa/cycles/cycle-008-persona-substrate/COMPLETED.md` | cycle close doc | +400 / 0 |
+| S8 | `grimoires/loa/ledger.json` | flips + archive | +5 / -3 |
+| S8 | `~/vault/wiki/concepts/persona-as-substrate.md` (NEW) | vault doctrine | operator-paced |
+
+**Net cycle-008 production code**: ~+700 / -75 LOC. Plus tests, docs, dashboard work.
+
+---
+
+## 2 · Data models
+
+### 2.1 · `BuildPromptError` (NEW · Effect-TS tagged error · S2)
+
+```ts
+// packages/persona-engine/src/persona/loader.ts
+
+import { Data, Effect } from 'effect';
+
+// Per Flatline-SDD IMP-003 815 · 2026-05-18: error kinds are classified as
+// INPUT-ERROR (caller provided bad input · retry won't help · halt this fire)
+// vs INVARIANT-VIOLATION (internal serialization bug · indicates code bug · alert).
+// claude-sdk.live.ts maps each class to different observability behavior.
+
+export class BuildPromptError extends Data.TaggedError('BuildPromptError')<{
+  readonly kind:
+    // INPUT errors (caller-provided · retry won't help)
+    | 'missing-cron-arg'                 // cron shape but cycle-008 arg undefined
+    | 'aggregate-stat-leakage'           // NFR-9 · runtime guard rejected input (V2 only · V1 logs)
+    // STRUCTURAL errors (persona.md or template invalid · likely operator error)
+    | 'template-section-missing'         // persona.md missing `## System prompt template`
+    | 'input-payload-marker-missing'     // template missing `═══ INPUT PAYLOAD ═══`
+    | 'fragment-not-found'               // `<!-- @FRAGMENT: <post-type> -->` absent
+    | 'fragment-end-marker-missing'
+    // INVARIANT-VIOLATION errors (internal bug · alert-worthy · indicates buildPrompt drift)
+    | 'fragment-sources-invariant-violation';
+  readonly category?: 'INPUT' | 'STRUCTURAL' | 'INVARIANT-VIOLATION';  // derived classification
+  readonly argName?: string;
+  readonly personaPath?: string;
+  readonly postType?: PostType;
+  readonly sample?: string;              // for aggregate-stat-leakage: offending text
+  readonly detail?: string;              // for fragment-sources-invariant-violation: which invariant
+}> {
+  static categoryFor(kind: BuildPromptError['kind']): 'INPUT' | 'STRUCTURAL' | 'INVARIANT-VIOLATION' {
+    switch (kind) {
+      case 'missing-cron-arg':
+      case 'aggregate-stat-leakage':
+        return 'INPUT';
+      case 'template-section-missing':
+      case 'input-payload-marker-missing':
+      case 'fragment-not-found':
+      case 'fragment-end-marker-missing':
+        return 'STRUCTURAL';
+      case 'fragment-sources-invariant-violation':
+        return 'INVARIANT-VIOLATION';
+    }
   }
 }
 
-export interface ZoneDisplayRecord {
-  readonly id: ZoneId;
-  readonly emoji: string;
-  readonly displayName: string;        // "El Dorado"  — for prose
-  readonly dimension: ZoneDimension;
-  readonly richLabel: string;          // "⛏️ El Dorado (NFT)" — for Discord headlines
-}
+// Caller behavior per category (in claude-sdk.live.ts):
+// - INPUT: halt this fire · emit trace · NO RETRY · no alert (caller bug · should be caught in dev)
+// - STRUCTURAL: halt this fire · emit trace · alert operator (persona.md broken · likely recent edit)
+// - INVARIANT-VIOLATION: halt this fire · emit trace · ALERT + page operator (internal bug · investigate buildPrompt drift)
+```
 
-export const ZONE_REGISTRY: Readonly<Record<ZoneId, ZoneDisplayRecord>> = Object.freeze({
-  'el-dorado':   { id: 'el-dorado',   emoji: '⛏️', displayName: 'El Dorado',   dimension: 'NFT',   richLabel: '⛏️ El Dorado (NFT)' },
-  'bear-cave':   { id: 'bear-cave',   emoji: '🐻', displayName: 'Bear Cave',   dimension: 'TOKEN', richLabel: '🐻 Bear Cave (TOKEN)' },
-  'lounge':      { id: 'lounge',      emoji: '🛋️', displayName: 'Lounge',      dimension: 'CHAT',  richLabel: '🛋️ Lounge (CHAT)' },
-  // ... full set pulled from current ZONE_FLAVOR · 4 zones total per MVP
-});
+### 2.2 · `ActiveFactorRender` (NEW · render shape · S2)
 
-/** Throws UnknownZoneError if zone not in registry (IMP-011). */
-export function resolveZoneDisplayName(zone: ZoneId): string {
-  const record = ZONE_REGISTRY[zone];
-  if (!record) throw new UnknownZoneError(zone);
-  return record.displayName;
-}
+```ts
+// packages/persona-engine/src/persona/loader.ts
 
-/** Throws UnknownZoneError if zone not in registry (IMP-011). */
-export function resolveZoneRichLabel(zone: ZoneId): string {
-  const record = ZONE_REGISTRY[zone];
-  if (!record) throw new UnknownZoneError(zone);
-  return record.richLabel;
-}
-
-/**
- * Detects kebab ZoneId leaks in voice output for sanitizer hook (FR-1.4).
- * Matches case-insensitively at word boundaries · SKIPS false-positive contexts (IMP-002):
- * - Fenced code blocks (``` ... ```)
- * - Discord emoji syntax (:name: or <:name:id>)
- * - URL path segments (https?://...)
- * - Inline code (`text`)
- * - Markdown link targets ([text](url))
- */
-export function detectKebabZoneIds(text: string): ZoneId[] {
-  // BB HIGH-2: NFKC normalize + Unicode dash substitution defensively (closes attack-shape
-  // input where LLM produces 'el‐dorado' U+2010, 'el—dorado' U+2014, etc.). Same pattern
-  // class as Loa cycle-098 sprint-7 cypherpunk HIGH-2 (L7 SOUL prescriptive matching).
-  const normalized = text
-    .normalize('NFKC')
-    .replace(/[‐-―−]/g, '-');   // U+2010-U+2015 dash variants + U+2212 minus → ASCII hyphen
-
-  // Strip false-positive contexts (IMP-002 allowlist)
-  const stripped = normalized
-    .replace(/```[\s\S]*?```/g, '')                     // fenced code
-    .replace(/`[^`\n]+`/g, '')                          // inline code
-    .replace(/:[a-z0-9_-]+:/gi, '')                     // Discord emoji syntax
-    .replace(/<:[a-z0-9_-]+:\d+>/gi, '')                // Discord custom emoji
-    .replace(/https?:\/\/\S+/gi, '')                    // URLs
-    .replace(/\([^)]*\)/g, '');                         // markdown link targets (loose)
-
-  const hits = new Set<ZoneId>();
-  for (const zone of ZONE_IDS) {
-    const pattern = new RegExp(`\\b${zone}\\b`, 'i');
-    if (pattern.test(stripped)) hits.add(zone);
-  }
-  return Array.from(hits);
-}
-
-/** Compile-time exhaustiveness helper (TS-side INV-12 guard). */
-export function assertNeverZone(zone: never): never {
-  throw new UnknownZoneError(String(zone));
+export interface ActiveFactorRender {
+  readonly displayName: string;
+  // RANK/ACTORS/ACTIVE_DAYS deliberately ABSENT.
+  // Reframe 2026-05-17: stats-out-of-voice principle (INV-PS-7).
+  // Caller adapts substrate `permittedFactors[]` → ActiveFactorRender[].
 }
 ```
 
-**Tests** (`domain/zone-registry.test.ts`):
-- Every ZoneId in `ZONE_IDS` has a registry entry (compile-time + runtime assertion).
-- `resolveZoneDisplayName('el-dorado') === 'El Dorado'`
-- `resolveZoneRichLabel('el-dorado').startsWith('⛏️')`
-- `resolveZoneDisplayName('does-not-exist' as ZoneId)` throws `UnknownZoneError` (IMP-011)
-- `detectKebabZoneIds('el-dorado wakes')` returns `['el-dorado']`
-- `detectKebabZoneIds('use :el-dorado: emoji')` returns `[]` (false-positive allowlist · IMP-002)
-- `detectKebabZoneIds('``el-dorado``')` returns `[]` (code block)
-- `detectKebabZoneIds('see https://example.com/el-dorado/x')` returns `[]` (URL)
-- `detectKebabZoneIds('[link](https://example.com/el-dorado)')` returns `[]` (markdown link)
-- Case-insensitivity: `detectKebabZoneIds('El-Dorado')` returns `['el-dorado']`
-- **BB HIGH-2 Unicode bypass tests** (added 2026-05-17):
-  - `detectKebabZoneIds('el‐dorado wakes')` (U+2010 HYPHEN) → `['el-dorado']`
-  - `detectKebabZoneIds('el—dorado roars')` (U+2014 EM DASH) → `['el-dorado']`
-  - `detectKebabZoneIds('el–dorado stirs')` (U+2013 EN DASH) → `['el-dorado']`
-  - `detectKebabZoneIds('el−dorado')` (U+2212 MINUS) → `['el-dorado']`
-- **Flatline IMP-002 (845) ReDoS benchmark test** (Phase 4 · 2026-05-17): regex matched against synthetic 10K-char attacker input (pathological-backtracking shapes: long sequences of `el-doradoel-doradoel-dorado...` interleaved with dash variants) MUST complete in <50ms wall-clock. Pins linear-time regex behavior · prevents ReDoS regression if future detector rewrites add backtracking.
-  - Confusable-script Latin/Cyrillic mix (e.g., 'еl-dorado' with Cyrillic Ye U+0435): documented gap · NFKC does NOT collapse Latin/Cyrillic homoglyphs · V2 work if observed in voice output
+### 2.3 · `BuildPromptArgsUnified` (UPDATED · S2)
 
-**Modifications elsewhere**:
-- `score/types.ts`: DELETE `ZONE_FLAVOR` (keep `ZONE_IDS` + `ZoneDimension` type · re-export).
-- `live/discord-render.live.ts`: DELETE `ZONE_LABEL` constant · replace with `resolveZoneRichLabel(zone)` call **wrapped in try/catch** (Flatline SKP-003/HIGH closure · see below).
-- `persona/loader.ts:267`: replace `ZONE_FLAVOR[zone].name` with `resolveZoneDisplayName(zone)` (sanity-only · already correct semantics) **wrapped in try/catch**.
-- `compose/voice-brief.ts::ZONE_VOICE_CONTEXT`: audit · interpolation through `resolveZoneDisplayName` (S1/T1.4) **wrapped in try/catch**.
-- `deliver/sanitize.ts`: kebab detector caller wraps in try/catch.
+```ts
+// packages/persona-engine/src/persona/loader.ts
 
-> **Flatline SKP-003/HIGH (Phase 4 · 2026-05-17 · UnknownZoneError caller safety)**: `resolveZoneDisplayName` and `resolveZoneRichLabel` throw `UnknownZoneError` per IMP-011 (Flatline Phase 2). All CALLERS in production paths (live/discord-render, deliver/sanitize, persona/loader, compose/voice-brief) MUST wrap calls in try/catch:
->
-> ```typescript
-> let displayName: string;
-> try {
->   displayName = resolveZoneDisplayName(zone);
-> } catch (e) {
->   if (e instanceof UnknownZoneError) {
->     // Emit OTEL counter — track resolution failures without crashing pipeline
->     otelCounter('zone.resolution_failed').inc({ zone: e.attemptedZone, caller: 'discord-render' });
->     displayName = String(zone);  // safe fallback to raw ZoneId · UI shows raw kebab once · operator sees the failure in telemetry
->   } else {
->     throw e;  // re-throw unexpected errors
->   }
-> }
-> ```
->
-> This pattern preserves IMP-011's strictness (resolver throws on unknown) while ensuring an LLM hallucination or data-corruption injection of unknown zone IDs does NOT crash the digest pipeline. The fallback shows the raw kebab ID to users ONCE — operator triages via OTEL counter and fixes the source. Acceptable trade-off: a single bad render vs total pipeline crash. Tests verify both the throw (registry-internal) AND the catch (caller resilience).
+export interface BuildPromptArgsUnified {
+  character: CharacterConfig;
+  shape: BuildPromptShape;
+  environmentContext?: string;
+  voiceGrimoire?: string;
 
-### 2.2 `packages/persona-engine/src/observability/trace-envelope.ts` (NEW · ~90 LoC)
-
-**Purpose**: 3-field additive envelope for every JSONL writer. Forward-only. **Type-enforced per BB HIGH-4**: the JSONL append helper signature requires `T & TraceEnvelope`, making `wrapTraceEntry` the ONLY way to construct values acceptable for append. Compile-time enforcement closes the "enforced by vigilance" gap (cycle-006 lesson).
-
-**Imports**: none (pure helper).
-
-**Public API**:
-```typescript
-export const TRACE_LAYERS = ['substrate', 'voice', 'presentation', 'medium-render', 'orchestrator'] as const;
-export type TraceLayer = typeof TRACE_LAYERS[number];
-
-export interface TraceEnvelope {
-  readonly layer: TraceLayer;
-  readonly layer_op: string;       // e.g., 'bedrock-converse' · 'render-digest' · 'snapshot-rejection'
-  readonly emitted_at: string;     // ISO 8601 · `new Date().toISOString()`
+  // cycle-008 additions · cron-only · undefined for chat-mode (regression fence)
+  activeFactors?: ReadonlyArray<ActiveFactorRender>;
+  priorWeekHint?: string;  // pre-wrapped by formatPriorWeekHint
 }
 
-/**
- * Wraps a payload in the trace envelope. Idempotent on already-wrapped payloads (no double-wrapping).
- * Envelope fields ALWAYS override caller-supplied keys of the same name (defensive against
- * attacker-controlled payload fields like { layer: 'admin' }).
- */
-export function wrapTraceEntry<T>(layer: TraceLayer, layer_op: string, payload: T): T & TraceEnvelope {
-  // Red Team AC-RT-005 (INV-15) · ATK-009 (420 quick-fix): sanitize NESTED reserved-keys
-  // (rename nested layer/layer_op/emitted_at → payload_layer/* to prevent attacker-controlled
-  // payload fields from biasing JSON-path-walking readers / future analytics aggregations).
-  const sanitized = sanitizeNestedReservedKeys(payload);
-  return {
-    ...sanitized,
-    layer,         // ← spread order: payload FIRST, envelope LAST, so envelope wins on conflict
-    layer_op,
-    emitted_at: new Date().toISOString(),
+export interface BuildPromptResult {
+  readonly systemPrompt: string;
+  readonly userMessage: string;
+  readonly fragmentSources?: ReadonlyArray<FragmentSource>;  // populated when shape.kind === 'cron' · S4
+}
+```
+
+### 2.4 · `FragmentSource` (NEW · trace envelope v2 · S4)
+
+```ts
+// packages/persona-engine/src/observability/trace-envelope.ts
+
+export interface FragmentSource {
+  readonly layer: 'persona' | 'voice' | 'tool' | 'medium' | 'environment';
+  readonly source_file: string;          // 'apps/character-ruggy/persona.md'
+  readonly source_lines: readonly [number, number];  // [12, 84] inclusive
+  readonly prompt_offset: readonly [number, number]; // character indices · NOT byte indices
+  readonly fragment_kind: string;        // 'persona-template' | 'voice-anchors' | 'codex-anchors' | ...
+}
+
+// FR-15a invariants (validated in buildPrompt before return):
+// (a) sorted by prompt_offset[0] ascending
+// (b) NO overlap (each char belongs to exactly one fragment_source)
+// (c) gaps allowed (whitespace/literal text not from a fragment)
+// (d) layer constrained to 5-element enum
+```
+
+### 2.5 · `LlmTraceEntry` v2 (UPDATED · S4 + S5)
+
+```ts
+// packages/persona-engine/src/observability/trace-envelope.ts
+
+export interface LlmTraceEntry {
+  // ─── v1 fields (cycle-007 INV-13 baseline) ───
+  at: string;                // ISO timestamp
+  duration_ms: number;
+  model_id: string;
+  region?: string;
+  path: 'fetch' | 'sdk';
+  zone?: ZoneId;
+  post_type: PostType;
+  character_id: string;
+  system_prompt: string;     // REDACTED per NFR-8
+  user_message: string;      // REDACTED per NFR-8
+  output: string;            // REDACTED per NFR-8
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  layer: 'voice';
+  layer_op: string;
+  emitted_at: string;
+
+  // ─── v2 additions (cycle-008) ───
+  schema_version: 2;
+  fragment_sources?: ReadonlyArray<FragmentSource>;  // FR-14 + FR-15 · OPTIONAL · cron only
+  outcome: 'success' | 'provider-error' | 'timeout' | 'malformed-response' | 'sdk-exception';  // FR-20
+  error_classification?: {                             // populated when outcome !== 'success'
+    readonly http_status?: number;
+    readonly anthropic_error_code?: string;
+    readonly redacted_message: string;                 // safe error message · NO stack traces · NO credentials
   };
 }
+```
 
-const RESERVED_KEYS = new Set(['layer', 'layer_op', 'emitted_at']);
+### 2.6 · LOA_PROMPT_BUILDER flag (NEW · S3)
 
-/** INV-15: recursively rename nested reserved-keys to payload_* prefix (top-level keys handled by spread-order). */
-function sanitizeNestedReservedKeys<T>(value: T, depth = 0): T {
-  if (depth >= 32) return value;  // bound recursion (defense against JSON-bomb-style nested structures)
-  if (Array.isArray(value)) return value.map(v => sanitizeNestedReservedKeys(v, depth + 1)) as unknown as T;
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      const safeKey = depth > 0 && RESERVED_KEYS.has(k) ? `payload_${k}` : k;
-      out[safeKey] = sanitizeNestedReservedKeys(v, depth + 1);
-    }
-    return out as T;
-  }
-  return value;
-}
+```ts
+// packages/persona-engine/src/config.ts
 
-export function isTraceEnvelope(value: unknown): value is TraceEnvelope {
-  return (
-    typeof value === 'object' && value !== null &&
-    'layer' in value && TRACE_LAYERS.includes((value as TraceEnvelope).layer) &&
-    'layer_op' in value && typeof (value as TraceEnvelope).layer_op === 'string' &&
-    'emitted_at' in value && typeof (value as TraceEnvelope).emitted_at === 'string'
+export const PROMPT_BUILDER_VALUES = ['canonical', 'legacy'] as const;
+export type PromptBuilder = (typeof PROMPT_BUILDER_VALUES)[number];
+
+export function parsePromptBuilder(raw: string | undefined): PromptBuilder {
+  if (raw === 'canonical') return 'canonical';
+  if (raw === undefined || raw === '' || raw === 'legacy') return 'legacy';
+  // Any other value: warn + fallback to legacy (per PRD §7.1 unset/malformed semantics)
+  process.stderr.write(
+    `[LOA_PROMPT_BUILDER] WARN: unknown value '${raw}' falling back to 'legacy'\n`
   );
+  return 'legacy';
 }
 
-/**
- * BB HIGH-4 · type-enforced JSONL append. SOLE allowed path to append JSONL trace rows in
- * packages/persona-engine/src/. Signature requires T & TraceEnvelope, so only values produced
- * by wrapTraceEntry compile against this surface. INV-4 enforced at compile-time.
- *
- * Existing direct fs.appendFile calls in writers MUST migrate to this helper at S2.
- *
- * Flatline IMP-003 semantics (post-Phase-4):
- *  - Best-effort write · no fsync · OS buffer is the durability boundary
- *  - NO file-locking · single-process invariant (matches cycle-006 SKP-001/HIGH voice-memory mutex pattern)
- *  - Concurrent writers in the same process serialize via Bun.write internal queueing
- *  - Multi-process writes are UNSUPPORTED · would interleave bytes mid-line · file-header documents this
- *  - On write failure: caller MAY retry · helper does not auto-retry · errors propagate as rejected promise
- *  - On disk-full / permission error: caller logs to stderr · does NOT crash the parent process
- */
-export async function appendTraceEntry<T extends TraceEnvelope>(filePath: string, entry: T): Promise<void> {
-  const line = JSON.stringify(entry) + '\n';
-  await Bun.write(filePath, line, { append: true });
-}
+// Production default (when env var unset): 'legacy'
+// Dev/CI/test: REQUIRED 'canonical' (CI workflow asserts before run)
+// Cycle-008 S8 flip post-OP-G2: production default → 'canonical'
 ```
 
-> **Flatline SKP-001/HIGH (Phase 4 · 2026-05-17)**: INV-14 audit script `scripts/audit-jsonl-append-discipline.sh` strengthened with defense-in-depth patterns + module-import discipline check (no new deps · PRAISE-3 holds). Greps for:
-> 1. `appendFile.*\.jsonl|fs\.write.*\.jsonl|createWriteStream.*\.jsonl`
-> 2. `Bun\.write.*\.jsonl.*append` (in any binding form — also catches `const writer = Bun.write`)
-> 3. `import.*'fs'|import.*'node:fs'|import.*'fs/promises'` outside `packages/persona-engine/src/observability/` (defensive — the persona-engine package should not need fs imports outside the observability module)
->
-> AST-level enforcement via ts-morph / biome / eslint deferred to V2 if convention proves insufficient (would add npm dep · violates PRAISE-3 zero-deps discipline). Defense-in-depth limit acknowledged: a sufficiently determined developer can bypass grep via runtime path construction (e.g., `const p = ['foo', 'jsonl'].join('.'); await Bun.write(p, ...)`). Mitigation: code review at PR time · audit script runs in CI · S2 acceptance gate.
+---
 
-> **BB HIGH-4 follow-on (cycle-007)**: a sibling invariant — **INV-14: `appendTraceEntry` is the SOLE permitted JSONL append helper in `packages/persona-engine/src/`. Direct `Bun.write` / `fs.appendFile` calls on `.jsonl` files in this package are forbidden.** Verified by audit script `scripts/audit-jsonl-append-discipline.sh` at S2 close · CI-integrated at S2 per Flatline IMP-007 (765 avg) · pattern set strengthened per Flatline SKP-001/HIGH (see semantics block above).
+## 3 · Component design
 
-**Tests** (`observability/trace-envelope.test.ts`):
-- `wrapTraceEntry('substrate', 'score-fetch', { zone: 'el-dorado' })` returns shape `{ zone, layer, layer_op, emitted_at }`.
-- `emitted_at` is a valid ISO 8601 string.
-- `isTraceEnvelope` returns `false` for pre-cycle-007 fixture (absent `layer` field) — confirms backwards-compat boundary.
-- TraceLayer enum frozen at 5 values.
+### 3.1 · `buildPrompt` Effect-TS migration (S2)
 
-**Modifications elsewhere** (S2 sweep):
-| File | callsite | wrap |
-|---|---|---|
-| `compose/agent-gateway.ts::writeLlmTraceEntry` | 2 sites | `wrapTraceEntry('voice', 'bedrock-converse', entry)` |
-| `live/voice-memory.live.ts::appendEntry` | 1 site | `wrapTraceEntry('voice', 'memory-write', entry)` |
-| `live/voice-memory.live.ts::forgetUser` | 1 site (audit log) | `wrapTraceEntry('voice', 'memory-forget', { stream, key, reason })` |
-| `live/score-mcp.live.ts::recordRejection` | 1 site | `wrapTraceEntry('substrate', 'snapshot-rejection', rejection)` |
-| `deliver/sanitize.ts::stripVoiceDisciplineDrift` (NEW write) | 1 site (kebab leak log) | `wrapTraceEntry('presentation', 'sanitize-violation', { violations, sample })` |
+#### 3.1.1 · Signature change
 
-### 2.3 `packages/persona-engine/src/deliver/medium-extensions.ts` (NEW · ~90 LoC)
+```ts
+// BEFORE (sync · native throw)
+export function buildPrompt(args: BuildPromptArgsUnified): {
+  systemPrompt: string;
+  userMessage: string;
+} { /* native throws */ }
 
-**Purpose**: locally-owned extension of upstream `MediumCapability` with Discord-specific render knobs. Upstream proposal AT cycle close (INV-7).
+// AFTER (Effect · S2)
+export function buildPrompt(
+  args: BuildPromptArgsUnified
+): Effect.Effect<BuildPromptResult, BuildPromptError, never> {
+  return Effect.gen(function* () {
+    // 1. Load template + sibling files (sync · pure functions)
+    const template = yield* loadTemplateE(args.character.personaPath);
+    const codex = loadCodexPrelude();
+    const voiceAnchors = loadVoiceAnchors(args.character.personaPath);
+    const codexAnchors = loadCodexAnchors(args.character.personaPath);
 
-**Imports**:
-```typescript
-import type { MediumCapability } from '@0xhoneyjar/medium-registry';
-import { DISCORD_WEBHOOK_DESCRIPTOR } from '@0xhoneyjar/medium-registry';
-```
-
-**Public API**:
-```typescript
-export interface ExtendedMediumMetrics {
-  readonly codeBlockMonoCharWidth: number;
-  readonly codeBlockMobileFallbackRisk: 'high' | 'low' | 'none';
-  readonly digitWidthSpaceChar: string;        // ALWAYS ' ' or ' ' — assert with codePointAt
-  readonly mobileProportionalWrap: number;
-  readonly emojiWidthInMonospace: 1 | 2;
-}
-
-/**
- * Discord-extended descriptor. The digitWidthSpaceChar is explicitly ' ' (FIGURE SPACE)
- * for OpenType-tabular-figure-width-invariance across font fallback (Android `gg sans` regression).
- *
- * Values informed by S0/T0.2 Discord Android typography spike — operator-attested at sprint close.
- */
-export const DISCORD_EXTENDED: ExtendedMediumMetrics = Object.freeze({
-  codeBlockMonoCharWidth: 38,                  // discord.js#3030 wrap-at-40 minus 2 safety
-  codeBlockMobileFallbackRisk: 'high',         // Android sans-serif regression
-  digitWidthSpaceChar: ' ',               // FIGURE SPACE · digit-width-invariant
-  mobileProportionalWrap: 40,
-  emojiWidthInMonospace: 2,
-});
-
-export const CLI_EXTENDED: ExtendedMediumMetrics = Object.freeze({
-  codeBlockMonoCharWidth: 80,                  // terminal default
-  codeBlockMobileFallbackRisk: 'none',
-  digitWidthSpaceChar: ' ',               // ASCII space — terminal is monospace
-  mobileProportionalWrap: 80,
-  emojiWidthInMonospace: 1,
-});
-
-/** Thrown by metricsForMedium when an unregistered medium descriptor is passed. */
-export class UnsupportedMediumError extends Error {
-  constructor(public readonly mediumId: string) {
-    super(`No extended metrics registered for medium "${mediumId}" · register a descriptor before use`);
-    this.name = 'UnsupportedMediumError';
-  }
-}
-
-/**
- * Resolves the extended metrics for a given upstream medium descriptor.
- * BB MEDIUM-5: throws on unregistered mediums instead of silently defaulting — forces conscious
- * decision when adding medium support (prevents silent ASCII-padded output to Telegram, etc.).
- */
-export function metricsForMedium(medium: MediumCapability): ExtendedMediumMetrics {
-  if (medium === DISCORD_WEBHOOK_DESCRIPTOR) return DISCORD_EXTENDED;
-  // V1 ships Discord + CLI only · CLI is identified by descriptor-id match
-  if ((medium as { id?: string }).id === 'cli') return CLI_EXTENDED;
-  throw new UnsupportedMediumError((medium as { id?: string }).id ?? 'unknown');
-}
-```
-
-**Tests** (`deliver/medium-extensions.test.ts`):
-- `DISCORD_EXTENDED.digitWidthSpaceChar.codePointAt(0) === 0x2007` (codepoint identity · SKP-002 hardening)
-- `DISCORD_EXTENDED.digitWidthSpaceChar !== ' '` (ASCII-negative assertion · IMP-006)
-- `DISCORD_EXTENDED.digitWidthSpaceChar.length === 1` (sanity · still useful even though insufficient alone)
-- `metricsForMedium(DISCORD_WEBHOOK_DESCRIPTOR) === DISCORD_EXTENDED`
-- **Flatline SKP-002/HIGH (Phase 4 · 720) spec/test alignment**: `metricsForMedium(unregisteredMedium)` throws `UnsupportedMediumError` (replaces previous `=== CLI_EXTENDED` assertion · matches BB MEDIUM-5 spec)
-- **CLI descriptor fixture**: define `CLI_DESCRIPTOR = { id: 'cli', ...minimal-fields }` · `metricsForMedium(CLI_DESCRIPTOR) === CLI_EXTENDED` (explicit registered path)
-- DISCORD_EXTENDED is frozen (mutation throws in strict mode)
-
-**Modifications elsewhere**:
-- `live/discord-render.live.ts::renderSnapshotField` (S3/T3.3): consume `metricsForMedium(medium).digitWidthSpaceChar` for `padEnd` + `padStart` · consume `metricsForMedium(medium).codeBlockMonoCharWidth` for value-column cap · NO hardcoded `1024 / 6000 / 19 / 40 / 38` remains.
-
-### 2.4 `scripts/lib/trace-readers.ts` (NEW · ~140 LoC)
-
-**Purpose**: shared trace-reader functions used by both `scripts/dashboard.ts` and `scripts/trace.ts`. Extracted from existing dashboard logic.
-
-**Public API**:
-```typescript
-import type { TraceLayer } from '../../packages/persona-engine/src/observability/trace-envelope.ts';
-
-export interface TraceRow {
-  readonly layer: TraceLayer | 'unknown';   // 'unknown' for pre-cycle-007 rows
-  readonly layer_op: string | null;
-  readonly emitted_at: string | null;
-  readonly raw: Record<string, unknown>;     // full original JSONL payload
-  readonly source_file: string;              // path of origin file
-  readonly line_number: number;              // 1-indexed
-}
-
-export interface ReadOpts {
-  readonly zone?: string;
-  readonly layer?: TraceLayer;
-  readonly limit?: number;
-  readonly since?: string;                   // ISO 8601 — emitted_at >= since
-}
-
-/** Read N most-recent rows across all known trace files. */
-export async function readLatest(opts: ReadOpts): Promise<TraceRow[]>;
-
-/** Read by run_id / trace UUID across all files. */
-export async function readByRunId(runId: string): Promise<TraceRow | null>;
-
-/** Filter by layer (and optionally zone). */
-export async function readByLayer(layer: TraceLayer, opts: ReadOpts): Promise<TraceRow[]>;
-
-/** Voice-specific reader (prompt + response + tokens from llm-trace.jsonl). */
-export async function readVoice(zone: string, opts: ReadOpts): Promise<TraceRow[]>;
-
-/** Parse a single pasted JSON row, identify layer + likely file:line. */
-export function explainRow(rawJson: string): ExplainedRow;
-
-export interface ExplainedRow {
-  readonly schema_version: '1';              // INV-13 frozen at v1
-  readonly identified_layer: TraceLayer | 'unknown';
-  readonly identified_op: string | null;
-  readonly likely_source: {
-    readonly file: string;
-    readonly line_range: [number, number];
-  } | null;
-  readonly raw: Record<string, unknown>;
-  readonly warnings: string[];                // e.g., "row predates envelope · layer inferred from shape"
-}
-
-/** Known JSONL trace files — explicit allowlist (SKP-001/CRITICAL closure). */
-export const FREESIDE_CHARACTERS_TRACE_FILES = [
-  'apps/bot/.run/llm-trace.jsonl',
-  // glob: apps/bot/.run/voice-memory/**/*.jsonl
-  'apps/bot/.run/score-snapshot-rejections.jsonl',
-] as const;
-```
-
-**Notes**:
-- Path resolution is relative to repo root (Bun script convention).
-- Reader returns `layer: 'unknown'` for pre-cycle-007 rows (absent envelope · IMP-012 reader-tolerance).
-- `explainRow` is the workhorse for `trace:explain` CLI; identifies layer from envelope field first, falls back to heuristics (presence of `prompt + response + tokens` → voice/bedrock-converse · `wallet_changes` → substrate · etc.) for pre-envelope rows.
-- **BB MEDIUM-1 operational note**: `readLatest` reads ALL allowlisted files on each invocation. Cold-cache. After ~3 months of digest cron + slash command interactions, `voice-memory/**/*.jsonl` glob may reach 100s of MB · invocation latency grows to ~200-500ms. Document this in `docs/trace-cli.md`. **V2 follow-up**: `.run/trace-index.jsonl` incrementally updated on JSONL appends · enables O(1) lookups by layer / zone / time-range.
-
-**Tests** (`scripts/lib/trace-readers.test.ts`):
-- `readLatest({ limit: 5 })` returns ≤5 rows across all files.
-- `readByLayer('voice', {})` returns only `layer === 'voice'` rows.
-- `readByRunId('test-uuid-X')` returns the matching row or null.
-- `explainRow(envelopeRow)` returns `identified_layer` matching envelope.
-- `explainRow(legacyRow)` returns `identified_layer: 'unknown'` + heuristic-inferred `layer_op` + warning.
-- Reader tolerates absent fields on legacy fixture (IMP-012).
-
-### 2.5 `scripts/trace.ts` (NEW · ~280 LoC)
-
-**Purpose**: agent-first CLI for trace debugging. 5 subcommands. STDIN-first for `trace:explain` (SKP-002).
-
-**CLI Surface**:
-```bash
-bun run trace:latest [--zone X] [--layer L] [--limit N] [--format human|json]
-bun run trace:get --run-id Y [--format human|json]
-bun run trace:layer --layer L [--zone X] [--limit N] [--format human|json]
-bun run trace:voice --zone X [--limit N] [--format human|json]
-bun run trace:explain [--file PATH] [--format human|json]
-  # STDIN canonical: pbpaste | bun run trace:explain
-  # File alt: bun run trace:explain --file ./row.json
-  # Positional arg: REJECTED with usage error per SKP-002
-```
-
-**Implementation sketch**:
-```typescript
-#!/usr/bin/env bun
-import { readLatest, readByRunId, readByLayer, readVoice, explainRow } from './lib/trace-readers.ts';
-
-const args = parseArgs(process.argv.slice(2));
-const subcommand = args._[0];
-
-switch (subcommand) {
-  case 'latest': {
-    const rows = await readLatest({ zone: args.zone, layer: args.layer, limit: args.limit ?? 10 });
-    return emit(rows, args.format ?? 'json');
-  }
-  case 'get': {
-    const row = await readByRunId(args['run-id']);
-    return emit(row, args.format ?? 'json');
-  }
-  case 'layer': {
-    const rows = await readByLayer(args.layer, { zone: args.zone, limit: args.limit ?? 10 });
-    return emit(rows, args.format ?? 'json');
-  }
-  case 'voice': {
-    const rows = await readVoice(args.zone, { limit: args.limit ?? 10 });
-    return emit(rows, args.format ?? 'json');
-  }
-  case 'explain': {
-    // SKP-002: STDIN-first · positional arg REJECTED
-    if (args._.length > 1) {
-      console.error('Error: trace:explain reads from stdin or --file <path>. Positional argument unsupported (shell-escaping risk).');
-      console.error('Usage: pbpaste | bun run trace:explain  OR  bun run trace:explain --file ./row.json');
-      process.exit(2);
+    // 2. Validate cron-only args (cycle-008)
+    if (args.shape.kind === 'cron') {
+      yield* validateCronArgs(args);  // returns Effect.fail on missing args (Q5)
     }
-    let rawJson: string;
-    if (args.file) {
-      // BB HIGH-1: realpath-canonicalize + repo-root containment + allowlist glob
-      // Flatline IMP-012 (DISPUTED · GPT+Gem 850/850): explicit repo-root discovery — walk up to find .git OR root package.json with workspaces
-      const repoRoot = await findRepoRoot();   // see findRepoRoot impl note below
-      const canonical = await Bun.realpath(args.file).catch(() => null);
-      if (!canonical) { console.error(`Error: file not found: ${args.file}`); process.exit(3); }
-      if (!canonical.startsWith(repoRoot + '/')) {
-        console.error(`Error: --file path escapes repo root: ${canonical}`); process.exit(3);
-      }
-      // Flatline SKP-001/HIGH (760): .jsonl files are multi-row · explainRow expects single row · require explicit row selector
-      // Red Team ATK-007 (580) quick-fix: STRICT membership against FREESIDE_CHARACTERS_TRACE_FILES allowlist
-      // (closes symlink-laundering surface · fixture .json loading requires LOA_TRACE_TEST_MODE=1).
-      const isTraceFile = FREESIDE_CHARACTERS_TRACE_FILES.some(allowed =>
-        canonical === `${repoRoot}/${allowed}` ||
-        (allowed.includes('**') && canonical.match(new RegExp(allowed.replace(/\*\*/g, '.*'))))
-      );
-      const isFixture = canonical.endsWith('.json') && process.env.LOA_TRACE_TEST_MODE === '1';
-      if (!isTraceFile && !isFixture) {
-        console.error(`Error: --file must be in FREESIDE_CHARACTERS_TRACE_FILES allowlist OR fixture .json with LOA_TRACE_TEST_MODE=1: ${canonical}`); process.exit(3);
-      }
-      if (isTraceFile && !args.line && !args['run-id'] && !args.latest) {
-        console.error(`Error: --file on .jsonl requires row selector: --line N | --run-id Y | --latest`);
-        console.error(`Example: bun run trace:explain --file .run/llm-trace.jsonl --latest`);
-        process.exit(3);
-      }
-      const fileText = await Bun.file(canonical).text();
-      if (isTraceFile) {
-        const lines = fileText.split('\n').filter(l => l.trim());
-        if (args.latest) rawJson = lines[lines.length - 1];
-        else if (args.line) rawJson = lines[args.line - 1];   // 1-indexed
-        else /* run-id */ rawJson = lines.find(l => { try { return JSON.parse(l).run_id === args['run-id']; } catch { return false; } }) ?? '';
-        if (!rawJson) { console.error(`Error: no row matching selector in ${canonical}`); process.exit(3); }
-      } else {
-        rawJson = fileText;
-      }
-    } else {
-      // Flatline IMP-001 + SKP-002/HIGH (780 + 895): STREAMING stdin reader with 1MB byte-count limit
-      // (NOT `await Bun.stdin.text()` which is unbounded → memory exhaustion DoS vector)
-      const MAX_STDIN_BYTES = 1024 * 1024;   // 1MB
-      const chunks: Uint8Array[] = [];
-      let totalBytes = 0;
-      for await (const chunk of Bun.stdin.stream()) {
-        totalBytes += chunk.byteLength;
-        if (totalBytes > MAX_STDIN_BYTES) {
-          console.error(`Error: stdin exceeded ${MAX_STDIN_BYTES} bytes — refusing to parse (DoS prevention)`);
-          process.exit(4);
+
+    // 3. Validate stat-leakage guard (NFR-9 V1 · FAIL-LOUD with allowlist + warn-mode escape · 2026-05-18 FINAL)
+    if (args.activeFactors) {
+      // Allowlist bypass · warn-mode downgrade · tightened regex
+      // Default behavior: Effect.fail on non-allowlisted leakage
+      yield* validateNoAggregateStatLeakage(args.activeFactors, args.priorWeekHint);
+    }
+
+    // 4. Resolve fragment + movement guidance + zone identity
+    // ...
+
+    // 5. Compute substitution map + populate fragment_sources[] as we go
+    const { systemHalf, fragmentSources } = yield* substituteAndTrack(template, /* ... */);
+
+    // 6. For cron: append JSON output schema + LOCK suffix
+    const cronSystemPrompt = args.shape.kind === 'cron'
+      ? `${systemHalf}\n\n${JSON_OUTPUT_SCHEMA}\n\n${UNTRUSTED_CONTENT_LLM_INSTRUCTION}`
+      : systemHalf;
+
+    // 7. Validate fragment_sources[] invariants (FR-15a · per BB-MED-001 accept · 2026-05-18)
+    // Checks: (a) sorted by prompt_offset.start ascending · (b) no overlap (each char in exactly one fragment)
+    // (c) layer enum constrained to 5-element set · (d) gaps allowed (literal/whitespace text)
+    // Returns Effect.fail(BuildPromptError({kind: 'fragment-sources-invariant-violation', detail: '<which>'}))
+    if (args.shape.kind === 'cron') {
+      yield* validateFragmentSourcesInvariants(fragmentSources);
+    }
+
+    // 8. Compute userHalf (cron vs reply branches)
+    const userMessage = yield* computeUserMessage(/* ... */);
+
+    return { systemPrompt: cronSystemPrompt, userMessage, fragmentSources };
+  });
+}
+```
+
+#### 3.1.2 · Backward-compat shims (S2)
+
+```ts
+// buildPromptPair (cron shim) — internal callers: 0 prod · keep until cycle-009
+export function buildPromptPair(args: BuildPromptArgs): { systemPrompt: string; userMessage: string } {
+  return Effect.runSync(buildPrompt({/* ... */}));
+}
+
+// buildReplyPromptPair (chat shim) — 1 prod caller (compose/reply.ts:206) + 4 smoke scripts
+// Migration plan: compose/reply.ts:206 moves to direct buildPrompt() in S2.
+// Smoke scripts unchanged (sync wrapper via Effect.runSync).
+export function buildReplyPromptPair(args: BuildReplyPromptArgs): { systemPrompt: string; userMessage: string } {
+  return Effect.runSync(buildPrompt({ shape: { kind: 'reply', /* ... */ }, /* ... */ }));
+}
+```
+
+#### 3.1.3 · Native-throw migration (S2)
+
+3 sites in loader.ts migrate native `throw` → `Effect.fail`:
+- Line 108: `throw new Error("could not find section header")` → `Effect.fail(new BuildPromptError({ kind: 'template-section-missing', personaPath }))`
+- Line 281: `throw new Error("could not find INPUT PAYLOAD marker")` → `Effect.fail(new BuildPromptError({ kind: 'input-payload-marker-missing', personaPath }))`
+- Line 414: `throw new Error("postType='reply' is invalid for cron shim")` → moves to validation step in buildPromptPair · Effect.fail(...)
+
+### 3.2 · Render helpers (S2)
+
+```ts
+// packages/persona-engine/src/persona/render-active-factors.ts (NEW)
+
+import type { ActiveFactorRender } from './loader.ts';
+
+/**
+ * Render the ACTIVE_FACTORS substitution block.
+ *
+ * Format (post-reframe 2026-05-17 + Phase 4 HITL injection-defense · 2026-05-18):
+ *   <untrusted-content source="score-mcp" stream="factor_trends">
+ *   factors with activity:
+ *     - Mibera NFT
+ *     - Mibera Quality
+ *   </untrusted-content>
+ *
+ * Empty case (shape-A signal):
+ *   <untrusted-content source="score-mcp" stream="factor_trends">
+ *   factors with activity:
+ *     (none)
+ *   </untrusted-content>
+ *
+ * The <untrusted-content> wrapper (per Flatline-SDD SKP-001 CRITICAL 850 · accepted Phase 4 HITL
+ * 2026-05-18) prevents prompt injection through factor names. RF-002 sources factor_trends from
+ * substrate without the cycle-005 gate filter; the marker contract + LOCK suffix
+ * (UNTRUSTED_CONTENT_LLM_INSTRUCTION) tell the LLM to treat marker contents as inert data.
+ * Symmetric to formatPriorWeekHint pattern.
+ *
+ * Factor names are also HTML-entity-escaped (5-char OWASP set: <>&"') to prevent marker
+ * breakout via injected `</untrusted-content>` in a factor display name (FLATLINE-SKP-002 pattern).
+ *
+ * Returns the block text · NEVER throws · pure function.
+ */
+export function renderActiveFactors(
+  factors: ReadonlyArray<ActiveFactorRender> | undefined
+): string {
+  const list = factors ?? [];
+  const inner = list.length === 0
+    ? 'factors with activity:\n  (none)'
+    : ['factors with activity:', ...list.map((f) => `  - ${escapeForUntrustedContent(f.displayName)}`)].join('\n');
+  return [
+    '<untrusted-content source="score-mcp" stream="factor_trends">',
+    inner,
+    '</untrusted-content>',
+  ].join('\n');
+}
+
+// Reuses the 5-char escape table from format-prior-week-hint.ts (FLATLINE-SKP-002)
+function escapeForUntrustedContent(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+```
+
+### 3.3 · Stat-leakage runtime guard (NFR-9 · S2)
+
+```ts
+// packages/persona-engine/src/persona/validate-no-aggregate-stat-leakage.ts (NEW)
+//
+// V1 BEHAVIOR (FINAL per Flatline-SDD Phase 4 HITL · 2026-05-18 · supersedes BB-RA-002 log-only):
+// FAIL-LOUD with three guardrails:
+//   (a) Factor-name ALLOWLIST loaded from packages/persona-engine/src/persona/fixtures/factor-name-allowlist.json
+//       Names in allowlist bypass the regex check (prevents 'Top-100 Holder' / '30 Day Streak' false-positives).
+//       Allowlist refreshed via `bun run --cwd packages/persona-engine sync-factor-allowlist` (S2 task).
+//   (b) WARN-MODE ESCAPE HATCH via LOA_STAT_LEAKAGE_GUARD=warn env var.
+//       Default unset → fail-loud. =warn → log-only with stderr warning.
+//       Emergency rollback path if production false-positive blocks digest fires.
+//   (c) REGEX TIGHTENING · all patterns require explicit number context.
+//       \brank[ -]?\d+\b NOT \brank\b · same for window/threshold phrases.
+// On non-allowlisted, non-warn-mode detection:
+//   Effect.fail(new BuildPromptError({kind: 'aggregate-stat-leakage', sample, category: 'INPUT'}))
+
+import { Effect } from 'effect';
+import { BuildPromptError } from './loader.ts';
+
+const STAT_LEAKAGE_PATTERNS: ReadonlyArray<{ regex: RegExp; label: string }> = [
+  // Integer ≥10 followed by aggregate unit
+  { regex: /\b\d{2,}\s+(events?|factors?|miberas?|actors?|days?)\b/i, label: 'aggregate-count' },
+  // Spelled-out numbers
+  { regex: /\b(ten|twenty|thirty|fifty|hundred|thousand|million)\s+(events?|factors?|miberas?|actors?|days?)\b/i, label: 'spelled-number' },
+  // Rank language
+  { regex: /\b(rank|ranked|percentile|rank-\d+|top-?\d+)\b/i, label: 'rank-language' },
+  // Window phrases
+  { regex: /\b(\d+\s*-?\s*day|window|prior\s+period|previous\s+week|past\s+\d+\s+days?)\b/i, label: 'window-language' },
+  // Threshold phrases
+  { regex: /\b(threshold|crossed\s+(rank|the\s+line)|above\s+rank|below\s+rank)\b/i, label: 'threshold-language' },
+];
+
+export function validateNoAggregateStatLeakage(
+  activeFactors: ReadonlyArray<ActiveFactorRender>,
+  priorWeekHint: string | undefined
+): Effect.Effect<void, BuildPromptError, never> {
+  return Effect.gen(function* () {
+    // Check activeFactors[].displayName
+    for (const factor of activeFactors) {
+      for (const { regex, label } of STAT_LEAKAGE_PATTERNS) {
+        if (regex.test(factor.displayName)) {
+          yield* Effect.fail(new BuildPromptError({
+            kind: 'aggregate-stat-leakage',
+            argName: 'activeFactors',
+            sample: `${factor.displayName} (matched ${label})`,
+          }));
         }
-        chunks.push(chunk);
       }
-      rawJson = new TextDecoder().decode(Buffer.concat(chunks));
     }
-    // Flatline IMP-001: structured exit on malformed JSON
-    try { JSON.parse(rawJson); } catch (e) {
-      console.error(`Error: malformed JSON input: ${(e as Error).message}`);
-      process.exit(5);
+    // Check priorWeekHint (note: this is post-formatPriorWeekHint wrapped string)
+    // Only the inner body matters; the <untrusted-content> wrapper is fine.
+    if (priorWeekHint) {
+      // Strip the wrapper to inspect inner body
+      const inner = priorWeekHint.replace(/<\/?untrusted-content[^>]*>/g, '');
+      for (const { regex, label } of STAT_LEAKAGE_PATTERNS) {
+        if (regex.test(inner)) {
+          yield* Effect.fail(new BuildPromptError({
+            kind: 'aggregate-stat-leakage',
+            argName: 'priorWeekHint',
+            sample: `(inside untrusted-content) matched ${label}`,
+          }));
+        }
+      }
     }
-    const explained = explainRow(rawJson);
-    return emit(explained, args.format ?? 'json');
+  });
+}
+```
+
+### 3.4 · Cron call-site Effect boundary (S3)
+
+```ts
+// packages/persona-engine/src/live/claude-sdk.live.ts
+//
+// SCORE-MCP SCHEMA VERIFICATION GATE (per Flatline-SDD IMP-001 + SKP-001 CRITICAL 880 · 2026-05-18):
+// Before S3 implementation lands:
+//   1. Read score-mcp schema (verify ZoneDigest.factor_trends OR equivalent field exists)
+//   2. Confirm field shape: array of { displayName: string, ... }
+//   3. Run comparison test against representative zones:
+//      assert factor_trends[].displayName ⊇ permittedFactors[].displayName
+//      (factor_trends is unfiltered superset of gate-passed list)
+//   4. If field doesn't exist OR semantics differ, OPERATOR DECISION GATE:
+//      - (a) Add unfiltered query endpoint to score-mcp (substrate change · scope expansion)
+//      - (b) Revert RF-002 accept-major decision (keep cycle-005 gate consumption)
+//      - (c) Document delta + operator-confirm alternate source
+//   5. S3 acceptance: zero use of `derived.permittedFactors` in claude-sdk.live.ts
+//      AND positive evidence (test or schema snippet) of factor_trends shape
+
+import { Effect } from 'effect';
+import { buildPrompt, BuildPromptError } from '../persona/loader.ts';
+
+export function createClaudeSdkLive(
+  config: Config,
+  character: CharacterConfig,
+  tracer: Tracer = getTracer(),
+): VoiceGenPort {
+  return {
+    generateDigestVoice: (snapshot, ctx) =>
+      tracer.startActiveSpan('voice.invoke', async (span) => {
+        try {
+          // Adapt substrate types → render shapes
+          // POST-REFRAME (RF-002 accept-major 2026-05-18): source is ZoneDigest.factor_trends
+          // (or equivalent unfiltered query) NOT derived.permittedFactors (cycle-005 gate output).
+          // The cycle-005 gate stays alive for other consumers; bypassed at prompt-layer.
+          // Actual field name verified during S3 implementation against score-mcp schema.
+          const activeFactors = ctx.zoneDigest.factor_trends.map((f) => ({
+            displayName: f.displayName,
+          }));
+
+          const result = await Effect.runPromise(
+            Effect.gen(function* () {
+              // buildPrompt returns Effect; tapError handles BuildPromptError
+              const { systemPrompt, userMessage } = yield* buildPrompt({
+                character,
+                shape: { kind: 'cron', zoneId: snapshot.zone, postType: 'digest' },
+                environmentContext: ctx.environment,
+                voiceGrimoire: ctx.voiceGrimoire,
+                activeFactors,
+                priorWeekHint: ctx.priorWeekHint,
+              }).pipe(
+                Effect.tapError((err) => Effect.sync(() => {
+                  // Log error to trace + span before propagating
+                  appendTraceEntry({
+                    layer: 'voice',
+                    layer_op: 'build-prompt-error',
+                    outcome: 'sdk-exception',
+                    error_classification: {
+                      redacted_message: `${err._tag}: ${err.kind}`,
+                    },
+                    // ... other envelope fields
+                  });
+                  span.recordException(new Error(`${err._tag}: ${err.kind}`));
+                }))
+              );
+
+              // Invoke LLM, parse, sanitize
+              const response = yield* Effect.tryPromise({
+                try: () => invoke(config, { character, systemPrompt, userMessage, /* ... */ }),
+                catch: (e) => new BuildPromptError({ kind: 'sdk-exception', detail: String(e) }),
+              });
+              return sanitizeVoiceAugment(parseVoiceResponse(response.text));
+            })
+          );
+          return result;
+        } catch (err) {
+          // BuildPromptError propagates from Effect.runPromise as rejected Promise
+          // Existing span.recordException catches it · existing cron orchestrator handles
+          span.recordException(err as Error);
+          throw err;
+        } finally {
+          span.end();
+        }
+      }),
+  };
+}
+```
+
+**NO RETRY on BuildPromptError** — it's a structural/spec violation, not transient. Retrying would loop indefinitely. The orchestrator's existing per-zone error handling skips this zone for this fire and resumes the next zone.
+
+### 3.5 · Trace envelope v2 (S4)
+
+#### 3.5.1 · Schema bump
+
+`.claude/overrides/trace-explain-output.schema.json` gains:
+- `schema_version: { const: 2 }` (was `const: 1`)
+- `fragment_sources: { type: 'array', items: { ... }, optional: true }`
+- `outcome: { enum: ['success', 'provider-error', 'timeout', 'malformed-response', 'sdk-exception'] }`
+- `error_classification: { ... optional ... }`
+
+ajv validates on write (via existing `appendTraceEntry`). v1 readers tolerate v2 (extra fields ignored). v2 readers fall back gracefully on v1 (no `fragment_sources` · no `outcome`).
+
+#### 3.5.2 · `fragment_sources[]` population — TWO-PASS APPROACH (per Flatline-SDD IMP-002 885 + SKP-005 720 · 2026-05-18)
+
+**Bug in original single-pass design**: recording `prompt_offset` AT substitution time produces stale offsets. When subsequent substitutions for OTHER placeholders happen earlier in the template, prior fragments' recorded offsets diverge from their actual final-prompt positions. The FR-15a invariants validate against stale numbers; dashboard breadcrumbs point to wrong locations. This is silent data corruption.
+
+**Two-pass design (correct)**:
+
+```ts
+// PASS 1: substitute ALL placeholders + record meta (NOT offsets) per fragment
+interface FragmentSourceMeta {
+  layer: FragmentSource['layer'];
+  source_file: string;
+  source_lines: readonly [number, number];
+  fragment_kind: string;
+  fragment_text: string;          // the substituted text (needed for offset recovery in pass 2)
+}
+
+const substitutionMeta: FragmentSourceMeta[] = [];
+
+function substituteAndRecord(
+  template: string,
+  placeholder: string,
+  fragment: string,
+  meta: Omit<FragmentSourceMeta, 'fragment_text'>
+): string {
+  const idx = template.indexOf(placeholder);
+  if (idx === -1) return template; // no-op (placeholder not present)
+  substitutionMeta.push({ ...meta, fragment_text: fragment });
+  return template.replace(placeholder, fragment);
+}
+
+// PASS 2: after all substitutions complete, recover offsets by scanning final prompt
+function recoverOffsets(
+  finalPrompt: string,
+  meta: ReadonlyArray<FragmentSourceMeta>
+): FragmentSource[] {
+  let searchStart = 0;
+  const sources: FragmentSource[] = [];
+  // Process meta in substitution order — same as logical text order for typical templates
+  for (const m of meta) {
+    const idx = finalPrompt.indexOf(m.fragment_text, searchStart);
+    if (idx === -1) {
+      // Fragment text not found · either substituted into an unexpected position
+      // OR overlapping fragments swallowed it · fail-loud
+      throw new BuildPromptError({
+        kind: 'fragment-sources-invariant-violation',
+        detail: `fragment "${m.fragment_kind}" not found in final prompt during offset recovery`,
+      });
+    }
+    sources.push({
+      layer: m.layer,
+      source_file: m.source_file,
+      source_lines: m.source_lines,
+      fragment_kind: m.fragment_kind,
+      prompt_offset: [idx, idx + m.fragment_text.length],
+    });
+    searchStart = idx + m.fragment_text.length;
   }
-  default:
-    console.error(`Unknown subcommand: ${subcommand}. Valid: latest, get, layer, voice, explain`);
-    process.exit(2);
+  return sources;
 }
+```
 
-function emit(payload: unknown, format: 'human' | 'json'): void {
-  if (format === 'json') return console.log(JSON.stringify(payload, null, 2));
-  return console.log(humanFormat(payload));   // markdown + glyphs + NO ANSI unless TTY+no-NO_COLOR
-}
+**Disambiguation strategy for duplicate fragment text** (rare but possible): track `searchStart` after each successful match. Search forward from `searchStart` for the next occurrence. Assumes substitution order matches final-prompt textual order (true for the persona.md template structure where placeholders are encountered linearly).
 
-/**
- * Flatline IMP-012 (DISPUTED 850 GPT/Gem) — explicit repo-root discovery algorithm.
- * Walk up from script location looking for .git directory OR root package.json with `workspaces` field.
- * Returns absolute path. Throws RepoRootNotFoundError if neither marker found within 10 levels up.
- */
-async function findRepoRoot(): Promise<string> {
-  let dir = await Bun.realpath(import.meta.dir);
-  for (let i = 0; i < 10; i++) {
-    if (await Bun.file(`${dir}/.git/HEAD`).exists()) return dir;
+**Alternative considered**: reverse-substitute (last placeholder first) so earlier offsets remain stable. Rejected because (a) requires explicit ordering knowledge of placeholders, (b) couples loader.ts substitution chain to FR-15a concerns, (c) harder to reason about.
+
+**Alternative considered**: maintain running offset delta + update prior `fragment_sources` entries after each substitution. Rejected as more complex than scanning the final prompt once.
+
+After PASS 2, validate FR-15a invariants (ordering · non-overlap · layer enum) before returning. Recovery failure produces `BuildPromptError({kind: 'fragment-sources-invariant-violation'})`.
+
+### 3.6 · Anthropic-SDK trace capture (S5)
+
+#### 3.6.1 · Span wrap + outcome + stream hook
+
+```ts
+// packages/persona-engine/src/compose/agent-gateway.ts::invokeAnthropicSdk (S5 changes)
+
+async function invokeAnthropicSdk(config: Config, req: InvokeRequest): Promise<InvokeResponse> {
+  if (!req.zoneHint || !req.postTypeHint) {
+    throw new Error('invokeAnthropicSdk: zoneHint and postTypeHint are required');
+  }
+
+  const tracer = getTracer();
+  return tracer.startActiveSpan('anthropic.sdk.converse', async (span) => {
+    const startedAt = Date.now();
+    let outcome: LlmTraceEntry['outcome'] = 'success';
+    let errorClassification: LlmTraceEntry['error_classification'] | undefined;
+    let response: InvokeResponse | undefined;
+
     try {
-      const pkg = await Bun.file(`${dir}/package.json`).json();
-      if (pkg.workspaces) return dir;
-    } catch { /* not a package.json or invalid */ }
-    const parent = dir.replace(/\/[^/]+$/, '');
-    if (parent === dir) break;
-    dir = parent;
+      // ── existing SDK call (single-shot or streaming) ──
+      const sdkResponse = await invokeViaClaudeAgentSdk(config, req);
+
+      // Stream-completion hook: wait for onComplete if streaming used
+      if (isStreamingResponse(sdkResponse)) {
+        await awaitStreamComplete(sdkResponse);
+      }
+
+      response = parseToInvokeResponse(sdkResponse);
+      return response;
+    } catch (err) {
+      // Classify the error
+      if (isTimeoutError(err)) {
+        outcome = 'timeout';
+        errorClassification = { redacted_message: 'Anthropic SDK timeout (60s)' };
+      } else if (isProviderError(err)) {
+        outcome = 'provider-error';
+        errorClassification = {
+          http_status: err.status,
+          anthropic_error_code: err.code,
+          redacted_message: redactErrorMessage(err.message),
+        };
+      } else if (isMalformedResponse(err)) {
+        outcome = 'malformed-response';
+        errorClassification = { redacted_message: 'response did not match expected schema' };
+      } else {
+        outcome = 'sdk-exception';
+        errorClassification = { redacted_message: redactErrorMessage(String(err)) };
+      }
+      span.recordException(err as Error);
+      throw err;
+    } finally {
+      span.setAttribute('outcome', outcome);
+      // Emit trace row REGARDLESS of outcome (success + all failure classes)
+      appendTraceEntry({
+        schema_version: 2,
+        at: new Date(startedAt).toISOString(),
+        duration_ms: Date.now() - startedAt,
+        model_id: req.modelAlias ?? config.FREESIDE_AGENT_MODEL,
+        path: 'sdk',
+        zone: req.zoneHint,
+        post_type: req.postTypeHint,
+        character_id: req.character.id,
+        system_prompt: redactPromptForTrace(req.systemPrompt),
+        user_message: redactPromptForTrace(req.userMessage),
+        output: response ? redactPromptForTrace(response.text) : '',
+        input_tokens: response?.tokens.input ?? 0,
+        output_tokens: response?.tokens.output ?? 0,
+        total_tokens: response?.tokens.total ?? 0,
+        layer: 'voice',
+        layer_op: 'anthropic.sdk.converse',
+        outcome,
+        error_classification: errorClassification,
+        emitted_at: new Date().toISOString(),
+      });
+      span.end();
+    }
+  });
+}
+```
+
+#### 3.6.2 · Stream-completion detection
+
+```ts
+function isStreamingResponse(response: unknown): boolean {
+  // Detect SDK's streaming response shape (claude-agent-sdk returns AsyncIterable<MessageStreamEvent>)
+  return typeof response === 'object' && response !== null && Symbol.asyncIterator in response;
+}
+
+async function awaitStreamComplete(stream: AsyncIterable<MessageStreamEvent>): Promise<void> {
+  for await (const event of stream) {
+    if (event.type === 'message_stop') {
+      return;
+    }
   }
-  throw new Error(`Cannot find repo root from ${import.meta.dir} (no .git or workspaces package.json within 10 levels up)`);
 }
 ```
 
-**Human format** (per INV-11):
-- Layer glyphs: `▣ substrate · ◈ voice · ◆ presentation · ▶ medium-render · ♦ orchestrator · ? unknown`
-- Two-line blocks per row: `[glyph] [layer] [layer_op] [emitted_at]` + most-important payload field
-- Blank line between rows
-- TTY-detected ANSI color (substrate-cool-blue · voice-warm-gold · presentation-sage-green · medium-render-lavender) — stripped when piped to file or `pbcopy`
+### 3.7 · Trace data redaction (NFR-8 · S4 + S5)
 
-**`trace:explain` JSON output schema** (INV-13 · `.claude/data/trace-explain-output.schema.json`):
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://freeside-characters/trace-explain-output.v1.json",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "identified_layer", "identified_op", "likely_source", "raw", "warnings"],
-  "properties": {
-    "schema_version": { "const": "1" },
-    "identified_layer": { "enum": ["substrate", "voice", "presentation", "medium-render", "orchestrator", "unknown"] },
-    "identified_op": { "type": ["string", "null"] },
-    "likely_source": {
-      "oneOf": [
-        { "type": "null" },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["file", "line_range"],
-          "properties": {
-            "file": { "type": "string" },
-            "line_range": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 2, "maxItems": 2 }
-          }
-        }
-      ]
-    },
-    "raw": { "type": "object", "additionalProperties": true },
-    "warnings": { "type": "array", "items": { "type": "string" } }
+```ts
+// packages/persona-engine/src/observability/redact.ts (NEW)
+
+const WALLET_REGEX = /0x[a-fA-F0-9]{40}/g;
+const JWT_REGEX = /eyJ[A-Za-z0-9+/=._-]+\.[A-Za-z0-9+/=._-]+\.[A-Za-z0-9+/=._-]+/g;
+const API_KEY_REGEX = /\b(sk-[A-Za-z0-9-_]{32,}|Bearer\s+[A-Za-z0-9-_]+)\b/g;
+
+export function redactPromptForTrace(text: string): string {
+  return text
+    .replace(WALLET_REGEX, '0x[REDACTED]')
+    .replace(JWT_REGEX, '[REDACTED-JWT]')
+    .replace(API_KEY_REGEX, '[REDACTED-CREDENTIAL]');
+}
+
+// Per Flatline-SDD SKP-004 CRITICAL 850 · accepted Phase 4 HITL 2026-05-18:
+// Redaction MUST happen INSIDE appendTraceEntry (not caller-dependent).
+// Single missed call path otherwise persists credentials to .jsonl.
+export function appendTraceEntry(entry: LlmTraceEntry): void {
+  // Redact prompts + outputs + error messages UNCONDITIONALLY before write
+  const redacted: LlmTraceEntry = {
+    ...entry,
+    system_prompt: redactPromptForTrace(entry.system_prompt),
+    user_message: redactPromptForTrace(entry.user_message),
+    output: redactPromptForTrace(entry.output),
+    error_classification: entry.error_classification ? {
+      ...entry.error_classification,
+      redacted_message: redactPromptForTrace(entry.error_classification.redacted_message),
+    } : undefined,
+  };
+  // NOW validate against schema + write
+  validateAgainstSchema(redacted);  // ajv via .claude/overrides/trace-explain-output.schema.json v2
+  withTraceLock(TRACE_PATH, () => {
+    maybeRotate(TRACE_PATH);
+    fs.appendFileSync(TRACE_PATH, JSON.stringify(redacted) + '\n');
+  });
+}
+
+// Tests prove: raw secrets cannot reach .jsonl through the public API.
+// Test scenarios 41-46 in §5.4 verify each pattern class.
+
+export function redactErrorMessage(message: string): string {
+  return redactPromptForTrace(message)
+    .replace(/\bat\s+[^)]+\)/g, '')  // strip stack frame paths
+    .slice(0, 500);                   // cap length
+}
+
+// Discord ID gating: only included when LOA_TRACE_INCLUDE_DISCORD_IDS=1
+export function maybeRedactDiscordIds(text: string): string {
+  if (process.env.LOA_TRACE_INCLUDE_DISCORD_IDS === '1') return text;
+  return text.replace(/<@!?\d{17,20}>/g, '<@[REDACTED]>');
+}
+```
+
+### 3.8 · Trace file rotation (NFR-8 · S4)
+
+```ts
+// packages/persona-engine/src/observability/trace-rotation.ts (NEW)
+
+const MAX_SIZE_MB = Number(process.env.LOA_TRACE_MAX_SIZE_MB ?? 100);
+const RETENTION_DAYS = Number(process.env.LOA_TRACE_RETENTION_DAYS ?? 30);
+const ARCHIVE_DIR = '.run/llm-trace-archive/';
+
+// Called by appendTraceEntry before write
+export function maybeRotate(tracePath: string): void {
+  const stats = fs.statSync(tracePath);
+  const sizeMb = stats.size / (1024 * 1024);
+
+  if (sizeMb >= MAX_SIZE_MB) {
+    rotateNow(tracePath, 'size');
+  } else if (ageDays(stats.mtime) >= RETENTION_DAYS) {
+    rotateNow(tracePath, 'age');
+  }
+}
+
+function rotateNow(tracePath: string, reason: 'size' | 'age'): void {
+  ensureDir(ARCHIVE_DIR);
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const archiveName = `${path.basename(tracePath, '.jsonl')}-${ts}-${reason}.jsonl`;
+  fs.renameSync(tracePath, path.join(ARCHIVE_DIR, archiveName));
+}
+```
+
+**Concurrency safety (per BB-RA-003 accept · 2026-05-18)**: `maybeRotate` and `appendTraceEntry` MUST acquire a `.lock` sibling-file advisory lock around the rotation check + rename + write sequence. Pattern:
+
+```ts
+async function withTraceLock<T>(tracePath: string, op: () => Promise<T>): Promise<T> {
+  const lockPath = `${tracePath}.lock`;
+  const myPid = process.pid;
+  const maxRetries = 30;
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      // Try exclusive create (fails if file exists)
+      const fd = fs.openSync(lockPath, 'wx');
+      fs.writeSync(fd, String(myPid));
+      fs.closeSync(fd);
+      try {
+        return await op();
+      } finally {
+        // Release lock
+        fs.unlinkSync(lockPath);
+      }
+    } catch (err: any) {
+      if (err.code !== 'EEXIST') throw err;
+      // Lock held · check if owner PID still alive
+      try {
+        const owner = parseInt(fs.readFileSync(lockPath, 'utf8'), 10);
+        process.kill(owner, 0);  // throws if dead
+      } catch {
+        // Stale lock · steal it
+        try { fs.unlinkSync(lockPath); } catch {}
+        continue;
+      }
+      // Live lock · backoff + retry
+      await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
+    }
+  }
+  throw new Error(`Could not acquire trace lock after ${maxRetries} retries`);
+}
+```
+
+Concurrency test: spawn 2 processes writing to same trace file near rotation threshold; verify both writes succeed and exactly one rotation occurs. If Bun gains native flock support in future, swap PID-lock-file approach for native `flock(2)`.
+
+**Max-wait policy + fallback (per Flatline-SDD IMP-004 790 · 2026-05-18)**: the `maxRetries = 30` (with 50-150ms backoff per retry · max ~4.5s total wait) is the hard cap. If still cannot acquire after 30 retries:
+- Emit `[trace-lock] WARN: max-wait exceeded after 30 retries, falling back to append-without-rotation` to stderr
+- Append the trace entry WITHOUT performing rotation check
+- The next successful lock-acquirer handles rotation when it's their turn
+- Operator-facing OTel span event records the fallback occurrence for monitoring
+- This prevents trace loss under sustained lock contention (better stale rotation than dropped traces)
+
+**Atomic lock acquisition (per Flatline-SDD SKP-002 HIGH 750 · 2026-05-18)**: the `fs.openSync('wx')` + `fs.writeSync(PID)` sequence is NOT atomic. If process A is delayed between open and write, process B can read empty file → parseInt(NaN) → TypeError → assume stale → steal. Mitigation:
+
+```ts
+// ATOMIC: write PID to temp file FIRST, then rename into place
+function tryAcquireLockAtomic(lockPath: string): boolean {
+  const tmpPath = `${lockPath}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmpPath, String(process.pid), { flag: 'w' });
+  try {
+    // fs.linkSync fails if destination exists (atomic check-and-create)
+    fs.linkSync(tmpPath, lockPath);
+    fs.unlinkSync(tmpPath);
+    return true;
+  } catch (err: any) {
+    fs.unlinkSync(tmpPath);
+    if (err.code === 'EEXIST') return false;
+    throw err;
+  }
+}
+
+// Stale-PID detection: read MUST tolerate empty/malformed contents
+function isLockStale(lockPath: string): boolean {
+  try {
+    const content = fs.readFileSync(lockPath, 'utf8').trim();
+    if (!content) return false;  // EMPTY: another process is mid-acquire · back off, don't steal
+    const ownerPid = parseInt(content, 10);
+    if (isNaN(ownerPid)) return false;  // MALFORMED: same as empty, back off
+    process.kill(ownerPid, 0);  // throws ESRCH if PID dead
+    return false;  // owner alive
+  } catch (err: any) {
+    if (err.code === 'ESRCH') return true;  // owner truly dead, safe to steal
+    return false;  // any other error: don't steal
   }
 }
 ```
 
-**Package.json script aliases** (S4/T4.3):
-```json
+Backoff on transient unreadability is safer than stealing on empty/malformed reads. Only true dead-PID (ESRCH) authorizes lock theft.
+
+### 3.9 · `/tweak` Tweakpane tab (S6)
+
+5 folders matching the 5-layer substrate:
+
+```
+┌─ /tweak tab ─────────────────────────────────────────────┐
+│                                                          │
+│  PERSONA   [cool-blue border]                           │
+│    character: ▼ ruggy ▼                                 │
+│    [reload persona.md]                                  │
+│                                                          │
+│  VOICE     [warm-gold border]                           │
+│    voice-anchors: ☑ enabled                            │
+│    silence-register: ☑ enabled                         │
+│    LOCK suffix: ☑ enabled                              │
+│    grimoire sampler seed: |■────────────|  42          │
+│    temperature:           |───■────────|  0.7          │
+│                                                          │
+│  TOOL      [sage border]                                │
+│    MCPs: ☑ score  ☑ codex  ☑ emojis ☑ rosenzu          │
+│    tool-invocation.md: ☐ (extracted in cycle-009)       │
+│                                                          │
+│  MEDIUM    [lavender border]                            │
+│    descriptor: ▼ discord-webhook ▼                      │
+│    padding char preview: " " (figure-space U+2007)     │
+│                                                          │
+│  ENVIRONMENT [dim-purple border]                        │
+│    window: ▼ 30d ▼ (7d · 30d · 90d)                    │
+│    zone: ▼ bear-cave ▼                                  │
+│    post-type: ▼ digest ▼                                │
+│    prior-week-hint: ☑ inject                            │
+│                                                          │
+│  [FIRE]   (live-fire with current tweak state)          │
+│                                                          │
+│  ────── result panel (reserved space) ──────             │
+│  [Discord embed preview]                                 │
+│  [source-map breadcrumbs · clickable]                    │
+└──────────────────────────────────────────────────────────┘
+```
+
+State persists via `localStorage.tweakpane:freeside-characters` JSON. Export/import as preset.
+
+### 3.10 · middot-detector (S7)
+
+```ts
+// packages/persona-engine/src/deliver/sanitize.ts (S7 addition)
+
+export interface AiArtifact {
+  kind: 'middot-density' | 'spelled-number' | 'em-dash' | 'hyphenated-compound';
+  sample: string;
+  position?: number;
+}
+
+export function detectAiArtifacts(text: string, postType: PostType): AiArtifact[] {
+  const artifacts: AiArtifact[] = [];
+
+  // 1. middot-density: > 2 middots AND > 1% density
+  const middotCount = (text.match(/·/g) ?? []).length;
+  if (middotCount > 2 && middotCount / text.length > 0.01) {
+    artifacts.push({ kind: 'middot-density', sample: `${middotCount} middots in ${text.length} chars` });
+  }
+
+  // 2. spelled-number followed by aggregate unit
+  const spelledMatch = text.match(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred|thousand|million)\s+(events?|miberas?|wallets?|factors?|actors?)/i);
+  if (spelledMatch) {
+    artifacts.push({ kind: 'spelled-number', sample: spelledMatch[0] });
+  }
+
+  // 3. em-dash · only flagged in voice output · grimoire-licensed sources exempt
+  if (/[—–]/.test(text)) {
+    artifacts.push({ kind: 'em-dash', sample: text.match(/[^.]*[—–][^.]*/)?.[0]?.trim() ?? '<em-dash>' });
+  }
+
+  // 4. hyphenated-compound from system prompt (V2 candidate · expensive · skip in V1)
+  // V1: log-only · no autocorrect
+
+  return artifacts;
+}
+```
+
+Wired to existing `.run/sanitize-violations.jsonl` infrastructure (cycle-007). Dashboard sanitize-violations tab gets new artifact-kind rows.
+
+---
+
+## 4 · API contracts
+
+### 4.1 · `buildPrompt` (S2)
+
+```ts
+export function buildPrompt(
+  args: BuildPromptArgsUnified
+): Effect.Effect<BuildPromptResult, BuildPromptError, never>;
+```
+
+**Caller responsibilities**:
+- Cron: provide `activeFactors` + `priorWeekHint` (may be empty list / empty string · but ARG REQUIRED for cron · undefined → fail-loud per Q5)
+- Chat: all cycle-008 args default `undefined` (regression fence preserved)
+
+**buildPrompt responsibilities**:
+- Validate cron args present when `shape.kind === 'cron'`
+- Validate no aggregate-stat leakage (NFR-9)
+- Load template + sibling files
+- Substitute placeholders + track fragment_sources[]
+- Append cron-only suffixes (JSON schema · LOCK)
+- Validate fragment_sources[] invariants (FR-15a)
+- Return Effect with systemPrompt + userMessage + optional fragmentSources
+
+### 4.2 · `renderActiveFactors` (S2)
+
+```ts
+export function renderActiveFactors(
+  factors: ReadonlyArray<ActiveFactorRender> | undefined
+): string;
+```
+
+Pure function · never throws. Empty list → `(none)` block. Non-empty → bullet list.
+
+### 4.3 · `validateNoAggregateStatLeakage` (S2)
+
+```ts
+export function validateNoAggregateStatLeakage(
+  activeFactors: ReadonlyArray<ActiveFactorRender>,
+  priorWeekHint: string | undefined
+): Effect.Effect<void, BuildPromptError, never>;
+```
+
+Returns `Effect.unit` on pass, `Effect.fail(BuildPromptError({kind: 'aggregate-stat-leakage', ...}))` on detect.
+
+### 4.4 · `appendTraceEntry` (S4 · cycle-007 INV-14 typed shim)
+
+```ts
+export function appendTraceEntry(entry: LlmTraceEntry): void;
+```
+
+Validates against trace-explain-output.schema.json v2 before write. Throws on schema violation. Caller responsible for redaction (use `redactPromptForTrace` helpers).
+
+### 4.5 · Tweakpane fire endpoint (S6)
+
+**Enforcement (per Flatline-SDD SKP-008 HIGH 760 · accepted Phase 4 HITL 2026-05-18 · layered defense)**:
+
+1. **Localhost bind**: `/api/playground/*` routes bind ONLY to `127.0.0.1` (not `0.0.0.0`). Server listen call enforces. Express/Bun.serve config: `{ host: '127.0.0.1' }`. Any attempt to access via LAN-routable IP returns 404.
+2. **LOA_DASH_AUTH bearer**: every `/api/playground/*` request requires `Authorization: Bearer <LOA_DASH_AUTH>` header. Reuses cycle-007 INV-16 mechanism. Missing/invalid token returns 401.
+3. **Production gate**: routes return 404 unless `LOA_TWEAKPANE_ENABLED=1` env var is set. Default unset → tweakpane disabled. Operator opts in per environment. Enforces INV-PS-5 (kitchen-only) via code, not just convention.
+4. **Response redaction**: returned `systemPrompt` + `userMessage` + `output` fields run through `redactPromptForTrace` before serialization (same redaction policy as trace data per NFR-8). Operator sees redacted prompts in /tweak UI; raw prompts stay in memory only.
+
+```ts
+// POST /api/playground/fire
 {
-  "scripts": {
-    "trace:latest":  "bun run scripts/trace.ts latest",
-    "trace:get":     "bun run scripts/trace.ts get",
-    "trace:layer":   "bun run scripts/trace.ts layer",
-    "trace:voice":   "bun run scripts/trace.ts voice",
-    "trace:explain": "bun run scripts/trace.ts explain"
+  "tweak": {
+    "persona": { "characterId": "ruggy", "reloadFromDisk": true },
+    "voice": { "voiceAnchorsEnabled": true, "silenceRegisterEnabled": true, "lockEnabled": true, "seed": 42, "temperature": 0.7 },
+    "tool": { "mcps": ["score", "codex", "emojis", "rosenzu"] },
+    "medium": { "descriptor": "discord-webhook" },
+    "environment": { "window": "30d", "zone": "bear-cave", "postType": "digest", "priorWeekHint": true }
   }
 }
+// Returns (redacted): { runId, systemPrompt, userMessage, output, fragmentSources, embedPreview }
+// Headers: Authorization: Bearer <LOA_DASH_AUTH>
+// Enforcement: 401 if no/wrong bearer · 404 if LOA_TWEAKPANE_ENABLED unset
 ```
 
-**Tests** (`scripts/trace.test.ts`):
-- Each subcommand returns expected JSON shape (validated against schema where applicable).
-- `trace:explain` with positional arg exits 2 with usage error (SKP-002).
-- `trace:explain --file fixture.json` produces v1-schema-conforming output.
-- `trace:explain` STDIN path: `echo '<row>' | trace.ts explain` works end-to-end.
-- Human-format markdown snapshot per subcommand.
-- **BB HIGH-1 path containment tests** (added 2026-05-17):
-  - `trace:explain --file /etc/passwd` exits 3 with "escapes repo root" error
-  - `trace:explain --file ../outside-repo.json` exits 3 with realpath check
-  - `trace:explain --file scripts/trace.ts` exits 3 with "must point to .run/**/*.jsonl or **/*.json fixture"
-  - `trace:explain --file .run/llm-trace.jsonl` succeeds (allowlisted .run/ path)
-  - `trace:explain --file tests/fixtures/sample-row.json` succeeds (fixture .json path)
-- **BB HIGH-5 schema validation test** (added 2026-05-17):
-  - For each `trace:explain` fixture output, validate against `.claude/data/trace-explain-output.schema.json` using `ajv` (already in Loa framework deps per cycle-098 audit envelope work) · schema drift fails build at S4 acceptance
-- **Flatline IMP-001 + SKP-002 STDIN streaming + size limit tests** (Phase 4 · 2026-05-17):
-  - `echo '{}' | trace:explain` exits 0 with valid output (small payload happy path)
-  - Crafted 2MB input piped into stdin exits 4 with "stdin exceeded 1048576 bytes" message · no OOM
-  - Malformed JSON `echo 'not-json' | trace:explain` exits 5 with "malformed JSON input: ..." message
-- **Flatline SKP-001 JSONL row-selector tests** (Phase 4 · 2026-05-17):
-  - `trace:explain --file .run/llm-trace.jsonl` (no selector) exits 3 with "requires row selector: --line N | --run-id Y | --latest"
-  - `trace:explain --file .run/llm-trace.jsonl --latest` returns last row
-  - `trace:explain --file .run/llm-trace.jsonl --line 5` returns 5th row
-  - `trace:explain --file .run/llm-trace.jsonl --run-id deadbeef` returns matching row OR exits 3 if not found
-- **Flatline IMP-012 repo-root discovery tests** (Phase 4 · 2026-05-17):
-  - `findRepoRoot()` returns first ancestor dir containing `.git/HEAD` OR `package.json` with `workspaces` field
-  - Throws if neither found within 10 levels up
-
-**Docs** (`docs/trace-cli.md` · S4/T4.5):
-- Copy-paste examples · "paste-to-Loa" workflow walkthrough · screenshot of `bun run trace:explain` output.
-
-### 2.6 Dashboard UI extension (`scripts/dashboard.ts`) — modifications + SSE-flag
-
-**Modifications** (S5):
-- Extract reader logic into `scripts/lib/trace-readers.ts` (T5.1 · shared with CLI).
-- Add 3px left-border per row colored by layer (oklch palette per Alexander spec · T5.2).
-- Add detail panel layer split: when row selected, panels for substrate/voice/presentation/medium-render render side-by-side or stacked viewport-adaptive (T5.3).
-- Cross-layer connector lines (subtle 1px) in OTHER layer's color on right edge of panel when row has cross-layer attributes.
-- Visual regression fixtures (T5.4): checked-in PNGs at `scripts/dashboard-fixtures/*.png` · operator-attested.
-- **NEW T5.5 · SSE-behind-flag** (OP-Q4):
-  - Server endpoint at `/sse` streams `data: <jsonl-row>\n\n` events when `LOA_DASH_SSE=1` set at server start.
-  - **Flatline IMP-005 (855) security**: server explicitly bound to localhost — `Bun.serve({ hostname: '127.0.0.1', port: 3001 })` · NEVER `'0.0.0.0'` · NO CORS headers · Origin check on `/sse` handler rejects non-`http://localhost:3001` / non-`http://127.0.0.1:3001` origins with 403 · prevents cross-origin trace exfiltration if attacker convinces operator to open a malicious page while dashboard runs.
-  - **Red Team AC-RT-001 (780 · INV-16) DNS-rebinding defense**: localhost-only + Origin check INSUFFICIENT against DNS rebinding (browser reuses Host header `attacker.example` but routes to 127.0.0.1:3001). Defense composes 3 checks:
-    1. **Per-session bearer token**: dashboard generates `LOA_DASH_TOKEN = crypto.randomUUID()` at server start · prints to stderr (operator copies into terminal/browser).
-    2. **Token required on /sse + ALL /api/* endpoints**: `X-Loa-Dash-Token` header (EventSource can't set custom headers — use query param `?token=$LOA_DASH_TOKEN`) · 403 on miss/mismatch.
-    3. **Host header validation**: reject any request whose `Host` header is not in `{127.0.0.1:3001, localhost:3001}` · DNS-rebinding attacker page sends `Host: attacker.example` and gets 403.
-  - **Red Team AC-RT-010 (380) per-token cap**: SSE client cap of 1 PER TOKEN (not per-IP/per-host) · forcibly evicts prior connections for same token · prevents reconnect-storm by malicious local processes (composes with AC-RT-001 token requirement — un-tokened or wrong-token connections rejected before counting against cap).
-  - **Red Team AC-RT-003 (740 · INV-18) ANSI escape sanitization**: SSE-streamed payloads pass through `scripts/lib/safe-render.ts::sanitizeForTerminal()` (strips C0/C1 control bytes · OSC 8 hyperlinks → plain-text `[url]` suffixes) before transmission to browser (defense-in-depth · browser-side may also have XSS protections but server pre-sanitizes per cycle-007 craft policy).
-  - Client: `if (window.__LOA_DASH_SSE__) new EventSource('/sse').onmessage = (ev) => animateRow(JSON.parse(ev.data));`
-  - Layer-color flash: 200ms ease-out on border-left brightness boost (`oklch(L+10%/C/H)` for the layer color).
-  - Default behavior: 2-second poll (unchanged from cycle-006 dashboard substrate).
-  - **BB MEDIUM-2 · client cap + heartbeat**: server enforces `max-clients: 5` (configurable via `.loa.config.yaml::dashboard.sse.max_clients`) · sends `event: ping\n\n` every 60s · client cleanup on `EventSource.onerror`. Prevents file-descriptor exhaustion under buggy clients / runaway tabs.
-  - **BB MEDIUM-3 · payload truncation**: SSE-streamed rows truncate `prompt` / `response` / large string fields to 500 chars (`+= '...[truncated]'` suffix) · full row remains available via existing `/api/llm-trace?run-id=Y` REST endpoint on click. Prevents main-thread jank from large LLM-payload JSON.parse on the client side.
-
-**Acceptance** (per IMP-005 hardening):
-- **Default path test**: dashboard with `LOA_DASH_SSE` unset · no `/sse` requests · no EventSource attempts (regression guard against silent SSE-on default)
-- **Enabled path test**: `LOA_DASH_SSE=1` → EventSource attaches · new row triggers flash · poll cadence suppressed
-- **Rollback path test**: SSE-enabled then unset+restart · dashboard reverts cleanly · no EventSource leftover state
-
-**CSS palette** (checked-in fixtures · INV-10):
-```css
---layer-substrate:     oklch(64% 0.10 230);   /* cool blue */
---layer-voice:         oklch(72% 0.14 80);    /* warm gold */
---layer-presentation:  oklch(70% 0.10 160);   /* sage green */
---layer-medium-render: oklch(68% 0.10 320);   /* lavender */
---layer-orchestrator:  oklch(66% 0.08 280);   /* dim purple — secondary */
---layer-unknown:       oklch(50% 0.04 0);     /* neutral grey */
-```
-
-### 2.7 `scripts/lint-no-kebab-zoneid-in-voice-prompt.sh` (NEW · INV-12 · ~60 LoC bash)
-
-**Purpose**: CI lint guard against kebab ZoneId string literals in voice-prompt-producing files. Closes Bug A SOURCE-side (Flatline IMP-004).
-
-**BB HIGH-3 hardening (2026-05-17)**: voice-prompt-file allowlist is **manifest-based**, not hardcoded. Manifest at `.claude/data/voice-prompt-paths.json` is operator-authored + version-controlled. cycle-008+ can add new voice-prompt-producing paths to the manifest without touching the lint script. Format:
-
-```json
-{
-  "$schema": "voice-prompt-paths.v1.json",
-  "description": "Files/dirs whose contents reach the LLM prompt at compose-time. INV-12 lint scans these for raw kebab ZoneId literals outside zone-registry imports.",
-  "paths": [
-    "packages/persona-engine/src/compose",
-    "packages/persona-engine/src/persona",
-    "packages/persona-engine/src/live/claude-sdk.live.ts"
-  ],
-  "exclude": [
-    "packages/persona-engine/src/domain/zone-registry.ts"
-  ]
-}
-```
-
-Lint script reads manifest, falls back to safe default (current hardcoded list) if manifest missing, emits stderr warning. Manifest absence is NOT a build failure (cycle-007 ships baseline manifest at S1).
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-MANIFEST='.claude/data/voice-prompt-paths.json'
-if [[ -f "$MANIFEST" ]]; then
-  mapfile -t VOICE_PROMPT_FILES < <(jq -r '.paths[]' "$MANIFEST")
-  mapfile -t EXCLUDE_FILES < <(jq -r '.exclude[]' "$MANIFEST")
-else
-  echo "WARNING: $MANIFEST missing · using hardcoded fallback" >&2
-  VOICE_PROMPT_FILES=(
-    packages/persona-engine/src/compose
-    packages/persona-engine/src/persona
-    packages/persona-engine/src/live/claude-sdk.live.ts
-  )
-  EXCLUDE_FILES=('packages/persona-engine/src/domain/zone-registry.ts')
-fi
-
-ZONE_IDS=$(jq -r '.[]' .claude/data/zone-ids.json)  # or fall back to grep on registry source
-
-violations=0
-for zone in $ZONE_IDS; do
-  while IFS= read -r line; do
-    file="${line%%:*}"
-    line_num="${line#*:}"; line_num="${line_num%%:*}"
-    content="${line#*:*:}"
-    # Skip allowlisted exclude files (manifest-driven)
-    skip=false
-    for excl in "${EXCLUDE_FILES[@]}"; do
-      [[ "$file" == "$excl" ]] && skip=true && break
-    done
-    [[ "$skip" == true ]] && continue
-    # Flatline SKP-001/CRITICAL (Phase 4 · 850) FIX: skip ONLY if THIS LINE is the registry import statement.
-    # Original logic ('grep zone-registry in file && grep $zone in first 50 lines && continue') was a CRITICAL false-negative:
-    # a developer could import the registry and still leak '"el-dorado"' literal on line 60 — the linter would silently allow it.
-    # New logic: a violation line is allowed ONLY if the line itself is the import statement bringing in the registry symbol.
-    if echo "$content" | grep -qE "^\s*import\b.*zone-registry"; then
-      continue
-    fi
-    echo "INV-12 violation: '$zone' literal in $line"
-    violations=$((violations + 1))
-  done < <(grep -RnE "['\"]${zone}['\"]" "${VOICE_PROMPT_FILES[@]}" 2>/dev/null || true)
-done
-
-[[ $violations -eq 0 ]] && { echo "INV-12: 0 voice-prompt kebab leaks"; exit 0; } || { echo "INV-12: $violations violations · fix or import from zone-registry"; exit 1; }
-```
-
-**Integration** (S1/T1.5 — new task added for INV-12):
-- Wire into GitHub Actions: new step in `.github/workflows/ci.yml` calling `bash scripts/lint-no-kebab-zoneid-in-voice-prompt.sh`.
-- Local: `bun run lint:zone-source` alias.
-
-**Flatline IMP-013 (DISPUTED 770 GPT/700 Gem) manifest-fallback discipline**: if `.claude/data/voice-prompt-paths.json` exists but FAILS JSON Schema validation against `.claude/data/voice-prompt-paths.schema.json`, the lint script MUST exit non-zero with a CI error ("manifest malformed · refusing to fall back silently"). The hardcoded-list fallback fires ONLY when the manifest FILE is absent (allowing first-time bootstrap before S1 ships the manifest). This prevents an attacker (or sloppy refactor) from corrupting the manifest to bypass INV-12 silently.
-
-### 2.8 Spike scripts (auto-delete on cycle close · S0)
-
-**T0.1 · `scripts/spike-zone-registry-callers.ts`** (~30 LoC, auto-delete):
-- Runs `git grep -rnE "ZONE_FLAVOR|ZONE_LABEL"` across `packages apps scripts`.
-- Outputs Markdown table of `file:line · variable · context` to `sprint-0-COMPLETED.md`.
-- Operator confirms scope (or expands if hidden callers found).
-- Deletes self at sprint close.
-
-**T0.2 · `scripts/spike-discord-android-typography.ts`** (~80 LoC, auto-delete · SKP-003):
-- Generates a synthetic Discord embed with 4 padding variants:
-  1. ASCII space (` `) — control / current behavior
-  2. FIGURE SPACE (` `) — primary candidate
-  3. PUNCTUATION SPACE (` `) — alt
-  4. NO-BREAK SPACE (` `) — alt
-  5. Code-block alternative (triple-backtick wrap with different font hint)
-- Posts to a test Discord channel via webhook (uses existing webhook from `.env.example`).
-- Operator captures Android screenshots of each variant.
-- Operator visually picks winning padding char (record in `sprint-0-COMPLETED.md`).
-- **BB MEDIUM-4 decision-capture**: spike script appends a STRUCTURED block to `sprint-0-COMPLETED.md` (operator-fillable template with `chosen padding char`, `evidence path`, `rationale`, `fallback list`) so S3 reads the decision deterministically and is gated on it being filled (no silent default drift).
-- **Flatline IMP-014 (DISPUTED 690) explicit schema** (Phase 4 · 2026-05-17): the appended block conforms to JSON Schema at `.claude/data/cycle-007-t02-decision.schema.json` with required fields: `chosen_padding_char` (Unicode escape pattern `^\u[0-9A-F]{4}$`), `evidence_paths` (array of relative paths), `rationale` (non-empty string), `fallback_chain` (array of padding-char escapes ordered by preference). S3 reads the YAML/JSON block, validates against schema, refuses to start if validation fails. Prevents drift between operator's freeform "I picked X" and S3's deterministic implementation.
-- DISCORD_EXTENDED.digitWidthSpaceChar set per spike conclusion (defaults to ` ` unless spike says otherwise).
-- Deletes self at sprint close.
-
 ---
 
-## 3. Test Plan
+## 5 · Test strategy
 
-| FR | test target | location |
-|---|---|---|
-| FR-1.1 | zone-registry public API · throw on unknown · canonical resolution | `domain/zone-registry.test.ts` |
-| FR-1.4 | sanitizer hook fires `voice.kebab_zone_leak_detected` OTEL event on injected kebab fixture | `deliver/sanitize.test.ts` (S6) |
-| FR-1.5 | detectKebabZoneIds false-positive allowlist | `domain/zone-registry.test.ts` |
-| FR-2.1 | DISCORD_EXTENDED.digitWidthSpaceChar codepoint identity | `deliver/medium-extensions.test.ts` |
-| FR-2.4 | byte-snapshot of renderSnapshotField output containing U+2007 bytes | `live/discord-render.live.test.ts` |
-| FR-3.1 | wrapTraceEntry shape · idempotency · isTraceEnvelope predicate | `observability/trace-envelope.test.ts` |
-| FR-3.3 | reader-tolerance fixture (pre-envelope + post-envelope mixed) | `scripts/lib/trace-readers.test.ts` |
-| FR-4.2 | trace:explain STDIN-first · positional-arg REJECT · file path | `scripts/trace.test.ts` |
-| FR-4.3 | trace:explain JSON output validates against `.claude/data/trace-explain-output.schema.json` | `scripts/trace.test.ts` |
-| FR-5.4 | dashboard SSE: default-path + enabled-path + rollback-path | `scripts/dashboard.test.ts` (new) |
-| FR-5.5 | visual regression fixtures match | manual operator attestation S5 |
-| FR-6 | orchestrator port cleanup — no `to*Payload` imports outside ports/ | `composer-router.test.ts` (extend) |
-| INV-12 | lint script exits 0 on clean code · exits 1 + reports on injected violation | `scripts/lint-no-kebab-zoneid-in-voice-prompt.test.sh` |
-| INV-13 | schema file exists · trace:explain output validates against it | `scripts/trace.test.ts` |
-| FR-7 | E2E paste-row-to-Loa workflow | `tests/integration/cycle-007-debug-loop.test.ts` (S8) |
+### 5.1 · Equivalence matrix (S2 · per spike doc 5+3 scenarios + BB-RA-001 9th E2E smoke)
 
----
-
-## 4. Migration Strategy
-
-Migration is forward-only per OP-Q2. Order matters because S1 (zone-registry) is a hard prerequisite for INV-12 + S6 (sanitizer hook) + INV-3 enforcement.
-
-```
-S0 spikes (parallel)         → S1 zone-registry + INV-12   → S6 sanitizer (depends on detectKebabZoneIds)
-                              ↘ S2 trace-envelope          → S4 trace CLI (depends on envelope readers)
-                              ↘ S3 medium-extensions       → S5 dashboard UI (depends on trace-readers · D5 padding)
-                                                              ↘ S5/T5.5 SSE-behind-flag
-S7 orchestrator port cleanup (parallel to S6/S5 · independent)
-S8 cycle close (depends on all)
-```
-
-**Dependency graph**:
-- S1 must complete BEFORE S6 (sanitizer needs `detectKebabZoneIds`).
-- S1 must complete BEFORE INV-12 CI integration (script needs canonical registry to grep against).
-- S2 must complete BEFORE S4 (CLI readers need envelope to filter by `layer`).
-- S3 must complete AFTER S0/T0.2 spike (padding char informed by Android typography evidence).
-- S5/T5.1 (reader extraction) must complete BEFORE S5/T5.2-5 (dashboard UI consumes shared readers).
-- S7 is independent of all other sprints — pure cleanup, can run parallel.
-- S8 (cycle close) depends on ALL.
-
-**Per-sprint completion criteria**: see §11 of PRD (Cycle-Level Acceptance Criteria).
-
----
-
-## 5. Rollout & Canary
-
-Cycle-007 has no live production user surface change BEFORE S3 close (Bug B fix lands at S3 · Bug A SOURCE-fix at S1 prevents future leaks but doesn't substitute existing). Canary plan:
-
-1. **S0/T0.2 typography spike**: operator captures Android screenshots from test channel before S3.
-2. **S1 INV-12 CI integration**: lint runs on every PR · failure blocks merge · in-effect after S1 close.
-3. **S2 envelope retrofit**: forward-only · zero user-facing change.
-4. **S3 figure-space deploy**: digest cron fires next produce U+2007-padded values · operator screenshots Android within 24h of S3 close → confirms FR-2 acceptance OR triggers fallback path (U+2008 / U+00A0 / code-block alts staged from spike).
-5. **S6 sanitizer**: log-only · zero user-facing impact · 24h cron-fired digests produce evidence corpus → V2 substitution policy review at S6+24h (calendarized per IMP-001).
-6. **S5 SSE-flag**: opt-in only · default poll unchanged · operator manually enables for live demos.
-7. **S8 E2E acceptance**: operator pastes trace row to Loa → Loa identifies layer-of-origin in 1 inference step → recorded as evidence in COMPLETED.md.
-
-**Rollback strategy**:
-- D1 zone-registry: revert via `git revert` if hidden callers found · S0/T0.1 spike de-risks this.
-- D5 figure-space: change one constant in DISCORD_EXTENDED back to ` ` if Android shows worse behavior.
-- D3 medium-extensions: local extension shed-able if upstream pushes back.
-- Dashboard SSE: unset `LOA_DASH_SSE` env, restart daemon.
-- Sanitizer hook: log-only — no rollback needed (no user-facing change).
-
----
-
-## 6. Security Architecture (for Red Team Phase 4.5 prep)
-
-This cycle's attack surfaces are NEW relative to cycle-006:
-
-| surface | risk class | mitigation |
-|---|---|---|
-| `scripts/trace.ts` reads `.run/*.jsonl` files | local-only read · no remote · low risk | scripts run with user-level perms · no setuid · no eval of trace content |
-| `trace:explain` parses untrusted JSON from STDIN | injection · JSON-bomb · billion-laughs | `JSON.parse` is safe by spec · enforce max input size (1 MB) · output schema constraints prevent reflection of arbitrary fields |
-| `scripts/lint-no-kebab-zoneid-in-voice-prompt.sh` runs in CI | shell injection if zone IDs contain shell metachars | ZoneId enum is hardcoded · pre-validated · grep is parameterized |
-| `SSE /sse` endpoint exposes new HTTP attack surface | XSS · CSRF · open SSE = DoS | endpoint bound to localhost · no CORS · same-origin only · no client input echoed back |
-| `medium-extensions.ts` exports global descriptor | mutation attack | DISCORD_EXTENDED is `Object.freeze`d · test pins immutability |
-| `detectKebabZoneIds` regex on untrusted text | ReDoS | regex uses bounded character classes · word boundaries · no backtracking explosion · benchmark test pins linear behavior |
-| `wrapTraceEntry` mutates trace payloads | no — caller's payload spread before envelope fields | test confirms envelope fields take precedence on naming conflict (defensive) |
-| Pre-cycle-007 reader-tolerance | malformed JSONL row could crash reader | reader uses try-catch per-line · logs warning · continues iteration |
-
-Anticipated Red Team Phase 4.5 attack categories:
-- Path traversal via `trace:explain --file <attacker-path>` → mitigation: realpath check inside trace files allowlist OR document operator-trust-boundary.
-- Trace envelope spoofing (attacker controls input payload field named `layer`) → wrapTraceEntry spreads payload FIRST then overrides with envelope fields · attacker-controlled `layer` is squashed.
-- SSE injection (malicious row content streamed to browser) → client sanitizes via `DOMPurify` or text-only rendering · no HTML eval.
-- Zone-registry kebab leak via Unicode normalization bypass (e.g., `el‐dorado` with U+2010 hyphen instead of ASCII hyphen) → `detectKebabZoneIds` should normalize via NFKC before regex match (defensive · add as INV-12-extension).
-
----
-
-## 7. Out of Scope (Barth · ship discipline)
-
-Same as PRD §7. Highlights:
-- ❌ Telegram / CLI / Web medium renderers — `medium-extensions` designs for them, ships Discord only.
-- ❌ Time-travel replay · per-zone different voice models · dashboard port change.
-- ❌ `.run/audit.jsonl` refactor (Loa framework owned).
-- ❌ `trace:diff` · `trace:summary` · `bun link` global install — frozen out (V2 backlog).
-- ❌ `detectKebabZoneIds` auto-substitution V1 (log-only · V2 policy at S6+24h per IMP-001).
-- ❌ Upstream PR to freeside-mediums during cycle (propose AT close).
-
----
-
-## 8. References
-
-| topic | path |
-|---|---|
-| PRD (companion) | `grimoires/loa/prd.md` (top-level) · `grimoires/loa/cycles/cycle-007-agent-debuggability/prd.md` (mirror) |
-| Arch decisions D1-D6 | `grimoires/loa/specs/arch-cycle-007-agent-debuggability.md` |
-| Build doc (sprint sequence) | `grimoires/loa/specs/enhance-cycle-007-agent-debuggability.md` |
-| Kickoff session | `grimoires/loa/context/track-2026-05-16-cycle-007-agent-debuggability-kickoff.md` |
-| Predecessor cycle-006 SDD | `grimoires/loa/cycles/cycle-006-substrate-presentation/sdd.md` |
-| Decision logs | `grimoires/loa/NOTES.md` |
-| Flatline PRD review (Phase 2) | `.run/flatline-prd-cycle-007.log` |
-| Trace schema today | `packages/persona-engine/src/observability/llm-trace.ts::LlmTraceEntry` |
-| Medium descriptor upstream | `@0xhoneyjar/medium-registry@^0.2.0` (`deliver/embed.ts:17-22`) |
-| FR-1 root cause site | `packages/persona-engine/src/score/types.ts::ZONE_FLAVOR` + `live/discord-render.live.ts::ZONE_LABEL` |
-| FR-2 root cause site | `packages/persona-engine/src/live/discord-render.live.ts:42-63` (renderSnapshotField) |
-| Dashboard surface | `scripts/dashboard.ts` |
-| Discord-as-Material rules | `CLAUDE.md` |
-| Loa framework rules | `.claude/loa/CLAUDE.loa.md` |
-| OperatorOS v3.2 | `/Users/zksoju/.claude/CLAUDE.md` |
-
----
-
----
-
-## 9. Bridgebuilder Design Review Integration Log (Phase 3.5 · 2026-05-17)
-
-22 findings parsed from `.run/bridge-reviews/design-review-cycle-007.md` (score 35 · 0 CRITICAL · 5 HIGH · 5 MEDIUM · 3 REFRAME · 3 SPECULATION · 4 PRAISE · 2 VISION). All 16 actionable findings integrated; 3 REFRAMEs operator-resolved as accept-minor; 4 PRAISE celebrated; 2 VISIONs auto-captured to vision registry; 3 SPECULATIONs deferred as cycle-008+ candidates.
-
-### Integrated amendments by finding
-
-| BB ID | sev | amendment | location |
+| # | Scenario | Tier | Assertion |
 |---|---|---|---|
-| REFRAME-1 | accept-minor | SDD §1 reframe: dashboard is WITNESS · INV-12 + envelope + CLI are FORCE FUNCTIONS · S5 is craft-polish | §1 framing note |
-| REFRAME-2 | accept-minor | richLabel stays in domain/ for cycle-007 + explicit comment naming Discord-coupling trade-off + cycle-008 follow-up task to extract to presentation/zone-display.ts | §2.1 note |
-| REFRAME-3 | accept-minor | PRD §1.1 names Class A (substrate-leakage) + Class B (medium-divergence) + shared DX substrate explicitly · cleaner ontology for future cycles | PRD §1.1 |
-| HIGH-1 | accept | `trace:explain --file` realpath-canonicalize + repo-root-bound + `.run/**/*.jsonl` or fixture `.json` allowlist · exits 3 on escape | §2.5 explain case |
-| HIGH-2 | accept | `detectKebabZoneIds` NFKC normalize + Unicode dash substitution (U+2010-U+2015, U+2212 → ASCII hyphen) BEFORE regex · same pattern as cycle-098 sprint-7 cypherpunk HIGH-2 | §2.1 detectKebabZoneIds body |
-| HIGH-3 | accept | INV-12 lint script reads voice-prompt-file allowlist from `.claude/data/voice-prompt-paths.json` manifest · cycle-008 inheritance · fallback to hardcoded if manifest missing | §2.7 lint script |
-| HIGH-4 | accept | INV-14: `appendTraceEntry` is sole permitted JSONL append helper · type signature requires `T & TraceEnvelope` · audit script `audit-jsonl-append-discipline.sh` at S2 close | §2.2 appendTraceEntry + INV-14 |
-| HIGH-5 | accept | ajv-validation snapshot test in `scripts/trace.test.ts` validates `trace:explain` output against schema file at S4 acceptance | §2.5 tests |
-| MEDIUM-1 | accept | reader-scan operational note documented in `docs/trace-cli.md` (~200-500ms after 3 months) · V2 follow-up: `.run/trace-index.jsonl` incremental index | §2.4 notes |
-| MEDIUM-2 | accept | SSE server: `max-clients: 5` (configurable) + 60s heartbeat ping + client cleanup on `EventSource.onerror` | §2.6 T5.5 |
-| MEDIUM-3 | accept | SSE payload truncation: prompt/response/large strings → 500ch with `[truncated]` suffix · full row via REST `/api/llm-trace?run-id=Y` on click | §2.6 T5.5 |
-| MEDIUM-4 | accept | T0.2 spike script appends structured decision-capture block to `sprint-0-COMPLETED.md` · S3 implementation gated on filled block | §2.8 T0.2 |
-| MEDIUM-5 | accept | `metricsForMedium` throws `UnsupportedMediumError` on unregistered mediums · CLI medium identified by descriptor id match · forces conscious registration | §2.3 metricsForMedium body |
-| PRAISE-1..4 | celebrate | SOURCE+SINK split · assertNeverZone pattern · zero new deps · operator-attested visual fixtures — surfaced in BB review prose · no SDD change needed | — |
-| SPEC-1..3 | defer | Trace envelope → Loa primitive · OTEL bridge · color-encodes-layer doctrine — captured to `grimoires/loa/visions/cycle-007-bb-speculations.md` (V2 backlog) | vision registry |
-| VISION-1,2 | auto-capture | "Dashboards are witnesses, not force functions" · "Two-bug pair as catalyst not cause" — captured to vision registry for future-cycle reviewers | vision registry |
+| 1 | cron · empty active factors · no prior week | 2 (normalize) | `normalize(actual) === normalize(expected)` against fixture |
+| 2 | cron · empty active factors · prior week present | 2 | same |
+| 3 | cron · 1 active factor · no prior week | 2 | same |
+| 4 | cron · 2+ active factors · no prior week | 2 | same |
+| 5 | chat-mode (regression fence) | 1 (byte-identical) | `actual === buildReplyPromptPair(args)` from pre-cycle-008 baseline |
+| 6 | cron · priorWeekHint containing `</untrusted-content>` | 2 | marker integrity survives (no re-escaping by buildPrompt) |
+| 7 | cron · activeFactors undefined | NEGATIVE | `Effect.runSyncExit(...)` returns Failure with BuildPromptError({kind: 'missing-cron-arg', argName: 'activeFactors'}) |
+| 8 | cron · priorWeekHint undefined | NEGATIVE | same shape (argName: 'priorWeekHint') |
+| 9 | **end-to-end smoke** (BB-RA-001 accept · 2026-05-18) · pre-deploy gate | E2E | Runs `bun run --cwd apps/bot digest:once --stub` AND `bun run smoke-non-data-reply` against fixture-mode buildPrompt. Both paths must produce valid output OR pre-deploy halts. Catches all-paths-broken case structurally (SPOF defense). |
+| 10 | **chat-mode before/after fixture verification** (Flatline-SDD IMP-006 accept · 2026-05-18) · pre-S2-merge gate | 1 (byte-identical) | Capture a fixture of `buildReplyPromptPair(args)` output from the pre-cycle-008 commit baseline. Store at `packages/persona-engine/src/persona/fixtures/chat-mode-baseline-pre-c008.txt`. After S2 lands, run `Effect.runSync(buildPrompt(args_for_reply))` with same args. Diff MUST be empty. Catches any drift introduced by the Effect-TS migration into the regression-fence path. |
 
-Full BB review prose archived at `.run/bridge-reviews/design-review-cycle-007.md`. Parsed findings JSON at `.run/bridge-reviews/design-review-cycle-007.json`.
+Plus NFR-9 stat-leakage scenarios (5):
+| # | Scenario | Assertion |
+|---|---|---|
+| 11 | `activeFactors[].displayName` contains `"30 events"` | `Effect.fail(BuildPromptError({kind: 'aggregate-stat-leakage', sample: ...}))` |
+| 12 | `activeFactors[].displayName` contains `"thirty events"` | same |
+| 13 | `priorWeekHint` inner body contains `"rank 90"` | same |
+| 14 | `priorWeekHint` inner body contains `"prior period"` | same |
+| 15 | `activeFactors[].displayName` contains `"top-10"` | same |
 
----
+### 5.2 · FR-15a fragment_sources[] invariant tests (S4)
 
-## 10. Flatline SDD Review Integration Log (Phase 4 · 2026-05-17)
+| # | Scenario | Assertion |
+|---|---|---|
+| 21 | Well-formed cron prompt with 5 layer fragments | `fragment_sources.length >= 5` · sorted ascending · no overlap |
+| 22 | Cron prompt with no environment data | fragment_sources only includes layers actually substituted (>= 4) |
+| 23 | Mutated buildPrompt produces overlapping offsets | `Effect.fail(BuildPromptError({kind: 'fragment-sources-invariant-violation', detail: 'overlap'}))` |
+| 24 | Mutated buildPrompt produces out-of-order offsets | `Effect.fail(...)` |
 
-3-model Flatline (Opus + GPT-5.5 + Gemini-3.1-pro · 73% agreement · 111s · $0 cheval) returned 15 findings on the 855-line SDD: 5 HIGH_CONSENSUS + 4 DISPUTED (3 with Opus=0 known empty per `feedback_multimodel_via_clis`) + 6 BLOCKERs (1 CRITICAL + 5 HIGH). All 14 actionable findings integrated (1 DISPUTED deferred-to-V2 as out-of-cycle-scope). NO genuine architectural forks surfaced — all amendments Loa-decided per operator-attested latitude grants.
+### 5.3 · FR-20a failure-path tests (S5)
 
-### Integrated amendments
+5 tests for outcome classes:
+| # | Mock condition | Expected trace |
+|---|---|---|
+| 31 | Successful response | outcome='success' · error_classification absent |
+| 32 | Mock SDK 500 response | outcome='provider-error' · http_status=500 |
+| 33 | Mock 60s timeout via AbortController | outcome='timeout' |
+| 34 | Mock invalid JSON response | outcome='malformed-response' |
+| 35 | Mock thrown exception in SDK call | outcome='sdk-exception' · redacted_message present |
 
-| Flatline ID | sev | amendment | location |
-|---|---|---|---|
-| IMP-001 (895) | HIGH | trace:explain STDIN streaming reader + 1MB byte-count limit + malformed JSON → exit 5 (composite with SKP-002/HIGH 780) | §2.5 explain case |
-| IMP-002 (845) | HIGH | ReDoS benchmark test for detectKebabZoneIds — 10K-char pathological input <50ms wall-clock | §2.1 tests |
-| IMP-003 (795) | HIGH | appendTraceEntry semantics documented: best-effort · no fsync · no locking · single-process invariant (matches cycle-006 voice-memory mutex pattern) | §2.2 appendTraceEntry doc |
-| IMP-005 (855) | HIGH | SSE server bound to 127.0.0.1 explicitly · NO CORS · Origin check on `/sse` rejects non-localhost · prevents cross-origin trace exfiltration | §2.6 T5.5 |
-| IMP-007 (765) | HIGH | audit-jsonl-append-discipline.sh wired into CI at S2 (matches INV-12 lint pattern) | INV-14 + S2 acceptance |
-| IMP-012 (DISPUTED 850 GPT/Gem) | DISPUTED→accept | explicit `findRepoRoot()` algorithm: walk up to find `.git/HEAD` OR `package.json` with `workspaces` · throws if not within 10 levels | §2.5 implementation note |
-| IMP-013 (DISPUTED 770 GPT/700 Gem) | DISPUTED→accept | manifest-fallback discipline: hardcoded fallback fires ONLY when manifest file absent · malformed manifest fails CI with explicit error (prevents silent INV-12 bypass via corrupt manifest) | §2.7 lint script |
-| IMP-014 (DISPUTED 690 GPT/550 Gem) | DISPUTED→accept | JSON Schema for T0.2 decision-capture block at `.claude/data/cycle-007-t02-decision.schema.json` · S3 refuses to start if validation fails | §2.8 T0.2 |
-| IMP-015 (DISPUTED 560 GPT/650 Gem) | LOW→defer | SSE log rotation/truncation behavior — single-developer dashboard surface · doesn't merit cycle-007 budget · documented as V2 follow-up | (not in SDD · captured here for ledger) |
-| **SKP-001/CRITICAL (850)** | CRITICAL | INV-12 lint logic flaw fix: skip ONLY the import-statement LINE (not first 50 lines) · flag literals on all other lines · closes false-negative where developer imports registry then leaks kebab on line 60 | §2.7 lint script body |
-| **SKP-001/HIGH (720) INV-14 audit** | HIGH | strengthen audit script with defense-in-depth patterns (appendFile · createWriteStream · ANY `.jsonl` + write · binding-form-agnostic Bun.write) + "no fs/* imports outside observability/" check · acknowledge AST-level enforcement deferred to V2 if convention insufficient (zero new deps · PRAISE-3 holds) | §2.2 INV-14 note |
-| **SKP-002/HIGH (780)** | HIGH | (composite with IMP-001) STDIN streaming + size guard | §2.5 explain case |
-| **SKP-003/HIGH (750) UnknownZoneError** | HIGH | callers (live/discord-render, deliver/sanitize, persona/loader, compose/voice-brief) wrap in try/catch · safe fallback `<zone-id>` raw string + OTEL counter `zone.resolution_failed` · preserves IMP-011 throw-on-unknown contract at resolver layer while preventing production pipeline crash | §2.1 SKP-003 block |
-| **SKP-002/HIGH (720) metricsForMedium spec/test contradiction** | HIGH | align tests with throw-on-unknown spec (BB MEDIUM-5) · add explicit CLI_DESCRIPTOR fixture · replaces previous "=== CLI_EXTENDED" assertion with "throws UnsupportedMediumError" | §2.3 tests |
-| **SKP-001/HIGH (760) trace:explain JSONL multi-row** | HIGH | bare `.jsonl` file rejects · requires `--line N` or `--run-id Y` or `--latest` row selector · `.json` fixtures accepted as-is (single-row contract) | §2.5 explain case |
+### 5.4 · NFR-8 redaction tests (S4)
 
-**Loa observations**:
-- Composing BB design-review (Phase 3.5) + Flatline-SDD (Phase 4) caught BB's INV-14 grep-enforcement as a HIGH severity bypass surface. The two reviewers reinforce each other: BB found the gap, Flatline pressure-tested it. Pattern: REFRAME tier (BB) surfaces frame issues · ADVERSARIAL tier (Flatline) surfaces correctness issues · together they cover both.
-- BB MEDIUM-5 (metricsForMedium throws) directly conflicted with my own test spec written before the BB review (`=== CLI_EXTENDED`). Flatline caught this as SKP-002/HIGH spec/test contradiction. Lesson: cross-review reveals MID-CYCLE-drift before implementation locks it in.
-- The CRITICAL lint-logic flaw (SKP-001/CRITICAL 850) was a literal false-negative I didn't notice when I wrote the original lint script. Without Flatline, INV-12 would have silently failed once any voice-prompt file imported the registry. This is the highest-value finding of the cycle so far.
+| # | Input | Expected redacted output |
+|---|---|---|
+| 41 | systemPrompt contains `0xabc123...0xdef456` (40-hex) | `0x[REDACTED]` substituted |
+| 42 | systemPrompt contains `sk-anthropic-xyz123...` | `[REDACTED-CREDENTIAL]` |
+| 43 | systemPrompt contains `Bearer abc123def456` | `[REDACTED-CREDENTIAL]` |
+| 44 | systemPrompt contains JWT `eyJhbGci...` | `[REDACTED-JWT]` |
+| 45 | output contains Discord ID `<@123456789012345678>` (LOA_TRACE_INCLUDE_DISCORD_IDS unset) | `<@[REDACTED]>` |
+| 46 | output contains Discord ID + LOA_TRACE_INCLUDE_DISCORD_IDS=1 | not redacted |
 
-**INV deltas**: 14 → 14 (no new INVs from Phase 4 · all amendments are hardening to existing INVs).
+### 5.5 · FR-13a non-digest post-type compatibility tests (S3)
 
-Full Flatline JSON archived at `.run/flatline-sdd-cycle-007.log`.
-
----
-
----
-
-## 11. Red Team SDD Integration Log (Phase 4.5 · 2026-05-17)
-
-3-model Red Team (Opus + GPT-5.5 + Gemini-3.1-pro · standard mode · 397s · $0 cheval) produced 10 adversarial attack scenarios against the SDD. Grounding-failure flagged (Opus=0 on all 10 — known cheval-headless intermittent-empty per `feedback_multimodel_via_clis` · same pattern as cycle-006 Red Team Phase 4.5 where 4 ACs were operator-attested despite same flag). GPT + Gemini cross-scored substantive attacks with concrete file/section citations · treated as primary signal per cycle-006 precedent.
-
-Consensus breakdown: 3 THEORETICAL (severity ≥700) + 7 CREATIVE_ONLY (severity 380-700).
-
-### Integrated as cycle-007 acceptance criteria (5 ACs)
-
-| AC-RT ID | source ATK | sev | counter-design | sprint integration |
+5 tests covering empty-arg buildPrompt invocation for non-digest types:
+| # | post_type | activeFactors | priorWeekHint | Expected |
 |---|---|---|---|---|
-| **AC-RT-001** | ATK-001 · DNS Rebinding Bypass of SSE Localhost Bind | 780 | Per-session bearer token (LOA_DASH_TOKEN env, generated at dashboard start, printed to stderr) · required via `X-Loa-Dash-Token` header on `/sse` AND `/api/llm-trace` (and other REST endpoints) · Host header validation enforces `Host: 127.0.0.1:3001` OR `Host: localhost:3001` · reject otherwise with 403 · closes DNS-rebinding attack class | **S5/T5.5 SSE-behind-flag** extended · acceptance test: dashboard with synthetic DNS-rebinding fixture confirms 403 reject |
-| **AC-RT-002** | ATK-002 · INV-12 Manifest Narrowing in PR | 760 | (a) `scripts/lint-manifest-monotonic.sh` — checks `.claude/data/voice-prompt-paths.json` paths[] length monotonically non-decreasing across git history on main OR removal is operator-attested via PR commit-trailer · (b) CODEOWNERS entry on `.claude/data/voice-prompt-paths.json` requiring operator (`@zksoju`) review for any change · (c) git-history-aware lint variant scans paths that were EVER in the manifest at any commit on main — closes scope-narrowing-then-leak attack | **S1/T1.6 manifest authoring + CI** extended · CODEOWNERS file created at S1 close |
-| **AC-RT-003** | ATK-006 · ANSI Escape Injection via trace:explain Human Format | 740 | New `scripts/lib/safe-render.ts` exporting `sanitizeForTerminal(value: string): string` — strips C0/C1 control bytes (regex `/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\x80-\x9F]/g`) AND OSC 8 hyperlink sequences (rendered as plain-text `[url]` suffixes). humanFormat() in `scripts/trace.ts` uses for ALL payload string values · ANSI color sequences ONLY emitted by the printer itself for layer glyphs · NEVER pass through caller content. Tests assert no input string can produce output containing ESC bytes the renderer didn't itself emit. | **S4/T4.4 trace CLI tests** extended + new **S5/T5.4 dashboard SSE-streamed payload** uses same sanitize pipeline |
-| **AC-RT-004** | ATK-004 · INV-12 Lint Bypass via JS String-Literal Escapes | 700 | **Operator-attested 2026-05-17 (FORK accepted)**: rewrite `scripts/lint-no-kebab-zoneid-in-voice-prompt.sh` → `scripts/lint-no-kebab-zoneid-in-voice-prompt.ts` using TypeScript compiler API (already in deps via `tsc` · PRAISE-3 zero-new-deps holds). Resolves string literals through (a) escape sequences (`'el-dorado'` decoded), (b) template literals with constant parts (`` `el${'-'}dorado` `` evaluated), (c) identifier references to `ZONE_IDS`-shaped const arrays. AST-level scanner replaces grep-level. Asymmetric tooling acknowledged: INV-14 audit script (BB HIGH-4) remains bash for now · future cycle may unify. Cost: ~80-120 LoC TS · S1 budget grows by ~half day. | **S1/T1.5 INV-12 lint** rewrites as TS · runs in CI same as bash version |
-| **AC-RT-005** | ATK-009 · Nested Layer Field Spoof Survives wrapTraceEntry | 420 (quick-fix) | Extend `wrapTraceEntry` with `sanitizeNestedKeys(payload)` step that recursively renames nested `layer` / `layer_op` / `emitted_at` keys to `payload_layer` / `payload_layer_op` / `payload_emitted_at`. Add JSON schema at `.claude/data/trace-envelope.schema.json` validated by `appendTraceEntry` before write (no nested reserved-keys invariant). ~15 LoC. | **S2 trace envelope** extended · test asserts spoof recursively rewritten |
+| 51 | micro | [] | undefined | buildPrompt succeeds · ACTIVE_FACTORS = "factors with activity:\n  (none)" |
+| 52 | weaver | [] | undefined | same |
+| 53 | lore_drop | [] | undefined | same |
+| 54 | question | [] | undefined | same |
+| 55 | callout | [] | undefined | same |
 
-### Quick-fix integrated (1 from CREATIVE_ONLY)
+OR explicit removal of these post types from `outputInstruction(postType)` + `PostType` discriminated union + persona.md fragment markers. The pruning decision per `project-cron-post-types-pruning` memory is operator-paced · S3 acceptance accepts either path.
 
-| ATK | sev | quick-fix | location |
-|---|---|---|---|
-| ATK-007 · Symlink-Inside-Repo Exfiltration via trace:explain --file | 580 | Replace `'isTraceFile || isFixture'` branching with STRICT membership check against `FREESIDE_CHARACTERS_TRACE_FILES` glob expansion · fixture `.json` loading requires `LOA_TRACE_TEST_MODE=1` env (production CLI accepts ONLY operationally-relevant trace files) | §2.5 trace:explain --file path containment |
+### 5.6 · End-to-end live-fire (OP-G2 · S3 close)
 
-### Deferred to V2 vision entries (4 CREATIVE_ONLY)
-
-| ATK | sev | reason for deferral |
-|---|---|---|
-| ATK-003 · Cyrillic Homoglyph Bypass of detectKebabZoneIds | 670 | SDD §2.1 already documents this gap. UTS #39 skeleton transform is the defense · adds ~30 LoC + small confusable-map JSON file at `.claude/data/`. Defer to cycle-008+ if observed in voice-output evidence corpus (per IMP-001 calendarized review). Vision entry captured. |
-| ATK-005 · findRepoRoot TOCTOU via Planted .git Marker | 510 | Operator-trust environment · planted `.git` markers require filesystem write inside repo · low likelihood in single-developer workflow. Sentinel-file pinning (check `package.json` name === `'freeside-characters'`) is the defense · defer to cycle-008. Vision entry captured. |
-| ATK-008 · JSON Bomb via trace:explain STDIN Reader | 430 | LOW likelihood · operator pastes from controlled sources · 1MB byte limit already in place. Structural-budget JSON parser (max depth · max keys · max array length) is the defense · `scripts/lib/safe-json.ts` is V2 work. Vision entry captured. |
-| ATK-010 · SSE Max-Clients Exhaustion via Reconnect Storm | 380 | Mostly closed by AC-RT-001 bearer-token + per-token cap of 1 (counter-design composes with ATK-001). Residual gap: malicious local process that has the token could still exhaust. Operator-trust environment · defer monitoring. Vision entry captured. |
-
-### Loa observations
-
-- **Grounding-halt false-negative recurs** (cycle-006 pattern · `feedback_multimodel_via_clis` memory holds). cheval-headless Opus produces empty consistently for Red Team. GPT+Gemini cross-scoring with severity ≥700 + concrete file/section citations is reliable signal. Worth filing as Loa framework feedback issue · runtime fix would enable grounding-halt to fire only when ALL models score 0 (currently fires if just primary scores 0).
-- **AC-RT-002 (manifest narrowing) is the highest-craft attack**: it exploits the BB HIGH-3 manifest-based allowlist (added to defend against future-cycle leak surface) AS the attack vector. Defense-in-depth becomes attack surface when the manifest itself is mutable via PR. The counter (CODEOWNERS + monotonic check + git-history-aware lint) compounds the BB-introduced defense rather than retreating from it.
-- **AC-RT-003 (ANSI escape) is the highest-class attack**: it weaponizes operator-trust in their own debugging tools. CVE-2003-0063 family. The counter (sanitizeForTerminal) is small (~30 LoC) but the threat model shift is important: trace CLI is no longer "safe because operator-only" · it's "safe because we sanitize before printing."
-- **AC-RT-004 (JS string escape) closes the BB HIGH-4 + Flatline SKP-001/HIGH gap**: BB and Flatline both surfaced INV-14 audit-script grep weakness · this RT attack proves the same class applies to INV-12. Symmetric resolution: AST-based scanner is the principled answer. PRAISE-3 zero-new-deps holds because `typescript` is already a hard dep.
-
-Full Red Team JSON archived at `.run/redteam-sdd-cycle-007.log` (run id `rt-1778988389-8bf58521`).
+Operator runs `bun run --cwd apps/bot digest:once` × 4 zones via `railway run`:
+- bear-cave · el-dorado · owsley-lab · stonehenge
+- 5 PASS criteria per §7 of PRD: zero kebab · zero em-dash · zero spelled-aggregate · digits as digits · no aggregate-stat citation
+- Trace rows verified via `bun run trace:explain --latest`
 
 ---
 
-**Status**: candidate · POST Phase 4.5 Red Team SDD (10 attacks · 3 THEORETICAL + 1 CREATIVE-700 integrated as ACs · 1 CREATIVE-580 quick-fix · 4 CREATIVE deferred-to-V2 visions · operator-attested 2026-05-17) · awaits Phase 5 sprint plan.
+## 6 · Migration plan (sprint-by-sprint dependency graph)
+
+```
+S2 ─┬─→ S3 ─┬─→ S4 ─→ S5 ──→ S6 ──→ S7 ──→ S8
+    │      │                                  ▲
+    │      └─→ FR-10 Effect boundary           │
+    │      └─→ FR-11 LOA_PROMPT_BUILDER flag   │
+    │      └─→ FR-12 voice-brief.ts deprecated │
+    │      └─→ FR-13/FR-13a non-digest compat  │
+    │      └─→ OP-G2 live voice attestation ───┘
+    │                                          │
+    └─→ FR-4/5/6/7/8/9 buildPrompt Effect      │
+       FR-15a fragment_sources invariants      │
+       NFR-9 stat-leakage guard                │
+       (no functional change to chat-mode)     │
+                                               │
+                                               └─→ OP-G3 tweakpane ≥15 min (S6 close)
+                                               └─→ PP-5 mobile canary (S8)
+                                               └─→ Branch protection (S8 · operator UI)
+                                               └─→ Cycle-007 ledger flip (S8)
+```
+
+S2 + S3 are the load-bearing dependency. S4-S7 can parallelize after S3 lands. S8 absorbs all cycle-007 pair-points + final attestations.
+
+---
+
+### 6.1 · Placeholder syntax convention (per Flatline-SDD IMP-009 accept · 2026-05-18)
+
+All persona.md placeholders use double-brace `{{NAME}}` syntax. The loader's substitution chain (`loader.ts:286-300`) uses `template.replace(/\{\{X\}\}/g, fragment)` against this convention. Test fixtures + render helpers must reference this convention. NOT `${NAME}` (JS template literals), NOT `<%= NAME %>` (EJS), NOT `{NAME}` (single-brace). Preserved convention from cycle-006/007 inherited templates. Pinning here prevents drift between persona edits and test authoring.
+
+### 6.2 · Cron post-type pruning ambiguity (per Flatline-SDD IMP-010 REJECTED · 2026-05-18)
+
+Concern flagged that post-type pruning ambiguity could create downstream churn. **Resolved by FR-13a** (PRD §5.3): S3 acceptance requires every cron post type to either (a) have explicit unit tests covering empty-array buildPrompt invocation, OR (b) be explicitly removed from `outputInstruction(postType)` + `PostType` enum + persona.md fragments. The "passed through silently" branch is rejected by FR-13a. Operator-paced pruning decisions per `project-cron-post-types-pruning` memory happen at S3 implementation time. No additional SDD spec needed.
+
+---
+
+## 7 · Security architecture
+
+### 7.0 · Red Team SDD findings · 0 confirmed (Phase 4.5 · 2026-05-18)
+
+10 attack scenarios generated · 0 CONFIRMED_ATTACK · 4 THEORETICAL · 6 CREATIVE_ONLY · 0 DEFENDED. Opus model consistently scored 0 on the theoretical attacks (no consensus that they're practically achievable). Zero sprint tasks added per skill protocol (sprint tasks gated on CONFIRMED_ATTACK ≥700).
+
+Theoretical attack surfaces surfaced for defense-in-depth awareness (not load-bearing for cycle-008 acceptance):
+
+| Attack | Severity | Counter-design (out-of-scope for cycle-008 unless operator promotes) |
+|---|---|---|
+| ATK-003 · Trace JSONL credential leak via race window (new code path bypasses `appendTraceEntry`) | 860 | Already addressed by Flatline-SDD SKP-004 acceptance (redaction moved INTO appendTraceEntry · §3.7). Future code paths writing directly to `.run/llm-trace.jsonl` must be reviewed; consider adding a lint rule that flags non-appendTraceEntry writes. |
+| ATK-005 · Tweakpane SSRF/exposure via misconfig (operator enables `LOA_TWEAKPANE_ENABLED=1` on non-loopback bind) | 820 | Already partially addressed (§4.5 specifies localhost bind). Hardening candidate: refuse to start dashboard if `LOA_TWEAKPANE_ENABLED=1` AND non-loopback bind detected (process exits with code 78). Cycle-009 candidate. |
+| ATK · Persona.md prescriptive drift in feature-branch (hidden directive added without operator review) | 780 | Already partially addressed via cycle-007 INV-17 CODEOWNERS for schema files. Hardening candidate: extend CODEOWNERS to `apps/character-*/persona.md` AND run SOUL-style descriptive-pattern lint in CI (warn-mode initially). Cycle-009 candidate. |
+| ATK-010 · Cycle-005 gate bypass amplifies upstream factor catalog poisoning (compromised maintainer adds malicious factor names) | 740 | Mitigated by NFR-9 allowlist (factor names sourced from score-mcp catalog snapshot at S2 fixture time; cross-reference at runtime). The allowlist effectively narrows the trust boundary to the catalog snapshot maintainer at S2 time. Future cycles consider git-commit-signing on score-mcp factor catalog edits. |
+
+### 7.1 · Preserved from cycle-007
+
+### 7.1 · Preserved from cycle-007
+
+| Invariant | Source | How preserved |
+|---|---|---|
+| FLATLINE-SKP-001/CRITICAL | LOCK suffix in system prompt | buildPrompt appends `UNTRUSTED_CONTENT_LLM_INSTRUCTION` unconditionally for `shape.kind === 'cron'` after substitution (unit test verifies presence + position) |
+| FLATLINE-SKP-002/CRITICAL | `<untrusted-content>` marker escape | `formatPriorWeekHint` does the 5-char OWASP escape at SOURCE · buildPrompt does literal substitution (no re-escaping) · negative test scenario 6 verifies marker integrity under injection attempt |
+| INV-12 (kebab-zone lint) | cycle-007 | applies to all new cycle-008 prose (zero kebab in voice outputs · OP-G2 attestation enforces) |
+| INV-17 (schema CODEOWNERS) | cycle-007 | cycle-008 adds 3 schema files to the CODEOWNERS rule (operator-paced GitHub UI · S8) |
+| INV-18 (safe-render C0/C1 strip) | cycle-007 | trace renderer (S4 trace:explain) inherits via existing `scripts/lib/safe-render.ts` |
+
+### 7.2 · NEW in cycle-008
+
+| ID | Surface | Control |
+|---|---|---|
+| NFR-8 | trace data | redaction at emit-time (wallets · API keys · JWTs · Discord IDs gated) · rotation (100MB / 30d) · LOA_DASH_AUTH gate (cycle-007 INV-16) |
+| NFR-9 | prompt input | regex-based runtime guard rejects aggregate-stat leakage in `activeFactors[].displayName` + `priorWeekHint` inner body |
+| FR-15a | trace schema | ajv enforces fragment_sources[] enum + ordering + non-overlap invariants |
+| INV-PS-5 | tweakpane | kitchen-only · no production toggle surface |
+
+---
+
+## 8 · Open spike questions resolved (cross-reference)
+
+All resolved in PRD §13. Reproduced here for SDD self-containment:
+
+| # | Question | Resolution |
+|---|---|---|
+| 1 | Zone-voice-context (Gap 8) | DROP from cycle-008 |
+| 2 | JSON output schema location (Gap 7) | Code-appended cron suffix in buildPrompt |
+| 3 | Chat-mode LOCK suffix (Gap 6) | Cron-only · reply-mode evaluation deferred to cycle-009 |
+| 4 | buildPrompt arg signature (Q1) | Structured `ActiveFactorRender` · names-only |
+| 5 | Negative cron shape behavior (Q5) | Fail-loud via `Effect.fail(BuildPromptError({...}))` |
+| 6 | Effect-TS scope (Q2) | Full loader.ts module migration · buildPrompt returns Effect |
+| 7 | Vocabulary for substrate-state labels | Neutral mechanical · `factors with activity:` |
+| 8 | Drop SILENCED list from prompt | YES · gate stays as engineering middleware |
+| 9 | Placement in persona.md | Base template after {{ENVIRONMENT}} · LANDED in S1 |
+
+---
+
+## 9 · Risks specific to SDD
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| Effect.runPromise rejection propagation through tracer span may double-handle errors | Low | Span.recordException is idempotent; existing pattern at agent-gateway.ts:201 shows safe coexistence |
+| Stream-completion detection at agent-gateway depends on SDK shape · could break on SDK upgrade | Medium | Add explicit version pin on `@anthropic-ai/claude-agent-sdk` in package.json · test fixture covers AsyncIterable detection |
+| Tweakpane v4 controlled-vs-uncontrolled state divergence (live-fire vs displayed state) | Low | One-way state flow · tweak event → fire → result panel update · no controlled-input ambiguity |
+| Trace rotation race condition (two concurrent appendTraceEntry calls during rotation) | Medium | Use `flock`-style file lock around rotation check + rename · existing pattern available |
+| LOA_PROMPT_BUILDER stderr warning gets buried in operator's terminal noise | Low | Also emit OTel span event (per operator's "Strengthen" option had this been picked · current decision: stderr-only acceptable) |
+| Discord ID redaction regex misses uncommon snowflake forms | Low | Pattern `<@!?\d{17,20}>` covers all known Discord ID surfaces · operator can extend via PR if new shapes emerge |
+
+---
+
+## 10 · Amendment 2026-05-22 · voice-fidelity + RLHF preference loop (FR-38..43)
+
+> **Source**: `grimoires/loa/cycles/cycle-008-persona-substrate/amendment-voice-fidelity-gaps.md` (status: active). FR-38/39/43 amend S3; FR-40/41/42 form new sprint S9. All code paths below verified by read on 2026-05-22 (corrections noted inline).
+
+### 10.1 · FR-43 · score-api-types adoption (S3 T3.0)
+
+- **Target**: `packages/persona-engine/src/score/types.ts` (verified **613 LoC** at 2026-05-22 — amendment brief's "206 LoC" was stale).
+- **Approach**: type-only adoption via `import type { … } from '@0xhoneyjar/score-api-types'`. Zero runtime — no zod loaded. Data shapes import INTO the **existing local port** at `packages/persona-engine/src/ports/score-fetch.port.ts` (verified path — NOT `src/score/score-fetch.port.ts`; the port lives under `ports/`).
+- **Constraints (verbatim, issue #85 comment)**: `MostActiveWalletEntry` stays local (not in package until cycle-029); names that live in >1 entity (e.g. `DimensionSummary`) are **deep-import only** (`@0xhoneyjar/score-api-types/entities/<name>`), never the flat root barrel.
+- **Verification interplay**: the package's JSON Schema (`/json/<entity>.v1.json`, permanent `$id`) feeds T3.1's score-mcp schema verification gate (Fork D → D1: T3.0 lands before T3.1 so the gate validates against the package schema rather than hand-sampling).
+- **Acceptance**: `bun run typecheck` stays green after the type-surface swap; `MostActiveWalletEntry` + deep-import `DimensionSummary` regression-guarded.
+
+### 10.2 · FR-38 · cadence-honest data surface (S3 T3.8)
+
+- **Separation requirement (Fork A operator decision)**: the *data-read* and the *voice* become independently-tweakable surfaces. The licensing window (decides what's worth narrating · stays 30d for factor density per cycle-005 r4 · `live/score-mcp.live.ts:164,195`) is separated from the reporting headline (the number the reader sees).
+- **Hero number**: a fresh "since last post" delta computed from `compose/voice-memory.ts` per-zone state (verified present). The 30d figure, if retained, is labeled rolling context — clearly secondary.
+- **Two-clocks close**: digest path uses `PULSE_WINDOW_DAYS=7` (`digest-orchestrator.ts:36`) while micro renders `windowDays=30` (`live/discord-render.live.ts` `buildSubstrateFacts`→`renderMicro`). FR-38 makes digest + micro report the same clock.
+- **Acceptance**: (a) card headline reflects cadence window OR since-last-post delta; (b) licensing/factor-density logic unchanged (still 30d); (c) digest + micro report the same clock; (d) byte-snapshot regression fixture in `evals/snapshots/` (verified dir exists).
+
+### 10.3 · FR-39 · two-beat billboard renderer (S3 T3.9 · LOCKED SPEC)
+
+Current delivery collapses voice + substrate into one message: `plainToPayload` (`live/discord-webhook.live.ts:30`) builds `content` as `[message.voiceContent, factsLine].filter(Boolean).join('\n')` where `factsLine = message.truthFields.join(' · ')` (verified `:31-33`). FR-39 splits this into two sequential Pattern-B webhook sends (neither pings on pop-in/digest cadence):
+
+- **Beat 1 — the agent** (`voiceContent`): 1–2 short lowercase lines, **zero numbers** (stats-out-of-voice). All-quiet register example:
+  > the lab's quiet today.
+  > i'll keep the lamp on.
+- **Beat 2 — the billboard** (`truthFields`, **bold**): zone header + cadence-honest data.
+  ```
+  🧪 OWSLEY LAB · onchain
+  since last       +0          ← FR-38 hero: fresh delta (voice-memory per-zone state)
+  30d rolling     352          ← rolling context, clearly secondary
+  wallets warm     15
+  state      all quiet
+  ```
+
+- **Craft sub-decision (locked · flag to push back on)**: Beat 2 renders as **bold text with U+2007 FIGURE-SPACE column alignment**, NOT a Discord code block. Rationale: code blocks give guaranteed monospace but **ignore `**bold**`**; bold was the explicit operator ask. The figure-space technique is already proven at `live/discord-render.live.ts:54` (verified — `PAD_CHAR = metrics.digitWidthSpaceChar`, U+2007 default attested in S0/T0.2 typography spike for Android `gg sans` tabular safety). Tradeoff: bold-figure-space depends on figure-space rendering (validated cycle-007 S3); code-block would be bulletproof-monospace but un-bold.
+- **Billboard reframe (Fork B)**: this supersedes the narrow "two messages" framing. The cron route renders as a clean data **Billboard** (digest) OR an **Event-spotlight** pop-in; **chat** (`/ruggy`, mentions) is ruggy-the-agent. Each surface unmistakably itself. Convergence with `project-cron-post-types-pruning`: digest→Billboard, pop-in→Event-spotlight; weaver/lore_drop/question/callout become prune candidates.
+- **Acceptance**: (a) delivery emits two messages; (b) Beat 2 bold via figure-space; (c) `message.content` always populated (Discord-as-Material fallback per CLAUDE.md); (d) underscore-escape preserved (`deliver/sanitize.ts`); (e) byte-snapshot fixture in `evals/snapshots/`.
+- **Open micro-decisions (defer to S9 preview surface, do NOT block T3.9)**: keep the `30d rolling` row at all? · exact label wording · separator between beats · all-quiet vs active-state register.
+
+### 10.4 · FR-40/41/42 · the RLHF preference loop (S9)
+
+- **FR-40 fan-out (capture)**: extend S6's `--tweak <json>` (`apps/bot/src/cli/playground-fire.ts`) into a `--fire-n` mode — same input (zone+state+snapshot), N candidates varying seed and/or a named format-fragment variant, grouped by a `batch_id`. Each candidate captured as an S5-shaped trace row (`outcome` classified). First slice is layout/format (billboard look), then voice.
+- **FR-41 elicitation**: dashboard (`scripts/dashboard.ts`) renders a batch's N candidates side-by-side at **Discord fidelity** (real bold · ~40-char mobile wrap · webhook avatar · reuse INV-10 oklch + embed preview from S6 T6.5). Operator picks/ranks + writes a free-text annotation. Persist as a preference record to `grimoires/loa/cycles/cycle-008-persona-substrate/preference-log.jsonl` (verified present · schema `rlhf-preference-v0`). Records structured as preference-pairs/rankings (RLHF-ready). The manual loop fired 2026-05-22 (amendment §7.4) is the reference shape: candidates `[scoreboard, two-beat, event-spotlight, ticker-tile]` → chosen `two-beat`.
+- **FR-42 backpressure (close)**: a picked+annotated winner promotes to `evals/snapshots/` as a golden case (verified dir). Annotations accumulate as a labeled corpus — the calibration signal for the **cycle-009 LLM-as-judge** (Fork C → C3: human loop now, judge bootstrapped from picks in cycle-009).
+- **S9 lead slice (the iteration-speed unlock)**: the billboard preview surface is the FIRST thing S9 ships, turning the manual loop into a self-serve tool. This is why S9 leads the amendment delivery despite landing as the highest global sprint number — the instrument unblocks the FR-38/39 craft work, which lands *through* it with side-by-side evidence.
+
+### 10.5 · SDD-specific risks (amendment)
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| score-api-types deep-import paths (`/entities/<name>`) don't resolve or package not published at 0.6.0 | Medium | T3.0 verifies `bun add -D @0xhoneyjar/score-api-types@0.6.0` resolves + deep-import typechecks BEFORE the type-surface swap; FR-43 acceptance gates on green typecheck |
+| FR-39 figure-space bold un-aligns on a Discord client that renders U+2007 non-tabular | Low | Already validated cycle-007 S3 + S0/T0.2 spike; byte-snapshot fixture + PP-5-style mobile screenshot at S9 attestation catches regression |
+| FR-38 "since last" delta drifts if voice-memory per-zone state is reset/missing | Medium | Type-guard + fallback: missing per-zone state → headline degrades to 30d-rolling-labeled (never shows a wrong fresh number); negative test fixture |
+| S9 self-serve preview diverges from real Discord delivery (fidelity gap) | Medium | Preview reuses the SAME `plainToPayload`/figure-space render path as production (FR-39), not a re-implementation; one render function, two callers (production webhook + preview) |
+
+---
+
+End of cycle-008 SDD r1 + amendment 2026-05-22. Ready for Phase 3.5 (Bridgebuilder SDD if enabled) → Phase 4 (Flatline SDD multi-model review).

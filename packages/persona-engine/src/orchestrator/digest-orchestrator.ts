@@ -13,6 +13,10 @@ import { createVoiceMemoryLive } from '../live/voice-memory.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
 import { getTracer } from '../observability/otel-layer.ts';
 import { buildDimensionPulsePayload } from '../deliver/dimension-pulse-payload.ts';
+import { fetchZoneDigest } from '../score/client.ts';
+import { buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2, prettyFactorName } from '../deliver/enriched-render.ts';
+import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
+import { callAmbientMcpTool } from '../ambient/live/score-mcp-client.ts';
 
 export interface DigestPostResult {
   readonly zone: ZoneId;
@@ -27,6 +31,10 @@ export interface DigestOrchestratorDeps {
   readonly voice?: VoiceGenPort;
   readonly presentation?: PresentationPort;
   readonly voiceMemory?: VoiceMemoryPort;
+  /** cycle-008 S9 · enriched-v2 path · full ZoneDigest fetch (defaults to the score client). */
+  readonly fetchZoneDigest?: (config: Config, zone: ZoneId) => Promise<ZoneDigest>;
+  /** cycle-008 S9 · enriched-v2 path · spotlight wallet→handle resolve (defaults to freeside-auth MCP). */
+  readonly resolveSpotlightHandle?: (config: Config, wallet: string) => Promise<string>;
 }
 
 // Default pulse window · cycle-007 S8 r4 (operator pivot 2026-05-17):
@@ -61,6 +69,13 @@ export async function composeDigestPost(
   zone: ZoneId,
   deps: DigestOrchestratorDeps = {},
 ): Promise<DigestPostResult> {
+  // cycle-008 S9 · enriched-v2 surface (DIGEST_SURFACE flag, default 'pulse').
+  // The RLHF-validated Components V2 billboard, fed by the full ZoneDigest (real
+  // raw_stats: spotlight, wallets, factor movers). Gated → canary → flip.
+  if (config.DIGEST_SURFACE === 'enriched-v2') {
+    return composeEnrichedDigestPost(config, zone, deps);
+  }
+
   const score = deps.score ?? createScoreMcpLive(config);
   // Resolve other deps even if unused · ensures shape parity with prior callers
   // that may inject mocks. voice/presentation/voiceMemory are constructed but
@@ -103,6 +118,94 @@ export async function composeDigestPost(
     voice: '',
     payload,
   };
+}
+
+/**
+ * composeEnrichedDigestPost — the cycle-008 S9 RLHF-validated enriched digest (Components V2).
+ *
+ * Fed by the FULL ZoneDigest (`get_zone_digest` → real raw_stats: spotlight, window_wallet_count,
+ * factor movers) rather than the dimension-pulse breakdown. Two real-data hookups the operator
+ * asked to wire before flipping:
+ *   - factor display names — `raw_stats.factor_trends` carries only factor_id, so a name catalog
+ *     is built from `get_dimension_breakdown` (its top/cold factors carry display_name).
+ *   - spotlight identity — the wallet is resolved via freeside_auth (NFR-29: NEVER a raw 0x… in
+ *     prose; on failure → "an anonymous keeper"). Spotlight PFP thumbnail is DEFERRED (issue #87).
+ *
+ * Voiceless, like the pulse digest — the container IS the billboard, no two-beat.
+ */
+async function composeEnrichedDigestPost(
+  config: Config,
+  zone: ZoneId,
+  deps: DigestOrchestratorDeps,
+): Promise<DigestPostResult> {
+  const score = deps.score ?? createScoreMcpLive(config);
+  const fetchZd = deps.fetchZoneDigest ?? fetchZoneDigest;
+  const resolveHandleFn = deps.resolveSpotlightHandle ?? resolveSpotlightHandle;
+
+  const zd = await fetchZd(config, zone);
+
+  // factor display-name catalog (factor_trends → factor_id only; names live on the breakdown).
+  const nameMap = new Map<string, string>();
+  try {
+    const { breakdowns } = await score.fetchDimensionBreakdowns({ zone, windowDays: PULSE_WINDOW_DAYS });
+    for (const b of breakdowns) {
+      for (const f of [...b.top_factors, ...b.cold_factors]) nameMap.set(f.factor_id, f.display_name);
+    }
+  } catch {
+    // names fall back to prettify — never fail the digest on the name-catalog hop.
+  }
+
+  // spotlight identity (NFR-29 · resolve before any 0x… reaches prose; "an anonymous keeper" on miss).
+  const sp = zd.raw_stats.spotlight;
+  const spotlightHandle = sp ? await resolveHandleFn(config, sp.wallet) : undefined;
+
+  const components = buildEnrichedDigestComponentsV2(zd, {
+    resolveFactorName: (id) => nameMap.get(id) ?? prettyFactorName(id),
+    ...(sp ? { resolveHandle: () => spotlightHandle ?? ANON_MEMBER } : {}),
+    // resolvePfp DEFERRED (issue #87 §2) — spotlight renders the handle, no NFT thumbnail yet.
+  });
+
+  const flavor = ZONE_REGISTRY[zone];
+  const payload: DigestPayload = {
+    // content is the Discord-as-Material fallback label; Discord renders `components` under the flag.
+    content: `${flavor.emoji} ${flavor.displayName}`,
+    embeds: [],
+    flags: IS_COMPONENTS_V2,
+    components,
+  };
+
+  return { zone, postType: 'digest', digest: zd, voice: '', payload };
+}
+
+// The THJ community's member noun (operator: "each community has a name for their members and we
+// call them Miberas"). The spotlight fallback when no handle resolves — never "an anonymous keeper".
+// Repo-scoped to the mibera world; lift to CharacterConfig if a non-mibera community digest lands here.
+const ANON_MEMBER = 'an anonymous mibera';
+
+/**
+ * Resolve a spotlight wallet → display handle via freeside_auth (resolve_wallet). NFR-29: a raw
+ * 0x… must NEVER reach prose; on any failure (endpoint unset, timeout, miss) → ANON_MEMBER.
+ * One call per weekly digest, so the Effect WalletResolver's cache/CB are unnecessary.
+ * NOTE: freeside-auth MCP is currently unconfigured in prod (FREESIDE_AUTH_MCP_URL unset · the
+ * deferred auth wiring), so spotlights show "a mibera" until it's wired (issue #87 §2).
+ */
+async function resolveSpotlightHandle(config: Config, wallet: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const raw = await callAmbientMcpTool<{ display_handle?: string | null; discord_handle?: string | null }>(
+      config,
+      'freeside-auth',
+      'resolve_wallet',
+      { wallet },
+      controller.signal,
+    );
+    return raw?.display_handle ?? raw?.discord_handle ?? ANON_MEMBER;
+  } catch {
+    return ANON_MEMBER;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function synthesizeSnapshot(

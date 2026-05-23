@@ -39,7 +39,7 @@ export async function composeQuestionPost(
   const derived = deriveShape({ snapshot, crossZone: [snapshot] });
   const augment: VoiceAugment | undefined = config.VOICE_DISABLED
     ? undefined
-    : await voiceGen.generateDigestVoice(snapshot, { derived });
+    : await voiceGen.generateDigestVoice(snapshot, { derived, postType: 'question' });
 
   const message = renderer.renderQuestion(snapshot, augment);
   return { zone, postType: 'question', message, payload: presentation.toQuestionPayload(message) };

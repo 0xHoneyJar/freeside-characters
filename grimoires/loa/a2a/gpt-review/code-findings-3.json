@@ -1,0 +1,44 @@
+{
+  "verdict": "CHANGES_REQUIRED",
+  "summary": "The hexagonal split and Components V2 rendering are solid, but capture correctness can silently lose or miss operator feedback in multi-candidate and non-429 error paths.",
+  "issues": [
+    {
+      "severity": "major",
+      "file": "packages/persona-engine/src/preview/adapters/discord/capture.ts",
+      "line": 106,
+      "description": "Reply pagination stops after the first matched reply across any candidate, which can miss older replies for other candidates in the same batch.",
+      "current_code": "if (batch.some((m) => m.message_reference?.message_id && targetIds.has(m.message_reference.message_id))) break;",
+      "fixed_code": "const unresolvedTargetIds = new Set(targetIds);\nfor (let page = 0; page < MAX_PAGES; page++) {\n  const qs = before ? `?limit=100&before=${before}` : '?limit=100';\n  const batch = await apiGetJson<DiscordMessage[]>(doFetch, `${DISCORD_API}/channels/${channelId}/messages${qs}`, auth, [], sleep);\n  if (batch.length === 0) break;\n  recent.push(...batch);\n  before = batch[batch.length - 1]?.id;\n\n  for (const m of batch) {\n    const ref = m.message_reference?.message_id;\n    if (ref && unresolvedTargetIds.has(ref)) unresolvedTargetIds.delete(ref);\n  }\n  if (unresolvedTargetIds.size === 0) break;\n}",
+      "explanation": "This only stops pagination when every candidate target message has been observed, preventing false negatives where one candidate gets a `why` and others are missed because their replies are on older pages."
+    },
+    {
+      "severity": "major",
+      "file": "packages/persona-engine/src/preview/adapters/discord/capture.ts",
+      "line": 64,
+      "description": "`apiGetJson` swallows all non-429 failures into fallbacks, so auth/permission failures can be recorded as empty feedback instead of surfacing capture failure.",
+      "current_code": "if (!res.ok) return fallback;",
+      "fixed_code": "async function apiGetJson<T>(\n  doFetch: typeof fetch,\n  url: string,\n  headers: Record<string, string>,\n  fallback: T,\n  sleep: (ms: number) => Promise<void>,\n  opts: { strict?: boolean } = {},\n): Promise<T> {\n  for (let attempt = 0; attempt < 3; attempt++) {\n    let res: Response;\n    try {\n      res = await doFetch(url, { headers });\n    } catch {\n      if (opts.strict) throw new Error(`discord api network error: ${url}`);\n      return fallback;\n    }\n    if (res.status === 429) {\n      const retry = await res.json().then((j: { retry_after?: number }) => j.retry_after ?? 1).catch(() => 1);\n      await sleep(Math.ceil(retry * 1000) + 250);\n      continue;\n    }\n    if (!res.ok) {\n      if (opts.strict) throw new Error(`discord api ${res.status}: ${url}`);\n      return fallback;\n    }\n    try {\n      return (await res.json()) as T;\n    } catch {\n      if (opts.strict) throw new Error(`discord api invalid json: ${url}`);\n      return fallback;\n    }\n  }\n  if (opts.strict) throw new Error(`discord api rate-limited after retries: ${url}`);\n  return fallback;\n}\n\nconst me = await apiGetJson<DiscordUser | null>(doFetch, `${DISCORD_API}/users/@me`, auth, null, sleep, { strict: true });\nconst botUserId = config.botUserId ?? me.id;",
+      "explanation": "Strict mode for required reads turns hard failures into explicit errors, preventing silent corpus poisoning from empty-but-invalid captures when token/permissions/network are broken."
+    }
+  ],
+  "blocking_issues": [
+    {
+      "location": "packages/persona-engine/src/preview/adapters/discord/capture.ts#L100-L107",
+      "issue": "Reply scan exits on first matched candidate instead of confirming coverage for all candidates.",
+      "why_blocking": "Multi-candidate rounds can drop valid `why` feedback, reducing attribution quality and biasing preference records.",
+      "fix": "Track unresolved target message IDs and only break pagination once all are found (or page cap hit)."
+    },
+    {
+      "location": "packages/persona-engine/src/preview/adapters/discord/capture.ts#L44-L72",
+      "issue": "Non-429 Discord API failures are treated as empty data.",
+      "why_blocking": "Invalid auth/perms/network errors become silent empty captures, creating false \"no feedback\" records instead of actionable failures.",
+      "fix": "Add strict error mode for mandatory capture endpoints (`/users/@me`, message history, reactions) and throw on non-429 failures."
+    }
+  ],
+  "fabrication_check": {
+    "passed": true,
+    "concerns": []
+  },
+  "iteration": 3,
+  "auto_approved": false
+}

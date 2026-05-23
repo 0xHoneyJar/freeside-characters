@@ -17,6 +17,14 @@ const ConfigSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
 
+  // ─── digest surface (cycle-008 S9) ────────────────────────────────────
+  /** Which digest surface the cron renders.
+   *  'pulse' (default) = the score-dashboard per-dimension card mirror.
+   *  'enriched-v2'     = the RLHF-validated enriched Components V2 billboard
+   *  (hero + factor movers + spotlight + wallets-warm). Flip to 'enriched-v2'
+   *  after canary. See deliver/enriched-render.ts + the digest orchestrator. */
+  DIGEST_SURFACE: z.enum(['pulse', 'enriched-v2']).default('pulse'),
+
   // ─── explicit LLM provider (V0.4 — codex-rescue F1: replace implicit
   // key-presence inference; fail loud if intent is ambiguous) ────────────
   /** stub | anthropic | freeside | bedrock | auto.
@@ -186,6 +194,10 @@ const ConfigSchema = z.object({
   // ─── meta ─────────────────────────────────────────────────────────────
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  /** cycle-008 T3.2 · cron voice builder selector. 'canonical' → buildPrompt
+   *  (persona.md · stats-out-of-voice); anything else → legacy buildVoiceBrief.
+   *  Resolve via parsePromptBuilder(). Unset = legacy (prod-safe default). */
+  LOA_PROMPT_BUILDER: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -202,6 +214,23 @@ export function loadConfig(): Config {
 export function isDryRun(config: Config): boolean {
   if (config.DISCORD_BOT_TOKEN) return false;
   return !config.DISCORD_WEBHOOK_URL || config.DISCORD_WEBHOOK_URL === '';
+}
+
+export type PromptBuilderMode = 'canonical' | 'legacy';
+
+/**
+ * cycle-008 T3.2 · resolve the cron voice builder. Returns 'canonical' ONLY on
+ * the literal string 'canonical'; everything else (unset, '', typos, casing,
+ * whitespace) returns 'legacy', with a stderr warning for unrecognized non-empty
+ * values. Default-legacy keeps production on the proven path until the operator
+ * explicitly opts in (e.g. for the railway live-voice attestation · OP-G2).
+ */
+export function parsePromptBuilder(raw: string | undefined): PromptBuilderMode {
+  if (raw === 'canonical') return 'canonical';
+  if (raw !== undefined && raw !== '' && raw !== 'legacy') {
+    console.warn(`[config] LOA_PROMPT_BUILDER="${raw}" unrecognized; falling back to 'legacy'`);
+  }
+  return 'legacy';
 }
 
 export function getZoneChannelId(config: Config, zone: ZoneId): string | undefined {

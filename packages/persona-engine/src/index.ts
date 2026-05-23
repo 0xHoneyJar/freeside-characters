@@ -231,3 +231,27 @@ export type {
   RoomTemperature,
   RoomSocialDensity,
 } from './orchestrator/rosenzu/lynch-primitives.ts';
+
+// cycle-008 S9 (g30) · standalone RLHF iteration surface — hexagonal (full API at @…/persona-engine/preview).
+export {
+  BILLBOARD_VARIANTS,
+  resolveVariants,
+  buildSnapshot,
+  CANONICAL_CASES,
+  caseById,
+  renderBatch,
+  buildRatedRecord,
+  appendPreferenceRecord,
+  promoteToEvals,
+  PREFERENCE_LOG_PATH,
+  EVALS_SNAPSHOTS_DIR,
+  createDiscordAdapter,
+  createTerminalAdapter,
+} from './preview/index.ts';
+export type {
+  BillboardVariant,
+  Candidate,
+  RenderBatch,
+  PreferenceRecord,
+  MediumAdapter,
+} from './preview/index.ts';

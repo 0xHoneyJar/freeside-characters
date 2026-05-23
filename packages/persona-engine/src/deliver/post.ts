@@ -24,6 +24,7 @@ import type { DigestPayload } from './embed.ts';
 import { getBotClient, postToChannel } from './client.ts';
 import { getOrCreateChannelWebhook, sendViaWebhook } from './webhook.ts';
 import { attachReactionBar } from './reaction-bar.ts';
+import { postComponentsV2 } from './cv2-post.ts';
 
 export interface DeliveryResult {
   posted: boolean;
@@ -51,14 +52,21 @@ export async function deliverZoneDigest(
       throw new Error('bot token set but client failed to connect');
     }
     const webhook = await getOrCreateChannelWebhook(client, channelId);
-    const result = await sendViaWebhook(webhook, character, payload);
+    // cycle-008 T3.9 · two-beat: voice (beat 1) then bold billboard (beat 2) as
+    // separate messages. `secondary` absent → single send (back-compat).
+    let firstMessageId: string | undefined;
+    for (const beat of beatsOf(payload)) {
+      const r = await sendViaWebhook(webhook, character, beat);
+      if (firstMessageId === undefined) firstMessageId = r.messageId;
+    }
     // Fire-and-forget reaction-bar attachment per
     // DIGEST_REACTION_BAR_ENABLED (default: true). Reactions are
     // augmentation, NOT critical path — never fail delivery on
-    // reaction-attach error. messageId may be undefined if the
-    // webhook didn't return one (legacy webhook variants).
-    if (config.DIGEST_REACTION_BAR_ENABLED && result.messageId) {
-      void attachReactionBar(client, channelId, result.messageId).catch((err) => {
+    // reaction-attach error. Attaches to beat 1 (the post the channel
+    // sees first). messageId may be undefined if the webhook didn't
+    // return one (legacy webhook variants).
+    if (config.DIGEST_REACTION_BAR_ENABLED && firstMessageId) {
+      void attachReactionBar(client, channelId, firstMessageId).catch((err) => {
         console.error('[reaction-bar] post-delivery attach threw:', err);
       });
     }
@@ -66,7 +74,7 @@ export async function deliverZoneDigest(
       posted: true,
       dryRun: false,
       via: 'webhook-shell',
-      messageId: result.messageId,
+      messageId: firstMessageId,
       channelId,
     };
   }
@@ -84,9 +92,14 @@ export async function deliverZoneDigest(
     if (!client) {
       throw new Error('bot token set but client failed to connect');
     }
-    const result = await postToChannel(client, channelId, payload);
-    if (config.DIGEST_REACTION_BAR_ENABLED && result.messageId) {
-      void attachReactionBar(client, channelId, result.messageId).catch((err) => {
+    // cycle-008 T3.9 · two-beat sequential send (see beatsOf).
+    let firstMessageId: string | undefined;
+    for (const beat of beatsOf(payload)) {
+      const r = await postToChannel(client, channelId, beat);
+      if (firstMessageId === undefined) firstMessageId = r.messageId;
+    }
+    if (config.DIGEST_REACTION_BAR_ENABLED && firstMessageId) {
+      void attachReactionBar(client, channelId, firstMessageId).catch((err) => {
         console.error('[reaction-bar] post-delivery attach threw:', err);
       });
     }
@@ -94,20 +107,32 @@ export async function deliverZoneDigest(
       posted: true,
       dryRun: false,
       via: 'bot',
-      messageId: result.messageId,
+      messageId: firstMessageId,
       channelId,
     };
   }
 
   // 3. Legacy single-webhook fallback (V0 testing path)
   if (config.DISCORD_WEBHOOK_URL) {
-    const response = await fetch(config.DISCORD_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      throw new Error(`webhook delivery failed: ${response.status} ${await response.text()}`);
+    // cycle-008 T3.9 · two-beat: POST each beat as its own message.
+    for (const beat of beatsOf(payload)) {
+      // cycle-008 S9 · Components V2 beat → {flags, components} + ?with_components=true (webhooks
+      // ignore components without it); built via URL so existing query params survive. CV2 goes
+      // through the shared 429-retrying helper; plain content/embeds keep the direct POST.
+      if (beat.components !== undefined) {
+        const url = new URL(config.DISCORD_WEBHOOK_URL);
+        url.searchParams.set('with_components', 'true');
+        await postComponentsV2(url.toString(), { flags: beat.flags, components: beat.components });
+        continue;
+      }
+      const response = await fetch(config.DISCORD_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: beat.content, embeds: beat.embeds }),
+      });
+      if (!response.ok) {
+        throw new Error(`webhook delivery failed: ${response.status} ${await response.text()}`);
+      }
     }
     return { posted: true, dryRun: false, via: 'webhook-fallback' };
   }
@@ -115,6 +140,32 @@ export async function deliverZoneDigest(
   // 4. Dry-run to stdout
   logDryRun(character, zone, payload, 'no token, no webhook');
   return { posted: false, dryRun: true, via: 'dry-run' };
+}
+
+/**
+ * cycle-008 T3.9 · split a (possibly two-beat) payload into the ordered list of
+ * Discord messages to send. `secondary` present → [voice beat, billboard beat];
+ * absent → [single message]. Strips `secondary` from each beat so it never
+ * recurses.
+ */
+function beatsOf(payload: DigestPayload): DigestPayload[] {
+  const primary: DigestPayload = {
+    content: payload.content,
+    embeds: payload.embeds,
+    ...(payload.flags !== undefined ? { flags: payload.flags } : {}),
+    ...(payload.components ? { components: payload.components } : {}),
+  };
+  return payload.secondary
+    ? [
+        primary,
+        {
+          content: payload.secondary.content,
+          embeds: payload.secondary.embeds,
+          ...(payload.secondary.flags !== undefined ? { flags: payload.secondary.flags } : {}),
+          ...(payload.secondary.components ? { components: payload.secondary.components } : {}),
+        },
+      ]
+    : [primary];
 }
 
 function logDryRun(
@@ -138,6 +189,10 @@ function logDryRun(
       field.value.split('\n').forEach((line) => console.log('    ' + line));
     }
     console.log('embed.footer:', payload.embeds[0].footer?.text);
+  }
+  if (payload.secondary) {
+    console.log('──── beat 2 (billboard) ────');
+    payload.secondary.content.split('\n').forEach((line) => console.log('    ' + line));
   }
   console.log('──────────────────────────────────────────────────────────────\n');
 }

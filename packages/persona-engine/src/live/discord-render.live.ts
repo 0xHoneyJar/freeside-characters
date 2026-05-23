@@ -216,13 +216,41 @@ function voiceLine(augment?: VoiceAugment): string {
   return [augment.header, augment.outro].filter(Boolean).join('\n');
 }
 
+/**
+ * cycle-008 T3.8/T3.9 · the data BILLBOARD rows (beat 2 of the two-beat post).
+ *
+ * Cadence-honesty (FR-38): the window total is labeled `<N>d rolling` so it can
+ * never be mistaken for "since you last looked" on a sub-window cadence. The true
+ * "since last post" delta (voice-memory-sourced) is DEFERRED until the
+ * VoiceMemoryPort is wired into the render path — `digest-orchestrator.ts:70`
+ * stubs it today (`void (deps.voiceMemory ?? ...)`), and the standalone
+ * `compose/voice-memory.ts` writer is orphaned (zero callers). This is T3.8's
+ * AC(e) graceful-degradation path: a clearly-labeled rolling figure, never a
+ * wrong fresh number. The fresh delta lights up when voice-memory is wired
+ * (rides with the deferred cron-migration · T3.3).
+ *
+ * Returns the billboard as discrete lines: `[header, ...aligned label/value rows]`.
+ * Column alignment uses U+2007 FIGURE SPACE (digit-width invariant — the same
+ * technique as `renderSnapshotField` above). The caller (`plainToPayload`) bolds
+ * each line; data state ("all quiet") stays in the voice beat, not the billboard.
+ */
 function buildSubstrateFacts(snapshot: DigestSnapshot): ReadonlyArray<string> {
-  const facts: string[] = [];
-  facts.push(`${safeResolveZoneRichLabel(snapshot.zone, 'discord-render')} · ${snapshot.totalEvents} events / ${snapshot.windowDays}d`);
-  if (snapshot.activeWallets !== undefined) {
-    facts.push(`${snapshot.activeWallets} active wallets`);
+  const header = safeResolveZoneRichLabel(snapshot.zone, 'discord-render');
+  const PAD_CHAR = metricsForMedium(DISCORD_WEBHOOK_DESCRIPTOR).digitWidthSpaceChar;
+  const rows: Array<readonly [string, string]> = [
+    [`${snapshot.windowDays}d rolling`, String(snapshot.totalEvents)],
+  ];
+  if (snapshot.deltaPct !== null && Math.abs(snapshot.deltaPct) >= 1) {
+    rows.push(['change', formatDeltaPct(snapshot.deltaPct)]);
   }
-  return facts;
+  if (snapshot.activeWallets !== undefined) {
+    rows.push(['wallets warm', String(snapshot.activeWallets)]);
+  }
+  const labelWidth = Math.max(...rows.map(([label]) => label.length));
+  const lines = rows.map(
+    ([label, value]) => `${label.padEnd(labelWidth + 2, PAD_CHAR)}${value}`,
+  );
+  return [header, ...lines];
 }
 
 export function renderMicro(snapshot: DigestSnapshot, augment?: VoiceAugment): MicroMessage {

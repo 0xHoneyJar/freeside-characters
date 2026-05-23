@@ -39,7 +39,7 @@ export async function composeLoreDropPost(
   const derived = deriveShape({ snapshot, crossZone: [snapshot] });
   const augment: VoiceAugment | undefined = config.VOICE_DISABLED
     ? undefined
-    : await voiceGen.generateDigestVoice(snapshot, { derived });
+    : await voiceGen.generateDigestVoice(snapshot, { derived, postType: 'lore_drop' });
 
   const message = renderer.renderLoreDrop(snapshot, augment);
   return { zone, postType: 'lore_drop', message, payload: presentation.toLoreDropPayload(message) };

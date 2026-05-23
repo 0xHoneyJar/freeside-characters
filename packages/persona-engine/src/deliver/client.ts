@@ -18,6 +18,7 @@
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import type { TextChannel, NewsChannel, ThreadChannel } from 'discord.js';
 import type { Config } from '../config.ts';
+import { postComponentsV2 } from './cv2-post.ts';
 
 let cachedClient: Client | null = null;
 let readyPromise: Promise<Client> | null = null;
@@ -93,8 +94,21 @@ async function startClient(config: Config): Promise<Client> {
 export async function postToChannel(
   client: Client,
   channelId: string,
-  payload: { content: string; embeds: object[] },
+  payload: { content: string; embeds: object[]; flags?: number; components?: unknown[] },
 ): Promise<{ posted: true; messageId: string }> {
+  // cycle-008 S9 · Components V2 → raw REST to the channel (Bot auth) + ?with_components=true.
+  // discord.js channel.send rejects raw component JSON; raw REST is the proven path.
+  if (payload.components !== undefined) {
+    const token = client.token;
+    if (!token) throw new Error('postToChannel: client has no token for Components V2 REST');
+    const json = await postComponentsV2(
+      `https://discord.com/api/v10/channels/${channelId}/messages?with_components=true`,
+      { flags: payload.flags, components: payload.components },
+      { authorization: `Bot ${token}` },
+    );
+    return { posted: true, messageId: json.id ?? '' };
+  }
+
   const channel = await client.channels.fetch(channelId);
   if (!channel) throw new Error(`channel not found: ${channelId}`);
   if (!isSendable(channel)) {

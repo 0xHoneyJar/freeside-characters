@@ -1,0 +1,53 @@
+{
+  "verdict": "CHANGES_REQUIRED",
+  "summary": "The hexagonal split and Components V2 renderer are solid, but there are blocking Discord capture/present edge-case bugs that can break or degrade the RLHF signal.",
+  "issues": [
+    {
+      "severity": "major",
+      "file": "packages/persona-engine/src/preview/adapters/discord/index.ts",
+      "line": 22,
+      "description": "Capture runs with an empty bot token when `botToken` is omitted, which sends `Authorization: Bot ` and causes invalid REST reads instead of failing fast.",
+      "current_code": "captureFromDiscord(presented, {\n  botToken: config.botToken ?? '',\n  channelId: config.channelId ?? (presented.meta?.channelId as string | undefined) ?? '',\n  ...\n})",
+      "fixed_code": "capture: async (presented: PresentedBatch) => {\n  if (!config.botToken) {\n    throw new Error('createDiscordAdapter.capture requires botToken for Discord REST capture');\n  }\n  return captureFromDiscord(presented, {\n    botToken: config.botToken,\n    channelId: config.channelId ?? (presented.meta?.channelId as string | undefined) ?? '',\n    botUserId: config.botUserId,\n    operatorUserId: config.operatorUserId,\n    fetchImpl: config.fetchImpl,\n  });\n}",
+      "explanation": "Failing fast on missing credentials prevents ambiguous capture behavior and avoids recording incomplete/invalid feedback caused by unauthorized API calls."
+    },
+    {
+      "severity": "major",
+      "file": "packages/persona-engine/src/preview/adapters/discord/present.ts",
+      "line": 80,
+      "description": "Webhook URL is concatenated with a hardcoded `?wait=true&with_components=true`, which breaks URLs that already include query parameters (e.g., `thread_id`).",
+      "current_code": "const res = await doFetch(`${config.webhookUrl}?wait=true&with_components=true`, { ... })",
+      "fixed_code": "const u = new URL(config.webhookUrl);\nu.searchParams.set('wait', 'true');\nu.searchParams.set('with_components', 'true');\nconst res = await doFetch(u.toString(), {\n  method: 'POST',\n  headers: { 'content-type': 'application/json' },\n  body: JSON.stringify({ ...body, username, avatar_url }),\n});",
+      "explanation": "Using `URL`/`searchParams` preserves existing webhook query params and guarantees valid URL composition for all Discord webhook targets."
+    },
+    {
+      "severity": "major",
+      "file": "packages/persona-engine/src/preview/adapters/discord/present.ts",
+      "line": 103,
+      "description": "Reaction 429 handling recurses without an attempt bound, which can loop indefinitely under persistent rate limiting.",
+      "current_code": "if (res.status === 429) {\n  const retry = await res.json().then((j: { retry_after?: number }) => j.retry_after ?? 1).catch(() => 1);\n  await sleep(Math.ceil(retry * 1000) + 250);\n  await react(channelId, messageId, emoji);\n}",
+      "fixed_code": "const react = async (channelId: string, messageId: string, emoji: string): Promise<void> => {\n  if (!config.botToken) return;\n  const enc = encodeURIComponent(emoji);\n  for (let attempt = 0; attempt < 3; attempt++) {\n    const res = await doFetch(`${DISCORD_API}/channels/${channelId}/messages/${messageId}/reactions/${enc}/@me`, {\n      method: 'PUT',\n      headers: { authorization: `Bot ${config.botToken}` },\n    });\n    if (res.status === 429) {\n      const retry = await res.json().then((j: { retry_after?: number }) => j.retry_after ?? 1).catch(() => 1);\n      await sleep(Math.ceil(retry * 1000) + 250);\n      continue;\n    }\n    if (!res.ok && res.status !== 403) {\n      console.error(`[discord-present] react ${emoji} failed: ${res.status}`);\n    }\n    return;\n  }\n  console.error(`[discord-present] react ${emoji} failed: rate-limited after 3 attempts`);\n};",
+      "explanation": "An iterative bounded retry keeps behavior deterministic and prevents runaway recursion/hangs while still respecting Discord rate-limit recovery."
+    }
+  ],
+  "blocking_issues": [
+    {
+      "location": "Discord adapter capture wiring (`preview/adapters/discord/index.ts`)",
+      "issue": "Missing `botToken` is converted to an empty token for capture reads.",
+      "why_blocking": "Feedback capture can proceed with invalid auth semantics and produce unreliable RLHF data.",
+      "fix": "Require `botToken` at capture time and throw a clear error if absent."
+    },
+    {
+      "location": "Discord webhook post URL builder (`preview/adapters/discord/present.ts`)",
+      "issue": "Query string is appended unsafely with string concatenation.",
+      "why_blocking": "Webhook posts can fail in valid deployments that rely on existing webhook query params.",
+      "fix": "Build the request URL with `new URL()` and `searchParams.set()`."
+    }
+  ],
+  "fabrication_check": {
+    "passed": true,
+    "concerns": []
+  },
+  "iteration": 2,
+  "auto_approved": false
+}
