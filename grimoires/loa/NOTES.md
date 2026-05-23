@@ -17,7 +17,7 @@
 - **`docs/` ↔ `grimoires/loa/specs/legacy-imports/` duplication** — mount PR copied AGENTS.md, ARCHITECTURE.md, CIVIC-LAYER.md, MULTI-REGISTER.md, CHARACTER-AUTHORING.md into legacy-imports/ without removing originals. Follow-up cleanup: pick canonical home (likely grimoires/), rewrite intra-repo references, delete duplicates. Track as separate PR.
 - **Three identity-shape drift across the auth surface** (found cycle-008 slice 1) — `freeside_auth/server.ts` `ResolvedWallet` emits `{handle, discord_username, mibera_id: string, pfp_url}`; the old `digest-orchestrator` HTTP resolver read `{display_handle, discord_handle}` (never emitted → silent ANON); `ambient/live/wallet-resolver.live.ts` decodes a THIRD shape `{display_handle, discord_handle, mibera_id: Number, midi_profile_url}`. Slice 1 fixed the digest path (in-process); the Effect `WalletResolverLive` (ambient/chat path) still carries the drifted shape — reconcile when the federated `auth` tenant lands (decision #2 arc). Also `enriched-render.ts` `resolveHandle` defaults to `shortenWallet` (NFR-29 footgun if a caller forgets to pass it; the digest path always passes it).
 
-## Decision Log — cycle-008 capability-wiring · slices 1 + 3 + 2a (2026-05-23)
+## Decision Log — cycle-008 capability-wiring · slices 1 + 3 + 2 (a + b) (2026-05-23)
 
 Build doc: `grimoires/loa/specs/enhance-freeside-capability-wiring.md`. Run via ground-and-craft (ground → seam → craft → review), ARCH/Ostrom + craft/Alexander. Code gate = `code-implement-and-review` (implementer replaceable = Opus; FAGAN reviewer non-replaceable).
 
@@ -50,7 +50,17 @@ Operator chose: topology = **fire-from-stir-tier** (event-at-source) · prune to
   3. **kill-switch bypass** (ACCEPTED) — event-driven path ignored `POP_IN_ENABLED`. Gated it; `EVENT_HEARTBEAT_ENABLED` stays the separate "no stir tier at all" knob.
 - **Invariant #3 honored**: louder DATA not louder cadence — the hourly tick is router-gated by refractory + daily-cap; actual fire rate unchanged.
 - **Gates**: persona-engine 923 pass / 0 fail · apps/bot 193 / 0 · both typechecks clean · FAGAN APPROVED (after the 3 catches converged).
-- **2b NEXT (deferred)**: thread the carried `eventTrigger` (axis + event class, already on `StirFireIntent.decision` / `fireIntent`) → micro voice (`generateDigestVoice` ctx via FireRequest → composeMicroPost) so the LLM leans into the actual moment — SEMANTIC (axis/class), not numeric (ruggy voice principle).
+- **2b**: DONE — see below.
+
+### slice 2b — events: the live moment reaches the micro voice (2026-05-23)
+
+Completes slice 2. The router's triggering axis + canon event class flow from the stir tick (`StirFireIntent`) → `FireRequest` → `composeZonePost` → `composeMicroPost` → the voice ctx.
+
+- **New `EventTrigger` type** (compose/post-types.ts · neutral, no ambient coupling). Threaded via the existing `ComposeZonePostOpts` channel + `MicroOrchestratorDeps` + `VoiceGenContext`.
+- **Persona boundary respected**: injected into the `userMessage` (RUNTIME context, like priorWeekHint), NOT ruggy's persona.md (operator owns it). Semantic signal only (event class + axis), never numbers (ruggy voice principle).
+- **Prompt-injection hardening (FAGAN · 4 passes on the eventClass surface)**: eventClass is free-form + externally sourced (on-chain → score-mibera). Progressive: raw interpolation (CRITICAL) → punctuation-strip (insufficient — instruction text survived) → object-allowlist (prototype-key leak via `toString`/`__proto__`) → **Map-allowlist + type guard + axis-clamp**. Unknown/malicious → neutral `recent activity` fallback. Tested with tag-breakout + prototype-key payloads (`claude-sdk.live.test.ts`).
+- **Gates**: persona-engine 934 pass / 0 fail · apps/bot 193 / 0 · typechecks clean · FAGAN APPROVED.
+- **Slice 2 whole**: pop-ins are event-driven (2a) AND the voice knows which event triggered them (2b).
 
 ## Decision Log — cycle-007 architectural reorient (post-Sprint-1 · 2026-05-17)
 
