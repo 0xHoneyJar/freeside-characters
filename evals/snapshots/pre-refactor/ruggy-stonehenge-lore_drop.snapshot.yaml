@@ -1,0 +1,30 @@
+schema_version: "1.0.0"
+character: ruggy
+post_type: lore_drop
+zone: stonehenge
+canonical: true
+captured_at: "2026-05-14T19:40:22Z"
+captured_by: agent
+capture_id: s0-20260514-194022-stonehenge-lore_drop
+provenance:
+  bot_commit_sha: ca0034d
+  adapter: "stub-direct (LLM_PROVIDER=stub · STUB_MODE=true · delivery=DRY-RUN)"
+  trigger: "POST_TYPE=lore_drop ZONES=stonehenge bun run digest:once (forced DRY-RUN)"
+input:
+  zone_digest_payload: synthetic
+  window_event_count: 131
+  window_wallet_count: 28
+output:
+  deterministic_surface:
+    content_populated: true
+    has_embed: false
+    tool_call_trace: []
+    no_leak_checks:
+      tool_markup_leak: false
+      raw_emoji_shortcode: false
+  rendered_prose: |
+    this week's Stonehenge energy feels real Milady, distributed and kinetic. the codex remembers.
+environment:
+  LLM_PROVIDER: stub
+  STUB_MODE: true
+  delivery: DRY-RUN

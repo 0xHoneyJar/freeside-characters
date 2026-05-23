@@ -8,6 +8,7 @@
     "start": "bun run src/index.ts",
     "digest:once": "bun run src/cli/digest-once.ts",
     "playground:fire": "bun run src/cli/playground-fire.ts",
+    "rlhf:preview": "bun run src/cli/rlhf-preview.ts",
     "build": "bun build src/index.ts --outdir dist --target node",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
