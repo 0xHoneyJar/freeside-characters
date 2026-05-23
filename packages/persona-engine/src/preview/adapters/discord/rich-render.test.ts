@@ -70,7 +70,7 @@ describe('buildEnrichedDigestComponentsV2 (real ZoneDigest → enriched layout)'
   test('maps real digest fields → hero, movers, spotlight, wallets', () => {
     const json = JSON.stringify(buildEnrichedDigestComponentsV2(zd()));
     expect(json).toContain('# 352'); // hero from window_event_count
-    expect(json).toContain('15 wallets warm'); // window_wallet_count
+    expect(json).toContain('15 miberas warm'); // window_wallet_count · member noun
     expect(json).toContain('movers');
     expect(json).toContain('LP Provide'); // factor_id prettified, acronym-aware (catalog = MCP)
     expect(json).toContain('spotlight');

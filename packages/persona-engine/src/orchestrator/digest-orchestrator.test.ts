@@ -229,7 +229,7 @@ describe('composeDigestPost · enriched-v2 path (cycle-008 S9)', () => {
     expect(Array.isArray(result.payload.components)).toBe(true);
     const json = JSON.stringify(result.payload.components);
     expect(json).toContain('# 352'); // hero from real window_event_count
-    expect(json).toContain('15 wallets warm'); // real window_wallet_count (not the pulse-path 0)
+    expect(json).toContain('15 miberas warm'); // real window_wallet_count (not the pulse-path 0)
     expect(json).toContain('degenharu'); // resolved spotlight handle
     expect(json).not.toContain('0xAB00'); // NFR-29: raw wallet NEVER reaches prose
   });
@@ -253,15 +253,16 @@ describe('composeDigestPost · enriched-v2 path (cycle-008 S9)', () => {
     expect(json).toContain('Mibera Trades'); // catalog display_name, not the prettified "Mibera"
   });
 
-  test('spotlight resolver returning anonymous → "an anonymous keeper", never raw 0x', async () => {
+  test('spotlight resolver returning the member-noun fallback → "a mibera", never raw 0x', async () => {
     const result = await composeDigestPost(
       config({ DIGEST_SURFACE: 'enriched-v2' }),
       character,
       'el-dorado',
-      enrichedDeps({ resolveSpotlightHandle: async () => 'an anonymous keeper' }),
+      enrichedDeps({ resolveSpotlightHandle: async () => 'a mibera' }),
     );
     const json = JSON.stringify(result.payload.components);
-    expect(json).toContain('an anonymous keeper');
+    expect(json).toContain('a mibera');
+    expect(json).not.toContain('an anonymous keeper');
     expect(json).not.toContain('0xAB00');
   });
 

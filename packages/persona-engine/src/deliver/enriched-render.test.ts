@@ -39,17 +39,17 @@ describe('buildEnrichedDigestComponentsV2 (prod module)', () => {
   test('maps real digest fields → hero, movers, spotlight, wallets', () => {
     const json = JSON.stringify(buildEnrichedDigestComponentsV2(zd()));
     expect(json).toContain('# 352'); // hero from window_event_count
-    expect(json).toContain('15 wallets warm'); // window_wallet_count
+    expect(json).toContain('15 miberas warm'); // window_wallet_count · member noun
     expect(json).toContain('LP Provide'); // prettify fallback (acronym-aware) when no resolver
     expect(json).toContain('spotlight');
     expect(json).not.toContain('—'); // em-dash core strip holds
   });
 
-  test('omits the wallets-warm footer when window_wallet_count is 0 (never "0 wallets warm")', () => {
-    expect(JSON.stringify(buildEnrichedDigestComponentsV2(zd({ wallets: 15 })))).toContain('15 wallets warm');
+  test('omits the members-warm footer when window_wallet_count is 0 (never "0 miberas warm")', () => {
+    expect(JSON.stringify(buildEnrichedDigestComponentsV2(zd({ wallets: 15 })))).toContain('15 miberas warm');
     const zero = JSON.stringify(buildEnrichedDigestComponentsV2(zd({ wallets: 0 })));
-    expect(zero).not.toContain('wallets warm');
-    expect(zero).not.toContain('0 wallets'); // the live pulse path can report 0 → must not surface it
+    expect(zero).not.toContain('miberas warm');
+    expect(zero).not.toContain('0 miberas'); // the live pulse path can report 0 → must not surface it
   });
 
   test('omits the spotlight section when raw_stats.spotlight is null', () => {

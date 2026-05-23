@@ -161,7 +161,7 @@ async function composeEnrichedDigestPost(
 
   const components = buildEnrichedDigestComponentsV2(zd, {
     resolveFactorName: (id) => nameMap.get(id) ?? prettyFactorName(id),
-    ...(sp ? { resolveHandle: () => spotlightHandle ?? 'an anonymous keeper' } : {}),
+    ...(sp ? { resolveHandle: () => spotlightHandle ?? ANON_MEMBER } : {}),
     // resolvePfp DEFERRED (issue #87 §2) — spotlight renders the handle, no NFT thumbnail yet.
   });
 
@@ -177,10 +177,17 @@ async function composeEnrichedDigestPost(
   return { zone, postType: 'digest', digest: zd, voice: '', payload };
 }
 
+// The THJ community's member noun (operator: "each community has a name for their members and we
+// call them Miberas"). The spotlight fallback when no handle resolves — never "an anonymous keeper".
+// Repo-scoped to the mibera world; lift to CharacterConfig if a non-mibera community digest lands here.
+const ANON_MEMBER = 'a mibera';
+
 /**
  * Resolve a spotlight wallet → display handle via freeside_auth (resolve_wallet). NFR-29: a raw
- * 0x… must NEVER reach prose; on any failure (endpoint unset, timeout, miss) → "an anonymous
- * keeper". One call per weekly digest, so the Effect WalletResolver's cache/CB are unnecessary.
+ * 0x… must NEVER reach prose; on any failure (endpoint unset, timeout, miss) → ANON_MEMBER.
+ * One call per weekly digest, so the Effect WalletResolver's cache/CB are unnecessary.
+ * NOTE: freeside-auth MCP is currently unconfigured in prod (FREESIDE_AUTH_MCP_URL unset · the
+ * deferred auth wiring), so spotlights show "a mibera" until it's wired (issue #87 §2).
  */
 async function resolveSpotlightHandle(config: Config, wallet: string): Promise<string> {
   const controller = new AbortController();
@@ -193,9 +200,9 @@ async function resolveSpotlightHandle(config: Config, wallet: string): Promise<s
       { wallet },
       controller.signal,
     );
-    return raw?.display_handle ?? raw?.discord_handle ?? 'an anonymous keeper';
+    return raw?.display_handle ?? raw?.discord_handle ?? ANON_MEMBER;
   } catch {
-    return 'an anonymous keeper';
+    return ANON_MEMBER;
   } finally {
     clearTimeout(timer);
   }

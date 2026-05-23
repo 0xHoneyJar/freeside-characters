@@ -120,10 +120,11 @@ export function buildEnrichedDigestComponentsV2(zd: ZoneDigest, opts: EnrichedDi
         : { type: COMPONENT_TEXT_DISPLAY, content: stripEmDashes(`### ⚡ spotlight\n\`${who}\` ${reason}`) },
     );
   }
-  // wallets-warm footer: omit when 0 (the live pulse path can report 0 → never show "0 wallets warm")
+  // members-warm footer: omit when 0 (the live pulse path can report 0 → never show "0 … warm").
+  // "miberas" = the THJ community's member noun (operator: "we call them Miberas").
   if (wallets > 0) {
     blocks.push({ type: COMPONENT_SEPARATOR });
-    blocks.push({ type: COMPONENT_TEXT_DISPLAY, content: `-# ${wallets} wallets warm` });
+    blocks.push({ type: COMPONENT_TEXT_DISPLAY, content: `-# ${wallets} miberas warm` });
   }
 
   return [{ type: COMPONENT_CONTAINER, accent_color: ZONE_ACCENT[zd.zone] ?? 0x6f4ea1, components: blocks }];
