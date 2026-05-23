@@ -40,7 +40,7 @@ describe('buildEnrichedDigestComponentsV2 (prod module)', () => {
     const json = JSON.stringify(buildEnrichedDigestComponentsV2(zd()));
     expect(json).toContain('# 352'); // hero from window_event_count
     expect(json).toContain('15 wallets warm'); // window_wallet_count
-    expect(json).toContain('Lp Provide'); // prettify fallback when no resolver
+    expect(json).toContain('LP Provide'); // prettify fallback (acronym-aware) when no resolver
     expect(json).toContain('spotlight');
     expect(json).not.toContain('—'); // em-dash core strip holds
   });
@@ -77,8 +77,9 @@ describe('buildEnrichedDigestComponentsV2 (prod module)', () => {
     expect(JSON.stringify(buildEnrichedDigestComponentsV2(thirty))).toContain('last 30 days');
   });
 
-  test('prettyFactorName strips the namespace and title-cases', () => {
-    expect(prettyFactorName('onchain:lp_provide')).toBe('Lp Provide');
+  test('prettyFactorName strips the namespace, title-cases, and keeps acronyms uppercased', () => {
+    expect(prettyFactorName('onchain:lp_provide')).toBe('LP Provide');
     expect(prettyFactorName('nft:mibera')).toBe('Mibera');
+    expect(prettyFactorName('og:nft_holder')).toBe('NFT Holder');
   });
 });

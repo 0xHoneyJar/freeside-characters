@@ -41,10 +41,18 @@ function stripEmDashes(s: string): string {
   return s.replace(/\s*[—–]\s*/g, '. ');
 }
 
-/** factor_id "onchain:lp_provide" → "Lp Provide" (last-resort fallback; canonical names come from the MCP). */
+// Acronyms that must stay uppercased in the prettify fallback (BB review · enriched-prettyfactor-
+// acronym-case). Canonical names come from the MCP catalog; this only shapes the last-resort path.
+const FACTOR_ACRONYMS = new Set(['lp', 'nft', 'og', 'p2p', 'dao', 'tvl', 'apr', 'apy', 'pol']);
+
+/** factor_id "onchain:lp_provide" → "LP Provide" (last-resort fallback; canonical names come from the MCP). */
 export function prettyFactorName(factorId: string): string {
   const tail = factorId.includes(':') ? factorId.split(':').slice(1).join(':') : factorId;
-  return tail.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return tail
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((w) => (FACTOR_ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
 }
 
 /** Shorten a 0x wallet to 0xAB00…00Cd (spotlight fallback when no handle resolves). */

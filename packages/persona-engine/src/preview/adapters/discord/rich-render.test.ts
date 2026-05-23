@@ -72,7 +72,7 @@ describe('buildEnrichedDigestComponentsV2 (real ZoneDigest → enriched layout)'
     expect(json).toContain('# 352'); // hero from window_event_count
     expect(json).toContain('15 wallets warm'); // window_wallet_count
     expect(json).toContain('movers');
-    expect(json).toContain('Lp Provide'); // factor_id prettified (catalog wiring = issue)
+    expect(json).toContain('LP Provide'); // factor_id prettified, acronym-aware (catalog = MCP)
     expect(json).toContain('spotlight');
     expect(json).toContain('earned a new badge'); // spotlight reason
     expect(json).toContain('0xAB00…00Cd'); // shortened wallet fallback
