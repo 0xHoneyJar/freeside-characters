@@ -5,7 +5,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import type { DigestSnapshot } from '../domain/digest-snapshot.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 import type { PlausibilityValidation } from '../domain/validate-snapshot-plausibility.ts';
 // cycle-007 S2/T2.3 · migrate to INV-14 appendTraceEntry (BB HIGH-4 type-enforced sole writer).
 import { appendTraceEntry, wrapTraceEntry } from '../observability/trace-envelope.ts';

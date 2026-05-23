@@ -17,7 +17,7 @@
  *   23 inside packages/persona-engine/src/ + 8 in apps/bot/src/ (S1/T1.3 expanded scope)
  */
 
-import { ZONE_IDS, type ZoneId, type ZoneDimension } from '../score/types.ts';
+import { ZONE_IDS, type ZoneId, type ZoneDimension } from '../score/index.ts';
 
 export class UnknownZoneError extends Error {
   constructor(public readonly attemptedZone: string) {

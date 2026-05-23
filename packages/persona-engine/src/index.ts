@@ -207,7 +207,7 @@ export {
 export type { LedgerEntry } from './conversation/ledger.ts';
 
 // Score helpers — bot's CLI uses ZONE_REGISTRY for log emoji + display (cycle-007 S1/T1.3 canon rename).
-export { getWindowEventCount, getWindowWalletCount } from './score/types.ts';
+export { getWindowEventCount, getWindowWalletCount } from './score/index.ts';
 export { ZONE_REGISTRY, resolveZoneDisplayName, resolveZoneRichLabel, safeResolveZoneDisplayName, safeResolveZoneRichLabel, detectKebabZoneIds, UnknownZoneError, assertNeverZone } from './domain/zone-registry.ts';
 export type { ZoneDisplayRecord } from './domain/zone-registry.ts';
 export { getCodexLineCount } from './score/codex-context.ts';

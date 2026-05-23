@@ -13,7 +13,7 @@ import type {
   MediumCapabilityOverridesType,
   TokenBindingType,
 } from '@0xhoneyjar/medium-registry';
-import type { ZoneId } from './score/types.ts';
+import type { ZoneId } from './score/index.ts';
 import type { PostType } from './compose/post-types.ts';
 
 export type EmojiAffinityKind = 'mibera' | 'ruggy';

@@ -11,7 +11,7 @@ import {
   type BaselineWindow,
 } from './validate-snapshot-plausibility.ts';
 import type { DigestSnapshot, DigestFactorSnapshot } from './digest-snapshot.ts';
-import type { FactorStats } from '../score/types.ts';
+import type { FactorStats } from '../score/index.ts';
 
 function statsOf(rank: number, reliable: boolean): FactorStats {
   return {

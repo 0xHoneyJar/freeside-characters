@@ -23,7 +23,7 @@ import type {
   PulseDimensionFactor,
   PulseDimension,
   ZoneId,
-} from '../score/types.ts';
+} from '../score/index.ts';
 import type { DigestPayload, DiscordEmbed } from './embed.ts';
 
 // ──────────────────────────────────────────────────────────────────────

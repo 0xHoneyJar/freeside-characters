@@ -1,6 +1,6 @@
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
 import type { VoiceGenPort } from '../ports/voice-gen.port.ts';
 import type { PresentationPort } from '../ports/presentation.port.ts';
@@ -11,7 +11,7 @@ import { createScoreMcpLive } from '../live/score-mcp.live.ts';
 import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
 import { deriveShape } from '../domain/derive-shape.ts';
-import { ZONE_IDS } from '../score/types.ts';
+import { ZONE_IDS } from '../score/index.ts';
 
 export interface WeaverPostResult {
   readonly zone: ZoneId;

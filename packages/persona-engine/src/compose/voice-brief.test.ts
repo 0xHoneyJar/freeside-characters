@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'bun:test';
 import { buildVoiceBrief, parseVoiceResponse } from './voice-brief.ts';
-import type { FactorStats } from '../score/types.ts';
+import type { FactorStats } from '../score/index.ts';
 
 function stats(rank: number): FactorStats {
   return {

@@ -32,7 +32,7 @@ import { type Options } from '@anthropic-ai/claude-agent-sdk';
 import { resolveQuery } from '../observability/raindrop-instrumentation.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 import { Effect } from 'effect';
 import { buildPrompt, BuildPromptError } from '../persona/loader.ts';
 import {

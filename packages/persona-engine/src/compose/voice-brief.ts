@@ -20,7 +20,7 @@
  * (per sprint.md T2.4) becomes a CONCRETE list of permitted phrasings.
  */
 
-import type { ZoneId, FactorStats } from '../score/types.ts';
+import type { ZoneId, FactorStats } from '../score/index.ts';
 import type { LayoutShape } from '../domain/derive-shape.ts';
 import type { ProseGateViolation } from '../deliver/prose-gate.ts';
 import { safeResolveZoneDisplayName } from '../domain/zone-registry.ts';

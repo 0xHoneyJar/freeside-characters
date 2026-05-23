@@ -21,7 +21,7 @@
 
 import { Context, Effect } from "effect";
 import type { CharacterConfig } from "../../../types.ts";
-import type { ZoneId } from "../../../score/types.ts";
+import type { ZoneId } from "../../../score/index.ts";
 import type { PostType } from "../../post-types.ts";
 
 // ============================================================================

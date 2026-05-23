@@ -21,7 +21,7 @@
  *     cross-zone weaver references and future activation)
  */
 
-import type { ZoneId } from '../../score/types.ts';
+import type { ZoneId } from '../../score/index.ts';
 
 /**
  * Spatial zone IDs include the 4 postable zones plus vocabulary-only

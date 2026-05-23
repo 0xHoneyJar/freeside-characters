@@ -20,7 +20,7 @@ import type { MediumCapability } from '@0xhoneyjar/medium-registry';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import { fetchZoneDigest } from '../score/client.ts';
-import type { ZoneDigest, ZoneId } from '../score/types.ts';
+import type { ZoneDigest, ZoneId } from '../score/index.ts';
 import type { DigestPayload } from '../deliver/embed.ts';
 import { composeDigestPost } from '../orchestrator/digest-orchestrator.ts';
 import { composeMicroPost } from '../orchestrator/micro-orchestrator.ts';

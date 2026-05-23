@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2, prettyFactorName } from './enriched-render.ts';
-import type { ZoneDigest } from '../score/types.ts';
+import type { ZoneDigest } from '../score/index.ts';
 
 // cycle-008 S9 → prod · the enriched digest renderer (real ZoneDigest → Components V2).
 

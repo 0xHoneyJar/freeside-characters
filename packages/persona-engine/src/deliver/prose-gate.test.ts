@@ -18,7 +18,7 @@
  */
 
 import { describe, test, expect } from 'bun:test';
-import type { FactorStats } from '../score/types.ts';
+import type { FactorStats } from '../score/index.ts';
 import {
   inspectProse,
   resolveProseGateMode,

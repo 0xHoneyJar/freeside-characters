@@ -29,7 +29,7 @@ import { type McpServerConfig, type Options } from '@anthropic-ai/claude-agent-s
 import { resolveQuery } from '../observability/raindrop-instrumentation.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 import type { PostType } from '../compose/post-types.ts';
 import { rosenzuServer } from './rosenzu/server.ts';
 import { freesideAuthServer } from './freeside_auth/server.ts';

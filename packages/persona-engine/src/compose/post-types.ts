@@ -16,7 +16,7 @@
  * The arcade move: surprise > schedule. Mix shapes so channels feel alive.
  */
 
-import type { ZoneDigest } from '../score/types.ts';
+import type { ZoneDigest } from '../score/index.ts';
 
 export type PostType =
   | 'digest'

@@ -9,8 +9,8 @@
 // edge (resolveFactorName from the score factor catalog, resolveHandle from
 // freeside_auth) per the hexagonal name-authority-at-the-boundary rule.
 
-import type { ZoneDigest, Spotlight, TopMover } from '../score/types.ts';
-import { getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
+import type { ZoneDigest, Spotlight, TopMover } from '../score/index.ts';
+import { getWindowEventCount, getWindowWalletCount } from '../score/index.ts';
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 
 /** Discord message flag enabling Components V2 (1 << 15). */

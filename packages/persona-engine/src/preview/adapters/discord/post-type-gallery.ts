@@ -14,7 +14,7 @@
 // stats-out-of-voice per ruggy doctrine.
 
 import type { DigestSnapshot } from '../../../domain/digest-snapshot.ts';
-import type { ZoneId } from '../../../score/types.ts';
+import type { ZoneId } from '../../../score/index.ts';
 import { ZONE_REGISTRY } from '../../../domain/zone-registry.ts';
 import { buildBillboardComponentsV2, dimDisplay } from './rich-render.ts';
 import { stripEmDashes } from '../../core/billboard-surface.ts';

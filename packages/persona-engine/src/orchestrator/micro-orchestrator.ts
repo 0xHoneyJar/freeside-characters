@@ -1,6 +1,6 @@
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
 import type { VoiceGenPort } from '../ports/voice-gen.port.ts';
 import type { PresentationPort } from '../ports/presentation.port.ts';

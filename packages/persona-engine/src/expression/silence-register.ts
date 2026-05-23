@@ -22,8 +22,8 @@
  */
 
 import { Schema } from "effect";
-import type { RawStats } from "../score/types.ts";
-import { getWindowEventCount } from "../score/types.ts";
+import type { RawStats } from "../score/index.ts";
+import { getWindowEventCount } from "../score/index.ts";
 
 // ─── Schema ──────────────────────────────────────────────────────────
 

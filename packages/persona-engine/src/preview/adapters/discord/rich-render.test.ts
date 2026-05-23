@@ -3,7 +3,7 @@ import { buildSnapshot } from '../../core/canonical-cases.ts';
 import { resolveVariants, variantById } from '../../core/billboard-variants.ts';
 import { renderCandidate } from '../../core/render-candidate.ts';
 import { buildBillboardEmbed, buildBillboardComponentsV2, buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2 } from './rich-render.ts';
-import type { ZoneDigest } from '../../../score/types.ts';
+import type { ZoneDigest } from '../../../score/index.ts';
 import { presentToDiscord } from './present.ts';
 import type { VoiceAugment } from '../../../domain/voice-augment.ts';
 
