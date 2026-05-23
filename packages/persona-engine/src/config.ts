@@ -17,6 +17,14 @@ const ConfigSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
 
+  // ─── digest surface (cycle-008 S9) ────────────────────────────────────
+  /** Which digest surface the cron renders.
+   *  'pulse' (default) = the score-dashboard per-dimension card mirror.
+   *  'enriched-v2'     = the RLHF-validated enriched Components V2 billboard
+   *  (hero + factor movers + spotlight + wallets-warm). Flip to 'enriched-v2'
+   *  after canary. See deliver/enriched-render.ts + the digest orchestrator. */
+  DIGEST_SURFACE: z.enum(['pulse', 'enriched-v2']).default('pulse'),
+
   // ─── explicit LLM provider (V0.4 — codex-rescue F1: replace implicit
   // key-presence inference; fail loud if intent is ambiguous) ────────────
   /** stub | anthropic | freeside | bedrock | auto.

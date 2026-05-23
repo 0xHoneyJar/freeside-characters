@@ -58,14 +58,22 @@ export interface DigestPayload {
   content: string;
   embeds: DiscordEmbed[];
   /**
+   * cycle-008 S9 · Components V2 (the enriched digest surface · DIGEST_SURFACE=enriched-v2).
+   * When `components` is set, delivery sends `{ flags, components }` via raw REST (+
+   * `?with_components=true`) instead of `content`/`embeds` — Discord ignores content/embeds
+   * once the IS_COMPONENTS_V2 flag is set. Absent on the legacy content/embed payloads.
+   */
+  flags?: number;
+  components?: unknown[];
+  /**
    * cycle-008 T3.9 · optional follow-up message — the "two-beat" delivery:
    * beat 1 = the agent voice in `content`, beat 2 = the bold data billboard
    * here. When present, delivery sends `content`/`embeds` first, then this as a
    * SEPARATE Discord message so voice and substrate read as distinct surfaces
    * (not the muddy middle that "reads too bot"). Absent on single-message
-   * payloads — fully backwards-compatible.
+   * payloads — fully backwards-compatible. May itself carry Components V2.
    */
-  secondary?: { content: string; embeds: DiscordEmbed[] };
+  secondary?: { content: string; embeds: DiscordEmbed[]; flags?: number; components?: unknown[] };
 }
 
 export interface DiscordEmbed {

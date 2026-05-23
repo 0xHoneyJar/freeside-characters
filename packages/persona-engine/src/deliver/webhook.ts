@@ -110,6 +110,31 @@ export async function sendViaWebhook(
     character.webhookUsername ?? character.displayName ?? character.id;
   const avatarURL = character.webhookAvatarUrl;
 
+  // cycle-008 S9 · Components V2 beat → raw POST to the webhook URL with the identity override
+  // + ?wait=true&with_components=true (discord.js's send-builder rejects raw component JSON, and
+  // webhooks drop components without the query flag). The proven RLHF present.ts delivery shape.
+  if (payload.components !== undefined) {
+    const url = new URL(webhook.url);
+    url.searchParams.set('wait', 'true');
+    url.searchParams.set('with_components', 'true');
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        avatar_url: avatarURL,
+        flags: payload.flags,
+        components: payload.components,
+        allowed_mentions: { parse: [] },
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`webhook components-v2 delivery failed: ${res.status} ${await res.text().catch(() => '')}`);
+    }
+    const json = (await res.json().catch(() => ({}))) as { id?: string };
+    return { posted: true, messageId: json.id ?? '' };
+  }
+
   const message = await webhook.send({
     username,
     avatarURL,

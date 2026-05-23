@@ -115,10 +115,18 @@ export async function deliverZoneDigest(
   if (config.DISCORD_WEBHOOK_URL) {
     // cycle-008 T3.9 · two-beat: POST each beat as its own message.
     for (const beat of beatsOf(payload)) {
-      const response = await fetch(config.DISCORD_WEBHOOK_URL, {
+      // cycle-008 S9 · Components V2 beat → {flags, components} + ?with_components=true (webhooks
+      // ignore components without it); built via URL so existing query params survive.
+      const isCV2 = beat.components !== undefined;
+      const url = new URL(config.DISCORD_WEBHOOK_URL);
+      if (isCV2) url.searchParams.set('with_components', 'true');
+      const body = isCV2
+        ? { flags: beat.flags, components: beat.components }
+        : { content: beat.content, embeds: beat.embeds };
+      const response = await fetch(url.toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(beat),
+        body: JSON.stringify(body),
       });
       if (!response.ok) {
         throw new Error(`webhook delivery failed: ${response.status} ${await response.text()}`);
@@ -139,9 +147,22 @@ export async function deliverZoneDigest(
  * recurses.
  */
 function beatsOf(payload: DigestPayload): DigestPayload[] {
-  const primary: DigestPayload = { content: payload.content, embeds: payload.embeds };
+  const primary: DigestPayload = {
+    content: payload.content,
+    embeds: payload.embeds,
+    ...(payload.flags !== undefined ? { flags: payload.flags } : {}),
+    ...(payload.components ? { components: payload.components } : {}),
+  };
   return payload.secondary
-    ? [primary, { content: payload.secondary.content, embeds: payload.secondary.embeds }]
+    ? [
+        primary,
+        {
+          content: payload.secondary.content,
+          embeds: payload.secondary.embeds,
+          ...(payload.secondary.flags !== undefined ? { flags: payload.secondary.flags } : {}),
+          ...(payload.secondary.components ? { components: payload.secondary.components } : {}),
+        },
+      ]
     : [primary];
 }
 

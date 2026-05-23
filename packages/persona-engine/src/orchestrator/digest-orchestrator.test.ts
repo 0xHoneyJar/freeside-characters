@@ -12,7 +12,8 @@ import { composeDigestPost } from './digest-orchestrator.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
-import type { PulseDimensionBreakdown } from '../score/types.ts';
+import type { PulseDimensionBreakdown, ZoneDigest } from '../score/types.ts';
+import { IS_COMPONENTS_V2 } from '../deliver/enriched-render.ts';
 
 function config(overrides: Partial<Config> = {}): Config {
   return {
@@ -183,5 +184,112 @@ describe('composeDigestPost · pulse path (cycle-007 S8 r4)', () => {
     expect(result.digest.zone).toBe('el-dorado');
     // raw_stats is the cycle-005 substrate shape · validate the bridge through.
     expect(result.digest.raw_stats).toBeDefined();
+  });
+});
+
+// cycle-008 S9 · enriched-v2 surface (DIGEST_SURFACE flag · the RLHF-validated billboard).
+function zoneDigestStub(partial: Partial<ZoneDigest> = {}): ZoneDigest {
+  return {
+    zone: 'el-dorado',
+    window: 'weekly',
+    computed_at: '2026-05-23T00:00:00Z',
+    window_start: '2026-05-16T00:00:00Z',
+    window_end: '2026-05-23T00:00:00Z',
+    stale: false,
+    schema_version: '2.0.0',
+    narrative: null,
+    narrative_error: null,
+    raw_stats: {
+      schema_version: '2.0.0',
+      window_event_count: 352,
+      window_wallet_count: 15,
+      top_movers: [],
+      top_events: [],
+      spotlight: { wallet: '0xAB00000000000000000000000000000000000Cd', reason: 'new_badge', details: {} },
+      rank_changes: { climbed: [], dropped: [], entered_top_tier: [], exited_top_tier: [] },
+      factor_trends: [{ factor_id: 'nft:mibera', current_count: 152, baseline_avg: 76, multiplier: 2 }],
+    },
+    ...partial,
+  } as ZoneDigest;
+}
+
+describe('composeDigestPost · enriched-v2 path (cycle-008 S9)', () => {
+  const enrichedDeps = (over: Partial<Parameters<typeof composeDigestPost>[3]> = {}) => ({
+    score: scoreStub([makeBreakdown({ id: 'nft', display_name: 'NFT' })]),
+    fetchZoneDigest: async () => zoneDigestStub(),
+    resolveSpotlightHandle: async () => 'degenharu',
+    ...over,
+  });
+
+  test('flag on → payload carries IS_COMPONENTS_V2 + components (the enriched billboard)', async () => {
+    const result = await composeDigestPost(config({ DIGEST_SURFACE: 'enriched-v2' }), character, 'el-dorado', enrichedDeps());
+    expect(result.postType).toBe('digest');
+    expect(result.voice).toBe(''); // enriched digest is voiceless like the pulse digest
+    expect(result.payload.flags).toBe(IS_COMPONENTS_V2);
+    expect(Array.isArray(result.payload.components)).toBe(true);
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain('# 352'); // hero from real window_event_count
+    expect(json).toContain('15 wallets warm'); // real window_wallet_count (not the pulse-path 0)
+    expect(json).toContain('degenharu'); // resolved spotlight handle
+    expect(json).not.toContain('0xAB00'); // NFR-29: raw wallet NEVER reaches prose
+  });
+
+  test('threads MCP factor display names from the breakdown catalog (not prettified)', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      enrichedDeps({
+        score: scoreStub([
+          makeBreakdown({
+            top_factors: [
+              { factor_id: 'nft:mibera', display_name: 'Mibera Trades', primary_action: 'x', total: 152, previous: 76, delta_pct: 1, delta_count: 1 },
+            ],
+          }),
+        ]),
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain('Mibera Trades'); // catalog display_name, not the prettified "Mibera"
+  });
+
+  test('spotlight resolver returning anonymous → "an anonymous keeper", never raw 0x', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      enrichedDeps({ resolveSpotlightHandle: async () => 'an anonymous keeper' }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain('an anonymous keeper');
+    expect(json).not.toContain('0xAB00');
+  });
+
+  test('no spotlight in raw_stats → no spotlight section, resolver not required', async () => {
+    let resolverCalled = false;
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      enrichedDeps({
+        fetchZoneDigest: async () =>
+          zoneDigestStub({ raw_stats: { ...zoneDigestStub().raw_stats, spotlight: null } }),
+        resolveSpotlightHandle: async () => {
+          resolverCalled = true;
+          return 'unused';
+        },
+      }),
+    );
+    expect(resolverCalled).toBe(false); // resolver skipped when no spotlight
+    expect(JSON.stringify(result.payload.components)).not.toContain('spotlight');
+  });
+
+  test('default pulse path is unchanged when the flag is absent', async () => {
+    const result = await composeDigestPost(config(), character, 'el-dorado', {
+      score: scoreStub([makeBreakdown()]),
+    });
+    expect(result.payload.flags).toBeUndefined();
+    expect(result.payload.components).toBeUndefined();
+    expect(result.payload.embeds.length).toBeGreaterThan(0); // still the embed dashboard mirror
   });
 });

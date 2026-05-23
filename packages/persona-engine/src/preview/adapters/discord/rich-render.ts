@@ -93,93 +93,9 @@ export function buildBillboardComponentsV2(snapshot: DigestSnapshot): unknown[] 
   ];
 }
 
-/** Discord message flag enabling Components V2 (1 << 15). */
-export const IS_COMPONENTS_V2 = 1 << 15;
-
-// ── production renderer: real ZoneDigest → enriched Components V2 ───────────────
-// The bridge from the RLHF tool (representative data) to production (real score-mcp data).
-// Maps a live ZoneDigest's raw_stats → the 5/5 enriched layout. PURE — wired into delivery +
-// gated behind a flag in the rollout sprint (see the open-loops issue); zero prod files touched
-// here. KNOWN GAPS (issue): factor_id→display-name needs the score factor catalog (prettified
-// here); spotlight pfp needs an async freeside_auth.pfp_url resolve (injectable below).
-
-import type { ZoneDigest } from '../../../score/types.ts';
-import { getWindowEventCount, getWindowWalletCount } from '../../../score/types.ts';
-import { shortenWallet } from '../../../live/discord-render.live.ts';
-
-/** factor_id "onchain:lp_provide" → "Lp Provide" (placeholder until the score catalog is wired). */
-function prettyFactor(factorId: string): string {
-  const tail = factorId.includes(':') ? factorId.split(':').slice(1).join(':') : factorId;
-  return tail.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-/** Derive the displayed window length (days) from the digest's own window bounds.
- *  GPT-review (code-findings-1): never hardcode the window — a 30d digest must not read "7 days". */
-function windowDaysOf(zd: ZoneDigest): number {
-  const start = Date.parse(zd.window_start);
-  const end = Date.parse(zd.window_end);
-  if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-    return Math.max(1, Math.round((end - start) / 86_400_000));
-  }
-  return 7; // validated fallback only when bounds are missing/malformed
-}
-
-export interface EnrichedDigestOpts {
-  /** Resolve a wallet → display handle (freeside_auth). Default: shortened 0x…. */
-  readonly resolveHandle?: (wallet: string) => string;
-  /** Resolve a wallet → pfp/NFT image url (freeside_auth.pfp_url). When present, a Thumbnail. */
-  readonly resolvePfp?: (wallet: string) => string | null;
-  /**
-   * Resolve a factor_id → display name. CANONICAL SOURCE IS THE MCP — score-mcp provides
-   * `display_name` on PulseDimensionFactor (score/types.ts:397 · mapped at score-mcp.live.ts:144);
-   * `raw_stats.factor_trends` carries only factor_id, so the caller injects the name dictionary
-   * from the edge (hexagonal: name-authority lives at the MCP/API boundary, not in this renderer).
-   * The prettify fallback is last-resort only, for factor_ids absent from the catalog.
-   */
-  readonly resolveFactorName?: (factorId: string) => string;
-}
-
-export function buildEnrichedDigestComponentsV2(zd: ZoneDigest, opts: EnrichedDigestOpts = {}): unknown[] {
-  const r = ZONE_REGISTRY[zd.zone];
-  const events = getWindowEventCount(zd.raw_stats);
-  const wallets = getWindowWalletCount(zd.raw_stats);
-  const handle = opts.resolveHandle ?? shortenWallet;
-  // factor display name: MCP-provided (the shared dictionary at the edge) · prettify is fallback
-  const factorName = opts.resolveFactorName ?? prettyFactor;
-
-  // movers = factor_trends by multiplier (the factor-style movers the operator liked)
-  const movers = [...zd.raw_stats.factor_trends]
-    .sort((a, b) => b.multiplier - a.multiplier)
-    .slice(0, 3)
-    .map((f) => `${f.multiplier >= 1 ? '↑' : '↓'} **${factorName(f.factor_id)}**`)
-    .join('   ·   ');
-
-  const days = windowDaysOf(zd);
-  const blocks: unknown[] = [
-    { type: COMPONENT_TEXT_DISPLAY, content: stripEmDashes(`## ${r.emoji} ${r.displayName}\n-# ${dimDisplay(r.dimension)}`) },
-    { type: COMPONENT_TEXT_DISPLAY, content: `# ${events}\nevents · last ${days} days` },
-  ];
-  if (movers) {
-    blocks.push({ type: COMPONENT_SEPARATOR });
-    blocks.push({ type: COMPONENT_TEXT_DISPLAY, content: stripEmDashes(`### movers\n${movers}`) });
-  }
-  if (zd.raw_stats.spotlight) {
-    const sp = zd.raw_stats.spotlight;
-    const who = handle(sp.wallet);
-    const reason = sp.reason === 'new_badge' ? 'earned a new badge' : 'climbed the ranks';
-    const pfp = opts.resolvePfp?.(sp.wallet) ?? null;
-    blocks.push({ type: COMPONENT_SEPARATOR });
-    blocks.push(
-      pfp
-        ? { type: SECTION_TYPE, components: [{ type: COMPONENT_TEXT_DISPLAY, content: stripEmDashes(`### ⚡ spotlight\n\`${who}\` ${reason}`) }], accessory: { type: THUMBNAIL_TYPE, media: { url: pfp } } }
-        : { type: COMPONENT_TEXT_DISPLAY, content: stripEmDashes(`### ⚡ spotlight\n\`${who}\` ${reason}`) },
-    );
-  }
-  blocks.push({ type: COMPONENT_SEPARATOR });
-  blocks.push({ type: COMPONENT_TEXT_DISPLAY, content: `-# ${wallets} wallets warm` });
-
-  return [{ type: COMPONENT_CONTAINER, accent_color: colorFor({ zone: zd.zone, deltaPct: null } as DigestSnapshot), components: blocks }];
-}
-
-const SECTION_TYPE = 9;
-const THUMBNAIL_TYPE = 11;
+// The production enriched renderer (real ZoneDigest → Components V2) now lives in
+// deliver/enriched-render.ts (prod core) so the dependency points inward (preview → prod,
+// never prod → preview). Re-exported here for the RLHF tool's consumers (present.ts, the
+// gallery, index.ts) which judge the prod renderer at Discord fidelity.
+export { buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2 } from '../../../deliver/enriched-render.ts';
+export type { EnrichedDigestOpts } from '../../../deliver/enriched-render.ts';
