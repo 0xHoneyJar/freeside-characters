@@ -227,11 +227,31 @@ export function pickSpotlightDisplay(r: ResolvedWallet): SpotlightIdentity {
  * but always fell back. resolve_wallet itself never throws (internal fallback); the try/catch is
  * belt-and-suspenders for NFR-29. One call per weekly digest, so freeside_auth's 5-min cache covers it.
  */
+// resolveWallet hits Postgres on a cache-miss (pool.connect + midi_profiles queries · server.ts:158);
+// node-postgres pool.connect() blocks indefinitely on an exhausted pool. This resolver runs inside the
+// digest cron's per-zone lock, so an unbounded stall would wedge that zone's ENTIRE posting pipeline
+// (the scheduler skips a zone while zoneLocks.has(zone)). Bound it — restoring the 5s safeguard the
+// prior HTTP-MCP path had (AbortController) that slice-1 dropped. FAGAN-thorough opus-skeptic · 2026-05-23.
+const SPOTLIGHT_RESOLVE_TIMEOUT_MS = 5_000;
+
 async function resolveSpotlightIdentity(wallet: string): Promise<SpotlightIdentity> {
+  const anon: SpotlightIdentity = { handle: ANON_MEMBER, pfp_url: null };
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return pickSpotlightDisplay(await resolveWallet(wallet));
+    const resolved = await Promise.race([
+      resolveWallet(wallet),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('resolve_wallet timeout')),
+          SPOTLIGHT_RESOLVE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    return pickSpotlightDisplay(resolved);
   } catch {
-    return { handle: ANON_MEMBER, pfp_url: null };
+    return anon; // NFR-29: never a raw 0x… reaches prose, even on timeout
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

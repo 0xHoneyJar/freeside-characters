@@ -12,6 +12,7 @@
 import type { ZoneDigest, Spotlight, TopMover } from '../score/index.ts';
 import { getWindowEventCount, getWindowWalletCount } from '../score/index.ts';
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
+import { escapeDiscordMarkdown } from './sanitize.ts';
 
 /** Discord message flag enabling Components V2 (1 << 15). */
 export const IS_COMPONENTS_V2 = 1 << 15;
@@ -100,6 +101,10 @@ export function buildEnrichedDigestComponentsV2(zd: ZoneDigest, opts: EnrichedDi
   const r = ZONE_REGISTRY[zd.zone];
   const events = getWindowEventCount(zd.raw_stats);
   const wallets = getWindowWalletCount(zd.raw_stats);
+  // handle() may resolve an external/untrusted identity (discord_username · mibera_id). EVERY sink
+  // that puts handle() output into Discord prose MUST run it through escapeDiscordMarkdown first —
+  // today the only sink is the spotlight `who` (below). Any new wallet-identity field (top movers,
+  // climbers) must escape at its render site too. (FAGAN-thorough opus-skeptic cleanup · 2026-05-23)
   const handle = opts.resolveHandle ?? shortenWallet;
   const factorName = opts.resolveFactorName ?? prettyFactorName;
   const days = windowDaysOf(zd);
@@ -121,7 +126,12 @@ export function buildEnrichedDigestComponentsV2(zd: ZoneDigest, opts: EnrichedDi
   }
   if (zd.raw_stats.spotlight) {
     const sp = zd.raw_stats.spotlight;
-    const who = handle(sp.wallet);
+    // handle resolves to an external/untrusted identity (discord_username · mibera_id — both can
+    // carry markdown chars: `mibera_acquire` would italicize mid-word). Escape at the presentation
+    // boundary per the chat-medium-presentation-boundary doctrine + the CLAUDE.md sanitize invariant.
+    // (allowed_mentions:{parse:[]} at the send layer already blocks pings; this closes the
+    // markdown-distortion residual.) FAGAN-thorough gpt-reviewer · 2026-05-23.
+    const who = escapeDiscordMarkdown(handle(sp.wallet));
     // pull THIS wallet's real rank movement from the typed source (rank_changes.climbed, then top_movers)
     const mover =
       zd.raw_stats.rank_changes.climbed.find((m) => m.wallet === sp.wallet) ??

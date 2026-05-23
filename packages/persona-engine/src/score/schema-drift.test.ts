@@ -34,7 +34,17 @@ import { loadConfig } from '../config.ts';
 // RawStats['schema_version'] union in types.ts. score's parseRow auto-migrates v1 → v2 on read,
 // so live payloads advertise one of these (currently 2.0.0). ADDING a value here is the
 // deliberate sync gesture — it pairs with a reviewed types.ts union edit, never a silent widening.
-const ACCEPTED_RAW_STATS_VERSIONS = ['1.0.0', '2.0.0'] as const;
+const ACCEPTED_RAW_STATS_VERSIONS = ['1.0.0', '2.0.0'] as const satisfies readonly RawStats['schema_version'][];
+// Exhaustiveness guard (FAGAN-thorough gpt-reviewer · 2026-05-23): if a new schema_version joins the
+// RawStats union, this fails to compile until it's also added above — the accepted-versions list can
+// no longer silently drift from the live type. `satisfies` blocks invalid entries; this blocks missing ones.
+type _MissingAcceptedRawStatsVersion = Exclude<
+  RawStats['schema_version'],
+  (typeof ACCEPTED_RAW_STATS_VERSIONS)[number]
+>;
+const _acceptedRawStatsVersionsAreExhaustive: _MissingAcceptedRawStatsVersion extends never
+  ? true
+  : never = true;
 
 // "real upstream" = a key is present AND we are not in stub mode (STUB_MODE defaults to stub
 // when unset, so real mode requires it explicitly false — see config.ts).
