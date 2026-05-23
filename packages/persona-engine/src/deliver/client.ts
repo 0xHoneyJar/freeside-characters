@@ -18,6 +18,7 @@
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import type { TextChannel, NewsChannel, ThreadChannel } from 'discord.js';
 import type { Config } from '../config.ts';
+import { postComponentsV2 } from './cv2-post.ts';
 
 let cachedClient: Client | null = null;
 let readyPromise: Promise<Client> | null = null;
@@ -100,18 +101,11 @@ export async function postToChannel(
   if (payload.components !== undefined) {
     const token = client.token;
     if (!token) throw new Error('postToChannel: client has no token for Components V2 REST');
-    const res = await fetch(
+    const json = await postComponentsV2(
       `https://discord.com/api/v10/channels/${channelId}/messages?with_components=true`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bot ${token}` },
-        body: JSON.stringify({ flags: payload.flags, components: payload.components }),
-      },
+      { flags: payload.flags, components: payload.components },
+      { authorization: `Bot ${token}` },
     );
-    if (!res.ok) {
-      throw new Error(`channel components-v2 delivery failed: ${res.status} ${await res.text().catch(() => '')}`);
-    }
-    const json = (await res.json().catch(() => ({}))) as { id?: string };
     return { posted: true, messageId: json.id ?? '' };
   }
 

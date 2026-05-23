@@ -24,6 +24,7 @@ import type { DigestPayload } from './embed.ts';
 import { getBotClient, postToChannel } from './client.ts';
 import { getOrCreateChannelWebhook, sendViaWebhook } from './webhook.ts';
 import { attachReactionBar } from './reaction-bar.ts';
+import { postComponentsV2 } from './cv2-post.ts';
 
 export interface DeliveryResult {
   posted: boolean;
@@ -116,17 +117,18 @@ export async function deliverZoneDigest(
     // cycle-008 T3.9 · two-beat: POST each beat as its own message.
     for (const beat of beatsOf(payload)) {
       // cycle-008 S9 · Components V2 beat → {flags, components} + ?with_components=true (webhooks
-      // ignore components without it); built via URL so existing query params survive.
-      const isCV2 = beat.components !== undefined;
-      const url = new URL(config.DISCORD_WEBHOOK_URL);
-      if (isCV2) url.searchParams.set('with_components', 'true');
-      const body = isCV2
-        ? { flags: beat.flags, components: beat.components }
-        : { content: beat.content, embeds: beat.embeds };
-      const response = await fetch(url.toString(), {
+      // ignore components without it); built via URL so existing query params survive. CV2 goes
+      // through the shared 429-retrying helper; plain content/embeds keep the direct POST.
+      if (beat.components !== undefined) {
+        const url = new URL(config.DISCORD_WEBHOOK_URL);
+        url.searchParams.set('with_components', 'true');
+        await postComponentsV2(url.toString(), { flags: beat.flags, components: beat.components });
+        continue;
+      }
+      const response = await fetch(config.DISCORD_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ content: beat.content, embeds: beat.embeds }),
       });
       if (!response.ok) {
         throw new Error(`webhook delivery failed: ${response.status} ${await response.text()}`);
