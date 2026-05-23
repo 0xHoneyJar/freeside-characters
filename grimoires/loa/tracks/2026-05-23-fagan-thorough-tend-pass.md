@@ -80,11 +80,35 @@ until synced.
 - **CLAUDE.md "ruggy + satoshi" is NOT clear drift:** 8 character apps have persona.md, but the live
   roster is `CHARACTERS` env (active set `["ruggy","satoshi"]`); the other 6 are persona scaffolds.
 
+## Follow-up: composer voice FIXED → 3-voice panel earns its keep (same day)
+
+**Root cause of the composer drop:** `lib-cursor-exec.sh` invoked `cursor-agent --mode plan` — an
+AGENTIC read-only *planning* loop that explores for minutes and blew past the panel timeout (a 10KB
+review prompt: >180s under `plan` vs **~65s** under `--mode ask`, single-shot Q&A). Fix: `--mode plan`
+→ `--mode ask` (construct-fagan, `feat/thorough-panel`). Safety unchanged (`--sandbox enabled` + empty
+mktemp cwd + diff-in-prompt = empty blast radius). NOT a JSON/extraction bug — `_fagan_extract_json`
+was already robust; it was pure latency → timeout → honest drop.
+
+**The payoff, immediately:** re-ran the panel on the SAME fix-delta the 2-voice panel had APPROVED.
+With composer (Kimi, distinct corpus) landing → **3 voices · CHANGES_REQUIRED · 1 blocking · dropped:[]**.
+The 3rd voice caught a real subtlety in my own timeout fix that opus+gpt missed: `Promise.race`
+ABANDONS but does not CANCEL `resolveWallet`, so my comment claiming to "restore the AbortController
+safeguard" overclaimed. Cross-lab independence, demonstrated on the first true 3-voice run.
+
+**Disposition (finding-accepted, fix-rejected-with-reason):** GROUNDED that the accumulation the
+finding feared can't happen — the pg pool already sets `connectionTimeoutMillis:5000` (server.ts:84),
+so `pool.connect()` is bounded; abandoned ops resolve/reject within ~5s and release their client
+(server.ts:238 finally). The race's real job is the UNBOUNDED query phase (no `statement_timeout`).
+Fix = corrected the comment to be honest; heavy "true cancellation" rejected with reason. (Third
+false-alarm-from-thin-context this session — reviewers didn't see the pool config; same shape as the
+allowed_mentions catch.)
+
 ## Deferred (surfaced, not done — need operator sequencing)
 - 🔀 **post-type prune** (kill the 5 kitchen orchestrators) — multi-file runtime-routing change →
   its own gated slice, not a TEND micro-fix. Operator signal = digest + micro only.
 - 🔀 **`.claude/` construct-sync churn** — fagan vendored→symlink + archivist-skill deletes + new
   untracked packs. System Zone git-tracking hygiene; separate decision.
-- 🟡 **composer voice keeps dropping** — the cursor/composer adapter returns no valid JSON. The panel
-  ran 2-voice both times. Diagnose `lib-cursor-exec.sh` to land the true 3-voice width.
-- 🟡 **`.loa` v1.108→v1.159 bump** — submodule pointer uncommitted; kept OUT of the cycle-008 PR.
+- ✅ **composer voice** — FIXED (see follow-up above); panel now runs true 3-voice.
+- 🟡 **`.loa` v1.108→v1.159 bump** — shipped as its own PR (#90), OUT of the cycle-008 PR.
+- 🟡 **CHANGELOG drift** — tags reached v0.11.3 with no entries (log resumes at [0.12.0]); v0.10–v0.11.3
+  reconciliation is a separate hygiene task.
