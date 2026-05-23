@@ -130,3 +130,48 @@ export function toUtcDate(ts: Timestamp): string {
 export function lexMinCharacter(a: string, b: string): string {
   return a < b ? a : b;
 }
+
+/**
+ * Build a per-zone Budget from recent ledger entries (cycle-008 capability-wiring slice 2a).
+ *
+ * The PopInLedger port has no `getBudget`; the router REQUIRES a Budget. This reconstructs it
+ * from the append-only entries the ledger already keeps:
+ *   - `today_fire_count` counts fired/bypassed entries by UTC CALENDAR date (matches
+ *     isDailyCapExhausted's date-equality check — NOT a rolling 24h window).
+ *   - `last_fire_*` is the most recent fired/bypassed entry across ALL characters (D17 shared
+ *     refractory). The truncated-window query is the caller's job: pass entries from
+ *     `ledger.readWindow` covering at least the last ~25h so both the calendar-day count and the
+ *     refractory window are fully represented.
+ *
+ * Pure + deterministic (no clock read beyond the supplied `now`) so it unit-tests without the
+ * Effect runtime — the firing gate's correctness is checkable in isolation.
+ */
+export function budgetFromLedger(
+  zone: ZoneId,
+  entries: ReadonlyArray<LedgerEntry>,
+  now: Timestamp,
+  opts?: { refractoryHours?: number; dailyCap?: number },
+): Budget {
+  const refractory_hours = opts?.refractoryHours ?? POP_IN_REFRACTORY_HOURS_DEFAULT;
+  const daily_cap = opts?.dailyCap ?? POP_IN_DAILY_CAP_DEFAULT;
+  const today_utc_date = toUtcDate(now);
+
+  let last: LedgerEntry | null = null;
+  let today_fire_count = 0;
+  for (const e of entries) {
+    if (e.zone !== zone) continue;
+    if (e.decision !== "fired" && e.decision !== "bypassed") continue;
+    if (toUtcDate(e.ts) === today_utc_date) today_fire_count++;
+    if (!last || e.ts > last.ts) last = e;
+  }
+
+  return {
+    zone,
+    last_fire_at: last?.ts ?? null,
+    last_fire_character_id: last?.character_id ?? null,
+    refractory_hours,
+    today_utc_date,
+    today_fire_count,
+    daily_cap,
+  };
+}

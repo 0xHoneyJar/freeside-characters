@@ -331,7 +331,7 @@ async function main(): Promise<void> {
     }
   };
 
-  const handle = schedule({ config, zones, onFire: fireOne });
+  const handle = schedule({ config, zones, onFire: fireOne, characterId: primary.id });
   if (handle.digestExpression) console.log(`${primary.id}: digest cron · ${handle.digestExpression}`);
   if (handle.popInExpression) console.log(`${primary.id}: pop-in cron · ${handle.popInExpression}`);
   if (handle.weaverExpression) console.log(`${primary.id}: weaver cron · ${handle.weaverExpression}`);

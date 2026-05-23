@@ -18,7 +18,7 @@
 
 import cron from 'node-cron';
 import type { Config } from '../config.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 import type { PostType } from '../compose/post-types.ts';
 
 const DAY_TO_CRON: Record<string, number> = {
@@ -49,6 +49,9 @@ export interface ScheduleArgs {
   zones: ZoneId[];
   /** Called for each zone+postType the scheduler decides to fire. */
   onFire: (req: FireRequest) => Promise<void>;
+  /** cycle-008 slice 2a · primary character id for the event-driven router decision in the stir
+   * tier (ledger entries + inter-character coord). Defaults to 'ruggy' (repo primary). */
+  characterId?: string;
 }
 
 /**
@@ -75,7 +78,7 @@ async function withZoneLock(
 }
 
 export function schedule(args: ScheduleArgs): SchedulerHandles {
-  const { config, zones, onFire } = args;
+  const { config, zones, onFire, characterId = 'ruggy' } = args;
   const tasks: cron.ScheduledTask[] = [];
   const handles: SchedulerHandles = {
     tasks,
@@ -104,27 +107,14 @@ export function schedule(args: ScheduleArgs): SchedulerHandles {
     );
   }
 
-  // ─── 2. Pop-in random cadence ───────────────────────────────────────
-  if (config.POP_IN_ENABLED) {
-    const interval = Math.max(1, config.POP_IN_INTERVAL_HOURS);
-    const expr = `0 */${interval} * * *`;
-
-    handles.popInExpression = expr;
-    tasks.push(
-      cron.schedule(
-        expr,
-        async () => {
-          for (const zone of zones) {
-            if (Math.random() > config.POP_IN_PROBABILITY) continue;
-            const popInTypes: PostType[] = ['micro', 'lore_drop', 'question'];
-            const postType = popInTypes[Math.floor(Math.random() * popInTypes.length)]!;
-            await withZoneLock(zone, () => onFire({ zone, postType }), `pop-in (${postType})`);
-          }
-        },
-        { timezone: 'UTC' },
-      ),
-    );
-  }
+  // ─── 2. Pop-in (cycle-008 slice 2a) ─────────────────────────────────
+  // The blind random-die-roll pop-in cron was DELETED here. Pop-ins are now
+  // EVENT-DRIVEN: the stir tier (§4 below) consults the router on each tick
+  // and fires a micro only when real on-chain activity crosses the kansei
+  // thresholds (router-gated by refractory + daily-cap, so louder data not
+  // louder cadence — invariant #3). lore_drop/question/callout no longer
+  // auto-fire (operator prune 2026-05-23: keep digest + micro + weaver).
+  // POP_IN_* config fields are retained but no longer drive a cron.
 
   // ─── 3. Weaver weekly mid-week ──────────────────────────────────────
   if (config.WEAVER_ENABLED) {
@@ -168,12 +158,31 @@ export function schedule(args: ScheduleArgs): SchedulerHandles {
                 if (zoneLocks.has(zone)) continue;
                 const profile = (lynchMod as { ZONE_PROFILES?: Record<string, { primitive: 'node' | 'district' | 'edge' | 'path' | 'inner_sanctum' }> }).ZONE_PROFILES?.[zone];
                 const primitive = profile?.primitive ?? 'node';
-                const result = await ambientMod.runStirTick(zone, primitive);
+                const result = await ambientMod.runStirTick(zone, primitive, characterId);
                 if (result.error) {
                   console.warn(`ambient-stir: zone=${zone} error=${result.error}`);
                 } else if (result.events_fetched > 0) {
                   console.log(
                     `ambient-stir: zone=${zone} fetched=${result.events_fetched} quarantined=${result.quarantined}`,
+                  );
+                }
+                // cycle-008 slice 2a · event-driven pop-in (replaces the deleted blind §2 cadence).
+                // The slow stir tick above ran UNLOCKED (so it never blocks/drops the weekly digest
+                // or weaver cron). The ledger CLAIM + the post run together under the zone lock here:
+                // commit the fire first, post only if we won the slot. If the lock is contended
+                // (digest/weaver firing) this whole block is dropped — nothing is committed, so no
+                // phantom budget is consumed (FAGAN slice-2a). POP_IN_ENABLED stays the operator
+                // kill switch for pop-in POSTS (the old §2 cron honored it); EVENT_HEARTBEAT_ENABLED
+                // is the separate "no stir tier at all" knob.
+                if (config.POP_IN_ENABLED && result.fireIntent) {
+                  const intent = result.fireIntent;
+                  await withZoneLock(
+                    zone,
+                    async () => {
+                      const won = await ambientMod.commitFireDecision(intent.decision);
+                      if (won) await onFire({ zone, postType: intent.postType });
+                    },
+                    `event-pop-in (${intent.triggeringAxis ?? 'gravity'})`,
                   );
                 }
               }
