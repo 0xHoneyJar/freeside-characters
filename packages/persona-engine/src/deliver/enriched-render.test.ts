@@ -57,6 +57,40 @@ describe('buildEnrichedDigestComponentsV2 (prod module)', () => {
     expect(json).not.toContain('spotlight');
   });
 
+  test('rank-climb spotlight surfaces the actual movement (#prior → #current)', () => {
+    const base = zd();
+    const climber = '0xCL11111111111111111111111111111111111111';
+    const withClimb = {
+      ...base,
+      raw_stats: {
+        ...base.raw_stats,
+        spotlight: { wallet: climber, reason: 'rank_climb', details: {} },
+        rank_changes: {
+          ...base.raw_stats.rank_changes,
+          climbed: [{ wallet: climber, rank_delta: 5, dimension: 'onchain', prior_rank: 12, current_rank: 7 }],
+        },
+      },
+    } as ZoneDigest;
+    const json = JSON.stringify(buildEnrichedDigestComponentsV2(withClimb, { resolveHandle: () => 'degenharu' }));
+    expect(json).toContain('climbed #12 → #7'); // the real rank change, not just "climbed the ranks"
+    expect(json).toContain('degenharu');
+  });
+
+  test('rank-climb spotlight with no matching mover falls back to prose', () => {
+    const base = zd();
+    const withClimb = {
+      ...base,
+      raw_stats: {
+        ...base.raw_stats,
+        spotlight: { wallet: '0xNOMATCH', reason: 'rank_climb', details: {} },
+        rank_changes: { climbed: [], dropped: [], entered_top_tier: [], exited_top_tier: [] },
+        top_movers: [],
+      },
+    } as ZoneDigest;
+    const json = JSON.stringify(buildEnrichedDigestComponentsV2(withClimb, { resolveHandle: () => 'an anonymous mibera' }));
+    expect(json).toContain('climbed the ranks'); // graceful fallback when the mover isn't found
+  });
+
   test('resolveFactorName injects MCP names; resolveHandle injects the spotlight identity', () => {
     const json = JSON.stringify(
       buildEnrichedDigestComponentsV2(zd(), {

@@ -9,7 +9,7 @@
 // edge (resolveFactorName from the score factor catalog, resolveHandle from
 // freeside_auth) per the hexagonal name-authority-at-the-boundary rule.
 
-import type { ZoneDigest } from '../score/types.ts';
+import type { ZoneDigest, Spotlight, TopMover } from '../score/types.ts';
 import { getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 
@@ -59,6 +59,17 @@ export function prettyFactorName(factorId: string): string {
 function shortenWallet(wallet: string): string {
   if (!wallet.startsWith('0x') || wallet.length < 12) return wallet;
   return `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
+}
+
+/** Spotlight reason text. For a rank climb, surface the ACTUAL movement (operator: a spotlight that
+ *  doesn't show the rank change isn't much of a spotlight). Falls back to prose if no mover matches. */
+function spotlightReason(reason: Spotlight['reason'], mover: TopMover | undefined): string {
+  if (reason === 'new_badge') return 'earned a new badge';
+  if (mover && mover.prior_rank != null && mover.current_rank != null) {
+    return `climbed #${mover.prior_rank} → #${mover.current_rank}`;
+  }
+  if (mover && mover.rank_delta) return `climbed ${Math.abs(mover.rank_delta)} ranks`;
+  return 'climbed the ranks';
 }
 
 /** Derive the displayed window length (days) from the digest's own bounds — never hardcode. */
@@ -111,13 +122,18 @@ export function buildEnrichedDigestComponentsV2(zd: ZoneDigest, opts: EnrichedDi
   if (zd.raw_stats.spotlight) {
     const sp = zd.raw_stats.spotlight;
     const who = handle(sp.wallet);
-    const reason = sp.reason === 'new_badge' ? 'earned a new badge' : 'climbed the ranks';
+    // pull THIS wallet's real rank movement from the typed source (rank_changes.climbed, then top_movers)
+    const mover =
+      zd.raw_stats.rank_changes.climbed.find((m) => m.wallet === sp.wallet) ??
+      zd.raw_stats.top_movers.find((m) => m.wallet === sp.wallet);
+    const what = spotlightReason(sp.reason, mover);
     const pfp = opts.resolvePfp?.(sp.wallet) ?? null;
+    const line = stripEmDashes(`### ⚡ spotlight\n**${who}** ${what}`);
     blocks.push({ type: COMPONENT_SEPARATOR });
     blocks.push(
       pfp
-        ? { type: SECTION_TYPE, components: [{ type: COMPONENT_TEXT_DISPLAY, content: stripEmDashes(`### ⚡ spotlight\n\`${who}\` ${reason}`) }], accessory: { type: THUMBNAIL_TYPE, media: { url: pfp } } }
-        : { type: COMPONENT_TEXT_DISPLAY, content: stripEmDashes(`### ⚡ spotlight\n\`${who}\` ${reason}`) },
+        ? { type: SECTION_TYPE, components: [{ type: COMPONENT_TEXT_DISPLAY, content: line }], accessory: { type: THUMBNAIL_TYPE, media: { url: pfp } } }
+        : { type: COMPONENT_TEXT_DISPLAY, content: line },
     );
   }
   // members-warm footer: omit when 0 (the live pulse path can report 0 → never show "0 … warm").

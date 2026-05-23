@@ -253,15 +253,15 @@ describe('composeDigestPost · enriched-v2 path (cycle-008 S9)', () => {
     expect(json).toContain('Mibera Trades'); // catalog display_name, not the prettified "Mibera"
   });
 
-  test('spotlight resolver returning the member-noun fallback → "a mibera", never raw 0x', async () => {
+  test('spotlight resolver returning the member-noun fallback → "an anonymous mibera", never raw 0x', async () => {
     const result = await composeDigestPost(
       config({ DIGEST_SURFACE: 'enriched-v2' }),
       character,
       'el-dorado',
-      enrichedDeps({ resolveSpotlightHandle: async () => 'a mibera' }),
+      enrichedDeps({ resolveSpotlightHandle: async () => 'an anonymous mibera' }),
     );
     const json = JSON.stringify(result.payload.components);
-    expect(json).toContain('a mibera');
+    expect(json).toContain('an anonymous mibera');
     expect(json).not.toContain('an anonymous keeper');
     expect(json).not.toContain('0xAB00');
   });

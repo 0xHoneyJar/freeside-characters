@@ -180,7 +180,7 @@ async function composeEnrichedDigestPost(
 // The THJ community's member noun (operator: "each community has a name for their members and we
 // call them Miberas"). The spotlight fallback when no handle resolves — never "an anonymous keeper".
 // Repo-scoped to the mibera world; lift to CharacterConfig if a non-mibera community digest lands here.
-const ANON_MEMBER = 'a mibera';
+const ANON_MEMBER = 'an anonymous mibera';
 
 /**
  * Resolve a spotlight wallet → display handle via freeside_auth (resolve_wallet). NFR-29: a raw
