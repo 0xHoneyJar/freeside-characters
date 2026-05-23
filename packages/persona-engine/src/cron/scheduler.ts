@@ -19,7 +19,7 @@
 import cron from 'node-cron';
 import type { Config } from '../config.ts';
 import type { ZoneId } from '../score/index.ts';
-import type { PostType } from '../compose/post-types.ts';
+import type { PostType, EventTrigger } from '../compose/post-types.ts';
 
 const DAY_TO_CRON: Record<string, number> = {
   sunday: 0,
@@ -34,6 +34,9 @@ const DAY_TO_CRON: Record<string, number> = {
 export interface FireRequest {
   zone: ZoneId;
   postType: PostType;
+  /** cycle-008 slice 2b · the live moment an event-driven pop-in is reacting to (axis + event
+   * class). Set only for router-fired micros; absent for the digest/weaver crons. */
+  eventTrigger?: EventTrigger;
 }
 
 export interface SchedulerHandles {
@@ -180,7 +183,13 @@ export function schedule(args: ScheduleArgs): SchedulerHandles {
                     zone,
                     async () => {
                       const won = await ambientMod.commitFireDecision(intent.decision);
-                      if (won) await onFire({ zone, postType: intent.postType });
+                      if (won)
+                        await onFire({
+                          zone,
+                          postType: intent.postType,
+                          // slice 2b · carry the live moment to the micro voice (semantic, not numeric).
+                          eventTrigger: { axis: intent.triggeringAxis, eventClass: intent.eventClass },
+                        });
                     },
                     `event-pop-in (${intent.triggeringAxis ?? 'gravity'})`,
                   );

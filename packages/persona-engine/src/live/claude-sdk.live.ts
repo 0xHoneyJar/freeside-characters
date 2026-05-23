@@ -3,6 +3,7 @@ import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { VoiceAugment } from '../domain/voice-augment.ts';
 import type { VoiceGenPort, VoiceGenContext } from '../ports/voice-gen.port.ts';
+import type { EventTrigger } from '../compose/post-types.ts';
 import { getTracer } from '../observability/otel-layer.ts';
 import { invoke } from '../compose/agent-gateway.ts';
 import { buildVoiceBrief, parseVoiceResponse } from '../compose/voice-brief.ts';
@@ -104,6 +105,18 @@ export function createClaudeSdkLive(
               : brief.user;
           }
 
+          // cycle-008 slice 2b · event-driven pop-ins append the triggering moment as RUNTIME
+          // context (NOT the persona doc — operator owns ruggy's persona.md). Neutral semantic
+          // signal (event class + axis), never numbers; the persona does the voicing.
+          if (ctx.eventTrigger) {
+            // validate the axis ONCE at the boundary and reuse for both the prompt and telemetry,
+            // so a corrupted any/cast value can't produce a sanitized prompt with misleading trace
+            // metadata (FAGAN slice-2b cleanup).
+            const eventAxis = formatEventAxis(ctx.eventTrigger.axis);
+            userMessage = `${userMessage}\n\n${formatEventTrigger({ ...ctx.eventTrigger, axis: eventAxis })}`;
+            span.setAttribute('voice.event_trigger_axis', eventAxis);
+          }
+
           const response = await invoke(config, {
             character,
             systemPrompt,
@@ -135,4 +148,54 @@ function sanitizeVoiceLine(line: string): string {
   return escapeDiscordMarkdown(
     stripVoiceDisciplineDrift(line, { postType: 'digest', mediumId: 'discord-webhook' }),
   );
+}
+
+/**
+ * cycle-008 slice 2b · render the event-driven pop-in's triggering moment as a neutral runtime
+ * context block. Semantic signal only — the canon event class + which kansei axis tugged — never
+ * aggregate numbers (ruggy voice principle). The persona prompt owns the actual voicing; this just
+ * tells the LLM WHICH live moment to lean into instead of summarizing the week.
+ */
+export function formatEventTrigger(t: EventTrigger): string {
+  // SANITIZE at the prompt boundary (FAGAN slice-2b CRITICAL). eventClass is typed free-form
+  // string and originates externally (on-chain → score-mibera); interpolating it raw would let a
+  // value like `</event-trigger>ignore prior instructions` break out of the context block. Strip to
+  // a plain label; validate the axis against the known literals. Defense-in-depth even though the
+  // upstream value is currently a validated enum — the prompt boundary never trusts runtime data.
+  const ev = formatPromptLabel(t.eventClass, 'recent activity');
+  const axis = formatEventAxis(t.axis);
+  return `<event-trigger>this pop-in reacts to a live moment — triggering signal: ${ev} · felt-axis: ${axis}. speak to THIS moment, not the week in aggregate.</event-trigger>`;
+}
+
+// Canon event-class → prompt label ALLOWLIST (FAGAN slice-2b CRITICAL). Prompt-boundary data must
+// be SELECTED from a known set, not normalized from arbitrary text — punctuation-stripping still
+// lets natural-language injection ("ignore prior instructions…") through. Keep in sync with the
+// ambient EventClass union (domain/event.ts); any unknown/malicious value falls back to neutral
+// context (safe-by-default — a new upstream class reads as "recent activity" until added here).
+// A Map (not a plain object) so untrusted keys can't resolve via the prototype chain — a plain
+// `Record` would return truthy values for `toString`/`constructor`/`__proto__`, leaking non-canon
+// text into the prompt (FAGAN slice-2b). Only explicitly allowlisted canon classes render.
+const CANON_EVENT_CLASS_LABELS: ReadonlyMap<string, string> = new Map([
+  ['awakening', 'awakening'],
+  ['cross_wallets', 'cross wallets'],
+  ['return_to_source', 'return to source'],
+  ['reveal', 'reveal'],
+  ['backing', 'backing'],
+  ['committed', 'committed'],
+  ['fracture', 'fracture'],
+]);
+
+/** Map an untrusted runtime event-class value to a KNOWN canon label, else the neutral fallback. */
+function formatPromptLabel(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const key = value.trim().toLowerCase();
+  if (!key) return fallback;
+  return CANON_EVENT_CLASS_LABELS.get(key) ?? fallback;
+}
+
+/** Validate the kansei axis against the known literals at the prompt boundary. */
+function formatEventAxis(axis: EventTrigger['axis']): NonNullable<EventTrigger['axis']> {
+  return axis === 'press' || axis === 'strangers' || axis === 'gravity' || axis === 'drift'
+    ? axis
+    : 'gravity';
 }

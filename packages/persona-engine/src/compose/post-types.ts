@@ -53,6 +53,19 @@ export const CRON_POST_TYPES: readonly CronPostType[] = [
   'callout',
 ] as const;
 
+/**
+ * cycle-008 slice 2b · why an event-driven pop-in fired — the live moment the micro voice should
+ * lean into. NEUTRAL substrate signal (which canon event class, which kansei axis), never numbers;
+ * the persona does the voicing. Carried cron → composeZonePost → composeMicroPost → voice ctx, and
+ * surfaced as RUNTIME context in the prompt (never the persona doc — operator owns ruggy's persona.md).
+ */
+export interface EventTrigger {
+  /** kansei axis that crossed (press/strangers/gravity/drift), or null for a gravity-class bypass. */
+  readonly axis: 'press' | 'strangers' | 'gravity' | 'drift' | null;
+  /** canon event class that triggered it (e.g. 'awakening', 'fracture'), or null. */
+  readonly eventClass: string | null;
+}
+
 export interface PostTypeSpec {
   type: PostType;
   /** Use embed (digest, weaver, callout) or plain message content (micro, lore_drop, question)? */

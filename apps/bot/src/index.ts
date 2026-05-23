@@ -313,7 +313,10 @@ async function main(): Promise<void> {
     const t0 = Date.now();
     console.log(`${primary.id}: fire ${req.zone}/${req.postType} at ${new Date().toISOString()}`);
     try {
-      const result = await composeForCharacter(config, primary, req.zone, req.postType);
+      const result = await composeForCharacter(config, primary, req.zone, req.postType, {
+        // slice 2b · thread the event-driven pop-in's triggering moment into the micro voice.
+        eventTrigger: req.eventTrigger,
+      });
       if (!result) {
         console.log(`${primary.id}: ${req.zone}/${req.postType} skipped (data didn't fit)`);
         return;
