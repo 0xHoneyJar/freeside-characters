@@ -26,7 +26,7 @@
  * ZONE_FLAVOR — the codex becomes the single source of world-element truth.
  */
 
-import { type ZoneId } from '../score/types.ts';
+import { type ZoneId } from '../score/index.ts';
 // cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry.
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import type { PostType } from './post-types.ts';

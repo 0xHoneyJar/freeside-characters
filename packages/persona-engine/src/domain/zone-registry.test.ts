@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { ZONE_IDS } from '../score/types.ts';
+import { ZONE_IDS } from '../score/index.ts';
 import {
   ZONE_REGISTRY,
   resolveZoneDisplayName,

@@ -24,8 +24,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Effect } from 'effect';
-import type { ZoneId } from '../score/types.ts';
-import { DIMENSION_NAME } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
+import { DIMENSION_NAME } from '../score/index.ts';
 // cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry per FR-1 (Bug A source-side).
 // Voice-prompt path MUST use the safe resolver per SKP-003 — UnknownZoneError caught + raw zone fallback + warn (no crash).
 import { safeResolveZoneDisplayName, ZONE_REGISTRY } from '../domain/zone-registry.ts';

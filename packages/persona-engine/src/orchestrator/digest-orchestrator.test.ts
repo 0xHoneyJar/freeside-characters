@@ -8,11 +8,12 @@
 //   - this file (orchestrator integration: stub port → DigestPostResult shape)
 
 import { describe, expect, test } from 'bun:test';
-import { composeDigestPost } from './digest-orchestrator.ts';
+import { composeDigestPost, pickSpotlightDisplay, httpsImageUrl } from './digest-orchestrator.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
-import type { PulseDimensionBreakdown, ZoneDigest } from '../score/types.ts';
+import type { PulseDimensionBreakdown, ZoneDigest } from '../score/index.ts';
+import type { ResolvedWallet } from './freeside_auth/server.ts';
 import { IS_COMPONENTS_V2 } from '../deliver/enriched-render.ts';
 
 function config(overrides: Partial<Config> = {}): Config {
@@ -217,7 +218,7 @@ describe('composeDigestPost · enriched-v2 path (cycle-008 S9)', () => {
   const enrichedDeps = (over: Partial<Parameters<typeof composeDigestPost>[3]> = {}) => ({
     score: scoreStub([makeBreakdown({ id: 'nft', display_name: 'NFT' })]),
     fetchZoneDigest: async () => zoneDigestStub(),
-    resolveSpotlightHandle: async () => 'degenharu',
+    resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: null }),
     ...over,
   });
 
@@ -258,7 +259,7 @@ describe('composeDigestPost · enriched-v2 path (cycle-008 S9)', () => {
       config({ DIGEST_SURFACE: 'enriched-v2' }),
       character,
       'el-dorado',
-      enrichedDeps({ resolveSpotlightHandle: async () => 'an anonymous mibera' }),
+      enrichedDeps({ resolveSpotlightIdentity: async () => ({ handle: 'an anonymous mibera', pfp_url: null }) }),
     );
     const json = JSON.stringify(result.payload.components);
     expect(json).toContain('an anonymous mibera');
@@ -275,14 +276,39 @@ describe('composeDigestPost · enriched-v2 path (cycle-008 S9)', () => {
       enrichedDeps({
         fetchZoneDigest: async () =>
           zoneDigestStub({ raw_stats: { ...zoneDigestStub().raw_stats, spotlight: null } }),
-        resolveSpotlightHandle: async () => {
+        resolveSpotlightIdentity: async () => {
           resolverCalled = true;
-          return 'unused';
+          return { handle: 'unused', pfp_url: null };
         },
       }),
     );
     expect(resolverCalled).toBe(false); // resolver skipped when no spotlight
     expect(JSON.stringify(result.payload.components)).not.toContain('spotlight');
+  });
+
+  test('spotlight pfp_url → renders an NFT Thumbnail accessory on the spotlight section', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      enrichedDeps({
+        resolveSpotlightIdentity: async () => ({
+          handle: 'degenharu',
+          pfp_url: 'https://assets.0xhoneyjar.xyz/mibera/1234.png',
+        }),
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain('https://assets.0xhoneyjar.xyz/mibera/1234.png');
+    expect(json).toContain('"type":11'); // THUMBNAIL_TYPE accessory present
+    expect(json).toContain('degenharu');
+  });
+
+  test('spotlight without pfp → handle only, no Thumbnail accessory', async () => {
+    const result = await composeDigestPost(config({ DIGEST_SURFACE: 'enriched-v2' }), character, 'el-dorado', enrichedDeps());
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain('degenharu');
+    expect(json).not.toContain('"type":11'); // no thumbnail when pfp_url is null
   });
 
   test('default pulse path is unchanged when the flag is absent', async () => {
@@ -292,5 +318,59 @@ describe('composeDigestPost · enriched-v2 path (cycle-008 S9)', () => {
     expect(result.payload.flags).toBeUndefined();
     expect(result.payload.components).toBeUndefined();
     expect(result.payload.embeds.length).toBeGreaterThan(0); // still the embed dashboard mirror
+  });
+});
+
+// cycle-008 capability-wiring slice 1 · the load-bearing NFR-29 logic, unit-tested without a DB.
+describe('pickSpotlightDisplay · NFR-29 spotlight fallback ladder', () => {
+  const base: ResolvedWallet = {
+    found: true,
+    wallet: '0xab00000000000000000000000000000000000ccd',
+    handle: null,
+    discord_id: null,
+    discord_username: null,
+    mibera_id: null,
+    pfp_url: null,
+    fallback: '0xAB00…00Cd',
+    resolved_via: 'direct',
+  };
+
+  test('display_name (handle) wins over everything', () => {
+    const id = pickSpotlightDisplay({ ...base, handle: 'nomadbera', discord_username: 'nomad', mibera_id: 'MIBERA-1' });
+    expect(id.handle).toBe('nomadbera');
+  });
+
+  test('falls to discord_username when no display_name', () => {
+    const id = pickSpotlightDisplay({ ...base, discord_username: 'nomad', mibera_id: 'MIBERA-1' });
+    expect(id.handle).toBe('nomad');
+  });
+
+  test('falls to mibera_id when no display_name and no discord (operator choice)', () => {
+    const id = pickSpotlightDisplay({ ...base, mibera_id: 'MIBERA-1234' });
+    expect(id.handle).toBe('MIBERA-1234');
+  });
+
+  test('falls to the member noun when nothing resolves — NEVER the truncated wallet', () => {
+    const id = pickSpotlightDisplay({ ...base, found: false, resolved_via: 'unknown' });
+    expect(id.handle).toBe('an anonymous mibera');
+    expect(id.handle).not.toContain('0x');
+    expect(id.handle).not.toBe(base.fallback); // .fallback (truncated 0x) is never surfaced
+  });
+
+  test('passes an https pfp through; drops a non-https one', () => {
+    expect(pickSpotlightDisplay({ ...base, pfp_url: 'https://cdn.x/1.png' }).pfp_url).toBe('https://cdn.x/1.png');
+    expect(pickSpotlightDisplay({ ...base, pfp_url: 'http://cdn.x/1.png' }).pfp_url).toBeNull();
+  });
+});
+
+describe('httpsImageUrl · pfp thumbnail guard', () => {
+  test('passes https urls verbatim', () => {
+    expect(httpsImageUrl('https://assets.0xhoneyjar.xyz/m/1.png')).toBe('https://assets.0xhoneyjar.xyz/m/1.png');
+  });
+  test('drops http, data, and malformed urls and null', () => {
+    expect(httpsImageUrl('http://insecure.example/x.png')).toBeNull();
+    expect(httpsImageUrl('data:image/png;base64,AAAA')).toBeNull();
+    expect(httpsImageUrl('not a url')).toBeNull();
+    expect(httpsImageUrl(null)).toBeNull();
   });
 });

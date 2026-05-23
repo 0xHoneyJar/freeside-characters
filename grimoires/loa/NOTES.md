@@ -15,6 +15,52 @@
 <!-- Issues found during implementation that need future attention -->
 
 - **`docs/` ↔ `grimoires/loa/specs/legacy-imports/` duplication** — mount PR copied AGENTS.md, ARCHITECTURE.md, CIVIC-LAYER.md, MULTI-REGISTER.md, CHARACTER-AUTHORING.md into legacy-imports/ without removing originals. Follow-up cleanup: pick canonical home (likely grimoires/), rewrite intra-repo references, delete duplicates. Track as separate PR.
+- **Three identity-shape drift across the auth surface** (found cycle-008 slice 1) — `freeside_auth/server.ts` `ResolvedWallet` emits `{handle, discord_username, mibera_id: string, pfp_url}`; the old `digest-orchestrator` HTTP resolver read `{display_handle, discord_handle}` (never emitted → silent ANON); `ambient/live/wallet-resolver.live.ts` decodes a THIRD shape `{display_handle, discord_handle, mibera_id: Number, midi_profile_url}`. Slice 1 fixed the digest path (in-process); the Effect `WalletResolverLive` (ambient/chat path) still carries the drifted shape — reconcile when the federated `auth` tenant lands (decision #2 arc). Also `enriched-render.ts` `resolveHandle` defaults to `shortenWallet` (NFR-29 footgun if a caller forgets to pass it; the digest path always passes it).
+
+## Decision Log — cycle-008 capability-wiring · slices 1 + 3 + 2 (a + b) (2026-05-23)
+
+Build doc: `grimoires/loa/specs/enhance-freeside-capability-wiring.md`. Run via ground-and-craft (ground → seam → craft → review), ARCH/Ostrom + craft/Alexander. Code gate = `code-implement-and-review` (implementer replaceable = Opus; FAGAN reviewer non-replaceable).
+
+- **Grounding correction**: build doc framed the wire as "hooks exist, just thread" with the HTTP path merely *unconfigured*. Reality — the HTTP default was **doubly broken**: (1) read `display_handle`/`discord_handle`, fields the in-bot server never emits, so it always fell to ANON even with a URL set; (2) the in-bot auth is a `createSdkMcpServer` (in-process SDK MCP), not an HTTP endpoint, so `FREESIDE_AUTH_MCP_URL` pointed at a not-yet-built federated service. In-process is necessity, not just preference.
+- **Slice shape (deviation surfaced)**: replaced dep `resolveSpotlightHandle: (config, wallet) => Promise<string>` with `resolveSpotlightIdentity: (wallet) => Promise<{handle, pfp_url}>` — one in-process `resolveWallet()` returns both, dropping the unused `config` param. Extracted pure `pickSpotlightDisplay` + `httpsImageUrl` (exported, unit-tested without a DB).
+- **Operator seam decision — fallback ladder**: `display_name → discord_username → mibera_id → "an anonymous mibera"`. mibera_id chosen over straight-to-anon (real token id beats anonymity, NFR-29 safe). pfp renders only for an `https:` pfp_url; null/non-https → handle-only, no broken thumb. `.fallback` (truncated 0x) is NEVER surfaced.
+- **Gate**: FAGAN review-diff → APPROVED iteration 1, 0 findings, fabrication check passed. persona-engine 905 pass / 0 fail; typecheck clean.
+- **CANARY PENDING (operator action)**: `railway run -- env ZONES=owsley-lab DIGEST_SURFACE=enriched-v2 bun run digest:once` posts to LIVE Discord. WATCH: (a) does the owsley-lab spotlight wallet have a midi_profile (else still ANON — correct, but not proof of the wire); (b) **mibera_id display format** — server.ts comment says e.g. "miber-1234"; if stored lowercase, the spotlight shows it verbatim, not "MIBERA-1234" — decide if a display normalizer is wanted.
+
+### slice 3 — schema drift + barrel (FAANG-tiered · 2026-05-23)
+
+Operator asked "what would FAANG do? would they use keys?" → answer: split the guard by tier; keys live in the scheduled/monitor tier, NOT the per-PR gate.
+
+- **`score/schema-drift.test.ts`** (NEW): two tiers. (1) OFFLINE (every PR · no key): locks `RAW_STATS_SCHEMA_VERSION` against accidental edits + asserts the v1→v2 helper ladder + the `ZoneDigest`/`raw_stats` field paths enriched-render dereferences. (2) LIVE (`MCP_KEY` + `STUB_MODE=false` gated · loud-skip): `fetchZoneDigest('owsley-lab')` → asserts advertised `schema_version ∈ ACCEPTED_RAW_STATS_VERSIONS` (the handled-set mirroring the `RawStats['schema_version']` union). Runs on railway/cron where the key lives — that's the real upstream-drift detector; the visible skip is the "never silently stale" signal.
+- **FAGAN caught a real one (iter-1 CHANGES_REQUIRED)**: my comments overclaimed "compares against the local pin" while the code checked set-membership (fabrication_check failed). REJECTED FAGAN's `=== RAW_STATS_SCHEMA_VERSION` fix with evidence — the mirror handles `1.0.0|2.0.0` and live emits `2.0.0` post-PR#75, so single-pin equality would FALSE-FAIL live. Resolved by aligning prose→behavior (set-membership is the correct guard; it still catches a future unhandled `3.0.0`). Re-FAGAN → APPROVED.
+- **Barrel (operator: "barrel now", overriding my "skip" rec)**: `score/index.ts` = `export * from './types.ts'`; 57 external importers repointed `score/types`→`score/index`; package.json adds `./score` + `./score/index` exports for the 2 package-path importers. Intra-`score/` files keep `./types.ts` direct. Swap-point is now one file. FAGAN APPROVED. Caveat: the swap it optimizes for is "maybe-never" (operator steered away from npm) — the barrel's standing value is the single public surface, not the swap.
+- **Gates**: persona-engine 909 pass / 0 fail · apps/bot 193 pass / 0 fail · both typechecks clean · drift-test + barrel both FAGAN-APPROVED.
+- **Real fix is the arc**: producer-side consumer-driven contract (score-mibera CI fails if it breaks ruggy's pinned shape) — composes with the cycle-007 "freeside-score as schema-keeper" framing below.
+
+### slice 2a — events: router wired into the stir tier (2026-05-23)
+
+Operator chose: topology = **fire-from-stir-tier** (event-at-source) · prune to **digest + micro + weaver** · **split** execution (2a firing path now, 2b voice context next).
+
+- **Dead router revived**: `routerDecide` (4-axis kansei + class-A bypass + refractory + daily-cap + inter-char coord) was fully UNCONSUMED and UNTESTED. Wired into `runStirTick` (the hourly stir tick): build budget → routerDecide → fire-intent. **Deleted the blind §2 `Math.random()` pop-in cron.** lore_drop/question/callout no longer auto-fire (callout never fired from cron anyway — only CLI tools). Cron now fires: digest (§1) + weaver (§3) + event-driven micro (§4).
+- **Greenfield budget builder**: `budgetFromLedger` (pure, budgets.ts) reconstructs the Budget the router needs from ledger entries (the port has no `getBudget`). today_fire_count by UTC calendar date; last_fire cross-character (D17). Unit-tested.
+- **Test baseline established** (was ZERO): `router.system.test.ts` (8 cases — per-axis fire, suppress, cap, refractory, class-A bypass, queued) + `budgets.test.ts` (6 cases).
+- **3 real FAGAN catches, all converged**:
+  1. **fail-open budget read** (ACCEPTED) — `readWindow` catchAll→[] fabricated an empty budget on a transient ledger failure → bypassed refractory/cap. Fixed: fail-CLOSED (propagate → outer catchAllCause → no fire).
+  2. **phantom-fire ordering** (finding ACCEPTED · FAGAN's fix REJECTED) — the ledger "fired" claim happened in the tick BEFORE the post's zone lock, so a competing digest could drop the post while budget was consumed. FAGAN's fix (whole tick under lock) would let the slow stir tick DROP the weekly digest at the Sunday-00:00 cron coincidence (`0 0 * * 0` vs `0 * * * *`). Better fix: tick stays UNLOCKED; the ledger claim (`commitFireDecision`) + post are ATOMIC under the zone lock in the cron — phantom closed, digest priority preserved.
+  3. **kill-switch bypass** (ACCEPTED) — event-driven path ignored `POP_IN_ENABLED`. Gated it; `EVENT_HEARTBEAT_ENABLED` stays the separate "no stir tier at all" knob.
+- **Invariant #3 honored**: louder DATA not louder cadence — the hourly tick is router-gated by refractory + daily-cap; actual fire rate unchanged.
+- **Gates**: persona-engine 923 pass / 0 fail · apps/bot 193 / 0 · both typechecks clean · FAGAN APPROVED (after the 3 catches converged).
+- **2b**: DONE — see below.
+
+### slice 2b — events: the live moment reaches the micro voice (2026-05-23)
+
+Completes slice 2. The router's triggering axis + canon event class flow from the stir tick (`StirFireIntent`) → `FireRequest` → `composeZonePost` → `composeMicroPost` → the voice ctx.
+
+- **New `EventTrigger` type** (compose/post-types.ts · neutral, no ambient coupling). Threaded via the existing `ComposeZonePostOpts` channel + `MicroOrchestratorDeps` + `VoiceGenContext`.
+- **Persona boundary respected**: injected into the `userMessage` (RUNTIME context, like priorWeekHint), NOT ruggy's persona.md (operator owns it). Semantic signal only (event class + axis), never numbers (ruggy voice principle).
+- **Prompt-injection hardening (FAGAN · 4 passes on the eventClass surface)**: eventClass is free-form + externally sourced (on-chain → score-mibera). Progressive: raw interpolation (CRITICAL) → punctuation-strip (insufficient — instruction text survived) → object-allowlist (prototype-key leak via `toString`/`__proto__`) → **Map-allowlist + type guard + axis-clamp**. Unknown/malicious → neutral `recent activity` fallback. Tested with tag-breakout + prototype-key payloads (`claude-sdk.live.test.ts`).
+- **Gates**: persona-engine 934 pass / 0 fail · apps/bot 193 / 0 · typechecks clean · FAGAN APPROVED.
+- **Slice 2 whole**: pop-ins are event-driven (2a) AND the voice knows which event triggered them (2b).
 
 ## Decision Log — cycle-007 architectural reorient (post-Sprint-1 · 2026-05-17)
 

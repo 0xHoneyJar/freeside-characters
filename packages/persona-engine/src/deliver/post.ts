@@ -19,7 +19,7 @@
 import type { Config } from '../config.ts';
 import { isDryRun, getZoneChannelId } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 import type { DigestPayload } from './embed.ts';
 import { getBotClient, postToChannel } from './client.ts';
 import { getOrCreateChannelWebhook, sendViaWebhook } from './webhook.ts';

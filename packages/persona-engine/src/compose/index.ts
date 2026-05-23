@@ -20,7 +20,7 @@
 
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 import type { PostType } from './post-types.ts';
 import type { ToolUseEvent } from '../orchestrator/index.ts';
 import type { RecentMessage } from './environment.ts';

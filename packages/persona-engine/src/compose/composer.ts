@@ -20,7 +20,7 @@ import type { MediumCapability } from '@0xhoneyjar/medium-registry';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import { fetchZoneDigest } from '../score/client.ts';
-import type { ZoneDigest, ZoneId } from '../score/types.ts';
+import type { ZoneDigest, ZoneId } from '../score/index.ts';
 import type { DigestPayload } from '../deliver/embed.ts';
 import { composeDigestPost } from '../orchestrator/digest-orchestrator.ts';
 import { composeMicroPost } from '../orchestrator/micro-orchestrator.ts';
@@ -32,6 +32,7 @@ import { composeCalloutPost } from '../orchestrator/callout-orchestrator.ts';
 import {
   POST_TYPE_SPECS,
   type PostType,
+  type EventTrigger,
 } from './post-types.ts';
 
 export interface PostComposeResult {
@@ -54,6 +55,8 @@ export interface PostComposeResult {
  */
 export interface ComposeZonePostOpts {
   readonly medium?: MediumCapability;
+  /** cycle-008 slice 2b · the event-driven moment to thread into the micro voice (axis + class). */
+  readonly eventTrigger?: EventTrigger;
 }
 
 /**
@@ -101,6 +104,7 @@ async function composeOrchestratedPost(
   character: CharacterConfig,
   zone: ZoneId,
   postType: ZoneRoutedPostType,
+  opts: ComposeZonePostOpts = {},
 ): Promise<PostComposeResult> {
   // The orchestrator already fetches its own snapshot via ScoreFetchPort.
   // We still need a ZoneDigest for the caller's logging surface — fetch once
@@ -117,7 +121,8 @@ async function composeOrchestratedPost(
       break;
     }
     case 'micro': {
-      const r = await composeMicroPost(config, character, zone);
+      // slice 2b · pass the event-driven trigger so the micro voice leans into the live moment.
+      const r = await composeMicroPost(config, character, zone, { eventTrigger: opts.eventTrigger });
       payload = r.payload;
       voice = r.message.voiceContent;
       break;
@@ -191,7 +196,7 @@ export async function composeZonePost(
   }
   const routed = postType as ZoneRoutedPostType;
   if (MIGRATED_POST_TYPES.has(routed)) {
-    return composeOrchestratedPost(config, character, zone, routed);
+    return composeOrchestratedPost(config, character, zone, routed, _opts);
   }
   throw new Error(`composeZonePost: unsupported zone-routed post type "${postType}"`);
 }

@@ -8,7 +8,7 @@ import {
   type PulseDimensionBreakdown,
   type ZoneId,
   type PulseDimension,
-} from '../score/types.ts';
+} from '../score/index.ts';
 import type { DigestSnapshot, DigestFactorSnapshot } from '../domain/digest-snapshot.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
 import { validateSnapshotPlausibility } from '../domain/validate-snapshot-plausibility.ts';

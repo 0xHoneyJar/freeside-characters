@@ -1,6 +1,6 @@
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
-import type { ZoneDigest, ZoneId, RawStats } from '../score/types.ts';
+import type { ZoneDigest, ZoneId, RawStats } from '../score/index.ts';
 import type { DigestSnapshot } from '../domain/digest-snapshot.ts';
 import type { DigestPayload } from '../deliver/embed.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
@@ -16,7 +16,7 @@ import { buildDimensionPulsePayload } from '../deliver/dimension-pulse-payload.t
 import { fetchZoneDigest } from '../score/client.ts';
 import { buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2, prettyFactorName } from '../deliver/enriched-render.ts';
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
-import { callAmbientMcpTool } from '../ambient/live/score-mcp-client.ts';
+import { resolveWallet, type ResolvedWallet } from './freeside_auth/server.ts';
 
 export interface DigestPostResult {
   readonly zone: ZoneId;
@@ -33,8 +33,12 @@ export interface DigestOrchestratorDeps {
   readonly voiceMemory?: VoiceMemoryPort;
   /** cycle-008 S9 · enriched-v2 path · full ZoneDigest fetch (defaults to the score client). */
   readonly fetchZoneDigest?: (config: Config, zone: ZoneId) => Promise<ZoneDigest>;
-  /** cycle-008 S9 · enriched-v2 path · spotlight wallet→handle resolve (defaults to freeside-auth MCP). */
-  readonly resolveSpotlightHandle?: (config: Config, wallet: string) => Promise<string>;
+  /**
+   * cycle-008 capability-wiring slice 1 · enriched-v2 spotlight identity (handle + pfp).
+   * Defaults to the in-process freeside_auth resolver (`resolveWallet`). `handle` is a display
+   * string already through the NFR-29 ladder — never a raw or truncated wallet.
+   */
+  readonly resolveSpotlightIdentity?: (wallet: string) => Promise<SpotlightIdentity>;
 }
 
 // Default pulse window · cycle-007 S8 r4 (operator pivot 2026-05-17):
@@ -128,8 +132,9 @@ export async function composeDigestPost(
  * asked to wire before flipping:
  *   - factor display names — `raw_stats.factor_trends` carries only factor_id, so a name catalog
  *     is built from `get_dimension_breakdown` (its top/cold factors carry display_name).
- *   - spotlight identity — the wallet is resolved via freeside_auth (NFR-29: NEVER a raw 0x… in
- *     prose; on failure → "an anonymous keeper"). Spotlight PFP thumbnail is DEFERRED (issue #87).
+ *   - spotlight identity — the wallet is resolved IN-PROCESS via freeside_auth's resolve_wallet
+ *     (NFR-29: NEVER a raw 0x… in prose; ladder display_name → discord → mibera_id → ANON_MEMBER).
+ *     The NFT pfp (when an https image is on file) renders as the spotlight Section's Thumbnail.
  *
  * Voiceless, like the pulse digest — the container IS the billboard, no two-beat.
  */
@@ -140,7 +145,7 @@ async function composeEnrichedDigestPost(
 ): Promise<DigestPostResult> {
   const score = deps.score ?? createScoreMcpLive(config);
   const fetchZd = deps.fetchZoneDigest ?? fetchZoneDigest;
-  const resolveHandleFn = deps.resolveSpotlightHandle ?? resolveSpotlightHandle;
+  const resolveIdentityFn = deps.resolveSpotlightIdentity ?? resolveSpotlightIdentity;
 
   const zd = await fetchZd(config, zone);
 
@@ -155,14 +160,17 @@ async function composeEnrichedDigestPost(
     // names fall back to prettify — never fail the digest on the name-catalog hop.
   }
 
-  // spotlight identity (NFR-29 · resolve before any 0x… reaches prose; "an anonymous keeper" on miss).
+  // spotlight identity (NFR-29 · resolve before any 0x… reaches prose; ANON_MEMBER on miss).
+  // handle is ladder-resolved (display_name → discord → mibera_id → "an anonymous mibera");
+  // pfp_url, when an https NFT image is on file, renders as the Section's Thumbnail accessory.
   const sp = zd.raw_stats.spotlight;
-  const spotlightHandle = sp ? await resolveHandleFn(config, sp.wallet) : undefined;
+  const identity = sp ? await resolveIdentityFn(sp.wallet) : undefined;
 
   const components = buildEnrichedDigestComponentsV2(zd, {
     resolveFactorName: (id) => nameMap.get(id) ?? prettyFactorName(id),
-    ...(sp ? { resolveHandle: () => spotlightHandle ?? ANON_MEMBER } : {}),
-    // resolvePfp DEFERRED (issue #87 §2) — spotlight renders the handle, no NFT thumbnail yet.
+    ...(sp && identity
+      ? { resolveHandle: () => identity.handle, resolvePfp: () => identity.pfp_url }
+      : {}),
   });
 
   const flavor = ZONE_REGISTRY[zone];
@@ -178,33 +186,77 @@ async function composeEnrichedDigestPost(
 }
 
 // The THJ community's member noun (operator: "each community has a name for their members and we
-// call them Miberas"). The spotlight fallback when no handle resolves — never "an anonymous keeper".
+// call them Miberas"). The spotlight fallback when no identity resolves — never "an anonymous keeper".
 // Repo-scoped to the mibera world; lift to CharacterConfig if a non-mibera community digest lands here.
 const ANON_MEMBER = 'an anonymous mibera';
 
-/**
- * Resolve a spotlight wallet → display handle via freeside_auth (resolve_wallet). NFR-29: a raw
- * 0x… must NEVER reach prose; on any failure (endpoint unset, timeout, miss) → ANON_MEMBER.
- * One call per weekly digest, so the Effect WalletResolver's cache/CB are unnecessary.
- * NOTE: freeside-auth MCP is currently unconfigured in prod (FREESIDE_AUTH_MCP_URL unset · the
- * deferred auth wiring), so spotlights show "a mibera" until it's wired (issue #87 §2).
- */
-async function resolveSpotlightHandle(config: Config, wallet: string): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5_000);
+/** Resolved spotlight identity — display string (ladder-applied) + optional NFT/pfp thumbnail url. */
+export interface SpotlightIdentity {
+  /** Display string already through the NFR-29 ladder — NEVER a raw or truncated wallet. */
+  readonly handle: string;
+  /** https NFT/pfp image url for the Section Thumbnail accessory, or null when none. */
+  readonly pfp_url: string | null;
+}
+
+/** Only https image urls reach the Discord thumbnail (drops null / non-https / malformed). */
+export function httpsImageUrl(url: string | null): string | null {
+  if (!url) return null;
   try {
-    const raw = await callAmbientMcpTool<{ display_handle?: string | null; discord_handle?: string | null }>(
-      config,
-      'freeside-auth',
-      'resolve_wallet',
-      { wallet },
-      controller.signal,
-    );
-    return raw?.display_handle ?? raw?.discord_handle ?? ANON_MEMBER;
+    return new URL(url).protocol === 'https:' ? url : null;
   } catch {
-    return ANON_MEMBER;
+    return null;
+  }
+}
+
+/**
+ * NFR-29 spotlight fallback ladder: display_name → discord_username → mibera_id → ANON_MEMBER.
+ * The truncated 0x `.fallback` is NEVER surfaced — a shortened wallet is still a leaked wallet.
+ */
+export function pickSpotlightDisplay(r: ResolvedWallet): SpotlightIdentity {
+  return {
+    handle: r.handle ?? r.discord_username ?? r.mibera_id ?? ANON_MEMBER,
+    pfp_url: httpsImageUrl(r.pfp_url),
+  };
+}
+
+/**
+ * Default spotlight resolver — IN-PROCESS (cycle-008 capability-wiring slice 1). Calls
+ * freeside_auth's `resolve_wallet` directly: no HTTP hop. The in-bot auth is an SDK MCP (not an
+ * endpoint), and the federated `auth` tenant is a V2 arc (decision #2) — the prior HTTP default
+ * read `display_handle`/`discord_handle`, fields freeside_auth never emits, so it leaked nothing
+ * but always fell back. resolve_wallet itself never throws (internal fallback); the try/catch is
+ * belt-and-suspenders for NFR-29. One call per weekly digest, so freeside_auth's 5-min cache covers it.
+ */
+// resolveWallet hits Postgres on a cache-miss: pool.connect (already bounded — the pool sets
+// connectionTimeoutMillis:5000 · server.ts:84) + midi_profiles queries (UNBOUNDED — no
+// statement_timeout). It runs inside the digest cron's per-zone lock, so a stalled QUERY would wedge
+// that zone's whole posting pipeline (the scheduler skips a zone while zoneLocks.has(zone)). This race
+// bounds the TOTAL at 5s — its real job is the unbounded query phase (connect is already capped).
+// Honest caveat (FAGAN composer+gpt): Promise.race ABANDONS, it does not cancel — a timed-out
+// resolveWallet keeps running, then releases its client in its own finally (server.ts:238). No
+// accumulation, because connect is pool-bounded, so an abandoned op resolves/rejects within ~5s, not
+// forever. (opus-skeptic raised the bound · composer+gpt caught the abandons-not-cancels overclaim ·
+// the pool's connectionTimeoutMillis closes the residual.) 2026-05-23.
+const SPOTLIGHT_RESOLVE_TIMEOUT_MS = 5_000;
+
+async function resolveSpotlightIdentity(wallet: string): Promise<SpotlightIdentity> {
+  const anon: SpotlightIdentity = { handle: ANON_MEMBER, pfp_url: null };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const resolved = await Promise.race([
+      resolveWallet(wallet),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('resolve_wallet timeout')),
+          SPOTLIGHT_RESOLVE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    return pickSpotlightDisplay(resolved);
+  } catch {
+    return anon; // NFR-29: never a raw 0x… reaches prose, even on timeout
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 

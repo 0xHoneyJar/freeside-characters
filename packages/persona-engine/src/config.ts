@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ZoneId } from './score/types.ts';
+import type { ZoneId } from './score/index.ts';
 
 const ConfigSchema = z.object({
   // ─── stub mode ────────────────────────────────────────────────────────

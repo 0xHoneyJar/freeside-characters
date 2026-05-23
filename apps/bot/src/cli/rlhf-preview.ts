@@ -20,7 +20,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
-import type { ZoneId } from '@freeside-characters/persona-engine/score/types';
+import type { ZoneId } from '@freeside-characters/persona-engine/score/index';
 import {
   buildSnapshot,
   caseById,

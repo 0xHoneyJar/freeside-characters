@@ -1,4 +1,4 @@
-import type { RecentEventRow } from '../score/types.ts';
+import type { RecentEventRow } from '../score/index.ts';
 
 export interface ActivityPulse {
   readonly generatedAt: string;

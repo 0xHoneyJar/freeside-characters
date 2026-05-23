@@ -25,7 +25,12 @@ import {
   getAmbientStirDisableReasons,
 } from "./runtime.ts";
 import { pulseTick } from "./pulse.system.ts";
-import type { ZoneId } from "./domain/event.ts";
+import { PopInLedger } from "./ports/pop-in-ledger.port.ts";
+import { routerDecide, appendDecision } from "./router.system.ts";
+import type { RouterDecision } from "./router.system.ts";
+import { budgetFromLedger } from "./domain/budgets.ts";
+import type { TriggeringAxis, LedgerEntry } from "./domain/budgets.ts";
+import type { ZoneId, EventClass } from "./domain/event.ts";
 import type { EventCursor } from "./domain/cursor.ts";
 import { emptySeen, REPLAY_WINDOW_SECONDS } from "./domain/cursor.ts";
 import type { LynchPrimitive } from "./domain/primitive-weights.ts";
@@ -103,12 +108,33 @@ function _saveCursor(cursor: EventCursor): void {
 
 const STIR_TICK_LIMIT = 100;
 
+/**
+ * cycle-008 capability-wiring slice 2a — when the router decides this tick's stir warrants a
+ * pop-in (and the inter-character race is won), the tick returns this intent and the §4 stir cron
+ * routes it through onFire as an event-driven micro. The triggering axis + event class ride along
+ * for the ledger/log now and for the micro voice context in 2b.
+ */
+export interface StirFireIntent {
+  readonly zone: ZoneId;
+  readonly postType: "micro";
+  readonly triggeringAxis: TriggeringAxis;
+  readonly eventClass: EventClass | null;
+  /**
+   * The router's fire decision, carried UNCOMMITTED. The caller commits it (budget claim +
+   * inter-character race) via `commitFireDecision` under the zone lock, atomically with the post —
+   * so a dropped post never leaves a phantom "fired" entry consuming budget (slice-2a FAGAN).
+   */
+  readonly decision: RouterDecision;
+}
+
 export interface StirTickResult {
   readonly zone: ZoneId;
   readonly events_fetched: number;
   readonly cursor_advanced: boolean;
   readonly quarantined: number;
   readonly error: string | null;
+  /** Non-null when the router decided to fire an event-driven pop-in this tick (slice 2a). */
+  readonly fireIntent: StirFireIntent | null;
 }
 
 /**
@@ -118,6 +144,7 @@ export interface StirTickResult {
 export async function runStirTick(
   zone: ZoneId,
   primitive: LynchPrimitive,
+  characterId: string = "ruggy",
 ): Promise<StirTickResult> {
   const now = new Date().toISOString();
 
@@ -132,6 +159,7 @@ export async function runStirTick(
       cursor_advanced: false,
       quarantined: 0,
       error: `ambient-stir disabled at boot: ${getAmbientStirDisableReasons().join("; ")}`,
+      fireIntent: null,
     };
   }
 
@@ -168,6 +196,7 @@ export async function runStirTick(
         events_fetched: 0,
         cursor_advanced: false,
         quarantined: fetched.quarantinedCount,
+        fireIntent: null as StirFireIntent | null,
       };
     }
 
@@ -203,10 +232,51 @@ export async function runStirTick(
       _saveCursor(idleCursor);
     }
 
+    // cycle-008 slice 2a · the stir tick now ASKS the router whether this tick's stir warrants an
+    // event-driven pop-in (replaces the deleted blind Math.random() pop-in cron). The router gates
+    // on per-axis thresholds + class-A bypass + refractory + daily-cap + inter-character coord, so
+    // this is louder DATA, never louder cadence (invariant #3). Runs AFTER the stir + cursor commit
+    // above, and the whole block catchAllCause→null, so a router/ledger hiccup never blocks the tick.
+    const fireIntent: StirFireIntent | null = yield* _(
+      Effect.gen(function* (_) {
+        const ledger = yield* _(PopInLedger);
+        // ~25h window covers both the calendar-day cap count and the (4h default) refractory.
+        const sinceTs = new Date(Date.parse(now) - 25 * 3_600_000).toISOString();
+        // FAIL-CLOSED (FAGAN slice-2a): do NOT swallow a readWindow failure into an empty budget —
+        // that would fabricate "no prior fires" and bypass refractory + daily-cap (over-fire risk,
+        // invariant #3). Let it propagate to the outer catchAllCause → null fireIntent → no fire.
+        const recent: ReadonlyArray<LedgerEntry> = yield* _(ledger.readWindow({ zone, sinceTs, untilTs: now }));
+        const budget = budgetFromLedger(zone, recent, now);
+        const latestEvent =
+          fetched.events.length > 0 ? fetched.events[fetched.events.length - 1]! : null;
+        const decision = yield* _(
+          routerDecide({ zone, characterId, stir: tickOutput.stir, latestEvent, budget, now }),
+        );
+        if (!decision.shouldFire) {
+          // Non-fire decisions (suppressed/capped/queued) are observability only — no budget impact,
+          // no Discord post — so commit them here in the unlocked tick (NFR-18 audit trail).
+          yield* _(appendDecision(decision));
+          return null;
+        }
+        // FIRE: do NOT commit here. The ledger claim (budget + inter-character race) must be ATOMIC
+        // with the Discord post under the §4 cron's zone lock — committing here (unlocked) then
+        // posting under a separate lock that may be dropped would consume budget for a post that
+        // never went out (FAGAN slice-2a). Carry the decision; the cron commits + posts together.
+        return {
+          zone,
+          postType: "micro",
+          triggeringAxis: decision.triggeringAxis,
+          eventClass: latestEvent?.event_class ?? null,
+          decision,
+        } as StirFireIntent;
+      }).pipe(Effect.catchAllCause(() => Effect.succeed<StirFireIntent | null>(null))),
+    );
+
     return {
       events_fetched: fetched.events.length,
       cursor_advanced: fetched.events.length > 0,
       quarantined: fetched.quarantinedCount,
+      fireIntent,
     };
   });
 
@@ -217,6 +287,7 @@ export async function runStirTick(
       events_fetched: number;
       cursor_advanced: boolean;
       quarantined: number;
+      fireIntent: StirFireIntent | null;
     };
     return {
       zone,
@@ -224,6 +295,7 @@ export async function runStirTick(
       cursor_advanced: result.cursor_advanced,
       quarantined: result.quarantined,
       error: null,
+      fireIntent: result.fireIntent,
     };
   } catch (err) {
     return {
@@ -232,7 +304,24 @@ export async function runStirTick(
       cursor_advanced: false,
       quarantined: 0,
       error: err instanceof Error ? err.message : String(err),
+      fireIntent: null,
     };
+  }
+}
+
+/**
+ * Commit a FIRE decision to the ledger — the budget claim + inter-character race (appendIfNoFire),
+ * cycle-008 slice 2a. Designed to run UNDER the §4 cron's zone lock so the claim and the Discord
+ * post are atomic: if the lock is contended and the block is dropped, this is never called, so no
+ * phantom "fired" entry consumes budget (FAGAN finding). Returns true if this character won the
+ * slot and should post; false if another character held the window OR the commit failed
+ * (fail-closed → caller does not post).
+ */
+export async function commitFireDecision(decision: RouterDecision): Promise<boolean> {
+  try {
+    return await ambientRuntime.runPromise(appendDecision(decision).pipe(Effect.map((r) => r.wrote)));
+  } catch {
+    return false;
   }
 }
 

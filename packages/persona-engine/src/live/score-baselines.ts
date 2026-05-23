@@ -5,7 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { DigestSnapshot } from '../domain/digest-snapshot.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 import { BASELINE_WINDOW_SIZE, type BaselineWindow } from '../domain/validate-snapshot-plausibility.ts';
 
 const BASELINE_DIR = '.run/score-baselines';

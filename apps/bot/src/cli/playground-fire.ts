@@ -34,7 +34,7 @@ import {
   fetchRecentBadges,
   generateStubRecentBadges,
 } from '@freeside-characters/persona-engine/score/client';
-import type { GetRecentBadgesResponse } from '@freeside-characters/persona-engine/score/types';
+import type { GetRecentBadgesResponse } from '@freeside-characters/persona-engine/score/index';
 import { loadCharacter } from '../character-loader.ts';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';

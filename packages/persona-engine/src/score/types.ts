@@ -5,6 +5,11 @@
  * These types are kept in sync until the score-vault repo lands and we can
  * import from `@score-vault/ports`. Until then, these mirror what zerker's
  * MCP server returns from `get_zone_digest`.
+ *
+ * KEPT HONEST BY `score/schema-drift.test.ts` (cycle-008 capability-wiring slice 3):
+ * offline mirror-integrity on every PR + an MCP_KEY-gated live freshness check that asserts
+ * the real upstream advertises a schema_version this mirror handles (run on railway/cron,
+ * not keyless CI).
  */
 
 export const RAW_STATS_SCHEMA_VERSION = '1.0.0';

@@ -21,7 +21,7 @@ import {
   renderEmoji,
   type EmojiMood,
 } from '../orchestrator/emojis/registry.ts';
-import type { FactorStats, PulseDimensionFactor } from '../score/types.ts';
+import type { FactorStats, PulseDimensionFactor } from '../score/index.ts';
 
 const isMoodEmojiDisabled = (): boolean => process.env.MOOD_EMOJI_DISABLED === 'true';
 

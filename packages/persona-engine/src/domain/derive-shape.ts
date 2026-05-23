@@ -6,7 +6,7 @@
 // S0 calibration spike (10/10 MATCH) validated equivalence with selectLayoutShape
 // across all 5 decision-tree branches. See sprint-0-COMPLETED.md for pinning decisions.
 
-import type { FactorStats } from '../score/types.ts';
+import type { FactorStats } from '../score/index.ts';
 import type { DigestSnapshot, DigestFactorSnapshot } from './digest-snapshot.ts';
 import type { ProseGateValidation, ProseGateViolation } from '../deliver/prose-gate.ts';
 

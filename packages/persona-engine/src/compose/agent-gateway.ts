@@ -46,12 +46,12 @@ import { getTracer } from '../observability/otel-layer.ts';
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { createRaindropBedrock } from '@raindrop-ai/bedrock';
 import { writeLlmTraceEntry } from '../observability/llm-trace.ts';
-import type { ZoneDigest, ZoneId } from '../score/types.ts';
+import type { ZoneDigest, ZoneId } from '../score/index.ts';
 // cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry (FR-1 voice prompt surface).
 // flavor.name → safeResolveZoneDisplayName(zone, 'agent-gateway') · per SDD §2.1 SKP-003.
 import { safeResolveZoneDisplayName } from '../domain/zone-registry.ts';
 import { generateStubZoneDigest } from '../score/client.ts';
-import { getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
+import { getWindowEventCount, getWindowWalletCount } from '../score/index.ts';
 import type { PostType } from './post-types.ts';
 import { runOrchestratorQuery } from '../orchestrator/index.ts';
 

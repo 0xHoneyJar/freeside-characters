@@ -4,7 +4,7 @@ import { describe, test, expect } from 'bun:test';
 import { presentation, renderActivityPulse, shortenWallet } from './discord-render.live.ts';
 import type { ActivityPulse } from '../domain/activity-pulse.ts';
 
-import type { RecentEventRow, PulseDimension } from '../score/types.ts';
+import type { RecentEventRow, PulseDimension } from '../score/index.ts';
 
 function eventOf(
   wallet: string,

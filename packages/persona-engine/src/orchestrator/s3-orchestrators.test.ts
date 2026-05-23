@@ -6,6 +6,7 @@ import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { DigestSnapshot } from '../domain/digest-snapshot.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
+import type { VoiceGenPort, VoiceGenContext } from '../ports/voice-gen.port.ts';
 import { composeMicroPost } from './micro-orchestrator.ts';
 import { composeLoreDropPost } from './lore-drop-orchestrator.ts';
 import { composeQuestionPost } from './question-orchestrator.ts';
@@ -66,6 +67,40 @@ describe('composeMicroPost', () => {
     });
     expect(result.message.voiceContent).toContain('checking in');
     expect(result.payload.embeds).toHaveLength(0);
+  });
+
+  test('slice 2b · threads eventTrigger into the voice ctx (event-driven micro)', async () => {
+    let captured: VoiceGenContext | undefined;
+    const capturingVoice: VoiceGenPort = {
+      generateDigestVoice: async (_snap, ctx) => {
+        captured = ctx;
+        return { header: 'x', outro: '' };
+      },
+    };
+    await composeMicroPost(STUB_CONFIG, STUB_CHARACTER, 'el-dorado', {
+      score: mockScore(),
+      voice: capturingVoice,
+      presentation,
+      eventTrigger: { axis: 'press', eventClass: 'awakening' },
+    });
+    expect(captured?.eventTrigger).toEqual({ axis: 'press', eventClass: 'awakening' });
+    expect(captured?.postType).toBe('micro');
+  });
+
+  test('slice 2b · no eventTrigger for a plain micro (scheduled, not event-driven)', async () => {
+    let captured: VoiceGenContext | undefined;
+    const capturingVoice: VoiceGenPort = {
+      generateDigestVoice: async (_snap, ctx) => {
+        captured = ctx;
+        return { header: 'x', outro: '' };
+      },
+    };
+    await composeMicroPost(STUB_CONFIG, STUB_CHARACTER, 'el-dorado', {
+      score: mockScore(),
+      voice: capturingVoice,
+      presentation,
+    });
+    expect(captured?.eventTrigger).toBeUndefined();
   });
 });
 

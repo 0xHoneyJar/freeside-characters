@@ -18,7 +18,7 @@ import {
   DISCORD_INTERACTION_DESCRIPTOR,
 } from "@0xhoneyjar/medium-registry";
 import { buildPostPayload } from "./embed.ts";
-import type { ZoneDigest } from "../score/types.ts";
+import type { ZoneDigest } from "../score/index.ts";
 
 const FIXTURE_DIGEST: ZoneDigest = {
   zone: "owsley-lab",

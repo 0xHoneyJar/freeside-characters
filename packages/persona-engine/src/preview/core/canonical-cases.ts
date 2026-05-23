@@ -9,7 +9,7 @@
 // the change-row framing can be iterated too.
 
 import type { DigestSnapshot } from '../../domain/digest-snapshot.ts';
-import type { ZoneId } from '../../score/types.ts';
+import type { ZoneId } from '../../score/index.ts';
 import { ZONE_REGISTRY } from '../../domain/zone-registry.ts';
 import type { VoiceAugment } from '../../domain/voice-augment.ts';
 

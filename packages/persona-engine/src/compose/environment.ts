@@ -21,7 +21,7 @@
  */
 
 import type { CharacterConfig } from '../types.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 // cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry (FR-1 voice prompt surface).
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import {

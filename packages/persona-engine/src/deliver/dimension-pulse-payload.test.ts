@@ -7,7 +7,7 @@ import {
   resolveFactorLabel,
   fmtDelta,
 } from './dimension-pulse-payload.ts';
-import type { PulseDimensionBreakdown, PulseDimensionFactor } from '../score/types.ts';
+import type { PulseDimensionBreakdown, PulseDimensionFactor } from '../score/index.ts';
 
 function factor(partial: Partial<PulseDimensionFactor>): PulseDimensionFactor {
   return {

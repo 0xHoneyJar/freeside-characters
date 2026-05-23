@@ -1,7 +1,7 @@
 import type { DigestSnapshot } from '../domain/digest-snapshot.ts';
 import type { ActivityPulse } from '../domain/activity-pulse.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
-import type { ZoneId } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
 
 export function createScoreMcpMock(fixtures: Partial<Record<ZoneId, DigestSnapshot>> = {}): ScoreFetchPort {
   return {

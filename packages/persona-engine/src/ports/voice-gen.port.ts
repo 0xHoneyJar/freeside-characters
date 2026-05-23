@@ -1,7 +1,7 @@
 import type { DigestSnapshot } from '../domain/digest-snapshot.ts';
 import type { VoiceAugment } from '../domain/voice-augment.ts';
 import type { DerivedShape } from '../domain/derive-shape.ts';
-import type { CronPostType } from '../compose/post-types.ts';
+import type { CronPostType, EventTrigger } from '../compose/post-types.ts';
 
 /**
  * cycle-006 S1 T1.6 · voice-gen port now accepts `ctx` carrying the derived
@@ -25,6 +25,12 @@ export interface VoiceGenContext {
    * compose/reply.ts, never this port).
    */
   readonly postType?: CronPostType;
+  /**
+   * cycle-008 slice 2b · for event-driven pop-ins, the live moment that triggered the fire (canon
+   * event class + kansei axis). Surfaced as RUNTIME context in the prompt so the voice leans into
+   * the actual event — NEUTRAL semantic signal, never numbers. Absent for scheduled/non-event posts.
+   */
+  readonly eventTrigger?: EventTrigger;
 }
 
 export interface VoiceGenPort {

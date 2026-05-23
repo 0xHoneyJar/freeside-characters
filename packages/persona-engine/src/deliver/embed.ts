@@ -26,8 +26,8 @@ import type {
   PulseDimensionFactor,
   ZoneDigest,
   ZoneId,
-} from '../score/types.ts';
-import { DIMENSION_NAME } from '../score/types.ts';
+} from '../score/index.ts';
+import { DIMENSION_NAME } from '../score/index.ts';
 // cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry.
 // Note: embed.ts uses .name → migrate to .displayName via ZONE_REGISTRY.
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';

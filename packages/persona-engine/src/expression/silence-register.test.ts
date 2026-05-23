@@ -18,7 +18,7 @@ import {
   isFlatWindow,
   pickSilenceTemplate,
 } from "./silence-register.ts";
-import type { RawStats } from "../score/types.ts";
+import type { RawStats } from "../score/index.ts";
 
 const FLAT_RAW_STATS: RawStats = {
   schema_version: "2.0.0",

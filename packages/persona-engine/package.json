@@ -1,6 +1,6 @@
 {
   "name": "@freeside-characters/persona-engine",
-  "version": "0.8.0",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
   "description": "Substrate (system-agent layer) for the freeside-characters umbrella. Cron, MCP orchestration, Discord delivery, score-mcp client, persona+exemplar loading. Character-agnostic; consumers inject CharacterConfig.",
@@ -10,6 +10,8 @@
     "./config": "./src/config.ts",
     "./orchestrator": "./src/orchestrator/index.ts",
     "./orchestrator/imagegen": "./src/orchestrator/imagegen/index.ts",
+    "./score": "./src/score/index.ts",
+    "./score/index": "./src/score/index.ts",
     "./score/types": "./src/score/types.ts",
     "./score/client": "./src/score/client.ts",
     "./compose/digest": "./src/compose/digest.ts",

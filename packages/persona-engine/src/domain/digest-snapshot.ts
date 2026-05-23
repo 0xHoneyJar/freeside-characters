@@ -1,4 +1,4 @@
-import type { ZoneId, PulseDimension, FactorStats } from '../score/types.ts';
+import type { ZoneId, PulseDimension, FactorStats } from '../score/index.ts';
 
 export type DigestSnapshotDimension = PulseDimension | 'overall';
 

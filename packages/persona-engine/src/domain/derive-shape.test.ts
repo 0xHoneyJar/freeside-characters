@@ -23,8 +23,8 @@ import {
   type LayoutShape,
 } from './derive-shape.ts';
 import type { DigestSnapshot, DigestFactorSnapshot } from './digest-snapshot.ts';
-import type { ZoneId } from '../score/types.ts';
-import type { FactorStats } from '../score/types.ts';
+import type { ZoneId } from '../score/index.ts';
+import type { FactorStats } from '../score/index.ts';
 
 // S2 deleted compose/layout-shape.ts. The T1.8 regression-guard for
 // FLATLINE-SKP-001/HIGH (oracle-vs-legacy equivalence) persists by inlining

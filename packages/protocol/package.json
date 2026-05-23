@@ -1,6 +1,6 @@
 {
   "name": "@freeside-characters/protocol",
-  "version": "0.8.0",
+  "version": "0.12.0",
   "private": true,
   "description": "Placeholder for sealed-schema package. Each character is a score-vault consumer; this package may grow if characters publish schemas (ChannelConfig, DigestPostMeta, etc.).",
   "type": "module",

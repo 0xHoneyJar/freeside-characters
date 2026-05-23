@@ -15,7 +15,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { moodEmojiForFactor, moodEmojiForColdFactor } from './mood-emoji.ts';
 import { pickByMoods } from '../orchestrator/emojis/registry.ts';
-import type { FactorStats, PulseDimensionFactor } from '../score/types.ts';
+import type { FactorStats, PulseDimensionFactor } from '../score/index.ts';
 
 function stats(o: {
   magRank?: number | null;

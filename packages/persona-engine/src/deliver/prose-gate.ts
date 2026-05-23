@@ -15,7 +15,7 @@
  * Closes PRD-FR-2 + SDD §Component 1 spec. Sibling pattern: `grail-ref-guard.ts`.
  */
 
-import type { FactorStats } from '../score/types.ts';
+import type { FactorStats } from '../score/index.ts';
 
 const PROXIMITY_WINDOW_CHARS = 200;
 
