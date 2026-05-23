@@ -1,6 +1,6 @@
 {
   "name": "@freeside-characters/persona-engine",
-  "version": "0.8.0",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
   "description": "Substrate (system-agent layer) for the freeside-characters umbrella. Cron, MCP orchestration, Discord delivery, score-mcp client, persona+exemplar loading. Character-agnostic; consumers inject CharacterConfig.",

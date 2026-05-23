@@ -1,5 +1,40 @@
 # Changelog
 
+> ⚠️ changelog drift: tags advanced to **v0.11.3** (2026-05-01) without entries; the
+> `[Unreleased]` block below is mislabeled "cycle-004" but holds older shipped work.
+> Retroactive reconciliation of v0.10.0–v0.11.3 is a separate hygiene task. The
+> entry below resumes the log at the cycle-008 state.
+
+## [0.12.0] — 2026-05-23 — cycle-008 capability-wiring + FAGAN-thorough
+
+### Added
+- **Enriched-v2 digest, live** — the weekly digest is now a Components V2 *billboard*
+  (voiceless by design): real `raw_stats` spotlight identity + NFT pfp, factor movers,
+  members-warm footer. `DIGEST_SURFACE=enriched-v2`.
+- **Capability-wiring** (3 slices): in-process spotlight identity resolve (freeside_auth) ·
+  event-driven micro pop-in via the ambient router → stir-tier · `score/types.ts` as the
+  sanctioned shim with a schema-drift test.
+- **FAGAN-thorough** multimodel code-review panel wired (`fagan_protocol` in `.loa.config.yaml`):
+  opus-skeptic + gpt-reviewer + composer-reviewer, lone-critical-holds-the-gate consensus.
+
+### Fixed
+- **Digest spotlight sanitize** — external identity (discord_username / mibera_id) now runs
+  through `escapeDiscordMarkdown` at the presentation boundary (CLAUDE.md invariant; caught by
+  the FAGAN panel). Defends against markdown distortion in the spotlight line.
+- **Digest spotlight availability** — bounded the in-process `resolveWallet` call (5s
+  `Promise.race`) so a stalled Postgres lookup can't wedge the per-zone cron lock (FAGAN
+  opus-skeptic).
+- **FAGAN composer voice** — switched the cursor adapter from `--mode plan` (agentic loop,
+  timed out → voice silently dropped) to `--mode ask` (single-shot Q&A, ~65s). The panel now
+  runs at its true 3-voice width. *(construct-fagan repo)*
+
+### Changed
+- **README** rewritten around the three-surface model (chat · scheduled billboard · event
+  pop-in), the substrate piece-map, quests (env-gated multi-world), and current status.
+
+### Tests
+- typecheck green (both packages) · `bun test` 1125 pass / 2 skip / 0 fail (71 files).
+
 ## [Unreleased] — cycle-004 in progress
 
 ### Added
