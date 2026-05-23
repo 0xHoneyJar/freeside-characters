@@ -70,6 +70,26 @@ flatline_protocol:
     blocker_skeptic: 700
 
 # =============================================================================
+# FAGAN code-review panel (construct-fagan · cycle-008 · multimodel review)
+# =============================================================================
+# `/fagan --mode thorough` (reviewing-diffs mode:thorough) fans a diff out to N
+# voices from DISTINCT base corpora so reviews fail differently. Distinct from
+# flatline (PRD/SDD · numeric cross-scoring): FAGAN reviews CODE with severity-enum
+# findings + a severity-cluster merge. Operator-tunable; the panel reads the voice
+# roster from FAGAN_PANEL_VOICES (exported from voices[] below); default = fast.
+fagan_protocol:
+  mode: fast                   # fast (single gpt-5.5 via codex) | thorough (the panel)
+  voices:                      # id:role:adapter:model · role: reviewer|skeptic · adapter: claude|codex|cursor
+    - opus-skeptic:skeptic:claude:opus                 # Anthropic · security-careful dissent seat
+    - gpt-reviewer:reviewer:codex:gpt-5.5              # OpenAI · proven bug-catcher
+    - composer-reviewer:reviewer:cursor:composer-2.5   # Moonshot-Kimi · coding-specialist (needs Cursor Pro)
+  # V2 candidates (gated): gemini-3.1-pro (free, already wired) | grok-4.1-fast (xAI · needs api.x.ai key)
+  gate:
+    lone_critical_holds: true  # a single voice's critical/major → CHANGES_REQUIRED (popularity-trap defense)
+    consensus_min_voices: 2    # a finding seen by ≥2 voices = consensus tier (high confidence)
+    fail_closed: true          # unknown severity → blocking; all-voices-dropped → CHANGES_REQUIRED
+
+# =============================================================================
 # Hounfour — model-heterogeneous agent routing + cheval transport config
 # =============================================================================
 # Routes flatline (and other agents) through cheval.py provider adapters.
