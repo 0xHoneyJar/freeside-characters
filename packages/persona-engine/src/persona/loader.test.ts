@@ -37,7 +37,6 @@ const RUGGY: CharacterConfig = {
   tool_invocation_style: undefined as unknown as string,
   webhookUsername: 'Ruggy',
   webhookAvatarUrl: undefined,
-  postingMode: 'webhook' as const,
 };
 
 function runSync(args: Parameters<typeof buildPrompt>[0]): BuildPromptResult {
