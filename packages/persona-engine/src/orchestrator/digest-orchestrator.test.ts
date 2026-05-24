@@ -437,6 +437,22 @@ describe('composeDigestPost · enriched-v2 multi-user spotlight (cycle-008)', ()
     expect(json).toContain('climbed #84 → #7'); // option (a) fallback held
     expect(json).toContain('-# Spotlight'); // digest never blocked on the badge enrichment
   });
+
+  test('badge feed timeout: a HUNG feed is bounded → climbers render rank-lines, digest still ships (FAGAN)', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      multiDeps({
+        badgeFetchTimeoutMs: 20,
+        // deliberately hung feed: never resolves (the MCP client has no fetch timeout)
+        fetchRecentBadges: () => new Promise<never>(() => {}),
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain('climbed #84 → #7'); // bounded → empty badge map → rank-line fallback
+    expect(json).toContain('-# Spotlight'); // the await never blocks the digest
+  });
 });
 
 // cycle-008 capability-wiring slice 1 · the load-bearing NFR-29 logic, unit-tested without a DB.
@@ -530,5 +546,17 @@ describe('enrichSpotlightPfp · inventory-api NFT pfp enrichment (Issue #87)', (
     );
     expect(id.pfp_url).toBeNull();
     expect(id.handle).toBe('nomadbera');
+  });
+
+  test('fail-soft: a THROWING resolver preserves the identity — handle intact, never bubbles to anon (FAGAN)', async () => {
+    const id = await enrichSpotlightPfp(
+      { handle: 'nomadbera', pfp_url: null },
+      '0xabc',
+      async () => {
+        throw new Error('inventory building exploded');
+      },
+    );
+    expect(id.handle).toBe('nomadbera'); // the resolved handle survives a thrown resolver
+    expect(id.pfp_url).toBeNull();
   });
 });

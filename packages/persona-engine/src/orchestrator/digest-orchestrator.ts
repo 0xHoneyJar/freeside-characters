@@ -46,6 +46,8 @@ export interface DigestOrchestratorDeps {
    * synthesized climbers to enrich. Injectable for tests.
    */
   readonly fetchRecentBadges?: typeof fetchRecentBadges;
+  /** Test/ops override for the badge-fetch timeout in ms (default BADGE_FETCH_TIMEOUT_MS). */
+  readonly badgeFetchTimeoutMs?: number;
 }
 
 // Default pulse window · cycle-007 S8 r4 (operator pivot 2026-05-17):
@@ -260,8 +262,16 @@ export async function enrichSpotlightPfp(
   nftResolver: NftPfpResolver = resolveNftPfp,
 ): Promise<SpotlightIdentity> {
   if (identity.pfp_url) return identity; // DB pfp wins
-  const nft = httpsImageUrl(await nftResolver(wallet));
-  return nft ? { ...identity, pfp_url: nft } : identity;
+  // The default resolveNftPfp is already bounded (3s) + returns null on error, but an injected or
+  // future resolver that THROWS must not bubble up — that would drop the already-resolved handle
+  // to ANON in resolveSpotlightIdentity's catch, breaking this function's fail-soft contract
+  // (FAGAN review 2026-05-24). Catch → return the identity with its handle intact.
+  try {
+    const nft = httpsImageUrl(await nftResolver(wallet));
+    return nft ? { ...identity, pfp_url: nft } : identity;
+  } catch {
+    return identity;
+  }
 }
 
 /**
@@ -283,6 +293,11 @@ export async function enrichSpotlightPfp(
 // forever. (opus-skeptic raised the bound · composer+gpt caught the abandons-not-cancels overclaim ·
 // the pool's connectionTimeoutMillis closes the residual.) 2026-05-23.
 const SPOTLIGHT_RESOLVE_TIMEOUT_MS = 5_000;
+
+// Bound the once-per-digest recent-badges fetch (the MCP client is unbounded). Generous enough
+// for a healthy MCP round-trip (init + tool call), tight enough that a stalled feed never wedges
+// the digest — badges are fail-soft enrichment, so a timeout just drops to rank-lines.
+const BADGE_FETCH_TIMEOUT_MS = 3_000;
 
 async function resolveSpotlightIdentity(wallet: string): Promise<SpotlightIdentity> {
   const anon: SpotlightIdentity = { handle: ANON_MEMBER, pfp_url: null };
@@ -332,10 +347,22 @@ async function fetchBadgeMap(
     const t = Date.parse(earnedAt);
     return Number.isFinite(t) ? t >= start && t <= end : false;
   };
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const fetchBadges = deps.fetchRecentBadges ?? fetchRecentBadges;
-    const { earnings } = await fetchBadges(config, { limit: 50 });
-    const recentFirst = [...earnings].sort((a, b) => (a.earned_at < b.earned_at ? 1 : -1));
+    // The score MCP client does NOT bound its fetch (score/client.ts has no AbortSignal), so a
+    // hung feed would block the digest — the try/catch only catches throws, not a stall (FAGAN
+    // review 2026-05-24). Race the fetch to a timeout: on stall we keep the empty map and climbers
+    // render rank-lines (fail-soft, ADR-008 §D-4). Promise.race ABANDONS (doesn't cancel) — fine,
+    // badges are once-per-digest enrichment.
+    const result = await Promise.race([
+      fetchBadges(config, { limit: 50 }),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), deps.badgeFetchTimeoutMs ?? BADGE_FETCH_TIMEOUT_MS);
+      }),
+    ]);
+    if (!result) return map; // timed out → no badge enrichment this cycle
+    const recentFirst = [...result.earnings].sort((a, b) => (a.earned_at < b.earned_at ? 1 : -1));
     for (const e of recentFirst) {
       if (!inWindow(e.earned_at)) continue;
       const key = e.wallet.toLowerCase();
@@ -344,6 +371,8 @@ async function fetchBadgeMap(
     }
   } catch {
     // fail-soft — badges are an enrichment, never a digest blocker
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   return map;
 }
