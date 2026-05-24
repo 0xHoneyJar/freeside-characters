@@ -17,6 +17,7 @@ import { fetchZoneDigest } from '../score/client.ts';
 import { buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2, prettyFactorName } from '../deliver/enriched-render.ts';
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import { resolveWallet, type ResolvedWallet } from './freeside_auth/server.ts';
+import { resolveNftPfp, type NftPfpResolver } from './inventory/resolve-nft-pfp.ts';
 
 export interface DigestPostResult {
   readonly zone: ZoneId;
@@ -220,6 +221,26 @@ export function pickSpotlightDisplay(r: ResolvedWallet): SpotlightIdentity {
 }
 
 /**
+ * Enrich a spotlight identity with the inventory-api building's NFT artwork when
+ * freeside_auth has no https pfp on file (Issue #87 · consume-pattern two-organ
+ * brief). The DB pfp WINS (operator-curated); inventory supplies real NFT
+ * artwork for holders resolvable today (fixtures; auto-upgrades to live-for-all
+ * when the sonar owner-token index lands — inventory-api/docs/sonar-ownership-gap.md).
+ * Fail-soft: a null/slow building leaves the identity unchanged — the handle is
+ * still resolved, so the spotlight is never "an anonymous mibera" from a stall.
+ * `nftResolver` is injectable for tests.
+ */
+export async function enrichSpotlightPfp(
+  identity: SpotlightIdentity,
+  wallet: string,
+  nftResolver: NftPfpResolver = resolveNftPfp,
+): Promise<SpotlightIdentity> {
+  if (identity.pfp_url) return identity; // DB pfp wins
+  const nft = httpsImageUrl(await nftResolver(wallet));
+  return nft ? { ...identity, pfp_url: nft } : identity;
+}
+
+/**
  * Default spotlight resolver — IN-PROCESS (cycle-008 capability-wiring slice 1). Calls
  * freeside_auth's `resolve_wallet` directly: no HTTP hop. The in-bot auth is an SDK MCP (not an
  * endpoint), and the federated `auth` tenant is a V2 arc (decision #2) — the prior HTTP default
@@ -252,7 +273,7 @@ async function resolveSpotlightIdentity(wallet: string): Promise<SpotlightIdenti
         );
       }),
     ]);
-    return pickSpotlightDisplay(resolved);
+    return enrichSpotlightPfp(pickSpotlightDisplay(resolved), wallet);
   } catch {
     return anon; // NFR-29: never a raw 0x… reaches prose, even on timeout
   } finally {

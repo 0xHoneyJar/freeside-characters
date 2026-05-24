@@ -8,7 +8,7 @@
 //   - this file (orchestrator integration: stub port → DigestPostResult shape)
 
 import { describe, expect, test } from 'bun:test';
-import { composeDigestPost, pickSpotlightDisplay, httpsImageUrl } from './digest-orchestrator.ts';
+import { composeDigestPost, pickSpotlightDisplay, httpsImageUrl, enrichSpotlightPfp } from './digest-orchestrator.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
@@ -372,5 +372,45 @@ describe('httpsImageUrl · pfp thumbnail guard', () => {
     expect(httpsImageUrl('data:image/png;base64,AAAA')).toBeNull();
     expect(httpsImageUrl('not a url')).toBeNull();
     expect(httpsImageUrl(null)).toBeNull();
+  });
+});
+
+describe('enrichSpotlightPfp · inventory-api NFT pfp enrichment (Issue #87)', () => {
+  test('keeps the DB pfp when present (DB wins)', async () => {
+    const id = await enrichSpotlightPfp(
+      { handle: 'nomadbera', pfp_url: 'https://db/pfp.png' },
+      '0xabc',
+      async () => 'https://nft/art.png',
+    );
+    expect(id.pfp_url).toBe('https://db/pfp.png');
+  });
+
+  test('falls back to inventory NFT artwork when DB pfp is null', async () => {
+    const id = await enrichSpotlightPfp(
+      { handle: 'nomadbera', pfp_url: null },
+      '0xabc',
+      async () => 'https://nft/art.png',
+    );
+    expect(id.pfp_url).toBe('https://nft/art.png');
+    expect(id.handle).toBe('nomadbera');
+  });
+
+  test('https-filters the inventory url (non-https dropped → unchanged)', async () => {
+    const id = await enrichSpotlightPfp(
+      { handle: 'nomadbera', pfp_url: null },
+      '0xabc',
+      async () => 'ipfs://Qm/art.png',
+    );
+    expect(id.pfp_url).toBeNull();
+  });
+
+  test('fail-soft: null from inventory leaves the identity unchanged (never anon from a stall)', async () => {
+    const id = await enrichSpotlightPfp(
+      { handle: 'nomadbera', pfp_url: null },
+      '0xabc',
+      async () => null,
+    );
+    expect(id.pfp_url).toBeNull();
+    expect(id.handle).toBe('nomadbera');
   });
 });
