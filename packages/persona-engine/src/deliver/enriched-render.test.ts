@@ -45,6 +45,25 @@ describe('buildEnrichedDigestComponentsV2 (prod module)', () => {
     expect(json).not.toContain('—'); // em-dash core strip holds
   });
 
+  test('names + bolds the badge from spotlight.details.badge_name (operator RLHF 2026-05-23)', () => {
+    const json = JSON.stringify(
+      buildEnrichedDigestComponentsV2(
+        zd({ spotlight: { wallet: '0xAB00000000000000000000000000000000000Cd', reason: 'new_badge', details: { badge_name: 'True HODLer' } } }),
+      ),
+    );
+    expect(json).toContain('earned **True HODLer**');
+    expect(json).not.toContain('earned a new badge');
+  });
+
+  test('falls back to "a new badge" when no badge_name (backward-compatible)', () => {
+    const json = JSON.stringify(
+      buildEnrichedDigestComponentsV2(
+        zd({ spotlight: { wallet: '0xAB00000000000000000000000000000000000Cd', reason: 'new_badge', details: {} } }),
+      ),
+    );
+    expect(json).toContain('earned a new badge');
+  });
+
   test('omits the members-warm footer when window_wallet_count is 0 (never "0 miberas warm")', () => {
     expect(JSON.stringify(buildEnrichedDigestComponentsV2(zd({ wallets: 15 })))).toContain('15 miberas warm');
     const zero = JSON.stringify(buildEnrichedDigestComponentsV2(zd({ wallets: 0 })));

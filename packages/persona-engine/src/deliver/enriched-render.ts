@@ -64,8 +64,13 @@ function shortenWallet(wallet: string): string {
 
 /** Spotlight reason text. For a rank climb, surface the ACTUAL movement (operator: a spotlight that
  *  doesn't show the rank change isn't much of a spotlight). Falls back to prose if no mover matches. */
-function spotlightReason(reason: Spotlight['reason'], mover: TopMover | undefined): string {
-  if (reason === 'new_badge') return 'earned a new badge';
+function spotlightReason(sp: Spotlight, mover: TopMover | undefined): string {
+  if (sp.reason === 'new_badge') {
+    // name the badge + bold it (operator feedback 2026-05-23). details.badge_name is
+    // curator/score-api data → escape before it enters markdown prose (same boundary as `who`).
+    const name = typeof sp.details?.badge_name === 'string' ? sp.details.badge_name.trim() : '';
+    return name ? `earned **${escapeDiscordMarkdown(name)}**` : 'earned a new badge';
+  }
   if (mover && mover.prior_rank != null && mover.current_rank != null) {
     return `climbed #${mover.prior_rank} → #${mover.current_rank}`;
   }
@@ -136,7 +141,7 @@ export function buildEnrichedDigestComponentsV2(zd: ZoneDigest, opts: EnrichedDi
     const mover =
       zd.raw_stats.rank_changes.climbed.find((m) => m.wallet === sp.wallet) ??
       zd.raw_stats.top_movers.find((m) => m.wallet === sp.wallet);
-    const what = spotlightReason(sp.reason, mover);
+    const what = spotlightReason(sp, mover);
     const pfp = opts.resolvePfp?.(sp.wallet) ?? null;
     const line = stripEmDashes(`### ⚡ spotlight\n**${who}** ${what}`);
     blocks.push({ type: COMPONENT_SEPARATOR });
