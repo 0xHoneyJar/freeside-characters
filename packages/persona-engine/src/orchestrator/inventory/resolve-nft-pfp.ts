@@ -11,8 +11,12 @@
  * and NEVER "an anonymous mibera" purely because a building stalled.
  *
  * The import is lazy + the specifier is dynamic so persona-engine builds even
- * when @0xhoneyjar/inventory isn't installed yet (declared as a dep; resolves at
- * runtime). The V2 arc moves this to the gateway capability-safe runtime.
+ * when @0xhoneyjar/inventory isn't installed. It is intentionally NOT a
+ * package.json dependency: the only resolvable form today was a local
+ * `file:../inventory-api` path that broke CI install (unresolvable off a dev
+ * machine) — so the deploy/gateway provides the package at runtime, and this
+ * path fail-softs to the DB pfp / handle when it's absent (CI + any env without
+ * it). The V2 arc moves this to the gateway capability-safe runtime.
  */
 
 export type NftPfpResolver = (wallet: string) => Promise<string | null>;

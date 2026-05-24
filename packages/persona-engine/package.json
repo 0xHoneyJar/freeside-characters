@@ -27,7 +27,6 @@
   },
   "dependencies": {
     "@0xhoneyjar/medium-registry": "^0.2.0",
-    "@0xhoneyjar/inventory": "file:../../../inventory-api",
     "@anthropic-ai/claude-agent-sdk": "^0.2.122",
     "@aws-sdk/client-bedrock-runtime": "^3.1048.0",
     "@opentelemetry/api": "^1.9.1",
