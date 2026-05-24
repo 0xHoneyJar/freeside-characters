@@ -9,6 +9,7 @@
 // `bun test` without installed deps.
 
 import { describe, expect, test } from "bun:test";
+import type { AmbientMcpEndpoint } from "./live/score-mcp-client.ts";
 import {
   AMBIENT_ALL_ENDPOINTS,
   AMBIENT_OPTIONAL_ENDPOINTS,
@@ -116,11 +117,21 @@ describe("classifyEndpointCriticality — mixed and edge cases", () => {
     expect(outcome).toEqual({ disabled: false, reasons: [], warnings: [] });
   });
 
-  test("missing reason falls back to a generic detail", () => {
+  test("an endpoint absent from the policy map fails safe to required", () => {
+    // Fail-safe contract (F-004): if a future AmbientMcpEndpoint slips past the
+    // exhaustiveness check (e.g. via a cast) and is not in the criticality map,
+    // it must be treated as REQUIRED — tier-fatal until classified, never
+    // silently optional.
     const outcome = classifyEndpointCriticality([
-      { endpoint: "score", ok: false },
+      {
+        endpoint: "unknown-endpoint" as unknown as AmbientMcpEndpoint,
+        ok: false,
+        reason: "not in policy map",
+      },
     ]);
 
-    expect(outcome.reasons).toEqual(["score: validation failed"]);
+    expect(outcome.disabled).toBe(true);
+    expect(outcome.reasons).toEqual(["unknown-endpoint: not in policy map"]);
+    expect(outcome.warnings).toEqual([]);
   });
 });

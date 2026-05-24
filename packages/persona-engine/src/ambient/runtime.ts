@@ -89,17 +89,10 @@ function _bootstrapEndpointValidation(): void {
 
   const { disabled, reasons, warnings } = classifyEndpointCriticality(results);
 
-  // Optional-endpoint failures are non-fatal — surface them so the gap is
-  // visible, but the tier stays up and narration runs without the enrichment.
-  for (const warning of warnings) {
-    console.warn(
-      `ambient-runtime: optional endpoint degraded [${warning}] — stir tier ` +
-        "stays ENABLED; narration runs without this enrichment until the " +
-        "endpoint is configured.",
-    );
-  }
-
-  // Dev/test: required failures warn and continue (preserves STUB_MODE flows).
+  // Dev/test: nothing is fatal. Surface required-endpoint gaps as
+  // continue-warnings and stay QUIET on optional enrichment — in dev the URL
+  // is commonly unset, the dev already knows, and STUB_MODE covers it, so an
+  // optional warning here is just module-load noise (preserves STUB_MODE flows).
   if (!isProd) {
     for (const reason of reasons) {
       console.warn(
@@ -110,7 +103,18 @@ function _bootstrapEndpointValidation(): void {
     return;
   }
 
-  // Production: only REQUIRED-endpoint failures disable the stir tier.
+  // Production. Optional-endpoint failures are non-fatal — surface them so the
+  // gap is visible, but the tier stays up and narration runs without the
+  // enrichment.
+  for (const warning of warnings) {
+    console.warn(
+      `ambient-runtime: optional endpoint degraded [${warning}] — stir tier ` +
+        "stays ENABLED; narration runs without this enrichment until the " +
+        "endpoint is configured.",
+    );
+  }
+
+  // Only REQUIRED-endpoint failures disable the stir tier.
   for (const reason of reasons) {
     console.error(`ambient-runtime: endpoint validation failed [${reason}]`);
   }
