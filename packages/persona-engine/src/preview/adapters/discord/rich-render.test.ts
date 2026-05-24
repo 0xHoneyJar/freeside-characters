@@ -71,9 +71,9 @@ describe('buildEnrichedDigestComponentsV2 (real ZoneDigest → enriched layout)'
     const json = JSON.stringify(buildEnrichedDigestComponentsV2(zd()));
     expect(json).toContain('# 352'); // hero from window_event_count
     expect(json).toContain('15 miberas warm'); // window_wallet_count · member noun
-    expect(json).toContain('movers');
+    expect(json).toContain('Movers'); // section label (normal-cased subtext · gen-4)
     expect(json).toContain('LP Provide'); // factor_id prettified, acronym-aware (catalog = MCP)
-    expect(json).toContain('spotlight');
+    expect(json).toContain('Spotlight'); // section label (normal-cased subtext · gen-4)
     expect(json).toContain('earned a new badge'); // spotlight reason
     expect(json).toContain('0xAB00…00Cd'); // shortened wallet fallback
     expect(json).not.toContain('—'); // em-dash core strip holds

@@ -13,10 +13,11 @@ import { createVoiceMemoryLive } from '../live/voice-memory.live.ts';
 import { presentation } from '../live/discord-render.live.ts';
 import { getTracer } from '../observability/otel-layer.ts';
 import { buildDimensionPulsePayload } from '../deliver/dimension-pulse-payload.ts';
-import { fetchZoneDigest } from '../score/client.ts';
-import { buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2, prettyFactorName } from '../deliver/enriched-render.ts';
+import { fetchZoneDigest, fetchRecentBadges } from '../score/client.ts';
+import { buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2, prettyFactorName, deriveSpotlights } from '../deliver/enriched-render.ts';
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import { resolveWallet, type ResolvedWallet } from './freeside_auth/server.ts';
+import { resolveNftPfp, type NftPfpResolver } from './inventory/resolve-nft-pfp.ts';
 
 export interface DigestPostResult {
   readonly zone: ZoneId;
@@ -39,6 +40,14 @@ export interface DigestOrchestratorDeps {
    * string already through the NFR-29 ladder — never a raw or truncated wallet.
    */
   readonly resolveSpotlightIdentity?: (wallet: string) => Promise<SpotlightIdentity>;
+  /**
+   * cycle-008 · option (b) recent-badges feed for the multi-user spotlight board. Defaults to
+   * the score client's `fetchRecentBadges` (get_recent_badges). Only called when the digest has
+   * synthesized climbers to enrich. Injectable for tests.
+   */
+  readonly fetchRecentBadges?: typeof fetchRecentBadges;
+  /** Test/ops override for the badge-fetch timeout in ms (default BADGE_FETCH_TIMEOUT_MS). */
+  readonly badgeFetchTimeoutMs?: number;
 }
 
 // Default pulse window · cycle-007 S8 r4 (operator pivot 2026-05-17):
@@ -160,17 +169,35 @@ async function composeEnrichedDigestPost(
     // names fall back to prettify — never fail the digest on the name-catalog hop.
   }
 
-  // spotlight identity (NFR-29 · resolve before any 0x… reaches prose; ANON_MEMBER on miss).
-  // handle is ladder-resolved (display_name → discord → mibera_id → "an anonymous mibera");
-  // pfp_url, when an https NFT image is on file, renders as the Section's Thumbnail accessory.
-  const sp = zd.raw_stats.spotlight;
-  const identity = sp ? await resolveIdentityFn(sp.wallet) : undefined;
+  // Multi-user spotlight board (cycle-008 · RLHF V3). Resolve identity for EACH derived
+  // spotlight wallet — the curated hero + the climbers (capped) — fail-soft per wallet
+  // (resolveSpotlightIdentity never throws → ANON_MEMBER on miss, NFR-29). The board is
+  // derived once here (to know which wallets to resolve) and again in the renderer (for
+  // layout); deriveSpotlights is a cheap pure fn, so "which wallets" stays single-sourced.
+  const { entries } = deriveSpotlights(zd);
+  const identities = new Map<string, SpotlightIdentity>();
+  // allSettled (not all) makes the per-entry fail-soft STRUCTURAL: a rejected resolve drops
+  // that one wallet from the map → resolveHandle falls back to ANON_MEMBER, the other entries
+  // still render. (The default resolver never throws; this guards an injected one that might.)
+  const resolved = await Promise.allSettled(
+    entries.map(async (e) => ({ wallet: e.spotlight.wallet, identity: await resolveIdentityFn(e.spotlight.wallet) })),
+  );
+  for (const r of resolved) {
+    if (r.status === 'fulfilled') identities.set(r.value.wallet, r.value.identity);
+  }
+
+  // option (b) badge-join — only when there are synthesized climbers to enrich, so the common
+  // single-spotlight digest adds ZERO new MCP calls. Fail-soft (ADR-008 §D-4): no MCP_KEY / a
+  // stalled feed → empty map → climbers fall back to rank-lines (option a).
+  const badgeMap = entries.some((e) => e.synthesized)
+    ? await fetchBadgeMap(config, deps, zd.window_start, zd.window_end)
+    : new Map<string, string>();
 
   const components = buildEnrichedDigestComponentsV2(zd, {
     resolveFactorName: (id) => nameMap.get(id) ?? prettyFactorName(id),
-    ...(sp && identity
-      ? { resolveHandle: () => identity.handle, resolvePfp: () => identity.pfp_url }
-      : {}),
+    resolveHandle: (w) => identities.get(w)?.handle ?? ANON_MEMBER,
+    resolvePfp: (w) => identities.get(w)?.pfp_url ?? null,
+    resolveBadge: (w) => badgeMap.get(w.toLowerCase()) ?? null,
   });
 
   const flavor = ZONE_REGISTRY[zone];
@@ -220,6 +247,34 @@ export function pickSpotlightDisplay(r: ResolvedWallet): SpotlightIdentity {
 }
 
 /**
+ * Enrich a spotlight identity with the inventory-api building's NFT artwork when
+ * freeside_auth has no https pfp on file (Issue #87 · consume-pattern two-organ
+ * brief). The DB pfp WINS (operator-curated); inventory supplies real NFT
+ * artwork for holders resolvable today (fixtures; auto-upgrades to live-for-all
+ * when the sonar owner-token index lands — inventory-api/docs/sonar-ownership-gap.md).
+ * Fail-soft: a null/slow building leaves the identity unchanged — the handle is
+ * still resolved, so the spotlight is never "an anonymous mibera" from a stall.
+ * `nftResolver` is injectable for tests.
+ */
+export async function enrichSpotlightPfp(
+  identity: SpotlightIdentity,
+  wallet: string,
+  nftResolver: NftPfpResolver = resolveNftPfp,
+): Promise<SpotlightIdentity> {
+  if (identity.pfp_url) return identity; // DB pfp wins
+  // The default resolveNftPfp is already bounded (3s) + returns null on error, but an injected or
+  // future resolver that THROWS must not bubble up — that would drop the already-resolved handle
+  // to ANON in resolveSpotlightIdentity's catch, breaking this function's fail-soft contract
+  // (FAGAN review 2026-05-24). Catch → return the identity with its handle intact.
+  try {
+    const nft = httpsImageUrl(await nftResolver(wallet));
+    return nft ? { ...identity, pfp_url: nft } : identity;
+  } catch {
+    return identity;
+  }
+}
+
+/**
  * Default spotlight resolver — IN-PROCESS (cycle-008 capability-wiring slice 1). Calls
  * freeside_auth's `resolve_wallet` directly: no HTTP hop. The in-bot auth is an SDK MCP (not an
  * endpoint), and the federated `auth` tenant is a V2 arc (decision #2) — the prior HTTP default
@@ -239,6 +294,11 @@ export function pickSpotlightDisplay(r: ResolvedWallet): SpotlightIdentity {
 // the pool's connectionTimeoutMillis closes the residual.) 2026-05-23.
 const SPOTLIGHT_RESOLVE_TIMEOUT_MS = 5_000;
 
+// Bound the once-per-digest recent-badges fetch (the MCP client is unbounded). Generous enough
+// for a healthy MCP round-trip (init + tool call), tight enough that a stalled feed never wedges
+// the digest — badges are fail-soft enrichment, so a timeout just drops to rank-lines.
+const BADGE_FETCH_TIMEOUT_MS = 3_000;
+
 async function resolveSpotlightIdentity(wallet: string): Promise<SpotlightIdentity> {
   const anon: SpotlightIdentity = { handle: ANON_MEMBER, pfp_url: null };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -252,12 +312,69 @@ async function resolveSpotlightIdentity(wallet: string): Promise<SpotlightIdenti
         );
       }),
     ]);
-    return pickSpotlightDisplay(resolved);
+    return enrichSpotlightPfp(pickSpotlightDisplay(resolved), wallet);
   } catch {
     return anon; // NFR-29: never a raw 0x… reaches prose, even on timeout
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/**
+ * Build a wallet → recently-earned-badge-name map for the multi-user spotlight board
+ * (cycle-008 · option b). get_recent_badges is a GLOBAL earnings list (no window/zone param,
+ * per the score type), so we BOUND it to the digest window: a badge earned weeks ago — or in
+ * another zone — must not be attributed to a "this week" climb (coincidence-as-causation). We
+ * sort recent-first and keep each wallet's most-recent in-window badge.
+ * FAIL-SOFT (ADR-008 §D-4): no MCP_KEY / a stalled or erroring feed → an empty map, so the
+ * climbers render their rank-line (option a) and the digest is never blocked on badges.
+ *
+ * Caveat: limit=50 is best-effort — under heavy global earning the join may miss a wallet; it
+ * fails soft to the rank line. Zone-scoping is not possible until the feed exposes a filter.
+ */
+async function fetchBadgeMap(
+  config: Config,
+  deps: DigestOrchestratorDeps,
+  windowStart: string,
+  windowEnd: string,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const start = Date.parse(windowStart);
+  const end = Date.parse(windowEnd);
+  // Fail-open ONLY if the digest's own bounds are malformed (the digest would be broken anyway).
+  const inWindow = (earnedAt: string): boolean => {
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return true;
+    const t = Date.parse(earnedAt);
+    return Number.isFinite(t) ? t >= start && t <= end : false;
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const fetchBadges = deps.fetchRecentBadges ?? fetchRecentBadges;
+    // The score MCP client does NOT bound its fetch (score/client.ts has no AbortSignal), so a
+    // hung feed would block the digest — the try/catch only catches throws, not a stall (FAGAN
+    // review 2026-05-24). Race the fetch to a timeout: on stall we keep the empty map and climbers
+    // render rank-lines (fail-soft, ADR-008 §D-4). Promise.race ABANDONS (doesn't cancel) — fine,
+    // badges are once-per-digest enrichment.
+    const result = await Promise.race([
+      fetchBadges(config, { limit: 50 }),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), deps.badgeFetchTimeoutMs ?? BADGE_FETCH_TIMEOUT_MS);
+      }),
+    ]);
+    if (!result) return map; // timed out → no badge enrichment this cycle
+    const recentFirst = [...result.earnings].sort((a, b) => (a.earned_at < b.earned_at ? 1 : -1));
+    for (const e of recentFirst) {
+      if (!inWindow(e.earned_at)) continue;
+      const key = e.wallet.toLowerCase();
+      const name = typeof e.badge_name === 'string' ? e.badge_name.trim() : '';
+      if (name && !map.has(key)) map.set(key, name); // first (most-recent in-window) badge wins
+    }
+  } catch {
+    // fail-soft — badges are an enrichment, never a digest blocker
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+  return map;
 }
 
 function synthesizeSnapshot(

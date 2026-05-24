@@ -149,6 +149,14 @@ export interface RawStats {
   top_movers: TopMover[];
   top_events: RecentEvent[];
   spotlight: Spotlight | null;
+  /**
+   * OPTIONAL curated multi-user spotlight array (cycle-008 · the RLHF V3 leaderboard
+   * direction · V2 hook). When score-api later provides a curated list, the enriched
+   * digest renderer PREFERS it over client-side derivation (deriveSpotlights). Absent
+   * today — the derive path ([spotlight, ...rank_changes.climbed]) is the V1 source.
+   * Additive + optional so the v1.0.0/v2.0.0 mirror stays backward-compatible.
+   */
+  spotlights?: Spotlight[];
   rank_changes: RankChanges;
   factor_trends: FactorTrend[];
 }
