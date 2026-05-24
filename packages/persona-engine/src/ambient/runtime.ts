@@ -23,11 +23,13 @@ import { MiberaResolverLive } from "./live/mibera-resolver.live.ts";
 import { WalletResolverLive } from "./live/wallet-resolver.live.ts";
 import { CircuitBreakerLive } from "./live/circuit-breaker.live.ts";
 import { PopInLedgerLive } from "./live/pop-in-ledger.live.ts";
-import {
-  validateEndpointConfig,
-  type AmbientMcpEndpoint,
-} from "./live/score-mcp-client.ts";
+import { validateEndpointConfig } from "./live/score-mcp-client.ts";
 import { loadConfig } from "../config.ts";
+import {
+  AMBIENT_ALL_ENDPOINTS,
+  classifyEndpointCriticality,
+  type EndpointValidationResult,
+} from "./endpoint-criticality.ts";
 
 // BB pass-3 F10 + pass-4 F10 closure: validate MCP endpoint config at
 // module load.
@@ -69,30 +71,59 @@ function _bootstrapEndpointValidation(): void {
     return;
   }
   const isProd = process.env.NODE_ENV === "production";
-  const endpoints: ReadonlyArray<AmbientMcpEndpoint> = [
-    "score",
-    "codex",
-    "freeside-auth",
-  ];
-  const reasons: Array<string> = [];
-  for (const endpoint of endpoints) {
-    const result = validateEndpointConfig(endpoint, config);
-    if (!result.ok) {
-      const msg = `ambient-runtime: endpoint validation failed [${endpoint}] — ${result.reason}`;
-      if (isProd) {
-        console.error(msg);
-        reasons.push(`${endpoint}: ${result.reason}`);
-      } else {
-        console.warn(msg + " (dev mode — continuing)");
-      }
+
+  // Cycle-003 follow-up: endpoints are NOT equally critical. `score`/`codex`
+  // are required; `freeside-auth` is soft-degradable enrichment whose live
+  // resolver anonymizes on failure (NFR-29). Classifying them keeps the stir
+  // tier ENABLED when only an optional endpoint (e.g. an unset
+  // FREESIDE_AUTH_MCP_URL, the intended state until identity-api ships) is
+  // missing. See ./endpoint-criticality.ts for the full policy + rationale.
+  const results: EndpointValidationResult[] = AMBIENT_ALL_ENDPOINTS.map(
+    (endpoint) => {
+      const result = validateEndpointConfig(endpoint, config);
+      return result.ok
+        ? { endpoint, ok: true }
+        : { endpoint, ok: false, reason: result.reason };
+    },
+  );
+
+  const { disabled, reasons, warnings } = classifyEndpointCriticality(results);
+
+  // Dev/test: nothing is fatal. Surface required-endpoint gaps as
+  // continue-warnings and stay QUIET on optional enrichment — in dev the URL
+  // is commonly unset, the dev already knows, and STUB_MODE covers it, so an
+  // optional warning here is just module-load noise (preserves STUB_MODE flows).
+  if (!isProd) {
+    for (const reason of reasons) {
+      console.warn(
+        `ambient-runtime: endpoint validation failed [${reason}] ` +
+          "(dev mode — continuing)",
+      );
     }
+    return;
   }
-  if (isProd && reasons.length > 0) {
+
+  // Production. Optional-endpoint failures are non-fatal — surface them so the
+  // gap is visible, but the tier stays up and narration runs without the
+  // enrichment.
+  for (const warning of warnings) {
+    console.warn(
+      `ambient-runtime: optional endpoint degraded [${warning}] — stir tier ` +
+        "stays ENABLED; narration runs without this enrichment until the " +
+        "endpoint is configured.",
+    );
+  }
+
+  // Only REQUIRED-endpoint failures disable the stir tier.
+  for (const reason of reasons) {
+    console.error(`ambient-runtime: endpoint validation failed [${reason}]`);
+  }
+  if (disabled) {
     _ambientStirDisabled = true;
     _ambientStirDisabledReasons = reasons;
     console.error(
       "ambient-runtime: AMBIENT STIR TIER DISABLED in production — " +
-        `${reasons.length} endpoint(s) misconfigured. Digest cron + ` +
+        `${reasons.length} required endpoint(s) misconfigured. Digest cron + ` +
         "read-side continue normally. Resolve endpoint config to re-enable.",
     );
   }
