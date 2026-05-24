@@ -11,7 +11,7 @@
  * and NEVER "an anonymous mibera" purely because a building stalled.
  *
  * The import is lazy + the specifier is dynamic so persona-engine builds even
- * when @freeside/inventory isn't installed yet (declared as a dep; resolves at
+ * when @0xhoneyjar/inventory isn't installed yet (declared as a dep; resolves at
  * runtime). The V2 arc moves this to the gateway capability-safe runtime.
  */
 
@@ -28,8 +28,8 @@ export const resolveNftPfp: NftPfpResolver = async (wallet) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     // Dynamic specifier (`as string`) — not statically resolved, so the package
-    // builds without @freeside/inventory present; runtime resolves the dep.
-    const mod = (await import('@freeside/inventory' as string)) as unknown as InventoryModule;
+    // builds without @0xhoneyjar/inventory present; runtime resolves the dep.
+    const mod = (await import('@0xhoneyjar/inventory' as string)) as unknown as InventoryModule;
     return await Promise.race([
       mod.getProfilePicture(wallet),
       new Promise<null>((resolve) => {
