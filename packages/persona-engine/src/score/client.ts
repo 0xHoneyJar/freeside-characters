@@ -57,17 +57,33 @@ const MCP_PROTOCOL_VERSION = '2024-11-05';
  * Retry policy for score-mcp transport calls. The weekly digest cron sweeps
  * all zones in a tight loop, so the burst trips score-mcp's rate limit and the
  * last zone (owsley-lab) used to drop on the first un-retried 429. Honors the
- * server's Retry-After and logs each backoff so the waits are visible in the
- * Sunday cron's prod logs.
+ * server's Retry-After and logs each backoff (labelled init vs tool) so the
+ * waits are visible in the Sunday cron's prod logs.
  */
-const SCORE_RETRY_OPTS: FetchRetryOptions = {
-  onRetry: ({ attempt, status, delayMs, reason }) => {
-    console.warn(
-      `score-mcp: retry ${attempt} in ${delayMs}ms — ${reason}` +
-        (status ? ` (status ${status})` : ''),
-    );
-  },
-};
+function scoreRetryOpts(
+  label: 'init' | 'tool',
+  extra: Partial<FetchRetryOptions> = {},
+): FetchRetryOptions {
+  return {
+    ...extra,
+    onRetry: ({ attempt, status, delayMs, reason }) => {
+      console.warn(
+        `score-mcp/${label}: retry ${attempt} in ${delayMs}ms — ${reason}` +
+          (status ? ` (status ${status})` : ''),
+      );
+    },
+  };
+}
+
+// The initialize handshake is NOT idempotent under 5xx: a 504 gateway timeout
+// may mean the upstream already created a session before the proxy gave up, so
+// retrying would orphan it. Restrict init retries to 429, where the server
+// provably rejected the request and created nothing (the actual digest-sweep
+// failure mode). tools/call keeps the full transient set.
+const SCORE_INIT_RETRY_OPTS: FetchRetryOptions = scoreRetryOpts('init', {
+  retryableStatuses: new Set([429]),
+});
+const SCORE_TOOL_RETRY_OPTS: FetchRetryOptions = scoreRetryOpts('tool');
 
 /** Parse a single SSE response body into the embedded JSON-RPC envelope. */
 function parseSseEnvelope<T>(body: string): McpJsonRpcEnvelope<T> {
@@ -108,7 +124,7 @@ async function mcpInit(url: string, key: string, bearer?: string): Promise<McpIn
         },
       }),
     },
-    SCORE_RETRY_OPTS,
+    SCORE_INIT_RETRY_OPTS,
   );
 
   if (!response.ok) {
@@ -163,7 +179,7 @@ async function mcpToolCall<T>(
         params: { name: toolName, arguments: toolArgs },
       }),
     },
-    SCORE_RETRY_OPTS,
+    SCORE_TOOL_RETRY_OPTS,
   );
 
   if (!response.ok) {

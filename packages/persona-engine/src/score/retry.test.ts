@@ -106,6 +106,15 @@ describe("fetchWithRetry", () => {
     expect(s.ms).toEqual([2000]);
   });
 
+  test("Retry-After: 0 → immediate retry (sleep 0)", async () => {
+    const ff = fakeFetch([r(429, { "retry-after": "0" }), r(200)]);
+    const s = sleeps();
+    const res = await fetchWithRetry("u", {}, { fetchImpl: ff.fn, sleep: s.sleep });
+    expect(res.status).toBe(200);
+    expect(ff.calls()).toBe(2);
+    expect(s.ms).toEqual([0]);
+  });
+
   test("caps an oversized Retry-After at maxRetryAfterMs", async () => {
     const ff = fakeFetch([r(503, { "retry-after": "9999" }), r(200)]);
     const s = sleeps();
