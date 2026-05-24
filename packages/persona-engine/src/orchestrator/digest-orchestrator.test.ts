@@ -321,6 +321,124 @@ describe('composeDigestPost · enriched-v2 path (cycle-008 S9)', () => {
   });
 });
 
+// cycle-008 · multi-user spotlight board (the RLHF V3 leaderboard direction · option b badge-join)
+describe('composeDigestPost · enriched-v2 multi-user spotlight (cycle-008)', () => {
+  const HERO = '0xHE00000000000000000000000000000000000000';
+  const C1 = '0xC100000000000000000000000000000000000000';
+  const C2 = '0xC200000000000000000000000000000000000000';
+
+  const multiDigest = (): ZoneDigest =>
+    zoneDigestStub({
+      raw_stats: {
+        ...zoneDigestStub().raw_stats,
+        spotlight: { wallet: HERO, reason: 'new_badge', details: { badge_name: 'True HODLer' } },
+        rank_changes: {
+          climbed: [
+            { wallet: C1, rank_delta: 77, dimension: 'onchain', prior_rank: 84, current_rank: 7 },
+            { wallet: C2, rank_delta: 22, dimension: 'onchain', prior_rank: 41, current_rank: 19 },
+          ],
+          dropped: [],
+          entered_top_tier: [],
+          exited_top_tier: [],
+        },
+      },
+    });
+
+  const handleOf: Record<string, string> = { [HERO]: 'owsleymibera', [C1]: 'jadebera', [C2]: 'kaelbera' };
+
+  const multiDeps = (over: Partial<Parameters<typeof composeDigestPost>[3]> = {}) => ({
+    score: scoreStub([makeBreakdown({ id: 'nft', display_name: 'NFT' })]),
+    fetchZoneDigest: async () => multiDigest(),
+    resolveSpotlightIdentity: async (w: string) => ({ handle: handleOf[w] ?? 'an anonymous mibera', pfp_url: null }),
+    // deterministic default: no badges → climbers render rank-lines (overridden per-test)
+    fetchRecentBadges: async () => ({ earnings: [], generated_at: '2026-05-23T00:00:00Z' }),
+    ...over,
+  });
+
+  test('resolves identity for hero + each climber and renders the leaderboard (NFR-29 per entry)', async () => {
+    const result = await composeDigestPost(config({ DIGEST_SURFACE: 'enriched-v2' }), character, 'el-dorado', multiDeps());
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain('-# Spotlight'); // gen-2 header (no ⚡, no "this week")
+    expect(json).toContain('owsleymibera'); // hero resolved
+    expect(json).toContain('jadebera'); // climber 1 resolved
+    expect(json).toContain('kaelbera'); // climber 2 resolved
+    expect(json).toContain('climbed #84 → #7'); // climber rank line (empty badge feed)
+    expect(json).not.toContain('0xHE0'); // NFR-29: no raw wallet, any entry
+    expect(json).not.toContain('0xC10');
+    expect(json).not.toContain('0xC20');
+  });
+
+  test('option (b) badge-join: an injected get_recent_badges upgrades the matching climber', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      multiDeps({
+        fetchRecentBadges: async () => ({
+          earnings: [
+            { badge_id: 'b1', badge_name: 'Diamond Paws', badge_type: 'count', rarity: 'rare', description: null, earned_at: '2026-05-22T00:00:00Z', wallet: C1 },
+          ],
+          generated_at: '2026-05-23T00:00:00Z',
+        }),
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain('**jadebera** earned **Diamond Paws**'); // matched climber → badge
+    expect(json).toContain('**kaelbera** climbed #41 → #19'); // unmatched climber → rank fallback
+    expect(json).toContain('earned **True HODLer**'); // curated hero keeps its own badge
+  });
+
+  test('badge-join window guard: a badge earned OUTSIDE the digest window is ignored (no stale attribution)', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      multiDeps({
+        fetchRecentBadges: async () => ({
+          // window is 2026-05-16 → 2026-05-23 (zoneDigestStub); this badge is from a month before.
+          earnings: [
+            { badge_id: 'b0', badge_name: 'Ancient Relic', badge_type: 'count', rarity: 'rare', description: null, earned_at: '2026-04-01T00:00:00Z', wallet: C1 },
+          ],
+          generated_at: '2026-05-23T00:00:00Z',
+        }),
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).not.toContain('Ancient Relic'); // out-of-window badge not attributed to this-week climb
+    expect(json).toContain('**jadebera** climbed #84 → #7'); // climber falls back to its rank line
+  });
+
+  test('the badge feed is NOT fetched when there are no climbers (single-spotlight digest)', async () => {
+    let badgeCalled = false;
+    await composeDigestPost(config({ DIGEST_SURFACE: 'enriched-v2' }), character, 'el-dorado', {
+      score: scoreStub([makeBreakdown()]),
+      fetchZoneDigest: async () => zoneDigestStub(), // climbed: [] → single spotlight only
+      resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: null }),
+      fetchRecentBadges: async () => {
+        badgeCalled = true;
+        return { earnings: [], generated_at: '' };
+      },
+    });
+    expect(badgeCalled).toBe(false); // the common single-spotlight digest adds zero new MCP calls
+  });
+
+  test('badge feed fail-soft: a throwing feed → climbers render rank-lines, the digest still ships', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      multiDeps({
+        fetchRecentBadges: async () => {
+          throw new Error('score-mcp unavailable');
+        },
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain('climbed #84 → #7'); // option (a) fallback held
+    expect(json).toContain('-# Spotlight'); // digest never blocked on the badge enrichment
+  });
+});
+
 // cycle-008 capability-wiring slice 1 · the load-bearing NFR-29 logic, unit-tested without a DB.
 describe('pickSpotlightDisplay · NFR-29 spotlight fallback ladder', () => {
   const base: ResolvedWallet = {
