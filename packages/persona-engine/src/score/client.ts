@@ -33,6 +33,7 @@ import type {
   BadgeType,
 } from './types.ts';
 import { ZONE_TO_DIMENSION } from './types.ts';
+import { fetchWithRetry, type FetchRetryOptions } from './retry.ts';
 
 interface McpInitResult {
   sessionId: string;
@@ -51,6 +52,38 @@ interface McpToolResult {
 }
 
 const MCP_PROTOCOL_VERSION = '2024-11-05';
+
+/**
+ * Retry policy for score-mcp transport calls. The weekly digest cron sweeps
+ * all zones in a tight loop, so the burst trips score-mcp's rate limit and the
+ * last zone (owsley-lab) used to drop on the first un-retried 429. Honors the
+ * server's Retry-After and logs each backoff (labelled init vs tool) so the
+ * waits are visible in the Sunday cron's prod logs.
+ */
+function scoreRetryOpts(
+  label: 'init' | 'tool',
+  extra: Partial<FetchRetryOptions> = {},
+): FetchRetryOptions {
+  return {
+    ...extra,
+    onRetry: ({ attempt, status, delayMs, reason }) => {
+      console.warn(
+        `score-mcp/${label}: retry ${attempt} in ${delayMs}ms — ${reason}` +
+          (status ? ` (status ${status})` : ''),
+      );
+    },
+  };
+}
+
+// The initialize handshake is NOT idempotent under 5xx: a 504 gateway timeout
+// may mean the upstream already created a session before the proxy gave up, so
+// retrying would orphan it. Restrict init retries to 429, where the server
+// provably rejected the request and created nothing (the actual digest-sweep
+// failure mode). tools/call keeps the full transient set.
+const SCORE_INIT_RETRY_OPTS: FetchRetryOptions = scoreRetryOpts('init', {
+  retryableStatuses: new Set([429]),
+});
+const SCORE_TOOL_RETRY_OPTS: FetchRetryOptions = scoreRetryOpts('tool');
 
 /** Parse a single SSE response body into the embedded JSON-RPC envelope. */
 function parseSseEnvelope<T>(body: string): McpJsonRpcEnvelope<T> {
@@ -71,24 +104,28 @@ function authHeaders(key: string, bearer?: string): Record<string, string> {
 }
 
 async function mcpInit(url: string, key: string, bearer?: string): Promise<McpInitResult> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-      ...authHeaders(key, bearer),
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: MCP_PROTOCOL_VERSION,
-        clientInfo: { name: 'freeside-characters', version: '0.6.0' },
-        capabilities: {},
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...authHeaders(key, bearer),
       },
-    }),
-  });
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: MCP_PROTOCOL_VERSION,
+          clientInfo: { name: 'freeside-characters', version: '0.6.0' },
+          capabilities: {},
+        },
+      }),
+    },
+    SCORE_INIT_RETRY_OPTS,
+  );
 
   if (!response.ok) {
     throw new Error(`mcp init failed: ${response.status} ${await response.text()}`);
@@ -125,21 +162,25 @@ async function mcpToolCall<T>(
   toolArgs: Record<string, unknown>,
   bearer?: string,
 ): Promise<T> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-      ...authHeaders(key, bearer),
-      'Mcp-Session-Id': sessionId,
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...authHeaders(key, bearer),
+        'Mcp-Session-Id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Math.floor(Math.random() * 1e9),
+        method: 'tools/call',
+        params: { name: toolName, arguments: toolArgs },
+      }),
     },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: Math.floor(Math.random() * 1e9),
-      method: 'tools/call',
-      params: { name: toolName, arguments: toolArgs },
-    }),
-  });
+    SCORE_TOOL_RETRY_OPTS,
+  );
 
   if (!response.ok) {
     throw new Error(`mcp tools/call failed: ${response.status} ${await response.text()}`);
