@@ -412,6 +412,14 @@ function describeLlmMode(config: ReturnType<typeof loadConfig>): string {
       if (config.STUB_MODE) return 'auto→stub';
       if (config.FREESIDE_API_KEY) return `auto→freeside (${config.FREESIDE_AGENT_MODEL})`;
       return 'UNCONFIGURED (no provider available — set LLM_PROVIDER or supply a key)';
+    default: {
+      // Bridgebuilder F1 closure: exhaustiveness guard. A new LLM_PROVIDER enum
+      // value (or a Zod relaxation that lets unknown strings through) fails at
+      // compile time here — preventing the silent `llm: undefined` banner that
+      // this PR was filed to eliminate elsewhere.
+      const _exhaustive: never = config.LLM_PROVIDER;
+      return `UNKNOWN_PROVIDER (${String(_exhaustive)})`;
+    }
   }
 }
 
