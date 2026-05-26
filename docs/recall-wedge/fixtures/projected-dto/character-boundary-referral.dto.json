@@ -4,6 +4,7 @@
   "fixture_version": "phase-33b.0",
   "dto_scope_note": "a public-channel projection of the Dixie-safe Recall Wedge envelope, narrowed for a character-boundary referral on the public_discord render surface; not the full Straylight schema, not the full Dixie response, not the source of recall semantics, not a replacement for Hounfour/Straylight types",
   "synthetic": true,
+  "source_seed_fixture": "shared-substrate-demo-001",
   "outcome": "referral",
   "recall_interface": "public_discord",
   "render_surface": "discord_public_character",
