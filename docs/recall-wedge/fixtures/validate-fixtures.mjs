@@ -139,11 +139,10 @@ for (const [label, dto] of [
   else if (expectedActor)
     ok(`${label}: continuity_actor_id matches seed (${expectedActor})`);
 
-  if (label === "operator-private") {
-    if (expectedSeedId && d.source_seed_fixture !== expectedSeedId)
-      fail(`${label}: source_seed_fixture should reference seed (${expectedSeedId})`);
-    else if (expectedSeedId) ok(`${label}: source_seed_fixture references seed`);
-  }
+  if (expectedSeedId && d.source_seed_fixture !== expectedSeedId)
+    fail(`${label}: source_seed_fixture must reference seed (expected ${expectedSeedId}, got ${d.source_seed_fixture})`);
+  else if (expectedSeedId)
+    ok(`${label}: source_seed_fixture references seed`);
 }
 
 // --- 4. operator-private frame invariants ----------------------------------

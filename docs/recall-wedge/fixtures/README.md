@@ -124,7 +124,10 @@ It checks:
   `fixture_kind: reviewed_seed_memory_packet`,
   `admission_state: already_admitted`, and names Straylight as authority;
 - all projected DTOs share the same `continuity_actor_id` as the seed;
-- the operator-private projection references the seed packet by id;
+- every projected DTO (operator-private, public-discord, character-
+  boundary-referral) references the seed packet by id via
+  `source_seed_fixture`, so Phase 33D can mechanically prove the same
+  seed packet underlies all three views;
 - the operator-private projection is `recall_interface: operator_private`
   and `render_surface: operator_debug`;
 - the public-discord and character-boundary-referral projections are
