@@ -50,8 +50,9 @@ import {
 import { pgPoolBuilder } from './lib/pg-pool-builder.ts';
 import type { WorldManifestQuestSubset } from './world-resolver.ts';
 import { publishCommands } from './lib/publish-commands.ts';
+import pkg from '../package.json' with { type: 'json' };
 
-const banner = `─── freeside-characters bot · v0.6.0-A ────────────────────────`;
+const banner = `─── freeside-characters bot · v${pkg.version} ────────────────────────`;
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -70,7 +71,7 @@ async function main(): Promise<void> {
   console.log(`llm:            ${describeLlmMode(config)}`);
   console.log(`zones:          ${selectedZones(config).map((z) => `${ZONE_REGISTRY[z].emoji} ${z}`).join(' · ')}`);
   console.log(`digest cadence: ${config.DIGEST_CADENCE}` + (config.DIGEST_CADENCE !== 'manual' ? ` · ${config.DIGEST_DAY} ${String(config.DIGEST_HOUR_UTC).padStart(2, '0')}:00 UTC` : ''));
-  console.log(`pop-ins:        ${config.POP_IN_ENABLED ? `every ${config.POP_IN_INTERVAL_HOURS}h · ${config.POP_IN_PROBABILITY * 100}% chance/zone/tick` : 'disabled'}`);
+  console.log(`pop-ins:        ${config.POP_IN_ENABLED ? 'event-driven (cycle-008 · router-gated via ambient-stir)' : 'disabled (POP_IN_ENABLED=false)'}`);
   console.log(`weaver:         ${config.WEAVER_ENABLED ? `${config.WEAVER_DAY} ${String(config.WEAVER_HOUR_UTC).padStart(2, '0')}:00 UTC → ${config.WEAVER_PRIMARY_ZONE}` : 'disabled'}`);
   console.log(`delivery:       ${describeDelivery(config)}`);
 
@@ -385,10 +386,33 @@ async function main(): Promise<void> {
 }
 
 function describeLlmMode(config: ReturnType<typeof loadConfig>): string {
-  if (config.ANTHROPIC_API_KEY) return `anthropic-direct (${config.ANTHROPIC_MODEL})`;
-  if (config.STUB_MODE) return 'STUB (canned digest)';
-  if (config.FREESIDE_API_KEY) return `freeside agent-gw (${config.FREESIDE_AGENT_MODEL})`;
-  return 'UNCONFIGURED';
+  // Mirrors `resolveProvider` in packages/persona-engine/src/compose/agent-gateway.ts.
+  // V0.12 auto-rule (operator-named 2026-05-01): bedrock-first when AWS env present.
+  // Banner was previously bedrock-blind — reported UNCONFIGURED even when bedrock was
+  // wired, masking the real provider on cost-bearing production deploys.
+  const hasBedrock = Boolean(config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY);
+  switch (config.LLM_PROVIDER) {
+    case 'stub':
+      return 'STUB (canned digest)';
+    case 'anthropic':
+      return config.ANTHROPIC_API_KEY
+        ? `anthropic-direct (${config.ANTHROPIC_MODEL})`
+        : 'anthropic-MISCONFIGURED (ANTHROPIC_API_KEY unset)';
+    case 'freeside':
+      return config.FREESIDE_API_KEY
+        ? `freeside agent-gw (${config.FREESIDE_AGENT_MODEL})`
+        : 'freeside-MISCONFIGURED (FREESIDE_API_KEY unset)';
+    case 'bedrock':
+      return hasBedrock
+        ? `bedrock (${config.BEDROCK_TEXT_MODEL_ID ?? 'no-model-id'} @ ${config.BEDROCK_TEXT_REGION})`
+        : 'bedrock-MISCONFIGURED (AWS_BEARER_TOKEN_BEDROCK / BEDROCK_API_KEY unset)';
+    case 'auto':
+      if (hasBedrock) return `auto→bedrock (${config.BEDROCK_TEXT_MODEL_ID ?? 'no-model-id'} @ ${config.BEDROCK_TEXT_REGION})`;
+      if (config.ANTHROPIC_API_KEY) return `auto→anthropic (${config.ANTHROPIC_MODEL})`;
+      if (config.STUB_MODE) return 'auto→stub';
+      if (config.FREESIDE_API_KEY) return `auto→freeside (${config.FREESIDE_AGENT_MODEL})`;
+      return 'UNCONFIGURED (no provider available — set LLM_PROVIDER or supply a key)';
+  }
 }
 
 function describeDelivery(config: ReturnType<typeof loadConfig>): string {
