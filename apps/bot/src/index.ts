@@ -50,6 +50,11 @@ import {
 import { pgPoolBuilder } from './lib/pg-pool-builder.ts';
 import type { WorldManifestQuestSubset } from './world-resolver.ts';
 import { publishCommands } from './lib/publish-commands.ts';
+import {
+  startMintEventSubscriber,
+  createKanseiRouterStub,
+  type MintEventSubscriberHandle,
+} from '@freeside-characters/persona-engine/events/mint-event-subscriber';
 import pkg from '../package.json' with { type: 'json' };
 
 const banner = `─── freeside-characters bot · v${pkg.version} ────────────────────────`;
@@ -340,6 +345,52 @@ async function main(): Promise<void> {
   if (handle.popInExpression) console.log(`${primary.id}: pop-in cron · ${handle.popInExpression}`);
   if (handle.weaverExpression) console.log(`${primary.id}: weaver cron · ${handle.weaverExpression}`);
 
+  // ─── Cross-cell NATS mint-event subscriber (cluster-events-pillar DEP-1) ───
+  // Subscribes to `nft.mint.detected.>` published by sonar-api, verifies each
+  // ACVP envelope (sig + hash-chain + payload-schema), and hands the typed
+  // payload to a kansei router. DEP-1 ships a STUB router that always returns
+  // { announce: false } — DEP-2 wires the real threshold-based router + the
+  // Discord channel announcement.
+  //
+  // Gated on NATS_URL being set so the bot still boots cleanly without NATS
+  // (e.g. local dev without the cluster broker). When absent, we log a warn
+  // and skip rather than crash — keeps the substrate optional during rollout.
+  let mintEventSubscriber: MintEventSubscriberHandle | null = null;
+  const natsUrl = process.env.NATS_URL?.trim();
+  if (natsUrl) {
+    try {
+      const subscriberLogger = {
+        info: (obj: unknown, msg?: string) => console.log(msg ?? '[events]', JSON.stringify(obj)),
+        warn: (obj: unknown, msg?: string) => console.warn(msg ?? '[events]', JSON.stringify(obj)),
+        error: (obj: unknown, msg?: string) => console.error(msg ?? '[events]', JSON.stringify(obj)),
+      };
+      mintEventSubscriber = await startMintEventSubscriber({
+        natsUrl,
+        natsTlsCa: process.env.NATS_TLS_CA?.trim() || undefined,
+        jwksUrl: process.env.JWKS_URL?.trim() || undefined,
+        // kansei stub — DEP-2 will wire real routing.
+        kanseiRouter: createKanseiRouterStub(subscriberLogger),
+        logger: subscriberLogger,
+        initialPrevHashPolicy: (process.env.MINT_EVENT_INITIAL_ANCHOR_POLICY?.trim() as
+          | 'any'
+          | 'genesis'
+          | undefined) ?? 'any',
+      });
+      console.log(
+        `events:         NATS subscriber wired · subject=nft.mint.detected.> · ` +
+          `jwks=${process.env.JWKS_URL ? 'configured' : 'DEV (sigs surface as invalid)'} · ` +
+          `kansei-router=stub (DEP-1 · DEP-2 will wire real routing)`,
+      );
+    } catch (err) {
+      console.error('events: failed to start NATS subscriber (bot continues without it):', err);
+      mintEventSubscriber = null;
+    }
+  } else {
+    console.log(
+      'events:         DISABLED (set NATS_URL to enable cross-cell mint subscriber)',
+    );
+  }
+
   // V0.7-A.0: Discord Interactions endpoint for slash commands.
   // Disjoint from digest cron — failure here doesn't affect Pattern B writes.
   let interactionServer: InteractionServerHandle | null = null;
@@ -370,6 +421,7 @@ async function main(): Promise<void> {
     console.log(`${primary.id}: manual mode — exiting after single fire`);
     handle.stop();
     interactionServer?.stop();
+    if (mintEventSubscriber) await mintEventSubscriber.stop();
     await shutdownClient();
     process.exit(0);
   }
@@ -378,6 +430,13 @@ async function main(): Promise<void> {
     console.log(`\n${primary.id}: ${signal} — shutting down`);
     handle.stop();
     interactionServer?.stop();
+    if (mintEventSubscriber) {
+      try {
+        await mintEventSubscriber.stop();
+      } catch (err) {
+        console.warn('events: subscriber stop error during shutdown:', err);
+      }
+    }
     await shutdownClient();
     process.exit(0);
   };
