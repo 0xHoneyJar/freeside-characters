@@ -101,6 +101,11 @@ export function schedule(args: ScheduleArgs): SchedulerHandles {
       cron.schedule(
         expr,
         async () => {
+          // silent-digest fingerprint (issue #78): logs BEFORE per-zone work
+          // so a future missed digest can be told apart from a missed tick.
+          console.log(
+            `digest cron tick at ${new Date().toISOString()} · zones=[${zones.join(',')}] · expr=${expr}`,
+          );
           for (const zone of zones) {
             await withZoneLock(zone, () => onFire({ zone, postType: 'digest' }), 'digest cron');
           }

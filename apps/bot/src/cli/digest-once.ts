@@ -51,8 +51,13 @@ async function main(): Promise<void> {
   const zones = selectedZones(config);
   const typeMode = pickType(config);
 
+  // bedrock-aware (mirrors describeLlmMode in apps/bot/src/index.ts and
+  // resolveProvider in agent-gateway.ts). Was previously bedrock-blind.
+  const hasBedrock = Boolean(config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY);
   const llmMode = config.VOICE_DISABLED
     ? 'VOICE_DISABLED (no LLM)'
+    : config.LLM_PROVIDER === 'bedrock' || (config.LLM_PROVIDER === 'auto' && hasBedrock)
+    ? `bedrock (${config.BEDROCK_TEXT_MODEL_ID ?? 'no-model-id'} @ ${config.BEDROCK_TEXT_REGION})`
     : config.ANTHROPIC_API_KEY
     ? `anthropic-direct (${config.ANTHROPIC_MODEL})`
     : config.STUB_MODE
