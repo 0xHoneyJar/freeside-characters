@@ -1,0 +1,60 @@
+{
+  "fixture_id": "operator-private-view-001",
+  "fixture_kind": "recall_wedge_dto_projection",
+  "fixture_version": "phase-33b.0",
+  "dto_scope_note": "a public-channel projection of the Dixie-safe Recall Wedge envelope, narrowed for the operator_private frame; not the full Straylight schema, not the full Dixie response, not the source of recall semantics, not a replacement for Hounfour/Straylight types",
+  "synthetic": true,
+  "source_seed_fixture": "shared-substrate-demo-001",
+  "outcome": "ok",
+  "source_interface": "github_seed",
+  "recall_interface": "operator_private",
+  "render_surface": "operator_debug",
+  "character_frame": "ruggy",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "operator_private_marker": "OPERATOR_PRIVATE_FRAME — diagnostics in this fixture are not for public_discord rendering",
+  "public_summary": "actor is rehearsing the cross-interface continuity demo; voice prefs and participation observed across both frames",
+  "operator_private_summary": "broader operator context — includes operator-only diagnostic note PRIVATE_SENTINEL_OPERATOR_ONLY, redacted/excluded payload acknowledgement, character-boundary referral target, and external-data category separation reminder",
+  "included_count": 3,
+  "marked_count": 0,
+  "redacted_count": 1,
+  "excluded_count": 1,
+  "operator_private_count": 1,
+  "referral_count": 1,
+  "external_data_note_count": 1,
+  "interaction_log_note_count": 1,
+  "public_reason_counts": {
+    "redacted_for_public_surface": 1,
+    "excluded_from_public_surface": 1
+  },
+  "public_reason_labels": [
+    "redacted_for_public_surface",
+    "excluded_from_public_surface"
+  ],
+  "operator_private_diagnostics": {
+    "raw_reasons_for_operator_review": [
+      "seed_authored_by_operator_PRIVATE_SENTINEL_RAW_REASON",
+      "voice_doctrine_seed_PRIVATE_SENTINEL_RAW_REASON",
+      "fixture_seed_context_PRIVATE_SENTINEL_RAW_REASON",
+      "operator_only_diagnostic_PRIVATE_SENTINEL_RAW_REASON",
+      "boundary_redaction_rule_PRIVATE_SENTINEL_RAW_REASON",
+      "boundary_exclusion_rule_PRIVATE_SENTINEL_RAW_REASON",
+      "outside_ruggy_boundary_PRIVATE_SENTINEL_RAW_REASON",
+      "category_separation_doctrine_PRIVATE_SENTINEL_RAW_REASON",
+      "anti_admission_doctrine_PRIVATE_SENTINEL_RAW_REASON"
+    ],
+    "private_assertion_id_index_for_operator_review": [
+      "assn_PRIVATE_SENTINEL_ASSERTION_ID_001",
+      "assn_PRIVATE_SENTINEL_ASSERTION_ID_002",
+      "assn_PRIVATE_SENTINEL_ASSERTION_ID_003",
+      "assn_PRIVATE_SENTINEL_ASSERTION_ID_004",
+      "assn_PRIVATE_SENTINEL_ASSERTION_ID_005",
+      "assn_PRIVATE_SENTINEL_ASSERTION_ID_006",
+      "assn_PRIVATE_SENTINEL_ASSERTION_ID_007",
+      "assn_PRIVATE_SENTINEL_ASSERTION_ID_008",
+      "assn_PRIVATE_SENTINEL_ASSERTION_ID_009"
+    ],
+    "operator_private_note": "operator-only diagnostic context for this packet PRIVATE_SENTINEL_OPERATOR_ONLY"
+  },
+  "safe_referral_target": "satoshi",
+  "denied_or_refused": false
+}

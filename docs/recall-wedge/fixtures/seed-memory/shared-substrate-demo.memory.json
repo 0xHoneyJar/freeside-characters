@@ -1,0 +1,111 @@
+{
+  "fixture_id": "shared-substrate-demo-001",
+  "fixture_kind": "reviewed_seed_memory_packet",
+  "fixture_version": "phase-33b.0",
+  "schema_version": "recall-wedge-mvp.0",
+  "synthetic": true,
+  "admission_state": "already_admitted",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "actor_model": "shared_freeside_characters_app_substrate",
+  "source_authority_note": "Straylight is the authority for governed memory. This packet is a deterministic GitHub seed fixture representing memory whose admission has already occurred upstream of the demo. GitHub does not store memory; it stores reviewed fixtures.",
+  "non_production_authorization_note": "This packet is synthetic and reviewed. It contains no real user data. It is authorized for non-production fixture use in Phase 33B/33C/33D only. Live admission of new assertions is post-MVP and out of scope.",
+  "self_description": "This packet represents already-admitted Straylight memory for deterministic MVP proof.",
+  "assertions": [
+    {
+      "private_assertion_id": "assn_PRIVATE_SENTINEL_ASSERTION_ID_001",
+      "kind": "observation",
+      "boundary": "public_safe",
+      "summary_public": "operator participates in the freeside-characters substrate demo",
+      "body_private": "operator interacted with shared-substrate fixture during deterministic MVP rehearsal",
+      "raw_reasons": ["seed_authored_by_operator_PRIVATE_SENTINEL_RAW_REASON"],
+      "source_material": "synthetic_seed_text_PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "character_frame_scope": ["ruggy", "satoshi"]
+    },
+    {
+      "private_assertion_id": "assn_PRIVATE_SENTINEL_ASSERTION_ID_002",
+      "kind": "preference",
+      "boundary": "public_safe",
+      "summary_public": "actor prefers lowercase, no corporate-bot tells",
+      "body_private": "voice discipline preference noted across both ruggy and satoshi frames",
+      "raw_reasons": ["voice_doctrine_seed_PRIVATE_SENTINEL_RAW_REASON"],
+      "source_material": "voice_config_excerpt_PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "character_frame_scope": ["ruggy", "satoshi"]
+    },
+    {
+      "private_assertion_id": "assn_PRIVATE_SENTINEL_ASSERTION_ID_003",
+      "kind": "context",
+      "boundary": "public_safe",
+      "summary_public": "actor is rehearsing the cross-interface continuity demo",
+      "body_private": "context attached for orientation under public_discord and operator_private frames",
+      "raw_reasons": ["fixture_seed_context_PRIVATE_SENTINEL_RAW_REASON"],
+      "source_material": "phase_33b_seed_PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "character_frame_scope": ["ruggy", "satoshi"]
+    },
+    {
+      "private_assertion_id": "assn_PRIVATE_SENTINEL_ASSERTION_ID_004",
+      "kind": "operator_private_note",
+      "boundary": "operator_private",
+      "summary_public": null,
+      "summary_operator_private": "operator-only diagnostic context for this packet PRIVATE_SENTINEL_OPERATOR_ONLY",
+      "body_private": "diagnostic notes intended for operator_private frame only — must never reach public_discord PRIVATE_SENTINEL_OPERATOR_ONLY",
+      "raw_reasons": ["operator_only_diagnostic_PRIVATE_SENTINEL_RAW_REASON"],
+      "source_material": "operator_journal_excerpt_PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "character_frame_scope": ["ruggy", "satoshi"]
+    },
+    {
+      "private_assertion_id": "assn_PRIVATE_SENTINEL_ASSERTION_ID_005",
+      "kind": "redacted_field",
+      "boundary": "redacted",
+      "summary_public": "[redacted: present but not shown on public surface]",
+      "body_private": "private payload that is acknowledged on the public surface as a redacted count, but never rendered PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "raw_reasons": ["boundary_redaction_rule_PRIVATE_SENTINEL_RAW_REASON"],
+      "source_material": "redacted_source_blob_PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "public_reason_label": "redacted_for_public_surface",
+      "character_frame_scope": ["ruggy", "satoshi"]
+    },
+    {
+      "private_assertion_id": "assn_PRIVATE_SENTINEL_ASSERTION_ID_006",
+      "kind": "excluded_field",
+      "boundary": "excluded",
+      "summary_public": null,
+      "body_private": "excluded entirely from public projection — not even counted publicly beyond an excluded_count tally PRIVATE_SENTINEL_OPERATOR_ONLY",
+      "raw_reasons": ["boundary_exclusion_rule_PRIVATE_SENTINEL_RAW_REASON"],
+      "source_material": "excluded_source_blob_PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "public_reason_label": "excluded_from_public_surface",
+      "character_frame_scope": ["ruggy", "satoshi"]
+    },
+    {
+      "private_assertion_id": "assn_PRIVATE_SENTINEL_ASSERTION_ID_007",
+      "kind": "character_boundary_referral",
+      "boundary": "character_frame_referral",
+      "summary_public": "this question belongs to a different character frame",
+      "body_private": "request is outside ruggy's boundary; refer the user to satoshi for codex-domain answers PRIVATE_SENTINEL_OPERATOR_ONLY",
+      "raw_reasons": ["outside_ruggy_boundary_PRIVATE_SENTINEL_RAW_REASON"],
+      "source_material": "character_boundary_seed_PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "safe_referral_target": "satoshi",
+      "public_referral_message": "that lives closer to satoshi — try /satoshi for codex matters",
+      "character_frame_scope": ["ruggy"]
+    },
+    {
+      "private_assertion_id": "assn_PRIVATE_SENTINEL_ASSERTION_ID_008",
+      "kind": "external_data_note",
+      "boundary": "external_tool_output",
+      "summary_public": "mibera / onchain holder stats are external tool output, not governed memory",
+      "body_private": "score-mcp and mibera-codex outputs flow through their existing channels and are rendered in-voice as data; they do not enter the recall envelope unless explicitly admitted as governed assertions PRIVATE_SENTINEL_OPERATOR_ONLY",
+      "raw_reasons": ["category_separation_doctrine_PRIVATE_SENTINEL_RAW_REASON"],
+      "source_material": "doctrine_excerpt_PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "external_categories": ["mibera_codex", "score_mcp", "onchain_holder_stats"],
+      "character_frame_scope": ["ruggy", "satoshi"]
+    },
+    {
+      "private_assertion_id": "assn_PRIVATE_SENTINEL_ASSERTION_ID_009",
+      "kind": "interaction_log_note",
+      "boundary": "raw_source_not_memory",
+      "summary_public": "discord interaction logs are raw source, not governed memory by default",
+      "body_private": "ambient discord traffic is not memory; admission to Straylight is a separate, post-MVP path PRIVATE_SENTINEL_OPERATOR_ONLY",
+      "raw_reasons": ["anti_admission_doctrine_PRIVATE_SENTINEL_RAW_REASON"],
+      "source_material": "doctrine_excerpt_PRIVATE_SENTINEL_SOURCE_MATERIAL",
+      "character_frame_scope": ["ruggy", "satoshi"]
+    }
+  ]
+}
