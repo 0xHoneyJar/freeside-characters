@@ -58,6 +58,39 @@ scope.
 > `docs/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md` §7a (recorded fixtures
 > are examples, not schema authority).
 
+#### Phase 37A addendum — reconciliation against Dixie Phase 32E / 32F
+
+The Dixie-side contract evidence requested by Phase 36E now exists:
+
+- Dixie **Phase 32E** is the governing Dixie Recall Wedge route
+  contract for `POST /api/recall/intake`
+  (`../loa-dixie/docs/integration/phase-32e-recall-wedge-route-contract.md`).
+- Dixie **Phase 32F** is a cross-repo readiness checkpoint over
+  Phase 32E
+  (`../loa-dixie/docs/integration/phase-32f-recall-wedge-readiness-checkpoint.md`).
+  Phase 32F is explicit that Phase 32E unblocks **downstream
+  contract reconciliation only**, not live integration.
+
+Phase 37A reconciles the recorded fixtures here against that evidence
+(see `docs/RECALL-WEDGE-DIXIE-CONTRACT-RECONCILIATION.md`). The
+reconciliation verdict for these fixtures:
+
+- The recorded fixtures are reconciled as **local fixture / probe
+  envelopes**, not promoted to live Dixie schema authority.
+- `recorded_dixie_recall_envelope` remains **fixture / probe-only**;
+  it is a freeside-characters `input_envelope_kind`, not a Dixie-owned
+  live wire kind.
+- **Production traffic must not use `recorded_dixie_recall_envelope`.**
+  Per Phase 32F §6, recorded probe inputs are reserved for
+  fixture / probe use.
+- These fixtures remain useful for **adapter no-leak / fail-closed
+  proof only** — narrowing-boundary behavior, raw / private / debug
+  stripping, public-safe minimization, and stable error codes on the
+  negative corpus.
+- No live Dixie, no Discord / Telegram command wiring, no production
+  storage / admission, and no public renderer expansion are
+  introduced by Phase 37A. Those remain blocked.
+
 ### Positive vs negative corpus
 
 The Dixie envelope fixtures split cleanly into a **positive corpus**
