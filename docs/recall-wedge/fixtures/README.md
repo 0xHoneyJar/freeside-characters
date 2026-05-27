@@ -16,9 +16,30 @@ docs/recall-wedge/fixtures/
     operator-private-view.dto.json       operator_private projection
     public-discord-view.dto.json         public_discord projection
     character-boundary-referral.dto.json public_discord referral projection
-  validate-fixtures.mjs                  phase 33b no-leak fixture validator
+  dixie-envelope/                        phase 35d recorded dixie envelope fixtures
+    recorded-public-discord-recall-envelope.v0.json
+    recorded-referral-recall-envelope.v0.json
+    recorded-unknown-version-envelope.json
+  validate-fixtures.mjs                  phase 33b/35d no-leak fixture validator
   README.md                              this file
 ```
+
+`dixie-envelope/` is the Phase 35D home for recorded **Dixie-shaped recall
+envelope** fixtures. These envelopes feed the pure adapter at
+`packages/persona-engine/src/recall-wedge/dixie-envelope-adapter.ts`. The
+adapter is the only narrowing boundary from a Dixie envelope to a local
+projected DTO — the Phase 33C public renderer never reads a Dixie
+envelope directly. The envelope fixtures intentionally include
+raw / private / debug material (`raw_dixie_debug`, `raw_session_trace`,
+`source_material`, `PRIVATE_SENTINEL_*`, `session_id`, `message_id`,
+`continuity_actor_id`) so that adapter unit tests can prove none of it
+passes through to the projected DTO or the rendered public output.
+
+Recorded Dixie envelopes represent **recall responses / projected recall
+payloads**. They are not raw chat log memory and they do not constitute
+admission of any chat content into governed Straylight memory. Memory
+authority remains with Straylight; live admission is post-MVP and out of
+scope.
 
 `projected-dto/` is the neutral home for **all** projected views of the
 seed packet — operator-private and public-safe alike. Naming it
@@ -106,10 +127,11 @@ operator-private projection. The Phase 33B no-leak validator
 (`validate-fixtures.mjs`) greps the public-safe projections for these
 substrings and fails loudly if any are present.
 
-## Phase 33B no-leak fixture validator
+## Phase 33B / 35D fixture validator
 
 `validate-fixtures.mjs` is a deterministic, dependency-free, Node-
-compatible validator that locks the Phase 33B invariants in place.
+compatible validator that locks the Phase 33B invariants in place and,
+as of Phase 35D, also requires the recorded Dixie envelope fixtures.
 
 Run it:
 
@@ -117,7 +139,7 @@ Run it:
 node docs/recall-wedge/fixtures/validate-fixtures.mjs
 ```
 
-It checks:
+It checks (Phase 33B):
 
 - every fixture JSON parses;
 - the seed packet is `synthetic: true`,
@@ -140,11 +162,39 @@ It checks:
   `source_material`, `hidden estate`, `assertion_id`,
   `full assertion bodies`, `private identifiers`).
 
+It also checks (Phase 35D — required, not optional):
+
+- the `dixie-envelope/` directory exists;
+- all three required fixtures are present:
+  `recorded-public-discord-recall-envelope.v0.json`,
+  `recorded-referral-recall-envelope.v0.json`,
+  `recorded-unknown-version-envelope.json`;
+- every Dixie envelope fixture is `synthetic: true`,
+  `fixture_kind: recorded_dixie_recall_envelope`,
+  `input_envelope_kind: recorded_dixie_recall_envelope`,
+  and carries a `non_production_authorization_note`;
+- the v0 envelope fixtures use a supported `envelope_version`
+  (currently `recall_wedge.dixie_envelope.v0`);
+- the unknown-version fixture remains **syntactically valid** with an
+  `envelope_version` that is **present but intentionally unsupported**
+  — this fixture exists to drive adapter fail-closed tests, so the
+  validator confirms its non-support rather than failing on it.
+
+No leak-grep is run over raw Dixie envelope files: those intentionally
+contain raw/private/debug sentinels (`raw_dixie_debug`,
+`raw_session_trace`, `source_material`, `PRIVATE_SENTINEL_*`,
+`session_id`, `message_id`, `continuity_actor_id`) because the adapter
+in `packages/persona-engine/src/recall-wedge/dixie-envelope-adapter.ts`
+is responsible for stripping that material before any rendering.
+Public no-leak validation continues to gate only the public-safe
+projected DTOs above; the adapter's own unit tests cover the Dixie
+stripping behavior end-to-end.
+
 The validator exits 0 on success and nonzero on any failure. It is
 fixture-only — it does not import Straylight types, it does not call a
 live Dixie client, and it does not attempt rendering. Renderer
 implementation is Phase 33C; the cross-interface continuity demo is
-Phase 33D.
+Phase 33D; the recorded Dixie envelope adapter is Phase 35D.
 
 ## Categories that are not Recall Wedge memory
 
@@ -164,10 +214,14 @@ demo can show that the MVP keeps these categories distinct.
 ## Phase ladder (recap)
 
 - 33A — boundary decision doc (`RECALL-WEDGE-MEMORY-MVP.md`)
-- **33B — these fixtures**
+- **33B — projected-DTO + seed-memory fixtures**
 - 33C — public-safe Recall Wedge renderer + no-leak validator
 - 33D — cross-interface continuity demo
 - 34A — final MVP acceptance handoff
+- 35A — post-MVP decision map
+- 35B — operator demo runner
+- 35C — multi-surface contract spec
+- **35D — recorded Dixie envelope fixtures + adapter tests** (`dixie-envelope/`)
 
 If a later phase needs anything beyond what these fixtures shape, re-open
 the 33A doc — do not silently expand scope here.
