@@ -382,6 +382,27 @@ async function main(): Promise<void> {
           `kansei-router=stub (DEP-1 · DEP-2 will wire real routing)`,
       );
     } catch (err) {
+      // BB#105 rd-3 F-001 HIGH: distinguish JWKS-init failures (operator
+      // configured verification; misconfig is meaningful) from other
+      // subscriber failures (NATS broker down, network blip — bot can
+      // still serve cron + interactions). The events-subscriber lib's
+      // rd-1 throw on JWKS init reached HERE but was previously swallowed
+      // unconditionally, hiding the misconfig.
+      //
+      // Posture:
+      //   JWKS_URL set + subscriber throws → fail loud (process.exit(1)).
+      //     Operator opted into verification; refusing to silently disable.
+      //   JWKS_URL unset → log + continue. Subscriber failure is unexpected
+      //     but the bot's other functions (cron digests, weaver, Discord
+      //     interactions) are independent and shouldn't take a hard outage.
+      if (process.env.JWKS_URL?.trim()) {
+        console.error(
+          'events: JWKS_URL was configured but subscriber startup failed — refusing to boot the bot. ' +
+            'Fix JWKS reachability or unset JWKS_URL to fall back to dev verifier (every sig surfaces as invalid).',
+          err,
+        );
+        process.exit(1);
+      }
       console.error('events: failed to start NATS subscriber (bot continues without it):', err);
       mintEventSubscriber = null;
     }
