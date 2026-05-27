@@ -45,12 +45,29 @@ ROOT_DIR=$(pwd -P)
 COMMIT_SHA=""
 DECLARED_IN_PACKAGE_JSON=0
 if [[ -f "package.json" ]]; then
+  # BB#105 rd-2 F-001: SHA extraction reads from BOTH cluster.eventsPin.sha
+  # (the cluster sovereignty workaround for pnpm's subdir-github limitation)
+  # AND the standard dependencies/devDependencies field. Previously only the
+  # dep field was checked, so consumers using only cluster.eventsPin.sha
+  # (the canonical sonar/pnpm pattern) would always hit the declared-but-no-SHA
+  # error. Precedence: cluster.eventsPin.sha first (explicit sovereignty),
+  # then dependencies (legacy/bun-style consumers).
   COMMIT_SHA=$(node -e "
     const pkg = require('./package.json');
-    const dep = (pkg.devDependencies || {})['${PKG_NAME}'] ||
-                (pkg.dependencies || {})['${PKG_NAME}'] || '';
-    const match = dep.match(/#([0-9a-f]{7,40})\$/);
-    if (match) console.log(match[1]);
+    const SHA_RE = /^[0-9a-f]{7,40}\$/;
+    let sha = '';
+    // 1. cluster.eventsPin.sha (preferred per sovereignty doctrine)
+    const pinSha = ((pkg.cluster || {}).eventsPin || {}).sha;
+    if (pinSha && SHA_RE.test(pinSha)) {
+      sha = pinSha;
+    } else {
+      // 2. dependencies/devDependencies github:owner/repo#<sha>
+      const dep = (pkg.devDependencies || {})['${PKG_NAME}'] ||
+                  (pkg.dependencies || {})['${PKG_NAME}'] || '';
+      const match = dep.match(/#([0-9a-f]{7,40})\$/);
+      if (match) sha = match[1];
+    }
+    if (sha) console.log(sha);
   " 2>/dev/null || echo "")
   # BB#105 F-002: track whether the package is DECLARED (vs absent). When
   # declared-but-not-installed, we must fail loud below instead of silently
@@ -143,9 +160,16 @@ echo "$TAG Source SHA valid: $HAS_VALID_SOURCE_SHA"
 # Step 3: Verify git + pnpm available
 # =============================================================================
 
+# BB#105 rd-2 F-002 HIGH: once we're past the declared-but-not-found checks
+# above (package IS declared + needs rebuild), every remaining prerequisite
+# failure MUST exit 1. Silent-success at this point is a supply-chain hazard
+# — install goes green but the runtime import will throw "Cannot find package"
+# with no breadcrumb. Per BB review: "Required materialization scripts must
+# fail closed. Exit codes are an API to CI and operators."
 if ! command -v git &>/dev/null; then
-  echo "$TAG WARNING: git not available — cannot rebuild from source"
-  exit 0
+  echo "$TAG ERROR: git not available — cannot rebuild ${PKG_NAME} from source" >&2
+  echo "$TAG Install git or run rebuild-events-dist.sh from an environment with git available." >&2
+  exit 1
 fi
 
 PNPM_BIN=""
@@ -155,9 +179,9 @@ elif command -v corepack &>/dev/null; then
   # corepack will provision pnpm on first invocation
   PNPM_BIN="corepack pnpm"
 else
-  echo "$TAG WARNING: pnpm not available (and no corepack) — cannot build subdir package"
-  echo "$TAG Install pnpm or enable corepack: 'corepack enable'"
-  exit 0
+  echo "$TAG ERROR: pnpm not available (and no corepack) — cannot build ${PKG_NAME} subdir package" >&2
+  echo "$TAG Install pnpm or enable corepack: 'corepack enable'" >&2
+  exit 1
 fi
 
 # =============================================================================
@@ -179,13 +203,14 @@ git fetch --depth 1 origin "$COMMIT_SHA" 2>/dev/null || {
   cd "$BUILD_DIR"
   rm -rf repo
   git clone "$REPO" repo 2>/dev/null || {
-    echo "$TAG WARNING: git clone failed — cannot rebuild"
-    exit 0
+    # BB#105 rd-2 F-002: fail loud — declared dep cannot rebuild.
+    echo "$TAG ERROR: git clone of ${REPO} failed — cannot rebuild ${PKG_NAME}" >&2
+    exit 1
   }
   cd repo
   git checkout "$COMMIT_SHA" 2>/dev/null || {
-    echo "$TAG WARNING: Could not checkout $COMMIT_SHA — cannot rebuild"
-    exit 0
+    echo "$TAG ERROR: Could not checkout $COMMIT_SHA in ${REPO} — cannot rebuild ${PKG_NAME}" >&2
+    exit 1
   }
 }
 
@@ -210,8 +235,11 @@ echo "$TAG SHA verified: $ACTUAL_SHA"
 # =============================================================================
 
 if [[ ! -d "$SUBDIR" ]]; then
-  echo "$TAG WARNING: $SUBDIR not present in cloned loa-freeside@$COMMIT_SHA — cannot rebuild"
-  exit 0
+  # BB#105 rd-2 F-002: subdir-package SHA pinned to a commit that doesn't
+  # contain the subdir is operator-configuration broken — fail loud.
+  echo "$TAG ERROR: $SUBDIR not present in cloned loa-freeside@$COMMIT_SHA — cannot rebuild ${PKG_NAME}" >&2
+  echo "$TAG The pinned SHA may predate the subdir. Update cluster.eventsPin.sha or the github: URL #sha." >&2
+  exit 1
 fi
 
 cd "$SUBDIR"
@@ -223,15 +251,16 @@ echo "$TAG Entered subdir: $SUBDIR"
 
 echo "$TAG Installing events package deps (pnpm install --ignore-scripts)..."
 $PNPM_BIN install --ignore-scripts 2>/dev/null || {
-  echo "$TAG WARNING: pnpm install --ignore-scripts failed — cannot rebuild"
-  exit 0
+  # BB#105 rd-2 F-002: pnpm install failure leaves dist unrebuilt; fail loud.
+  echo "$TAG ERROR: pnpm install --ignore-scripts failed in $SUBDIR — cannot rebuild ${PKG_NAME}" >&2
+  exit 1
 }
 
 export SOURCE_DATE_EPOCH=0
 echo "$TAG Building events package (pnpm build, SOURCE_DATE_EPOCH=0)..."
 $PNPM_BIN build 2>/dev/null || {
-  echo "$TAG WARNING: pnpm build failed — cannot rebuild"
-  exit 0
+  echo "$TAG ERROR: pnpm build failed in $SUBDIR — cannot rebuild ${PKG_NAME}" >&2
+  exit 1
 }
 
 # =============================================================================
@@ -239,8 +268,8 @@ $PNPM_BIN build 2>/dev/null || {
 # =============================================================================
 
 if [[ ! -d "dist" ]]; then
-  echo "$TAG WARNING: No dist/ produced — cannot rebuild"
-  exit 0
+  echo "$TAG ERROR: pnpm build succeeded but produced no dist/ in $SUBDIR — cannot rebuild ${PKG_NAME}" >&2
+  exit 1
 fi
 
 if ! grep -q 'acvp-l1-v2' "dist/src/envelope.js" 2>/dev/null; then
