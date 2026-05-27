@@ -722,6 +722,45 @@ phase.**
 
 ---
 
+## 8a. Phase 37B addendum — Phase 37A became reconciliation; Phase 37B is the operator/dev-only spike gate
+
+> Added by Phase 37B
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md`). Targeted
+> addendum, not a rewrite of this section. Updates the meaning of
+> "Phase 37A" referenced in §9 below.
+
+Status update for the live-Dixie readiness ladder:
+
+- **Phase 37A became reconciliation, not a live client spike.** See
+  `docs/RECALL-WEDGE-DIXIE-CONTRACT-RECONCILIATION.md`. The "Phase
+  37A — live Dixie client spike" alternative described in §9 below
+  did not happen; instead, Phase 37A consumed Dixie Phase 32E
+  (`../loa-dixie/docs/integration/phase-32e-recall-wedge-route-contract.md`)
+  and Dixie Phase 32F
+  (`../loa-dixie/docs/integration/phase-32f-recall-wedge-readiness-checkpoint.md`)
+  as external contract evidence and reconciled the local recorded
+  Dixie envelope fixtures and the local pure adapter against that
+  evidence.
+- **Phase 37B is the gate for a future Phase 37C operator/dev-only
+  live Dixie client spike.** See
+  `docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md`. Phase 37B does not
+  itself add live code; it defines what the next code phase is
+  permitted to do, route-bound to `POST /api/recall/intake`,
+  isolated from the recorded fixture adapter, and operator/dev-only.
+- **All public surface, Telegram, `authorized_private_session`,
+  `public_telegram`, storage / admission, Finn audit wiring, and
+  character voice work remains blocked.** Each remains gated on its
+  own decision artifact (multi-surface contract §5a / §8a / §10;
+  this checkpoint §6 / §10; post-MVP decision map §6 / §7). Phase
+  37B does not relax any of those gates.
+
+When reading §9 below, treat "Phase 37A — live Dixie client spike"
+as a planning sketch that the ladder did not follow; the live-client
+spike is now the future Phase 37C, gated by Phase 37B, and only
+authorized under the Phase 37B constraints.
+
+---
+
 ## 9. Recommended next phase
 
 Two acceptable next-phase shapes, depending on how the team wants to

@@ -269,6 +269,46 @@ allowed:
 
 ---
 
+### 5b. Phase 37B addendum — live Dixie client narrowed to operator/dev-only first
+
+> Added by Phase 37B
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md`). Targeted
+> addendum, not a rewrite of this section.
+
+The post-MVP Option C ("live Dixie client integration") is narrowed:
+the **first** live-Dixie code phase, if any, is **operator/dev-only**.
+Public Discord / Telegram wiring, public renderer expansion, storage /
+admission, positive `public_telegram` / `authorized_private_session`
+support, and character-voiced recall output remain blocked.
+
+Status as of Phase 37B:
+
+- **Dixie Phase 32E / 32F now exist.**
+  `../loa-dixie/docs/integration/phase-32e-recall-wedge-route-contract.md`
+  governs `POST /api/recall/intake`;
+  `../loa-dixie/docs/integration/phase-32f-recall-wedge-readiness-checkpoint.md`
+  unblocks downstream contract reconciliation only.
+- **Phase 37A completed reconciliation.** See
+  `docs/RECALL-WEDGE-DIXIE-CONTRACT-RECONCILIATION.md`. Local
+  recorded fixtures remain valid as synthetic non-production probes;
+  they are not promoted to Dixie schema authority; production
+  traffic must not use `recorded_dixie_recall_envelope`.
+- **Phase 37B authorizes a future Phase 37C operator/dev-only live
+  Dixie client spike against `POST /api/recall/intake`.** Subject
+  to every constraint in `docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md`.
+  The spike is not Discord / Telegram wiring, not public renderer
+  expansion, not storage / admission, not character-voiced.
+- **Live Dixie client integration in any broader sense remains
+  gated.** Option C above is narrowed to "operator/dev-only first,"
+  and the readiness checkpoint §6 preconditions still apply to any
+  step beyond the operator/dev spike.
+
+If Phase 37C lands and Phase 37D accepts it, the next decision (Phase
+38A) is whether to expose a controlled public Discord test surface —
+not a relaxation of this gate.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
