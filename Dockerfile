@@ -36,7 +36,7 @@ FROM oven/bun:1.3
 # at the cluster.eventsPin.sha + builds @0xhoneyjar/events from packages/events
 # subdir via pnpm. That toolchain ships with this Debian image by default
 # (apart from pnpm which we add via bun's global install).
-RUN bun add -g pnpm
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/* && bun add -g pnpm
 
 WORKDIR /app
 
