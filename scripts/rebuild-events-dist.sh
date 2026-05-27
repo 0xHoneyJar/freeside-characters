@@ -152,6 +152,17 @@ if [[ "$HAS_VALID_SCHEMA_VERSION" == "true" && "$HAS_VALID_SOURCE_SHA" == "true"
   exit 0
 fi
 
+# Path ε hotfix 8 (2026-05-26): if the schema-version fingerprint matches but
+# SOURCE_SHA doesn't (because dist was committed to loa-freeside upstream and
+# its SOURCE_SHA file lags by definition — it can't contain the SHA of the
+# commit that introduces it), trust the schema literal alone. Avoids the
+# pnpm-install-in-standalone-subdir failure that took 7 hotfix layers to
+# surface (PRs #108-#113 on this repo).
+if [[ "$HAS_VALID_SCHEMA_VERSION" == "true" ]]; then
+  echo "$TAG dist/ has valid acvp-l1-v2 schema fingerprint (SOURCE_SHA=$(cat "$EVENTS_DIR/dist/SOURCE_SHA" 2>/dev/null || echo "missing") vs expected $COMMIT_SHA — accepting upstream dist regardless) — skipping rebuild"
+  exit 0
+fi
+
 echo "$TAG Rebuilding ${PKG_NAME} dist from loa-freeside@${COMMIT_SHA:0:12}..."
 echo "$TAG Schema version fingerprint present: $HAS_VALID_SCHEMA_VERSION"
 echo "$TAG Source SHA valid: $HAS_VALID_SOURCE_SHA"
