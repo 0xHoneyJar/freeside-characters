@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "bash scripts/fixup-events-bun.sh && (cd packages/persona-engine && bash ../../scripts/rebuild-events-dist.sh)",
     "dev": "bun run --cwd apps/bot dev",
     "start": "bun run --cwd apps/bot start",
     "build": "bun run --cwd apps/bot build",
