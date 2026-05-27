@@ -18,6 +18,13 @@
 
 FROM oven/bun:1.3-alpine
 
+# bash is required by package.json's postinstall script (rebuild-events-dist.sh
+# + fixup-events-bun.sh — both #!/usr/bin/env bash). bun:1.3-alpine ships with
+# /bin/sh only. Without bash the build fails with exit code 127 during
+# `bun install --frozen-lockfile`. Added 2026-05-26 (Path ε cluster-events-pillar
+# v1 — first canary flip).
+RUN apk add --no-cache bash
+
 WORKDIR /app
 
 # Monorepo workspace shape · root package.json declares:
