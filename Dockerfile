@@ -16,20 +16,27 @@
 # Memory: discord.js + pg pool + claude-agent-sdk subprocess. Allocate
 # at least 512MB; 1GB headroom is comfortable.
 
-FROM oven/bun:1.3-alpine
+FROM oven/bun:1.3
 
-# bash + git + pnpm are required by package.json's postinstall script:
-#   - bash: rebuild-events-dist.sh + fixup-events-bun.sh both `#!/usr/bin/env bash`
-#   - git: rebuild-events-dist.sh shells out to `git` to rebuild
-#     @0xhoneyjar/events dist from the cluster-pinned source SHA
-#   - pnpm: rebuild-events-dist.sh uses pnpm install + build inside the
-#     packages/events subdir (the @0xhoneyjar/events package's own toolchain;
-#     bun consumers still need pnpm transitively for the rebuild step)
-# bun:1.3-alpine ships with /bin/sh + node + bun only. Without these, `bun install
-# --frozen-lockfile` fails at the postinstall step. Added 2026-05-26 (Path ε
-# cluster-events-pillar v1 — first canary flip · cluster's sovereign code-distribution
-# pattern per memory `project_sovereign-code-distribution`).
-RUN apk add --no-cache bash git && bun add -g pnpm
+# Switched 2026-05-26 from `oven/bun:1.3-alpine` to the Debian base for the
+# Path ε cluster-events-pillar v1 canary flip. The bot's package.json
+# postinstall hook (`bash scripts/fixup-events-bun.sh && (cd packages/persona-engine
+# && bash ../../scripts/rebuild-events-dist.sh)` added in DEP-1 PR #105)
+# requires bash + git + pnpm in the image — alpine ships none of these, leading
+# to a 4-deep iterative debug loop (PRs #108/#109/#110/#111). Debian base has
+# bash + git out of the box, and pnpm installs cleanly via `bun add -g`.
+#
+# Pre-existing context: postinstall has been failing since DEP-1 landed
+# (silent because Railway kept the v0.12.0 container alive when new builds
+# failed). Path ε mTLS code in PR #107 needs to actually deploy, surfacing
+# the long-broken chain.
+#
+# The rebuild-events-dist.sh script (cluster's sovereign-code-distribution
+# pattern per memory `project_sovereign-code-distribution`) clones loa-freeside
+# at the cluster.eventsPin.sha + builds @0xhoneyjar/events from packages/events
+# subdir via pnpm. That toolchain ships with this Debian image by default
+# (apart from pnpm which we add via bun's global install).
+RUN bun add -g pnpm
 
 WORKDIR /app
 
