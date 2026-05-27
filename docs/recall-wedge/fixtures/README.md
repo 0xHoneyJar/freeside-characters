@@ -306,7 +306,8 @@ demo can show that the MVP keeps these categories distinct.
 - 35C — multi-surface contract spec
 - 35D — recorded Dixie envelope fixtures + adapter tests (`dixie-envelope/`)
 - 36A — live-boundary decision (`docs/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md`)
-- **36B — expanded recorded Dixie envelope corpus + adapter/validator tests** (refusal/unauthorized, session-bearing, authorized-private-target negative, public-telegram-target negative, malformed-missing-payload, malformed-missing-target)
+- 36B — expanded recorded Dixie envelope corpus + adapter/validator tests (refusal/unauthorized, session-bearing, authorized-private-target negative, public-telegram-target negative, malformed-missing-payload, malformed-missing-target)
+- **36C — dev/operator runner over the recorded Dixie envelope corpus** (`packages/persona-engine/src/recall-wedge/run-dixie-envelope-demo.ts`). Side-effect-free by default; exports `buildDixieEnvelopeDemoReport`, `formatDixieEnvelopeDemoReport`, `runDixieEnvelopeDemo`. Public sections render only positive fixtures through `renderPublicRecallProjection`; negative fixtures appear under the INTERNAL / operator-only proof section as fail-closed summaries with stable error codes. No live Dixie / Discord / Telegram / storage / admission / voice.
 
 If a later phase needs anything beyond what these fixtures shape, re-open
 the 33A doc — do not silently expand scope here.
