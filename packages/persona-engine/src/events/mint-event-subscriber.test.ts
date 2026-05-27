@@ -30,6 +30,7 @@ import {
 } from '@0xhoneyjar/events';
 
 import {
+  buildNatsConnectOptions,
   createKanseiRouterStub,
   type KanseiRouter,
   type MintEventSubscriberLogger,
@@ -394,6 +395,103 @@ describe('DEP-1 · mint-event-subscriber', () => {
     expect(routedLogs.length).toBe(1);
 
     await sub.stop();
+  });
+});
+
+// ── Path-ε mTLS client-cert tests (cluster-events-pillar-v1) ────────────────
+//
+// buildNatsConnectOptions is the pure helper extracted from
+// startMintEventSubscriber so the Path-ε partial-config refuse + TLS-options
+// assembly is unit-testable without touching the real `nats.connect()` socket.
+// Existing tests in this file deliberately bypass `startMintEventSubscriber`
+// (FakeNats + direct subscribeEnvelope) for the same isolation reason; these
+// tests target the new helper alongside.
+//
+// Mirrors the sonar PR #25 test shape (partial-config rejected ×2, both-set
+// assembly, backward-compat neither-set) adapted to the subscriber's
+// `caFile` (path) + `cert`/`key` (PEM body) asymmetric TLS contract.
+
+describe('Path-ε · buildNatsConnectOptions (NATS mTLS options assembly)', () => {
+  const NATS_URL = 'tls://broker.example:4222';
+  const CA_PATH = '/etc/nats/ca.pem';
+  // Dummy PEM bodies — opaque to buildNatsConnectOptions (passed through to
+  // nats.connect's tls options unchanged; real PEM validation only happens
+  // at TLS handshake time which we never reach in a unit test).
+  const FAKE_CLIENT_CERT =
+    '-----BEGIN CERTIFICATE-----\nMIIBdummyclientcert\n-----END CERTIFICATE-----\n';
+  const FAKE_CLIENT_KEY =
+    '-----BEGIN PRIVATE KEY-----\nMIIBdummyclientkey\n-----END PRIVATE KEY-----\n';
+
+  test('refuses partial config: natsTlsClientCert set without natsTlsClientKey → throws', () => {
+    expect(() =>
+      buildNatsConnectOptions({
+        natsUrl: NATS_URL,
+        natsTlsCa: CA_PATH,
+        natsTlsClientCert: FAKE_CLIENT_CERT,
+        // natsTlsClientKey intentionally unset
+      }),
+    ).toThrow(
+      /NATS_TLS_CLIENT_CERT and NATS_TLS_CLIENT_KEY must both be set or both unset/,
+    );
+  });
+
+  test('refuses partial config: natsTlsClientKey set without natsTlsClientCert → throws', () => {
+    expect(() =>
+      buildNatsConnectOptions({
+        natsUrl: NATS_URL,
+        natsTlsCa: CA_PATH,
+        natsTlsClientKey: FAKE_CLIENT_KEY,
+        // natsTlsClientCert intentionally unset
+      }),
+    ).toThrow(
+      /NATS_TLS_CLIENT_CERT and NATS_TLS_CLIENT_KEY must both be set or both unset/,
+    );
+  });
+
+  test('both client-cert env set → returned tls includes caFile, cert, key', () => {
+    const result = buildNatsConnectOptions({
+      natsUrl: NATS_URL,
+      natsTlsCa: CA_PATH,
+      natsTlsClientCert: FAKE_CLIENT_CERT,
+      natsTlsClientKey: FAKE_CLIENT_KEY,
+    });
+    expect(result.servers).toBe(NATS_URL);
+    expect(result.tls).toBeDefined();
+    expect(result.tls!.caFile).toBe(CA_PATH);
+    expect(result.tls!.cert).toBe(FAKE_CLIENT_CERT);
+    expect(result.tls!.key).toBe(FAKE_CLIENT_KEY);
+  });
+
+  test('both client-cert env set, no CA → returned tls includes cert + key only (system-CA mode)', () => {
+    const result = buildNatsConnectOptions({
+      natsUrl: NATS_URL,
+      // no natsTlsCa
+      natsTlsClientCert: FAKE_CLIENT_CERT,
+      natsTlsClientKey: FAKE_CLIENT_KEY,
+    });
+    expect(result.tls).toBeDefined();
+    expect(result.tls!.caFile).toBeUndefined();
+    expect(result.tls!.cert).toBe(FAKE_CLIENT_CERT);
+    expect(result.tls!.key).toBe(FAKE_CLIENT_KEY);
+  });
+
+  test('backward-compat: neither client-cert env set, CA set → returned tls = { caFile }, no cert/key', () => {
+    const result = buildNatsConnectOptions({
+      natsUrl: NATS_URL,
+      natsTlsCa: CA_PATH,
+    });
+    expect(result.tls).toBeDefined();
+    expect(result.tls!.caFile).toBe(CA_PATH);
+    expect(result.tls!.cert).toBeUndefined();
+    expect(result.tls!.key).toBeUndefined();
+  });
+
+  test('backward-compat: no CA, no client-cert → returned options omit tls entirely', () => {
+    const result = buildNatsConnectOptions({
+      natsUrl: NATS_URL,
+    });
+    expect(result.servers).toBe(NATS_URL);
+    expect(result.tls).toBeUndefined();
   });
 });
 

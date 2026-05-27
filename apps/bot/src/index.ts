@@ -426,6 +426,14 @@ async function main(): Promise<void> {
       mintEventSubscriber = await startMintEventSubscriber({
         natsUrl,
         natsTlsCa: process.env.NATS_TLS_CA?.trim() || undefined,
+        // Path-ε mTLS client cert: PEM bodies, not paths. Both-or-neither —
+        // partial config throws from buildNatsConnectOptions and is caught
+        // by the BB#105 rd-3 JWKS-style refuse path below (process.exit(1)
+        // when JWKS_URL is set, log-and-continue otherwise). .trim()
+        // defends against trailing-newline noise from Railway service-var
+        // round-trips and copy-paste — mirrors sonar PR #25.
+        natsTlsClientCert: process.env.NATS_TLS_CLIENT_CERT?.trim() || undefined,
+        natsTlsClientKey: process.env.NATS_TLS_CLIENT_KEY?.trim() || undefined,
         jwksUrl: process.env.JWKS_URL?.trim() || undefined,
         kanseiRouter,
         logger: subscriberLogger,

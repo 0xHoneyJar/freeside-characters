@@ -75,6 +75,29 @@ export interface MintEventSubscriberOpts {
   natsUrl: string;
   /** Optional path to a CA cert file for NATS TLS. TLS-only in production. */
   natsTlsCa?: string;
+  /**
+   * Path-ε mTLS client-cert presentation. Both fields are OPTIONAL env-wired
+   * PEM **bodies** (not paths — Railway service-variables inject the full PEM
+   * content). When BOTH are set, `nats.connect()`'s `tls` options include
+   * `cert` + `key` alongside the existing CA, enabling mTLS auth against the
+   * Path-ε broker (`--tlsverify` on nats-server requires + verifies a client
+   * cert signed by the cluster CA).
+   *
+   * Partial config (one set, the other missing) is refused at start with an
+   * explicit throw — proceeding either way (cert-without-key, key-without-cert)
+   * masks a deployment misconfiguration: cert-without-key fails the TLS
+   * handshake; key-without-cert silently falls back to anonymous TLS. Mirrors
+   * the JWKS-init refuse path (BB#105 rd-3) and the sonar publisher's
+   * partial-config refuse at sonar PR #25.
+   *
+   * Asymmetric with `natsTlsCa` (still a file path, handed to nats.js as
+   * `caFile`) for backward-compatibility with the AWS-NATS deployment shape.
+   * The Path-ε runbook documents this; future work may converge both to PEM
+   * bodies. Reference: ~/Documents/GitHub/loa-freeside/grimoires/loa/specs/
+   * cluster-events-pillar-v1/go-live-path-epsilon-railway-nats.md §Step 3b.
+   */
+  natsTlsClientCert?: string;
+  natsTlsClientKey?: string;
   /** Cluster JWKS endpoint for verifying publisher signatures. Absent → dev mode. */
   jwksUrl?: string;
   kanseiRouter: KanseiRouter;
@@ -100,18 +123,93 @@ export interface MintEventSubscriberHandle {
 // Entrypoint
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Internal type describing the connect-options shape this module hands to
+ * `nats.connect()`. Exported only to make the `buildNatsConnectOptions`
+ * helper unit-testable without exposing the nats.js types.
+ */
+export interface BuiltNatsConnectOptions {
+  servers: string;
+  tls?: {
+    caFile?: string;
+    cert?: string;
+    key?: string;
+  };
+}
+
+/**
+ * Build the options object handed to `nats.connect()`. Pure helper extracted
+ * so the Path-ε partial-config refuse + TLS-options assembly is unit-testable
+ * without spinning up a NATS connection.
+ *
+ * Throws on partial mTLS config (one of `natsTlsClientCert` / `natsTlsClientKey`
+ * set without the other). Matches the JWKS-init refuse path (BB#105 rd-3) and
+ * sonar PR #25's `markPermanentDisabled` style adapted to the subscriber's
+ * throw-on-misconfig contract.
+ */
+export function buildNatsConnectOptions(opts: {
+  natsUrl: string;
+  natsTlsCa?: string;
+  natsTlsClientCert?: string;
+  natsTlsClientKey?: string;
+}): BuiltNatsConnectOptions {
+  const { natsUrl, natsTlsCa, natsTlsClientCert, natsTlsClientKey } = opts;
+
+  // Path-ε partial-config refuse: one set without the other is a deployment
+  // misconfiguration. Proceeding either way (cert-without-key, key-without-cert)
+  // masks the error — fail-closed at config-load is the audit-friendly path.
+  if (Boolean(natsTlsClientCert) !== Boolean(natsTlsClientKey)) {
+    throw new Error(
+      '[events-subscriber] NATS_TLS_CLIENT_CERT and NATS_TLS_CLIENT_KEY must both be set or both unset (Path-ε mTLS)',
+    );
+  }
+
+  // TLS options assembly: caFile-only (legacy CA-path), caFile+client-cert
+  // (Path-ε mTLS), or client-cert-only (system-CA verification + client auth).
+  // The ternary keeps the no-TLS-options branch unchanged when neither CA nor
+  // client cert is configured (preserves DEP-1 default behavior).
+  const tls =
+    natsTlsCa || natsTlsClientCert
+      ? {
+          ...(natsTlsCa ? { caFile: natsTlsCa } : {}),
+          ...(natsTlsClientCert
+            ? { cert: natsTlsClientCert, key: natsTlsClientKey }
+            : {}),
+        }
+      : undefined;
+
+  return {
+    servers: natsUrl,
+    ...(tls ? { tls } : {}),
+  };
+}
+
 export async function startMintEventSubscriber(
   opts: MintEventSubscriberOpts,
 ): Promise<MintEventSubscriberHandle> {
   const subject = opts.subject ?? 'nft.mint.detected.>';
 
-  // Connect to NATS (TLS-only in production when a CA path is configured)
-  const nc: NatsConnection = await connect({
-    servers: opts.natsUrl,
-    ...(opts.natsTlsCa ? { tls: { caFile: opts.natsTlsCa } } : {}),
+  // Connect to NATS (TLS-only in production when a CA path is configured).
+  // buildNatsConnectOptions throws on Path-ε partial-config (cert-without-key
+  // or key-without-cert) BEFORE the NATS connection attempt — caller (bot
+  // wire at apps/bot/src/index.ts) routes the throw through the existing
+  // BB#105 rd-3 startup-failure path.
+  const connectOpts = buildNatsConnectOptions({
+    natsUrl: opts.natsUrl,
+    natsTlsCa: opts.natsTlsCa,
+    natsTlsClientCert: opts.natsTlsClientCert,
+    natsTlsClientKey: opts.natsTlsClientKey,
   });
+  const nc: NatsConnection = await connect(connectOpts);
+  const tlsMode = opts.natsTlsClientCert
+    ? opts.natsTlsCa
+      ? 'mTLS-with-custom-CA'
+      : 'mTLS-via-system-CA'
+    : opts.natsTlsCa
+      ? 'with-custom-CA'
+      : 'via-scheme';
   opts.logger.info(
-    { url: opts.natsUrl, subject, tls: Boolean(opts.natsTlsCa) },
+    { url: opts.natsUrl, subject, tls: Boolean(opts.natsTlsCa), tlsMode },
     '[events-subscriber] NATS connected',
   );
 
