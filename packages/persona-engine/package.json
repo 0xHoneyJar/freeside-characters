@@ -31,7 +31,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#0948a5344b21aef6a7ba7ce6e39a9258994638c0",
+    "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#7db6359e98739609f8f9d24f444822ad82f597a7",
     "@0xhoneyjar/medium-registry": "^0.2.0",
     "@effect/schema": "^0.75.0",
     "@noble/curves": "^1.7.0",
