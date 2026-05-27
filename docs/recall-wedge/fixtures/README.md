@@ -16,19 +16,27 @@ docs/recall-wedge/fixtures/
     operator-private-view.dto.json       operator_private projection
     public-discord-view.dto.json         public_discord projection
     character-boundary-referral.dto.json public_discord referral projection
-  dixie-envelope/                        phase 35d recorded dixie envelope fixtures
+  dixie-envelope/                        recorded dixie envelope fixtures (phase 35d + phase 36b)
     recorded-public-discord-recall-envelope.v0.json
     recorded-referral-recall-envelope.v0.json
     recorded-unknown-version-envelope.json
-  validate-fixtures.mjs                  phase 33b/35d no-leak fixture validator
+    recorded-refusal-unauthorized-envelope.v0.json
+    recorded-session-bearing-public-recall-envelope.v0.json
+    recorded-authorized-private-target-envelope.v0.json
+    recorded-public-telegram-target-envelope.v0.json
+    recorded-malformed-missing-payload-envelope.v0.json
+    recorded-malformed-missing-target-envelope.v0.json
+  validate-fixtures.mjs                  phase 33b/35d/36b fixture validator
   README.md                              this file
 ```
 
-`dixie-envelope/` is the Phase 35D home for recorded **Dixie-shaped recall
-envelope** fixtures. These envelopes feed the pure adapter at
-`packages/persona-engine/src/recall-wedge/dixie-envelope-adapter.ts`. The
-adapter is the only narrowing boundary from a Dixie envelope to a local
-projected DTO — the Phase 33C public renderer never reads a Dixie
+`dixie-envelope/` is the home for recorded **Dixie-shaped recall
+envelope** fixtures — Phase 35D shipped the first three; Phase 36B
+expands the corpus with refusal/unauthorized, session-bearing, and four
+intentional negative fixtures. These envelopes feed the pure adapter at
+`packages/persona-engine/src/recall-wedge/dixie-envelope-adapter.ts`.
+The adapter is the only narrowing boundary from a Dixie envelope to a
+local projected DTO — the Phase 33C public renderer never reads a Dixie
 envelope directly. The envelope fixtures intentionally include
 raw / private / debug material (`raw_dixie_debug`, `raw_session_trace`,
 `source_material`, `PRIVATE_SENTINEL_*`, `session_id`, `message_id`,
@@ -40,6 +48,53 @@ payloads**. They are not raw chat log memory and they do not constitute
 admission of any chat content into governed Straylight memory. Memory
 authority remains with Straylight; live admission is post-MVP and out of
 scope.
+
+> **Recorded fixtures are sample v0 contract probes only.** They are
+> not production schema authority. Live envelope contract truth must
+> come later from a Dixie-side artifact, endpoint contract, or
+> cross-repo decision. Adding more recorded fixtures, version bumps,
+> or adapter dispatch entries does not promote any of those shapes to
+> "the live contract" — see
+> `docs/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md` §7a (recorded fixtures
+> are examples, not schema authority).
+
+### Positive vs negative corpus
+
+The Dixie envelope fixtures split cleanly into a **positive corpus**
+(valid v0 envelopes the adapter projects through to a public-safe DTO)
+and a **negative corpus** (intentional fail-closed shapes that drive
+specific adapter error codes).
+
+| Fixture | Class | What it proves |
+|---------|-------|----------------|
+| `recorded-public-discord-recall-envelope.v0.json` | positive · normal public | adapts to public_discord/discord_public_character DTO; renders safely; raw envelope material stripped |
+| `recorded-referral-recall-envelope.v0.json` | positive · referral | adapts to referral DTO with safe target/message; renders safely |
+| `recorded-refusal-unauthorized-envelope.v0.json` | positive · refusal/unauthorized | adapts to a public-safe generic-refusal DTO (reuses `outcome=referral` + `denied_or_refused=true` + a generic `safe_referral_target=authorized_session` and authorization-shaped `public_referral_message`); renders safely; **does not authorize a positive `authorized_private_session` projection** |
+| `recorded-session-bearing-public-recall-envelope.v0.json` | positive · session-bearing | adapts to a public_discord DTO; **proves session_id / message_id / tenant_id / community_id / session_thread_id are stripped from the projected DTO and the rendered public text** |
+| `recorded-unknown-version-envelope.json` | negative · unsupported version | adapter throws `unsupported_dixie_envelope_version` |
+| `recorded-authorized-private-target-envelope.v0.json` | negative · authorized_private_session target | adapter throws `authorized_private_projection_not_implemented` (multi-surface contract §5a authorized-private DTO gate is unsatisfied) |
+| `recorded-public-telegram-target-envelope.v0.json` | negative · public_telegram target | adapter throws `public_telegram_projection_not_implemented` (multi-surface contract §8a future-renderer warning's per-surface contract is unsatisfied for Telegram) |
+| `recorded-malformed-missing-payload-envelope.v0.json` | negative · malformed | adapter throws `missing_public_recall_payload` |
+| `recorded-malformed-missing-target-envelope.v0.json` | negative · malformed | adapter throws `missing_target_projection` (or stable-equivalent target-resolution error) |
+
+### Phase 36B-specific rules
+
+- **`session_id` / `message_id` are operational identifiers, not memory
+  identity.** The session-bearing fixture exists to prove the adapter
+  strips them; they must never appear on the adapted DTO or the
+  rendered public output. (Multi-surface contract §5.)
+- **`authorized_private_session` and `public_telegram` fixtures are
+  negative-only in this phase.** They drive the adapter's existing
+  fail-closed paths and **do not** authorize a positive
+  `authorized_private_session` projection, an `authorized_private_session`
+  renderer, or a `public_telegram` renderer. Those gates remain
+  unsatisfied — see `docs/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md` §8
+  (authorized-private remains blocked) and §9 (public surfaces remain
+  blocked).
+- **No live integration is introduced by Phase 36B.** No live Dixie
+  network call, no Discord command wiring, no Telegram bot wiring, no
+  production storage, no admission, no LLM/voice rewrite. The corpus
+  remains recorded-envelope-bound and dev/operator-gated.
 
 `projected-dto/` is the neutral home for **all** projected views of the
 seed packet — operator-private and public-safe alike. Naming it
@@ -162,23 +217,51 @@ It checks (Phase 33B):
   `source_material`, `hidden estate`, `assertion_id`,
   `full assertion bodies`, `private identifiers`).
 
-It also checks (Phase 35D — required, not optional):
+It also checks (Phase 35D + Phase 36B — required, not optional):
 
 - the `dixie-envelope/` directory exists;
-- all three required fixtures are present:
-  `recorded-public-discord-recall-envelope.v0.json`,
-  `recorded-referral-recall-envelope.v0.json`,
-  `recorded-unknown-version-envelope.json`;
-- every Dixie envelope fixture is `synthetic: true`,
+- all required Dixie envelope fixtures are present:
+  - Phase 35D — `recorded-public-discord-recall-envelope.v0.json`,
+    `recorded-referral-recall-envelope.v0.json`,
+    `recorded-unknown-version-envelope.json`;
+  - Phase 36B — `recorded-refusal-unauthorized-envelope.v0.json`,
+    `recorded-session-bearing-public-recall-envelope.v0.json`,
+    `recorded-authorized-private-target-envelope.v0.json`,
+    `recorded-public-telegram-target-envelope.v0.json`,
+    `recorded-malformed-missing-payload-envelope.v0.json`,
+    `recorded-malformed-missing-target-envelope.v0.json`;
+- every Dixie envelope fixture (positive **and** negative) carries the
+  shared metadata invariants — `synthetic: true`,
   `fixture_kind: recorded_dixie_recall_envelope`,
   `input_envelope_kind: recorded_dixie_recall_envelope`,
-  and carries a `non_production_authorization_note`;
-- the v0 envelope fixtures use a supported `envelope_version`
-  (currently `recall_wedge.dixie_envelope.v0`);
-- the unknown-version fixture remains **syntactically valid** with an
-  `envelope_version` that is **present but intentionally unsupported**
-  — this fixture exists to drive adapter fail-closed tests, so the
-  validator confirms its non-support rather than failing on it.
+  `envelope_version` present, `non_production_authorization_note`
+  present;
+- the **positive** v0 envelope fixtures (normal public, referral,
+  refusal/unauthorized, session-bearing) use a **supported**
+  `envelope_version` (currently `recall_wedge.dixie_envelope.v0`),
+  and have valid `target_projection` and `public_recall_payload`
+  objects;
+- the refusal/unauthorized fixture is shaped as
+  `target_projection.recall_interface=public_discord` with
+  `outcome=referral` and `denied_or_refused=true` so it narrows to the
+  existing public-safe contract (and **does not** authorize a positive
+  `authorized_private_session` projection);
+- the session-bearing fixture carries synthetic `session_id` and
+  `message_id` so the adapter can be exercised to strip them;
+- the **negative** fixtures are deliberately malformed/unsupported in
+  exactly **one** specific way each, and the validator confirms each
+  one is still negative in the way Phase 36B expects:
+  - unknown-version — `envelope_version` present but **not** in the
+    supported list;
+  - authorized-private-target — supported version, but
+    `target_projection.recall_interface=authorized_private_session`;
+  - public-telegram-target — supported version, but
+    `target_projection.recall_interface=public_telegram`;
+  - malformed-missing-payload — supported version, `target_projection`
+    present, but `public_recall_payload` **absent**;
+  - malformed-missing-target — supported version,
+    `public_recall_payload` present, but `target_projection`
+    **absent**.
 
 No leak-grep is run over raw Dixie envelope files: those intentionally
 contain raw/private/debug sentinels (`raw_dixie_debug`,
@@ -221,7 +304,9 @@ demo can show that the MVP keeps these categories distinct.
 - 35A — post-MVP decision map
 - 35B — operator demo runner
 - 35C — multi-surface contract spec
-- **35D — recorded Dixie envelope fixtures + adapter tests** (`dixie-envelope/`)
+- 35D — recorded Dixie envelope fixtures + adapter tests (`dixie-envelope/`)
+- 36A — live-boundary decision (`docs/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md`)
+- **36B — expanded recorded Dixie envelope corpus + adapter/validator tests** (refusal/unauthorized, session-bearing, authorized-private-target negative, public-telegram-target negative, malformed-missing-payload, malformed-missing-target)
 
 If a later phase needs anything beyond what these fixtures shape, re-open
 the 33A doc — do not silently expand scope here.

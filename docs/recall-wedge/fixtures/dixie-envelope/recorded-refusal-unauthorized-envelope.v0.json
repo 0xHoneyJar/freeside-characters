@@ -1,0 +1,42 @@
+{
+  "fixture_id": "recorded-refusal-unauthorized-envelope-001",
+  "fixture_kind": "recorded_dixie_recall_envelope",
+  "fixture_version": "phase-36b.0",
+  "envelope_version": "recall_wedge.dixie_envelope.v0",
+  "input_envelope_kind": "recorded_dixie_recall_envelope",
+  "source_interface": "private_web_chat",
+  "source_surface_note": "carrier source is private web chat; the projection target inside this envelope is a generic public-safe refusal on the public discord render surface — Dixie has indicated the caller is not authorized for any broader view than a generic refusal billboard",
+  "synthetic": true,
+  "non_production_authorization_note": "This envelope is synthetic and reviewed. It contains no real user data, no live Dixie response, and no governed Straylight memory. It is authorized for non-production fixture use in Phase 36B only. Authorization is NOT considered solved by this fixture; it represents a recorded refusal/unauthorized response shape only.",
+  "envelope_scope_note": "This represents a recorded Dixie-shaped recall response in which the caller is not authorized for the requested view. It is NOT raw chat log memory and does NOT constitute admission of any chat content into governed Straylight memory. Per the Phase 36A live-boundary decision §10c boundaries, this fixture's refusal does not authorize a positive authorized_private_session projection; it narrows to the existing public-safe referral/refusal contract by reusing outcome=referral with denied_or_refused=true and a generic refusal message.",
+  "session_id": "session_PRIVATE_SENTINEL_DIXIE_SESSION_ID_REFUSAL_001",
+  "message_id": "msg_PRIVATE_SENTINEL_DIXIE_MESSAGE_ID_REFUSAL_001",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "target_projection": {
+    "recall_interface": "public_discord",
+    "render_surface": "discord_public_character",
+    "character_frame": "ruggy"
+  },
+  "public_recall_payload": {
+    "outcome": "referral",
+    "public_summary": "this view is not available without further authorization",
+    "public_referral_message": "this question is not available on the public surface — try again from an authorized session if you have one",
+    "safe_referral_target": "authorized_session",
+    "included_count": 0,
+    "marked_count": 0,
+    "redacted_count": 0,
+    "excluded_count": 0,
+    "public_reason_counts": {},
+    "public_reason_labels": [],
+    "denied_or_refused": true
+  },
+  "raw_dixie_debug": {
+    "raw_reasons": [
+      "caller_not_authorized_PRIVATE_SENTINEL_DIXIE_RAW",
+      "missing_caller_binding_PRIVATE_SENTINEL_DIXIE_RAW"
+    ],
+    "raw_session_trace": "trace_PRIVATE_SENTINEL_DIXIE_RAW_REFUSAL_TRACE",
+    "operator_private_note": "operator-only diagnostic context for this refusal envelope PRIVATE_SENTINEL_DIXIE_RAW"
+  },
+  "source_material": "refusal_envelope_source_blob_PRIVATE_SENTINEL_DIXIE_RAW"
+}

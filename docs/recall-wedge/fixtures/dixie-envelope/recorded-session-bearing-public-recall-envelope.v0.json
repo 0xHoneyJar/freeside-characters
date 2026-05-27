@@ -1,0 +1,47 @@
+{
+  "fixture_id": "recorded-session-bearing-public-recall-envelope-001",
+  "fixture_kind": "recorded_dixie_recall_envelope",
+  "fixture_version": "phase-36b.0",
+  "envelope_version": "recall_wedge.dixie_envelope.v0",
+  "input_envelope_kind": "recorded_dixie_recall_envelope",
+  "source_interface": "private_web_chat",
+  "source_surface_note": "carrier source is private web chat; the projection target inside this envelope is the public discord render surface. The envelope deliberately carries operational session metadata (session_id, message_id, tenant/community/session ids) to exercise the adapter's stripping of operational identifiers from the projected DTO — these are operational identifiers per multi-surface contract §5, never memory identity, and never permitted on a public surface per the §9 allowlist",
+  "synthetic": true,
+  "non_production_authorization_note": "This envelope is synthetic and reviewed. It contains no real user data and no live Dixie/Finn session record. Authorized for non-production fixture use in Phase 36B only.",
+  "envelope_scope_note": "This is a public-safe recorded recall envelope decorated with synthetic session-bearing metadata so the adapter test surface can prove that operational identifiers (session_id, message_id, tenant_id, community_id, session_thread_id) never reach the adapted projected DTO or the rendered public output.",
+  "session_id": "session_PRIVATE_SENTINEL_DIXIE_SESSION_ID_BEARING_001",
+  "message_id": "msg_PRIVATE_SENTINEL_DIXIE_MESSAGE_ID_BEARING_001",
+  "tenant_id": "tenant_PRIVATE_SENTINEL_DIXIE_TENANT_ID_BEARING_001",
+  "community_id": "community_PRIVATE_SENTINEL_DIXIE_COMMUNITY_ID_BEARING_001",
+  "session_thread_id": "thread_PRIVATE_SENTINEL_DIXIE_THREAD_ID_BEARING_001",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "target_projection": {
+    "recall_interface": "public_discord",
+    "render_surface": "discord_public_character",
+    "character_frame": "ruggy"
+  },
+  "public_recall_payload": {
+    "outcome": "ok",
+    "public_summary": "actor was observed across multiple character frames during the cross-interface continuity rehearsal",
+    "included_count": 2,
+    "marked_count": 0,
+    "redacted_count": 1,
+    "excluded_count": 0,
+    "public_reason_counts": {
+      "redacted_for_public_surface": 1
+    },
+    "public_reason_labels": [
+      "redacted_for_public_surface"
+    ],
+    "denied_or_refused": false
+  },
+  "raw_dixie_debug": {
+    "raw_reasons": [
+      "session_bearing_envelope_PRIVATE_SENTINEL_DIXIE_RAW",
+      "operational_identifier_carry_PRIVATE_SENTINEL_DIXIE_RAW"
+    ],
+    "raw_session_trace": "trace_PRIVATE_SENTINEL_DIXIE_RAW_SESSION_BEARING_TRACE",
+    "operator_private_note": "operator-only diagnostic context for the session-bearing envelope PRIVATE_SENTINEL_DIXIE_RAW"
+  },
+  "source_material": "session_bearing_envelope_source_blob_PRIVATE_SENTINEL_DIXIE_RAW"
+}

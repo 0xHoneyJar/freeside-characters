@@ -1,0 +1,39 @@
+{
+  "fixture_id": "recorded-authorized-private-target-envelope-001",
+  "fixture_kind": "recorded_dixie_recall_envelope",
+  "fixture_version": "phase-36b.0",
+  "envelope_version": "recall_wedge.dixie_envelope.v0",
+  "input_envelope_kind": "recorded_dixie_recall_envelope",
+  "source_interface": "private_web_chat",
+  "source_surface_note": "carrier source is private web chat; the projection target inside this envelope is authorized_private_session — used ONLY as a negative/fail-closed fixture so the adapter can prove its existing fail-closed authorized_private_projection_not_implemented path stays in force per the Phase 36A live-boundary decision §10c boundaries",
+  "synthetic": true,
+  "non_production_authorization_note": "This envelope is synthetic and reviewed. It is intentionally tagged with target_projection.recall_interface=authorized_private_session so the adapter must fail closed. It does NOT authorize any positive authorized_private_session projection or any authorized_private_session renderer; the multi-surface contract §5a authorized-private DTO gate has not been satisfied. Authorized for non-production fixture use in Phase 36B only.",
+  "envelope_scope_note": "Negative fixture. Exists to drive the adapter's fail-closed authorized_private_projection_not_implemented path. The adapter must throw before producing any DTO; no projection is expected from this fixture.",
+  "session_id": "session_PRIVATE_SENTINEL_DIXIE_SESSION_ID_AUTHPRIV_NEG_001",
+  "message_id": "msg_PRIVATE_SENTINEL_DIXIE_MESSAGE_ID_AUTHPRIV_NEG_001",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "target_projection": {
+    "recall_interface": "authorized_private_session",
+    "render_surface": "web_private_chat",
+    "character_frame": "ruggy"
+  },
+  "public_recall_payload": {
+    "outcome": "ok",
+    "public_summary": "this payload is unreachable because authorized_private_session is not implemented in this phase",
+    "included_count": 0,
+    "marked_count": 0,
+    "redacted_count": 0,
+    "excluded_count": 0,
+    "public_reason_counts": {},
+    "public_reason_labels": [],
+    "denied_or_refused": false
+  },
+  "raw_dixie_debug": {
+    "raw_reasons": [
+      "authorized_private_target_negative_PRIVATE_SENTINEL_DIXIE_RAW"
+    ],
+    "raw_session_trace": "trace_PRIVATE_SENTINEL_DIXIE_RAW_AUTHPRIV_NEG_TRACE",
+    "operator_private_note": "operator-only diagnostic context for the authorized-private negative envelope PRIVATE_SENTINEL_DIXIE_RAW"
+  },
+  "source_material": "authorized_private_target_envelope_source_blob_PRIVATE_SENTINEL_DIXIE_RAW"
+}

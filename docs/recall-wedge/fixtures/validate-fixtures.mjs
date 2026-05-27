@@ -38,6 +38,20 @@ const DIXIE_REFERRAL_ENVELOPE_FILE =
 const DIXIE_UNKNOWN_VERSION_ENVELOPE_FILE =
   "recorded-unknown-version-envelope.json";
 
+// Phase 36B expanded corpus.
+const DIXIE_REFUSAL_UNAUTHORIZED_ENVELOPE_FILE =
+  "recorded-refusal-unauthorized-envelope.v0.json";
+const DIXIE_SESSION_BEARING_ENVELOPE_FILE =
+  "recorded-session-bearing-public-recall-envelope.v0.json";
+const DIXIE_AUTHORIZED_PRIVATE_TARGET_ENVELOPE_FILE =
+  "recorded-authorized-private-target-envelope.v0.json";
+const DIXIE_PUBLIC_TELEGRAM_TARGET_ENVELOPE_FILE =
+  "recorded-public-telegram-target-envelope.v0.json";
+const DIXIE_MALFORMED_MISSING_PAYLOAD_ENVELOPE_FILE =
+  "recorded-malformed-missing-payload-envelope.v0.json";
+const DIXIE_MALFORMED_MISSING_TARGET_ENVELOPE_FILE =
+  "recorded-malformed-missing-target-envelope.v0.json";
+
 const SUPPORTED_DIXIE_ENVELOPE_VERSIONS = [
   "recall_wedge.dixie_envelope.v0",
 ];
@@ -234,20 +248,38 @@ for (const fname of PUBLIC_SAFE_DTOS) {
   ok(`${fname}: no banned public substrings`);
 }
 
-// --- 8. phase 35d recorded dixie envelope fixtures -------------------------
+// --- 8. recorded dixie envelope fixtures (phase 35d + phase 36b) -----------
 //
 // As of phase 35d these fixtures are part of the recall-wedge fixture
-// contract. The validator must FAIL if the dixie-envelope directory or
-// any of the three required fixtures go missing — silently skipping
-// section 8 would let a future deletion regress the multi-surface
-// contract without warning.
+// contract. Phase 36b expands the corpus with refusal/unauthorized,
+// session-bearing, authorized_private_session-target negative,
+// public_telegram-target negative, and two malformed/missing-field
+// negative fixtures. The validator must FAIL if the dixie-envelope
+// directory or any required fixture file goes missing — silently
+// skipping section 8 would let a future deletion regress the
+// multi-surface contract without warning.
 //
-// The unknown-version fixture is intentionally valid-JSON but tagged
-// with an unsupported envelope_version so adapter fail-closed tests
-// have something to bite on. Validator behavior: it must EXIST and
-// PARSE; its envelope_version must be PRESENT but NOT in the supported
-// list. Its unsupported-ness is the point — the validator does not
-// downgrade the run because of it.
+// **Recorded fixtures are sample v0 contract probes only.** They are
+// not production schema authority. Live envelope contract truth must
+// come from a Dixie-side artifact, endpoint contract, or cross-repo
+// decision. (Phase 36A live-boundary decision §7a.)
+//
+// Positive vs negative split:
+//   - positive fixtures are valid v0 envelopes the adapter projects
+//     into a public_discord/discord_public_character DTO. They satisfy
+//     every phase-35d positive invariant: shared metadata, supported
+//     envelope_version, target_projection present, public_recall_payload
+//     present.
+//   - negative fixtures are intentional fail-closed shapes. They satisfy
+//     SHARED METADATA invariants only (synthetic, fixture_kind,
+//     input_envelope_kind, non_production_authorization_note,
+//     envelope_version present). They are deliberately malformed/
+//     unsupported in ONE specific way each, and the validator allows
+//     that one specific malformation without treating it as a regression.
+//
+// The unknown-version fixture remains in the "unsupported version"
+// negative class — it must EXIST and PARSE; its envelope_version must
+// be PRESENT but NOT in the supported list.
 //
 // No leak-grep is run over raw Dixie envelope files: those intentionally
 // contain raw_dixie_debug / raw_session_trace / source_material /
@@ -278,10 +310,17 @@ if (!dixieDirExists) {
     if (loaded) ok(`parsed ${f}`);
   }
 
+  // Required files: phase 35d + phase 36b combined corpus.
   const REQUIRED_DIXIE_FILES = [
     DIXIE_PUBLIC_ENVELOPE_FILE,
     DIXIE_REFERRAL_ENVELOPE_FILE,
     DIXIE_UNKNOWN_VERSION_ENVELOPE_FILE,
+    DIXIE_REFUSAL_UNAUTHORIZED_ENVELOPE_FILE,
+    DIXIE_SESSION_BEARING_ENVELOPE_FILE,
+    DIXIE_AUTHORIZED_PRIVATE_TARGET_ENVELOPE_FILE,
+    DIXIE_PUBLIC_TELEGRAM_TARGET_ENVELOPE_FILE,
+    DIXIE_MALFORMED_MISSING_PAYLOAD_ENVELOPE_FILE,
+    DIXIE_MALFORMED_MISSING_TARGET_ENVELOPE_FILE,
   ];
 
   for (const fname of REQUIRED_DIXIE_FILES) {
@@ -306,16 +345,39 @@ if (!dixieDirExists) {
   const dixieUnknown = loadJson(
     join(DIXIE_ENVELOPE_DIR, DIXIE_UNKNOWN_VERSION_ENVELOPE_FILE),
   );
+  const dixieRefusal = loadJson(
+    join(DIXIE_ENVELOPE_DIR, DIXIE_REFUSAL_UNAUTHORIZED_ENVELOPE_FILE),
+  );
+  const dixieSessionBearing = loadJson(
+    join(DIXIE_ENVELOPE_DIR, DIXIE_SESSION_BEARING_ENVELOPE_FILE),
+  );
+  const dixieAuthPrivateTarget = loadJson(
+    join(DIXIE_ENVELOPE_DIR, DIXIE_AUTHORIZED_PRIVATE_TARGET_ENVELOPE_FILE),
+  );
+  const dixiePublicTelegramTarget = loadJson(
+    join(DIXIE_ENVELOPE_DIR, DIXIE_PUBLIC_TELEGRAM_TARGET_ENVELOPE_FILE),
+  );
+  const dixieMalformedMissingPayload = loadJson(
+    join(DIXIE_ENVELOPE_DIR, DIXIE_MALFORMED_MISSING_PAYLOAD_ENVELOPE_FILE),
+  );
+  const dixieMalformedMissingTarget = loadJson(
+    join(DIXIE_ENVELOPE_DIR, DIXIE_MALFORMED_MISSING_TARGET_ENVELOPE_FILE),
+  );
 
-  // Shared invariants run on ALL three fixtures (including the
-  // unknown-version one): synthetic, fixture_kind, input_envelope_kind,
-  // non_production_authorization_note. The unknown-version fixture is
-  // unsupported only on envelope_version — every other phase-35d
-  // invariant still applies.
+  // Shared metadata invariants — apply to EVERY fixture, positive or
+  // negative. This is the "still a recorded Dixie envelope, not random
+  // JSON" invariant. envelope_version must be PRESENT here; whether the
+  // value is supported is checked separately below.
   const allDixie = [
     ["dixie-public", dixiePublic],
     ["dixie-referral", dixieReferral],
     ["dixie-unknown-version", dixieUnknown],
+    ["dixie-refusal-unauthorized", dixieRefusal],
+    ["dixie-session-bearing", dixieSessionBearing],
+    ["dixie-authorized-private-target", dixieAuthPrivateTarget],
+    ["dixie-public-telegram-target", dixiePublicTelegramTarget],
+    ["dixie-malformed-missing-payload", dixieMalformedMissingPayload],
+    ["dixie-malformed-missing-target", dixieMalformedMissingTarget],
   ];
 
   for (const [label, env] of allDixie) {
@@ -342,43 +404,200 @@ if (!dixieDirExists) {
     if (!e.non_production_authorization_note)
       fail(`${label}: non_production_authorization_note missing`);
     else ok(`${label}: non_production_authorization_note present`);
+
+    if (typeof e.envelope_version !== "string" || e.envelope_version.length === 0)
+      fail(`${label}: envelope_version must be present`);
+    else ok(`${label}: envelope_version present (${e.envelope_version})`);
   }
 
-  // envelope_version: v0 fixtures must be SUPPORTED; the unknown-version
-  // fixture must be PRESENT but NOT SUPPORTED.
-  const supportedExpected = [
+  // POSITIVE-fixture invariants — supported envelope_version, valid
+  // target_projection, valid public_recall_payload. These are the
+  // fixtures the adapter will project into a public_discord DTO.
+  const positiveFixtures = [
     ["dixie-public", dixiePublic],
     ["dixie-referral", dixieReferral],
+    ["dixie-refusal-unauthorized", dixieRefusal],
+    ["dixie-session-bearing", dixieSessionBearing],
   ];
-  for (const [label, env] of supportedExpected) {
+  for (const [label, env] of positiveFixtures) {
     if (!env?.parsed) continue;
     const e = env.parsed;
+    if (!SUPPORTED_DIXIE_ENVELOPE_VERSIONS.includes(e.envelope_version))
+      fail(
+        `${label}: positive fixture envelope_version must be one of [${SUPPORTED_DIXIE_ENVELOPE_VERSIONS.join("|")}], got ${e.envelope_version}`,
+      );
+    else ok(`${label}: positive envelope_version === ${e.envelope_version}`);
+
     if (
-      typeof e.envelope_version !== "string" ||
-      !SUPPORTED_DIXIE_ENVELOPE_VERSIONS.includes(e.envelope_version)
+      typeof e.target_projection !== "object" ||
+      e.target_projection === null ||
+      Array.isArray(e.target_projection)
+    )
+      fail(`${label}: positive fixture must have target_projection object`);
+    else ok(`${label}: target_projection present`);
+
+    if (
+      typeof e.public_recall_payload !== "object" ||
+      e.public_recall_payload === null ||
+      Array.isArray(e.public_recall_payload)
     )
       fail(
-        `${label}: envelope_version must be one of [${SUPPORTED_DIXIE_ENVELOPE_VERSIONS.join("|")}], got ${e.envelope_version}`,
+        `${label}: positive fixture must have public_recall_payload object`,
       );
-    else ok(`${label}: envelope_version === ${e.envelope_version}`);
+    else ok(`${label}: public_recall_payload present`);
   }
 
+  // The refusal/unauthorized fixture must specifically be public_discord-
+  // shaped (so it renders through the existing public-safe renderer) and
+  // must mark itself denied_or_refused so the renderer's referral path
+  // takes it. Authorization is NOT considered solved by this fixture.
+  if (dixieRefusal?.parsed) {
+    const e = dixieRefusal.parsed;
+    const tp = e.target_projection;
+    if (tp && tp.recall_interface !== "public_discord")
+      fail(
+        `dixie-refusal-unauthorized: target_projection.recall_interface must be public_discord (it narrows refusal to the existing public-safe contract), got ${tp?.recall_interface}`,
+      );
+    else if (tp) ok("dixie-refusal-unauthorized: target=public_discord");
+    const p = e.public_recall_payload;
+    if (p && p.outcome !== "referral")
+      fail(
+        `dixie-refusal-unauthorized: outcome must be referral (so the existing renderer's denied_or_refused path applies), got ${p?.outcome}`,
+      );
+    else if (p) ok("dixie-refusal-unauthorized: outcome === referral");
+    if (p && p.denied_or_refused !== true)
+      fail("dixie-refusal-unauthorized: denied_or_refused must be true");
+    else if (p) ok("dixie-refusal-unauthorized: denied_or_refused === true");
+  }
+
+  // The session-bearing fixture must specifically carry session-shaped
+  // operational identifiers so the adapter test surface can prove the
+  // adapter strips them.
+  if (dixieSessionBearing?.parsed) {
+    const e = dixieSessionBearing.parsed;
+    if (typeof e.session_id !== "string" || e.session_id.length === 0)
+      fail("dixie-session-bearing: synthetic session_id must be present");
+    else ok("dixie-session-bearing: synthetic session_id present");
+    if (typeof e.message_id !== "string" || e.message_id.length === 0)
+      fail("dixie-session-bearing: synthetic message_id must be present");
+    else ok("dixie-session-bearing: synthetic message_id present");
+  }
+
+  // NEGATIVE-fixture targeted-malformation invariants. Each negative
+  // fixture is malformed/unsupported in exactly ONE specific way; the
+  // validator confirms the fixture remains intentionally negative and
+  // does not silently drift into a positive shape.
+
+  // unknown-version: envelope_version must be PRESENT but UNSUPPORTED.
   if (dixieUnknown?.parsed) {
     const e = dixieUnknown.parsed;
-    if (
-      typeof e.envelope_version !== "string" ||
-      e.envelope_version.length === 0
-    )
-      fail(
-        "dixie-unknown-version: envelope_version must be present (it is meant to be syntactically valid but unsupported)",
-      );
-    else if (SUPPORTED_DIXIE_ENVELOPE_VERSIONS.includes(e.envelope_version))
+    if (SUPPORTED_DIXIE_ENVELOPE_VERSIONS.includes(e.envelope_version))
       fail(
         `dixie-unknown-version: envelope_version must NOT be in the supported list, got ${e.envelope_version} (it is meant to drive adapter fail-closed tests)`,
       );
     else
       ok(
         `dixie-unknown-version: envelope_version present and intentionally unsupported (${e.envelope_version})`,
+      );
+  }
+
+  // authorized-private-target negative: envelope_version supported, but
+  // target_projection.recall_interface=authorized_private_session.
+  if (dixieAuthPrivateTarget?.parsed) {
+    const e = dixieAuthPrivateTarget.parsed;
+    if (!SUPPORTED_DIXIE_ENVELOPE_VERSIONS.includes(e.envelope_version))
+      fail(
+        `dixie-authorized-private-target: envelope_version must be supported, got ${e.envelope_version}`,
+      );
+    else
+      ok("dixie-authorized-private-target: envelope_version supported");
+    const tp = e.target_projection;
+    if (!tp || tp.recall_interface !== "authorized_private_session")
+      fail(
+        `dixie-authorized-private-target: target_projection.recall_interface must be authorized_private_session (it is meant to drive the adapter's fail-closed authorized_private_projection_not_implemented path), got ${tp?.recall_interface}`,
+      );
+    else
+      ok(
+        "dixie-authorized-private-target: target=authorized_private_session (negative)",
+      );
+  }
+
+  // public-telegram-target negative: envelope_version supported, but
+  // target_projection.recall_interface=public_telegram.
+  if (dixiePublicTelegramTarget?.parsed) {
+    const e = dixiePublicTelegramTarget.parsed;
+    if (!SUPPORTED_DIXIE_ENVELOPE_VERSIONS.includes(e.envelope_version))
+      fail(
+        `dixie-public-telegram-target: envelope_version must be supported, got ${e.envelope_version}`,
+      );
+    else
+      ok("dixie-public-telegram-target: envelope_version supported");
+    const tp = e.target_projection;
+    if (!tp || tp.recall_interface !== "public_telegram")
+      fail(
+        `dixie-public-telegram-target: target_projection.recall_interface must be public_telegram (it is meant to drive the adapter's fail-closed public_telegram_projection_not_implemented path), got ${tp?.recall_interface}`,
+      );
+    else
+      ok("dixie-public-telegram-target: target=public_telegram (negative)");
+  }
+
+  // malformed-missing-payload negative: envelope_version supported,
+  // target_projection present, but public_recall_payload absent.
+  if (dixieMalformedMissingPayload?.parsed) {
+    const e = dixieMalformedMissingPayload.parsed;
+    if (!SUPPORTED_DIXIE_ENVELOPE_VERSIONS.includes(e.envelope_version))
+      fail(
+        `dixie-malformed-missing-payload: envelope_version must be supported, got ${e.envelope_version}`,
+      );
+    else
+      ok("dixie-malformed-missing-payload: envelope_version supported");
+    if (
+      typeof e.target_projection !== "object" ||
+      e.target_projection === null ||
+      Array.isArray(e.target_projection)
+    )
+      fail(
+        "dixie-malformed-missing-payload: target_projection must remain present (the negative is in public_recall_payload only)",
+      );
+    else
+      ok("dixie-malformed-missing-payload: target_projection present");
+    if ("public_recall_payload" in e)
+      fail(
+        "dixie-malformed-missing-payload: public_recall_payload must be ABSENT (it is meant to drive the adapter's fail-closed missing_public_recall_payload path)",
+      );
+    else
+      ok(
+        "dixie-malformed-missing-payload: public_recall_payload absent (intentional)",
+      );
+  }
+
+  // malformed-missing-target negative: envelope_version supported,
+  // public_recall_payload present, but target_projection absent.
+  if (dixieMalformedMissingTarget?.parsed) {
+    const e = dixieMalformedMissingTarget.parsed;
+    if (!SUPPORTED_DIXIE_ENVELOPE_VERSIONS.includes(e.envelope_version))
+      fail(
+        `dixie-malformed-missing-target: envelope_version must be supported, got ${e.envelope_version}`,
+      );
+    else
+      ok("dixie-malformed-missing-target: envelope_version supported");
+    if (
+      typeof e.public_recall_payload !== "object" ||
+      e.public_recall_payload === null ||
+      Array.isArray(e.public_recall_payload)
+    )
+      fail(
+        "dixie-malformed-missing-target: public_recall_payload must remain present (the negative is in target_projection only)",
+      );
+    else
+      ok("dixie-malformed-missing-target: public_recall_payload present");
+    if ("target_projection" in e)
+      fail(
+        "dixie-malformed-missing-target: target_projection must be ABSENT (it is meant to drive the adapter's fail-closed missing/unknown target_projection path)",
+      );
+    else
+      ok(
+        "dixie-malformed-missing-target: target_projection absent (intentional)",
       );
   }
 }
