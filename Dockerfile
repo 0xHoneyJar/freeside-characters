@@ -39,6 +39,11 @@ WORKDIR /app
 COPY package.json bun.lock tsconfig.json ./
 COPY apps ./apps
 COPY packages ./packages
+# scripts/ is referenced by package.json's postinstall hook
+# (bash scripts/fixup-events-bun.sh + scripts/rebuild-events-dist.sh)
+# for the @0xhoneyjar/events dist rebuild. Without this COPY,
+# `bun install --frozen-lockfile` fails with exit 127 at the postinstall step.
+COPY scripts ./scripts
 
 # claude-agent-sdk pulls a Claude Code bundle (~25MB) — runtime
 # requirement for the persona-engine SDK subprocess (e.g.
