@@ -55,6 +55,9 @@ import {
   createKanseiRouterStub,
   type MintEventSubscriberHandle,
 } from '@freeside-characters/persona-engine/events/mint-event-subscriber';
+import { createMstKanseiRouter } from '@freeside-characters/persona-engine/events/mst-kansei-router';
+import { createAnnouncementDispatcher } from '@freeside-characters/persona-engine/events/announcement-dispatcher';
+import { postToChannel } from '@freeside-characters/persona-engine';
 import pkg from '../package.json' with { type: 'json' };
 
 const banner = `─── freeside-characters bot · v${pkg.version} ────────────────────────`;
@@ -364,22 +367,77 @@ async function main(): Promise<void> {
         warn: (obj: unknown, msg?: string) => console.warn(msg ?? '[events]', JSON.stringify(obj)),
         error: (obj: unknown, msg?: string) => console.error(msg ?? '[events]', JSON.stringify(obj)),
       };
+      // DEP-2 (cluster-events-pillar v1 · Sprint 4 canary):
+      //   - Replace the DEP-1 createKanseiRouterStub with createMstKanseiRouter
+      //     gated on MST subject + MST_CANARY_ENABLED.
+      //   - Wire createAnnouncementDispatcher (announce-mint enrichment +
+      //     Components-V2 render + Discord REST send) when the bot client is
+      //     available + canary is enabled.
+      //
+      // Canary safety:
+      //   - MST_CANARY_ENABLED defaults to "0" (OFF). Bot boots cleanly with
+      //     the new wire but no Discord post happens until operator flips it.
+      //   - MST_CANARY_CHANNEL_ID empty → router suppresses announce even when
+      //     ENABLED=1 (defense-in-depth; logged via subscriberLogger).
+      //   - Non-MST events still flow through the subscriber + log decisions;
+      //     they just don't surface in Discord per v1 scope.
+      const mstCanaryEnabled = process.env.MST_CANARY_ENABLED === '1';
+      const mstCanaryChannelId = process.env.MST_CANARY_CHANNEL_ID?.trim() ?? '';
+      const identityApiBaseUrl =
+        process.env.IDENTITY_API_URL?.trim() ?? 'https://identity.0xhoneyjar.xyz';
+
+      // Build the dispatcher only when the bot client is available — it's
+      // the discord.js Client carrying the Bot token for the Components-V2 REST
+      // path. When DISCORD_BOT_TOKEN is unset, getBotClient returns null and
+      // we fall back to the DEP-1 stub (subscriber still observes events).
+      const botClient = await getBotClient(config);
+      const dispatcher =
+        botClient && mstCanaryEnabled && mstCanaryChannelId
+          ? createAnnouncementDispatcher({
+              identityApiBaseUrl,
+              discordSendFn: async (msg) => {
+                await postToChannel(botClient, msg.channelId, {
+                  content: msg.contentFallback ?? '',
+                  embeds: [],
+                  flags: 1 << 15, // IS_COMPONENTS_V2 — cycle-008 S9 path
+                  components: msg.components,
+                });
+              },
+              logger: subscriberLogger,
+            })
+          : undefined;
+
+      const kanseiRouter =
+        // Use the real MST router whenever the bot is meant to consider
+        // announcements (canary on + channel configured). Otherwise fall back
+        // to the DEP-1 stub so the subscriber's contract stays stable.
+        dispatcher
+          ? createMstKanseiRouter({
+              canaryChannelId: mstCanaryChannelId,
+              enabled: mstCanaryEnabled,
+              logger: subscriberLogger,
+              dispatchAnnouncement: dispatcher,
+            })
+          : createKanseiRouterStub(subscriberLogger);
+
       mintEventSubscriber = await startMintEventSubscriber({
         natsUrl,
         natsTlsCa: process.env.NATS_TLS_CA?.trim() || undefined,
         jwksUrl: process.env.JWKS_URL?.trim() || undefined,
-        // kansei stub — DEP-2 will wire real routing.
-        kanseiRouter: createKanseiRouterStub(subscriberLogger),
+        kanseiRouter,
         logger: subscriberLogger,
         initialPrevHashPolicy: (process.env.MINT_EVENT_INITIAL_ANCHOR_POLICY?.trim() as
           | 'any'
           | 'genesis'
           | undefined) ?? 'any',
       });
+      const routerLabel = dispatcher
+        ? `mst (canary=${mstCanaryEnabled ? 'ON' : 'OFF'}, channel=${mstCanaryChannelId ? 'set' : 'UNSET'})`
+        : 'stub (DEP-1 fallback — no bot client OR canary disabled OR channel unset)';
       console.log(
         `events:         NATS subscriber wired · subject=nft.mint.detected.> · ` +
           `jwks=${process.env.JWKS_URL ? 'configured' : 'DEV (sigs surface as invalid)'} · ` +
-          `kansei-router=stub (DEP-1 · DEP-2 will wire real routing)`,
+          `kansei-router=${routerLabel}`,
       );
     } catch (err) {
       // BB#105 rd-3 F-001 HIGH: distinguish JWKS-init failures (operator

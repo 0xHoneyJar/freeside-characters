@@ -39,7 +39,7 @@ export { schedule } from './cron/scheduler.ts';
 
 // Delivery API
 export { deliverZoneDigest, isDryRun } from './deliver/post.ts';
-export { getBotClient, shutdownClient } from './deliver/client.ts';
+export { getBotClient, shutdownClient, postToChannel } from './deliver/client.ts';
 
 // Webhook delivery primitives (V0.7-A.0 — slash replies use Pattern B too)
 export {
