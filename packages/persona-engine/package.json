@@ -20,7 +20,11 @@
     "./preview": "./src/preview/index.ts",
     "./observability/otel-test": "./src/observability/otel-test.ts",
     "./observability/otel-layer": "./src/observability/otel-layer.ts",
-    "./events/mint-event-subscriber": "./src/events/mint-event-subscriber.ts"
+    "./events/mint-event-subscriber": "./src/events/mint-event-subscriber.ts",
+    "./events/mst-kansei-router": "./src/events/mst-kansei-router.ts",
+    "./events/announcement-dispatcher": "./src/events/announcement-dispatcher.ts",
+    "./events/announce-mint": "./src/events/announce-mint.ts",
+    "./events/mint-announcement-render": "./src/events/mint-announcement-render.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
