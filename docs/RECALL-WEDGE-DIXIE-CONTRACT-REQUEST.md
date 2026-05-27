@@ -688,6 +688,41 @@ live work — see the warning inside.
 
 ---
 
+## 11a. Phase 37B addendum — request answered; reconciliation done; future spike gated
+
+> Added by Phase 37B
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md`). Targeted
+> addendum, not a rewrite of this document.
+
+The cross-repo request authored here has been answered:
+
+- **Dixie Phase 32E** published the governing route contract for
+  `POST /api/recall/intake` at
+  `../loa-dixie/docs/integration/phase-32e-recall-wedge-route-contract.md`.
+- **Dixie Phase 32F** published the cross-repo readiness checkpoint
+  over Phase 32E at
+  `../loa-dixie/docs/integration/phase-32f-recall-wedge-readiness-checkpoint.md`,
+  unblocking downstream freeside-characters reconciliation only.
+- **freeside-characters Phase 37A** reconciled the local recorded
+  Dixie envelope fixtures and the local pure adapter against Phase
+  32E / 32F. See
+  `docs/RECALL-WEDGE-DIXIE-CONTRACT-RECONCILIATION.md`.
+- **freeside-characters Phase 37B** authorizes a future Phase 37C
+  operator/dev-only live Dixie client spike against
+  `POST /api/recall/intake`, subject to the constraints in
+  `docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md`. Phase 37B does
+  not itself add live code, and does not authorize Discord /
+  Telegram wiring, public renderer expansion, storage / admission,
+  positive `public_telegram` / `authorized_private_session`
+  support, or character-voiced recall output.
+
+This handoff document remains a request artifact. Phase 32E / 32F
+are the authoritative contract evidence; Phase 37A is the local
+reconciliation; Phase 37B is the gate for the future operator/dev
+spike. Read §12 below in that light.
+
+---
+
 ## 12. Recommended next phase
 
 - **Preferred: Phase 37A — live Dixie client spike, only after a
