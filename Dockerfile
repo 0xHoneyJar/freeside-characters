@@ -18,16 +18,18 @@
 
 FROM oven/bun:1.3-alpine
 
-# bash + git are required by package.json's postinstall script:
+# bash + git + pnpm are required by package.json's postinstall script:
 #   - bash: rebuild-events-dist.sh + fixup-events-bun.sh both `#!/usr/bin/env bash`
 #   - git: rebuild-events-dist.sh shells out to `git` to rebuild
-#     @0xhoneyjar/events dist from the cluster-pinned source SHA when the
-#     prebuilt dist isn't present in node_modules (cluster's sovereign
-#     code-distribution pattern per memory `project_sovereign-code-distribution`).
-# bun:1.3-alpine ships with /bin/sh only. Without these, `bun install --frozen-lockfile`
-# fails at the postinstall step. Added 2026-05-26 (Path ε cluster-events-pillar
-# v1 — first canary flip).
-RUN apk add --no-cache bash git
+#     @0xhoneyjar/events dist from the cluster-pinned source SHA
+#   - pnpm: rebuild-events-dist.sh uses pnpm install + build inside the
+#     packages/events subdir (the @0xhoneyjar/events package's own toolchain;
+#     bun consumers still need pnpm transitively for the rebuild step)
+# bun:1.3-alpine ships with /bin/sh + node + bun only. Without these, `bun install
+# --frozen-lockfile` fails at the postinstall step. Added 2026-05-26 (Path ε
+# cluster-events-pillar v1 — first canary flip · cluster's sovereign code-distribution
+# pattern per memory `project_sovereign-code-distribution`).
+RUN apk add --no-cache bash git && bun add -g pnpm
 
 WORKDIR /app
 
