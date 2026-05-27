@@ -91,10 +91,23 @@ async function startClient(config: Config): Promise<Client> {
   });
 }
 
+/**
+ * Discord channel post. Two payload shapes (mutually-exclusive in PRACTICE,
+ * but kept loosely typed for backward compat with the cycle-008 digest path):
+ *
+ *   - Legacy: `{ content, embeds[, flags] }` — content + embeds passed to discord.js.
+ *   - Components V2: `{ flags: 1<<15, components[] }` — content + embeds MUST NOT be
+ *     populated; Discord REST rejects the call when both are present (BB#106 F-001).
+ *
+ * The runtime branches on `components`: when defined, ONLY `flags + components` are
+ * forwarded to Discord (content + embeds are silently dropped — see line 110 below).
+ * Callers MUST NOT set content / embeds when using the V2 path; doing so is dead-code
+ * at runtime but indicates a wire-shape bug.
+ */
 export async function postToChannel(
   client: Client,
   channelId: string,
-  payload: { content: string; embeds: object[]; flags?: number; components?: unknown[] },
+  payload: { content?: string; embeds?: object[]; flags?: number; components?: unknown[] },
 ): Promise<{ posted: true; messageId: string }> {
   // cycle-008 S9 · Components V2 → raw REST to the channel (Bot auth) + ?with_components=true.
   // discord.js channel.send rejects raw component JSON; raw REST is the proven path.

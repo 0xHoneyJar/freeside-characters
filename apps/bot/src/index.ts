@@ -50,9 +50,9 @@ import {
 import { pgPoolBuilder } from './lib/pg-pool-builder.ts';
 import type { WorldManifestQuestSubset } from './world-resolver.ts';
 import { publishCommands } from './lib/publish-commands.ts';
+// BB#106 F-002: createKanseiRouterStub no longer imported — router is always the MST router now.
 import {
   startMintEventSubscriber,
-  createKanseiRouterStub,
   type MintEventSubscriberHandle,
 } from '@freeside-characters/persona-engine/events/mint-event-subscriber';
 import { createMstKanseiRouter } from '@freeside-characters/persona-engine/events/mst-kansei-router';
@@ -407,18 +407,21 @@ async function main(): Promise<void> {
             })
           : undefined;
 
-      const kanseiRouter =
-        // Use the real MST router whenever the bot is meant to consider
-        // announcements (canary on + channel configured). Otherwise fall back
-        // to the DEP-1 stub so the subscriber's contract stays stable.
-        dispatcher
-          ? createMstKanseiRouter({
-              canaryChannelId: mstCanaryChannelId,
-              enabled: mstCanaryEnabled,
-              logger: subscriberLogger,
-              dispatchAnnouncement: dispatcher,
-            })
-          : createKanseiRouterStub(subscriberLogger);
+      // BB#106 F-002: always wire createMstKanseiRouter when the events
+      // subscriber is enabled (NATS_URL is set). The router's own
+      // suppression / empty-channel-warning paths SHOULD run for telemetry
+      // even when canary is off — they emit structured logs that surface
+      // misconfig. Only the dispatcher (= the actual Discord post side
+      // effect) is gated by the triple-gate. This matches the router's
+      // unit-test contract: disabled-but-wired → router logs + returns
+      // {announce:false}; previously the bot routed to the DEP-1 stub
+      // entirely, bypassing both the contract and its telemetry.
+      const kanseiRouter = createMstKanseiRouter({
+        canaryChannelId: mstCanaryChannelId,
+        enabled: mstCanaryEnabled,
+        logger: subscriberLogger,
+        dispatchAnnouncement: dispatcher, // undefined when triple-gate fails → router never invokes
+      });
 
       mintEventSubscriber = await startMintEventSubscriber({
         natsUrl,
@@ -431,9 +434,10 @@ async function main(): Promise<void> {
           | 'genesis'
           | undefined) ?? 'any',
       });
-      const routerLabel = dispatcher
-        ? `mst (canary=${mstCanaryEnabled ? 'ON' : 'OFF'}, channel=${mstCanaryChannelId ? 'set' : 'UNSET'})`
-        : 'stub (DEP-1 fallback — no bot client OR canary disabled OR channel unset)';
+      // BB#106 F-002: router is ALWAYS the MST router (suppression telemetry
+      // is first-class). The dispatcher gate determines whether announce
+      // actually posts to Discord — surfaced separately in the log.
+      const routerLabel = `mst (canary=${mstCanaryEnabled ? 'ON' : 'OFF'}, channel=${mstCanaryChannelId ? 'set' : 'UNSET'}, dispatch=${dispatcher ? 'wired' : 'OFF (no bot client OR canary OFF OR channel UNSET)'})`;
       console.log(
         `events:         NATS subscriber wired · subject=nft.mint.detected.> · ` +
           `jwks=${process.env.JWKS_URL ? 'configured' : 'DEV (sigs surface as invalid)'} · ` +
