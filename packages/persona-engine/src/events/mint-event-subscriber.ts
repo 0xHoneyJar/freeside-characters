@@ -73,7 +73,18 @@ export interface MintEventSubscriberLogger {
 
 export interface MintEventSubscriberOpts {
   natsUrl: string;
-  /** Optional path to a CA cert file for NATS TLS. TLS-only in production. */
+  /**
+   * Optional CA cert PEM **body** for NATS TLS. TLS-only in production.
+   *
+   * BREAKING CHANGE (Path-ε consistency with dash loa-freeside#242):
+   * previously this option was a filesystem PATH passed to nats.js as `caFile`.
+   * It is now a PEM body passed to nats.js as `ca`. Railway service-variables
+   * inject full PEM content; local dev must update from
+   * `NATS_TLS_CA=/path/to/ca.pem` to `NATS_TLS_CA=$(cat /path/to/ca.pem)`.
+   *
+   * All three TLS options (`natsTlsCa`, `natsTlsClientCert`, `natsTlsClientKey`)
+   * are now PEM bodies — uniform contract, no path/body split.
+   */
   natsTlsCa?: string;
   /**
    * Path-ε mTLS client-cert presentation. Both fields are OPTIONAL env-wired
@@ -90,11 +101,10 @@ export interface MintEventSubscriberOpts {
    * the JWKS-init refuse path (BB#105 rd-3) and the sonar publisher's
    * partial-config refuse at sonar PR #25.
    *
-   * Asymmetric with `natsTlsCa` (still a file path, handed to nats.js as
-   * `caFile`) for backward-compatibility with the AWS-NATS deployment shape.
-   * The Path-ε runbook documents this; future work may converge both to PEM
-   * bodies. Reference: ~/Documents/GitHub/loa-freeside/grimoires/loa/specs/
-   * cluster-events-pillar-v1/go-live-path-epsilon-railway-nats.md §Step 3b.
+   * Uniform with `natsTlsCa` (all three are PEM bodies, handed to nats.js as
+   * `ca` / `cert` / `key`). Reference: ~/Documents/GitHub/loa-freeside/
+   * grimoires/loa/specs/cluster-events-pillar-v1/
+   * go-live-path-epsilon-railway-nats.md §Step 3b.
    */
   natsTlsClientCert?: string;
   natsTlsClientKey?: string;
@@ -131,7 +141,7 @@ export interface MintEventSubscriberHandle {
 export interface BuiltNatsConnectOptions {
   servers: string;
   tls?: {
-    caFile?: string;
+    ca?: string;
     cert?: string;
     key?: string;
   };
@@ -164,14 +174,15 @@ export function buildNatsConnectOptions(opts: {
     );
   }
 
-  // TLS options assembly: caFile-only (legacy CA-path), caFile+client-cert
-  // (Path-ε mTLS), or client-cert-only (system-CA verification + client auth).
-  // The ternary keeps the no-TLS-options branch unchanged when neither CA nor
-  // client cert is configured (preserves DEP-1 default behavior).
+  // TLS options assembly: ca-only (custom CA), ca+client-cert (Path-ε mTLS),
+  // or client-cert-only (system-CA verification + client auth). All values
+  // are PEM bodies (handed to nats.js as `ca` / `cert` / `key`). The ternary
+  // keeps the no-TLS-options branch unchanged when neither CA nor client cert
+  // is configured (preserves DEP-1 default behavior).
   const tls =
     natsTlsCa || natsTlsClientCert
       ? {
-          ...(natsTlsCa ? { caFile: natsTlsCa } : {}),
+          ...(natsTlsCa ? { ca: natsTlsCa } : {}),
           ...(natsTlsClientCert
             ? { cert: natsTlsClientCert, key: natsTlsClientKey }
             : {}),

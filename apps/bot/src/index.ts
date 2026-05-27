@@ -425,6 +425,10 @@ async function main(): Promise<void> {
 
       mintEventSubscriber = await startMintEventSubscriber({
         natsUrl,
+        // NATS_TLS_CA is a PEM body (not a path) — Path-ε consistency with
+        // dash loa-freeside#242. Railway service-vars inject full PEM content;
+        // local dev: NATS_TLS_CA=$(cat /path/to/ca.pem). .trim() defends
+        // against trailing-newline noise.
         natsTlsCa: process.env.NATS_TLS_CA?.trim() || undefined,
         // Path-ε mTLS client cert: PEM bodies, not paths. Both-or-neither —
         // partial config throws from buildNatsConnectOptions and is caught

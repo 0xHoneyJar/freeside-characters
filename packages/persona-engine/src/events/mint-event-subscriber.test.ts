@@ -408,15 +408,16 @@ describe('DEP-1 · mint-event-subscriber', () => {
 // tests target the new helper alongside.
 //
 // Mirrors the sonar PR #25 test shape (partial-config rejected ×2, both-set
-// assembly, backward-compat neither-set) adapted to the subscriber's
-// `caFile` (path) + `cert`/`key` (PEM body) asymmetric TLS contract.
+// assembly, backward-compat neither-set). All three TLS values (ca, cert,
+// key) are PEM bodies — uniform with dash loa-freeside#242.
 
 describe('Path-ε · buildNatsConnectOptions (NATS mTLS options assembly)', () => {
   const NATS_URL = 'tls://broker.example:4222';
-  const CA_PATH = '/etc/nats/ca.pem';
   // Dummy PEM bodies — opaque to buildNatsConnectOptions (passed through to
   // nats.connect's tls options unchanged; real PEM validation only happens
   // at TLS handshake time which we never reach in a unit test).
+  const FAKE_CA =
+    '-----BEGIN CERTIFICATE-----\nMIIBdummyca\n-----END CERTIFICATE-----\n';
   const FAKE_CLIENT_CERT =
     '-----BEGIN CERTIFICATE-----\nMIIBdummyclientcert\n-----END CERTIFICATE-----\n';
   const FAKE_CLIENT_KEY =
@@ -426,7 +427,7 @@ describe('Path-ε · buildNatsConnectOptions (NATS mTLS options assembly)', () =
     expect(() =>
       buildNatsConnectOptions({
         natsUrl: NATS_URL,
-        natsTlsCa: CA_PATH,
+        natsTlsCa: FAKE_CA,
         natsTlsClientCert: FAKE_CLIENT_CERT,
         // natsTlsClientKey intentionally unset
       }),
@@ -439,7 +440,7 @@ describe('Path-ε · buildNatsConnectOptions (NATS mTLS options assembly)', () =
     expect(() =>
       buildNatsConnectOptions({
         natsUrl: NATS_URL,
-        natsTlsCa: CA_PATH,
+        natsTlsCa: FAKE_CA,
         natsTlsClientKey: FAKE_CLIENT_KEY,
         // natsTlsClientCert intentionally unset
       }),
@@ -448,16 +449,16 @@ describe('Path-ε · buildNatsConnectOptions (NATS mTLS options assembly)', () =
     );
   });
 
-  test('both client-cert env set → returned tls includes caFile, cert, key', () => {
+  test('both client-cert env set → returned tls includes ca, cert, key (all PEM bodies)', () => {
     const result = buildNatsConnectOptions({
       natsUrl: NATS_URL,
-      natsTlsCa: CA_PATH,
+      natsTlsCa: FAKE_CA,
       natsTlsClientCert: FAKE_CLIENT_CERT,
       natsTlsClientKey: FAKE_CLIENT_KEY,
     });
     expect(result.servers).toBe(NATS_URL);
     expect(result.tls).toBeDefined();
-    expect(result.tls!.caFile).toBe(CA_PATH);
+    expect(result.tls!.ca).toBe(FAKE_CA);
     expect(result.tls!.cert).toBe(FAKE_CLIENT_CERT);
     expect(result.tls!.key).toBe(FAKE_CLIENT_KEY);
   });
@@ -470,18 +471,18 @@ describe('Path-ε · buildNatsConnectOptions (NATS mTLS options assembly)', () =
       natsTlsClientKey: FAKE_CLIENT_KEY,
     });
     expect(result.tls).toBeDefined();
-    expect(result.tls!.caFile).toBeUndefined();
+    expect(result.tls!.ca).toBeUndefined();
     expect(result.tls!.cert).toBe(FAKE_CLIENT_CERT);
     expect(result.tls!.key).toBe(FAKE_CLIENT_KEY);
   });
 
-  test('backward-compat: neither client-cert env set, CA set → returned tls = { caFile }, no cert/key', () => {
+  test('backward-compat: neither client-cert env set, CA set → returned tls = { ca }, no cert/key', () => {
     const result = buildNatsConnectOptions({
       natsUrl: NATS_URL,
-      natsTlsCa: CA_PATH,
+      natsTlsCa: FAKE_CA,
     });
     expect(result.tls).toBeDefined();
-    expect(result.tls!.caFile).toBe(CA_PATH);
+    expect(result.tls!.ca).toBe(FAKE_CA);
     expect(result.tls!.cert).toBeUndefined();
     expect(result.tls!.key).toBeUndefined();
   });
