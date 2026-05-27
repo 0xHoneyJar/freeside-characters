@@ -115,8 +115,21 @@ export async function startMintEventSubscriber(
     '[events-subscriber] NATS connected',
   );
 
-  // Verifier: JWKS in prod, empty StaticPubkeyVerifier in dev (every sig
-  // fails — visually obvious that traffic is not being trusted).
+  // Verifier choice (BB#105 F-001 closed):
+  //   - opts.jwksUrl SET + reachable: JwksVerifier loads + caches keys.
+  //   - opts.jwksUrl SET + UNREACHABLE: THROW from startMintEventSubscriber.
+  //     The old fallback-to-empty-StaticPubkeyVerifier path was an
+  //     availability hazard: every signed envelope failed verification,
+  //     events flowed through NATS but never reached kansei, and no retry
+  //     path recovered when JWKS came back. Failing loud at startup forces
+  //     the operator to fix config / wait for JWKS / disable verifier
+  //     explicitly. Matches the bot's other boot wires (gate on NATS_URL
+  //     absent → log + skip; gate on JWKS unreachable when configured →
+  //     throw + skip).
+  //   - opts.jwksUrl UNSET: intentional dev fallback to empty
+  //     StaticPubkeyVerifier — every signature surfaces invalid via
+  //     onVerificationFailure (visually loud, never silently accepts
+  //     unsigned traffic).
   let verifier: Verifier;
   if (opts.jwksUrl) {
     try {
@@ -127,10 +140,15 @@ export async function startMintEventSubscriber(
       );
     } catch (err) {
       opts.logger.error(
-        { err },
-        '[events-subscriber] JWKS init failed; falling back to empty StaticPubkeyVerifier (all sigs will fail)',
+        { err, jwksUrl: opts.jwksUrl },
+        '[events-subscriber] JWKS init failed — refusing to start (operator must fix JWKS or remove jwksUrl)',
       );
-      verifier = new StaticPubkeyVerifier();
+      // Drain NATS before throwing so we don't leak the connection.
+      await nc.drain().catch(() => undefined);
+      throw new Error(
+        `[events-subscriber] JWKS init failed at ${opts.jwksUrl}: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
     }
   } else {
     opts.logger.warn(

@@ -43,6 +43,7 @@ ROOT_DIR=$(pwd -P)
 # =============================================================================
 
 COMMIT_SHA=""
+DECLARED_IN_PACKAGE_JSON=0
 if [[ -f "package.json" ]]; then
   COMMIT_SHA=$(node -e "
     const pkg = require('./package.json');
@@ -51,11 +52,31 @@ if [[ -f "package.json" ]]; then
     const match = dep.match(/#([0-9a-f]{7,40})\$/);
     if (match) console.log(match[1]);
   " 2>/dev/null || echo "")
+  # BB#105 F-002: track whether the package is DECLARED (vs absent). When
+  # declared-but-not-installed, we must fail loud below instead of silently
+  # skipping (deferring the import error to runtime). Declared = either the
+  # dep is named in deps/devDeps (any value) OR cluster.eventsPin.sha is set.
+  DECLARED_IN_PACKAGE_JSON=$(node -e "
+    const pkg = require('./package.json');
+    const declared = (pkg.devDependencies || {})['${PKG_NAME}'] !== undefined
+                  || (pkg.dependencies || {})['${PKG_NAME}'] !== undefined
+                  || ((pkg.cluster || {}).eventsPin || {}).sha !== undefined;
+    console.log(declared ? '1' : '0');
+  " 2>/dev/null || echo "0")
 fi
 
 if [[ -z "$COMMIT_SHA" ]]; then
-  echo "$TAG No git commit SHA found in package.json for ${PKG_NAME} — skipping"
-  exit 0
+  # No SHA found AND package not declared → genuinely a non-consumer; skip safely.
+  if [[ "$DECLARED_IN_PACKAGE_JSON" != "1" ]]; then
+    echo "$TAG ${PKG_NAME} not declared in package.json — skipping (script is a cluster-shared template; harmless in non-consumer repos)"
+    exit 0
+  fi
+  # Declared but no SHA extractable → caller misconfigured the pin. Fail loud.
+  echo "$TAG ERROR: ${PKG_NAME} is declared in package.json but no git commit SHA can be extracted." >&2
+  echo "$TAG Expected one of:" >&2
+  echo "$TAG   - dependencies/devDependencies entry like: \"${PKG_NAME}\": \"github:owner/repo#<40-char-sha>\"" >&2
+  echo "$TAG   - cluster.eventsPin.sha block with a 40-char SHA" >&2
+  exit 1
 fi
 
 # =============================================================================
@@ -75,8 +96,18 @@ if [[ -z "$EVENTS_DIR" && -d "$ROOT_DIR/node_modules/${PKG_NAME}" ]]; then
 fi
 
 if [[ -z "$EVENTS_DIR" ]]; then
-  echo "$TAG No ${PKG_NAME} package found in node_modules — skipping"
-  exit 0
+  # BB#105 F-002: the consumer DECLARED ${PKG_NAME} (we extracted a SHA
+  # above), so a missing node_modules entry means the install layout is
+  # broken — most likely the bun-fixup script didn't run, OR pnpm bootstrap
+  # failed silently. Either way, runtime imports will throw with an opaque
+  # "Cannot find package" error. Fail loud at install time instead.
+  echo "$TAG ERROR: ${PKG_NAME} is declared with SHA ${COMMIT_SHA:0:12} but no package directory found in node_modules." >&2
+  echo "$TAG Expected one of:" >&2
+  echo "$TAG   - $ROOT_DIR/node_modules/.pnpm/@0xhoneyjar+${PKG_DIR_FILE_NAME}@*/node_modules/${PKG_NAME}" >&2
+  echo "$TAG   - $ROOT_DIR/node_modules/${PKG_NAME}" >&2
+  echo "$TAG If using bun: ensure scripts/fixup-events-bun.sh ran BEFORE this script." >&2
+  echo "$TAG If using pnpm: ensure the consumer's pnpm-lock.yaml resolves ${PKG_NAME} (you may need to clear node_modules + reinstall)." >&2
+  exit 1
 fi
 
 # =============================================================================
