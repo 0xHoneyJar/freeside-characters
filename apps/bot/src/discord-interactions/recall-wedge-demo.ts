@@ -120,6 +120,20 @@ export function shouldRegisterRecallWedgeDiscordDemo(env: Env): boolean {
 }
 
 /**
+ * Resolve the configured registration guild id (Phase 39C). Trims the value
+ * and returns null when missing / blank / whitespace-only — registration
+ * MUST fail closed (never global) when no guild is configured. This is the
+ * registration-side counterpart to the invocation-time guild gate
+ * (`isRecallWedgeDiscordDemoAllowedGuild`); it intentionally does NOT compare
+ * against an interaction, it only surfaces the single allowed guild scope for
+ * the guild-only registration path in `lib/publish-commands.ts`.
+ */
+export function resolveRecallWedgeDiscordDemoGuildId(env: Env): string | null {
+  const id = env.RECALL_WEDGE_DISCORD_DEMO_GUILD_ID?.trim();
+  return id && id.length > 0 ? id : null;
+}
+
+/**
  * Parse the comma-separated operator allowlist. Trims each entry and drops
  * empties. A missing/blank var yields an empty list (which fails closed at
  * the operator check).
@@ -180,6 +194,72 @@ export type RecallWedgeDemoSelector =
 export const RECALL_WEDGE_DEMO_SELECTOR_OPTION = 'case';
 
 const DEFAULT_RECALL_WEDGE_DEMO_SELECTOR: RecallWedgeDemoSelector = 'served';
+
+// -- registration metadata (Phase 39C) ------------------------------------
+
+/**
+ * Discord application-command option-type constants used by the registration
+ * payload (subset; mirrors `lib/publish-commands.ts`). STRING=3. Declared
+ * locally so this module carries no import dependency on publish-commands.
+ */
+const STRING_OPTION_TYPE = 3 as const;
+
+/**
+ * The single, finite, harmless demo selector option exposed at registration
+ * time (Phase 39A §E / §G). It is the `case` enum ONLY — NOT a freeform
+ * prompt / query / text / message / memory / recall option. Its choices are
+ * the same finite set the handler validates (`served` / `denied`); anything
+ * else falls back to the default selector at invocation time.
+ */
+export interface RecallWedgeDemoCommandOptionChoice {
+  readonly name: string;
+  readonly value: RecallWedgeDemoSelector;
+}
+
+export interface RecallWedgeDemoCommandOption {
+  readonly name: typeof RECALL_WEDGE_DEMO_SELECTOR_OPTION;
+  readonly description: string;
+  readonly type: typeof STRING_OPTION_TYPE;
+  readonly required: false;
+  readonly choices: readonly RecallWedgeDemoCommandOptionChoice[];
+}
+
+export interface RecallWedgeDemoCommandDefinition {
+  readonly name: typeof RECALL_WEDGE_DEMO_COMMAND_NAME;
+  readonly description: string;
+  readonly options: readonly RecallWedgeDemoCommandOption[];
+}
+
+/**
+ * The lightweight registration payload for `/recall-wedge-demo` (Phase 39C).
+ *
+ * This is plain metadata — no harness import, no runtime behavior — so it is
+ * safe to import from `lib/publish-commands.ts` without dragging in the
+ * Phase 38A harness (which is reached ONLY via the type-only import above and
+ * the gated dynamic import inside the handler).
+ *
+ * The description is explicitly dev-only / gated / demo framed and makes no
+ * production-memory / production-recall / consent claim (Phase 39A §E). The
+ * only option is the finite `case` enum selector (Phase 39A §G).
+ */
+export const RECALL_WEDGE_DEMO_COMMAND_DEFINITION: RecallWedgeDemoCommandDefinition =
+  {
+    name: RECALL_WEDGE_DEMO_COMMAND_NAME,
+    description:
+      'dev-only gated demo · renders fixture-bound harness output (not production recall)',
+    options: [
+      {
+        name: RECALL_WEDGE_DEMO_SELECTOR_OPTION,
+        description: 'demo case to render (dev-only fixture selector)',
+        type: STRING_OPTION_TYPE,
+        required: false,
+        choices: RECALL_WEDGE_DEMO_SELECTORS.map((s) => ({
+          name: s,
+          value: s,
+        })),
+      },
+    ],
+  };
 
 /**
  * Read the fixed enum selector from the interaction options. Reads ONLY the

@@ -823,9 +823,274 @@ describe('Phase 39B · dispatch wiring', () => {
   });
 });
 
-// -- 7. registration guard (registration NOT wired this phase) -----------
+// -- 7. registration (Phase 39C · dev-only guild-scoped registration) ----
 
-describe('Phase 39B · registration not globally wired', () => {
+import {
+  RECALL_WEDGE_DEMO_COMMAND_DEFINITION,
+  resolveRecallWedgeDiscordDemoGuildId,
+} from './recall-wedge-demo.ts';
+import {
+  buildCommandSet,
+  registerRecallWedgeDemoCommand,
+} from '../lib/publish-commands.ts';
+
+// A tiny fetch capture harness so the registration tests assert the EXACT
+// Discord route used (guild-scoped) without any real network call.
+function captureFetch(
+  response: { ok: boolean; status?: number; json?: unknown } = {
+    ok: true,
+    json: { id: 'cmd-id-123', name: RECALL_WEDGE_DEMO_COMMAND_NAME },
+  },
+): { calls: Array<{ url: string; init: RequestInit }>; restore: () => void } {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: RequestInit = {}) => {
+    calls.push({ url: String(url), init });
+    return {
+      ok: response.ok,
+      status: response.status ?? (response.ok ? 200 : 400),
+      json: async () => response.json ?? {},
+      text: async () => JSON.stringify(response.json ?? {}),
+    } as unknown as Response;
+  }) as typeof fetch;
+  return { calls, restore: () => (globalThis.fetch = original) };
+}
+
+const REGISTER_ENABLED = {
+  RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS: 'true',
+  RECALL_WEDGE_DISCORD_DEMO_GUILD_ID: GUILD,
+};
+
+describe('Phase 39C · command definition metadata', () => {
+  test('command name is exactly recall-wedge-demo (no alias)', () => {
+    expect(RECALL_WEDGE_DEMO_COMMAND_DEFINITION.name).toBe('recall-wedge-demo');
+    expect(RECALL_WEDGE_DEMO_COMMAND_DEFINITION.name).toBe(
+      RECALL_WEDGE_DEMO_COMMAND_NAME,
+    );
+  });
+
+  test('description includes dev-only / gated / demo wording', () => {
+    const d = RECALL_WEDGE_DEMO_COMMAND_DEFINITION.description.toLowerCase();
+    expect(d).toContain('dev-only');
+    expect(d).toContain('gated');
+    expect(d).toContain('demo');
+  });
+
+  test('description makes no production memory / recall / consent claim', () => {
+    const d = RECALL_WEDGE_DEMO_COMMAND_DEFINITION.description.toLowerCase();
+    for (const banned of [
+      'your memory',
+      'remembered',
+      'saved',
+      'stored',
+      'consent',
+      'admitted',
+    ]) {
+      expect(d).not.toContain(banned);
+    }
+    // It explicitly disclaims production recall.
+    expect(d).toContain('not production recall');
+  });
+
+  test('only option is the finite `case` enum selector (no freeform query)', () => {
+    const opts = RECALL_WEDGE_DEMO_COMMAND_DEFINITION.options;
+    expect(opts.length).toBe(1);
+    const opt = opts[0]!;
+    expect(opt.name).toBe(RECALL_WEDGE_DEMO_SELECTOR_OPTION);
+    expect(opt.name).toBe('case');
+    // Finite choices, exactly the handler's selector set.
+    expect(opt.choices.map((c) => c.value).sort()).toEqual(['denied', 'served']);
+    // No freeform option name is present anywhere in the definition.
+    for (const banned of ['prompt', 'query', 'text', 'message', 'memory', 'recall']) {
+      expect(opt.name).not.toBe(banned);
+    }
+  });
+
+  test('buildCommandSet (the global-capable array) never contains the demo command', () => {
+    // The demo command must NOT flow through the shared command-set that the
+    // global registration path PUTs — that is the only way it could leak to
+    // a global payload. It is registered exclusively via the separate
+    // guild-only path below.
+    const set = buildCommandSet([
+      { id: 'ruggy', displayName: 'Ruggy' } as never,
+      { id: 'satoshi', displayName: 'Satoshi' } as never,
+    ]);
+    for (const cmd of set) {
+      expect(cmd.name).not.toBe(RECALL_WEDGE_DEMO_COMMAND_NAME);
+    }
+  });
+});
+
+describe('Phase 39C · guild-id resolution (fails closed, never global)', () => {
+  test('present non-empty guild id resolves', () => {
+    expect(
+      resolveRecallWedgeDiscordDemoGuildId({
+        RECALL_WEDGE_DISCORD_DEMO_GUILD_ID: GUILD,
+      }),
+    ).toBe(GUILD);
+  });
+
+  test.each([undefined as unknown as string, '', '   ', '\t', ' \n '])(
+    'missing / empty / whitespace guild id %p resolves to null',
+    (value) => {
+      expect(
+        resolveRecallWedgeDiscordDemoGuildId({
+          RECALL_WEDGE_DISCORD_DEMO_GUILD_ID: value,
+        }),
+      ).toBeNull();
+    },
+  );
+});
+
+describe('Phase 39C · registration gate (disabled by default)', () => {
+  test('disabled by default (no env) → not registered, no network call', async () => {
+    const fetchCap = captureFetch();
+    try {
+      const res = await registerRecallWedgeDemoCommand({
+        botToken: 'tok',
+        applicationId: 'app',
+        env: {},
+      });
+      expect(res.registered).toBe(false);
+      expect(fetchCap.calls.length).toBe(0);
+    } finally {
+      fetchCap.restore();
+    }
+  });
+
+  test.each(['TRUE', 'True', '1', 'yes', ' true', 'true ', ''])(
+    'near-truthy register flag %p → not registered, no network call',
+    async (value) => {
+      const fetchCap = captureFetch();
+      try {
+        const res = await registerRecallWedgeDemoCommand({
+          botToken: 'tok',
+          applicationId: 'app',
+          env: {
+            RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS: value,
+            RECALL_WEDGE_DISCORD_DEMO_GUILD_ID: GUILD,
+          },
+        });
+        expect(res.registered).toBe(false);
+        if (!res.registered) expect(res.reason).toBe('gate_disabled');
+        expect(fetchCap.calls.length).toBe(0);
+      } finally {
+        fetchCap.restore();
+      }
+    },
+  );
+
+  test('exact "true" register flag enables the registration path', async () => {
+    const fetchCap = captureFetch();
+    try {
+      const res = await registerRecallWedgeDemoCommand({
+        botToken: 'tok',
+        applicationId: 'app',
+        env: REGISTER_ENABLED,
+      });
+      expect(res.registered).toBe(true);
+      expect(fetchCap.calls.length).toBe(1);
+    } finally {
+      fetchCap.restore();
+    }
+  });
+
+  test('missing guild id (register enabled) → not registered, NO global fallback', async () => {
+    const fetchCap = captureFetch();
+    try {
+      const res = await registerRecallWedgeDemoCommand({
+        botToken: 'tok',
+        applicationId: 'app',
+        env: { RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS: 'true' },
+      });
+      expect(res.registered).toBe(false);
+      if (!res.registered) expect(res.reason).toBe('no_guild');
+      // Crucially: no network call at all — it does NOT fall back to global.
+      expect(fetchCap.calls.length).toBe(0);
+    } finally {
+      fetchCap.restore();
+    }
+  });
+
+  test.each(['', '   ', '\t'])(
+    'empty / whitespace guild id %p (register enabled) → not registered, no call',
+    async (value) => {
+      const fetchCap = captureFetch();
+      try {
+        const res = await registerRecallWedgeDemoCommand({
+          botToken: 'tok',
+          applicationId: 'app',
+          env: {
+            RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS: 'true',
+            RECALL_WEDGE_DISCORD_DEMO_GUILD_ID: value,
+          },
+        });
+        expect(res.registered).toBe(false);
+        if (!res.registered) expect(res.reason).toBe('no_guild');
+        expect(fetchCap.calls.length).toBe(0);
+      } finally {
+        fetchCap.restore();
+      }
+    },
+  );
+});
+
+describe('Phase 39C · registration is guild-scoped ONLY', () => {
+  test('enabled path POSTs to the guild commands route with the configured guild id', async () => {
+    const fetchCap = captureFetch();
+    try {
+      const res = await registerRecallWedgeDemoCommand({
+        botToken: 'tok',
+        applicationId: 'app-42',
+        env: REGISTER_ENABLED,
+      });
+      expect(res.registered).toBe(true);
+      if (res.registered) {
+        expect(res.scope).toBe('guild');
+        expect(res.guildId).toBe(GUILD);
+      }
+      expect(fetchCap.calls.length).toBe(1);
+      const { url, init } = fetchCap.calls[0]!;
+      // Guild-scoped route includes the configured guild id...
+      expect(url).toBe(
+        `https://discord.com/api/v10/applications/app-42/guilds/${GUILD}/commands`,
+      );
+      expect(url).toContain(`/guilds/${GUILD}/commands`);
+      // ...and is NEVER the global route (no `/guilds/` segment).
+      expect(url).not.toBe(
+        'https://discord.com/api/v10/applications/app-42/commands',
+      );
+      expect(init.method).toBe('POST');
+      // The payload is exactly the one demo command (no alias, no array of
+      // many commands that could smuggle a global set).
+      const body = JSON.parse(String(init.body));
+      expect(body.name).toBe(RECALL_WEDGE_DEMO_COMMAND_NAME);
+    } finally {
+      fetchCap.restore();
+    }
+  });
+
+  test('no env path reaches the global commands route', async () => {
+    const fetchCap = captureFetch();
+    try {
+      // Across every skip reason, the global route is never touched.
+      await registerRecallWedgeDemoCommand({ botToken: 't', applicationId: 'a', env: {} });
+      await registerRecallWedgeDemoCommand({
+        botToken: 't',
+        applicationId: 'a',
+        env: { RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS: 'true' },
+      });
+      for (const { url } of fetchCap.calls) {
+        expect(url).not.toMatch(/\/applications\/[^/]+\/commands$/);
+      }
+      expect(fetchCap.calls.length).toBe(0);
+    } finally {
+      fetchCap.restore();
+    }
+  });
+});
+
+describe('Phase 39C · registration static source guards', () => {
   const publishSource = readFileSync(
     resolve(__dirname, '../lib/publish-commands.ts'),
     'utf8',
@@ -835,12 +1100,92 @@ describe('Phase 39B · registration not globally wired', () => {
     'utf8',
   );
 
-  test('publish-commands does not register /recall-wedge-demo', () => {
-    // Phase 39B implements handler + dispatch only; registration is NOT
-    // added (no command-set entry, no global path). A later phase that
-    // wires registration must gate on RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS
-    // and the RECALL_WEDGE_DISCORD_DEMO_GUILD_ID guild scope.
-    expect(publishSource).not.toContain('recall-wedge-demo');
-    expect(publishScriptSource).not.toContain('recall-wedge-demo');
+  test('buildCommandSet body does not mention the demo command (no global-array entry)', () => {
+    // Isolate the buildCommandSet function body and prove the demo command
+    // name never appears inside it — it can only be registered via the
+    // separate guild-only POST path.
+    const start = publishSource.indexOf('export function buildCommandSet');
+    expect(start).toBeGreaterThan(-1);
+    const after = publishSource.indexOf('\nfunction buildCommand(', start);
+    const body = publishSource.slice(start, after > -1 ? after : undefined);
+    expect(body).not.toContain('recall-wedge-demo');
+    expect(body).not.toContain('RECALL_WEDGE_DEMO_COMMAND_DEFINITION');
+  });
+
+  test('publishCommands body does not reference the demo command', () => {
+    const start = publishSource.indexOf('export async function publishCommands');
+    // End at the Phase 39C banner — the publishCommands function body proper
+    // is everything before the separate registration section (whose
+    // explanatory comment legitimately names the command).
+    const end = publishSource.indexOf('// Phase 39C · dev-only Recall Wedge');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = publishSource.slice(start, end);
+    expect(body).not.toContain('recall-wedge-demo');
+    expect(body).not.toContain('RECALL_WEDGE_DEMO_COMMAND_DEFINITION');
+  });
+
+  test('the demo registration path uses ONLY the guild route, never the global route', () => {
+    const start = publishSource.indexOf(
+      'export async function registerRecallWedgeDemoCommand',
+    );
+    expect(start).toBeGreaterThan(-1);
+    const body = publishSource.slice(start);
+    // It builds a guild-scoped URL...
+    expect(body).toMatch(/\/guilds\/\$\{guildId\}\/commands/);
+    // ...and contains no bare global commands URL template.
+    expect(body).not.toMatch(/applications\/\$\{applicationId\}\/commands`/);
+  });
+
+  test('demo registration code imports no live Dixie client / runner', () => {
+    expect(publishSource).not.toMatch(
+      /from\s+["'][^"']*live-dixie-client[^"']*["']/,
+    );
+    expect(publishSource).not.toMatch(
+      /from\s+["'][^"']*run-live-dixie-recall-demo[^"']*["']/,
+    );
+  });
+
+  test('demo registration code does not import the Phase 38A harness (static or dynamic)', () => {
+    expect(publishSource).not.toMatch(
+      /multi-surface-recall-harness/,
+    );
+    // It reaches the demo module only for lightweight metadata + env gates.
+    expect(publishSource).toContain(
+      "from '../discord-interactions/recall-wedge-demo.ts'",
+    );
+  });
+
+  test('demo registration code imports no Telegram / private-chat / storage / Finn / LLM SDKs', () => {
+    expect(publishSource).not.toMatch(/from\s+["']telegraf["']/);
+    expect(publishSource).not.toMatch(/from\s+["']grammy["']/);
+    expect(publishSource).not.toMatch(/from\s+["'][^"']*private[-_]chat[^"']*["']/i);
+    expect(publishSource).not.toMatch(/from\s+["']pg["']/);
+    expect(publishSource).not.toMatch(/from\s+["']redis["']/);
+    expect(publishSource).not.toMatch(/from\s+["']ioredis["']/);
+    expect(publishSource).not.toMatch(/from\s+["']@loa\/dixie["']/);
+    expect(publishSource).not.toMatch(/from\s+["']@loa\/straylight["']/);
+    expect(publishSource).not.toMatch(/from\s+["']@anthropic-ai\/[^"']+["']/);
+    expect(publishSource).not.toMatch(/from\s+["']openai["']/);
+  });
+
+  test('demo registration code does not consume RECALL_WEDGE_DIXIE_* envs', () => {
+    expect(publishSource).not.toMatch(/RECALL_WEDGE_DIXIE_/);
+  });
+
+  test('demo registration code adds no memory-admission / candidate / remember-this strings', () => {
+    const lc = publishSource.toLowerCase();
+    expect(lc).not.toMatch(/candidate[_-]?memory/);
+    expect(lc).not.toMatch(/writememory|write_memory/);
+    expect(lc).not.toMatch(/admitmemory|admit_memory|admission[_-]?job/);
+    expect(lc).not.toContain('remember this');
+  });
+
+  test('CLI script registers the demo command via the gated guild-only helper', () => {
+    expect(publishScriptSource).toContain('registerRecallWedgeDemoCommand');
+    // The CLI does not hand-roll a global registration of the demo command.
+    expect(publishScriptSource).not.toMatch(
+      /applications\/\$\{[^}]+\}\/commands`/,
+    );
   });
 });

@@ -23,6 +23,7 @@ import {
   buildCommandSet,
   fetchApplicationId,
   publishCommands,
+  registerRecallWedgeDemoCommand,
 } from '../src/lib/publish-commands.ts';
 
 async function main(): Promise<void> {
@@ -77,6 +78,22 @@ async function main(): Promise<void> {
       for (const r of result.commands) {
         console.log(`  ✓ /${r.name} → id ${r.id}`);
       }
+    }
+
+    // Phase 39C: dev-only Recall Wedge demo registration. SEPARATE from the
+    // character command publish above — it never enters buildCommandSet (so
+    // it can never reach the global route). Skipped unless BOTH
+    // RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS === "true" AND
+    // RECALL_WEDGE_DISCORD_DEMO_GUILD_ID is set; always guild-scoped.
+    const demo = await registerRecallWedgeDemoCommand({ botToken, applicationId });
+    if (demo.registered) {
+      console.log(
+        `publish-commands: registered dev-only /recall-wedge-demo → guild ${demo.guildId} (id ${demo.command.id})`,
+      );
+    } else {
+      console.log(
+        `publish-commands: /recall-wedge-demo NOT registered (${demo.reason})`,
+      );
     }
   } catch (err) {
     console.error('publish-commands: FAILED');
