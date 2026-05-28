@@ -18,6 +18,16 @@
  */
 
 import type { CharacterConfig } from '@freeside-characters/persona-engine';
+// Phase 39C: lightweight command METADATA only (a plain object) + the two
+// registration env gates. This module-level import is safe: recall-wedge-demo.ts
+// reaches the Phase 38A harness ONLY via a type-only import (erased at build)
+// and a gated dynamic import() inside its handler, so importing its metadata
+// here adds NO harness evaluation at startup / publish time.
+import {
+  RECALL_WEDGE_DEMO_COMMAND_DEFINITION,
+  resolveRecallWedgeDiscordDemoGuildId,
+  shouldRegisterRecallWedgeDiscordDemo,
+} from '../discord-interactions/recall-wedge-demo.ts';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
@@ -215,6 +225,115 @@ export async function publishCommands(
   }
 
   return results;
+}
+
+// =====================================================================
+// Phase 39C · dev-only Recall Wedge demo registration (guild-scoped ONLY)
+// =====================================================================
+//
+// Authority: docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md §C / §D / §L.
+//
+// This is a SEPARATE registration path, deliberately NOT routed through
+// `publishCommands` / `buildCommandSet`. Those build ONE command array that
+// is PUT to either the guild route OR (when `guildId` is undefined) the
+// GLOBAL route. `/recall-wedge-demo` must NEVER appear in a global payload,
+// so it is never added to `buildCommandSet` and never flows through that
+// global-capable code path. Instead it is registered with a single POST to
+// the guild-scoped command route, and ONLY when both env gates pass:
+//
+//   - RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS === "true" (exact); and
+//   - RECALL_WEDGE_DISCORD_DEMO_GUILD_ID is present + non-empty.
+//
+// Missing / near-truthy register flag, or a missing / blank guild id, skips
+// registration entirely (fail closed). There is no global fallback in this
+// function: if the guild id is absent the command is NOT registered anywhere.
+
+type RegistrationEnv = Record<string, string | undefined>;
+
+export interface RegisterRecallWedgeDemoOptions {
+  readonly botToken: string;
+  /** If absent, derived from `/applications/@me`. */
+  readonly applicationId?: string;
+  /** Defaults to `process.env`; the two §D.1 gates are read from here. */
+  readonly env?: RegistrationEnv;
+}
+
+export type RegisterRecallWedgeDemoResult =
+  | { readonly registered: false; readonly reason: 'gate_disabled' | 'no_guild' }
+  | {
+      readonly registered: true;
+      readonly scope: 'guild';
+      readonly guildId: string;
+      readonly command: { readonly name: string; readonly id: string };
+    };
+
+/**
+ * Register `/recall-wedge-demo` to the single configured guild, guild-scoped
+ * ONLY. Returns a skip result (without any network call) unless both env
+ * gates pass. The Discord route used is ALWAYS the guild commands route
+ * (`/applications/{app}/guilds/{guild}/commands`); there is no branch that
+ * targets the global route.
+ *
+ * POST to the guild commands route is upsert-by-name (idempotent for this one
+ * command) and does NOT replace the guild's full command set — so it composes
+ * with the separate `publishCommands` PUT without clobbering character
+ * commands. De-registration is handled per §M via Discord's command-delete
+ * mechanism, not here.
+ */
+export async function registerRecallWedgeDemoCommand(
+  opts: RegisterRecallWedgeDemoOptions,
+): Promise<RegisterRecallWedgeDemoResult> {
+  if (!opts.botToken) {
+    throw new Error('registerRecallWedgeDemoCommand: botToken is required');
+  }
+
+  const env = opts.env ?? process.env;
+
+  // Gate 1: exact-"true" register flag (near-truthy values fail closed).
+  if (!shouldRegisterRecallWedgeDiscordDemo(env)) {
+    return { registered: false, reason: 'gate_disabled' };
+  }
+
+  // Gate 2: a present, non-empty guild id. Missing / blank / whitespace-only
+  // fails closed — and crucially does NOT fall back to global registration.
+  const guildId = resolveRecallWedgeDiscordDemoGuildId(env);
+  if (!guildId) {
+    return { registered: false, reason: 'no_guild' };
+  }
+
+  const applicationId =
+    opts.applicationId ?? (await fetchApplicationId(opts.botToken));
+  if (!applicationId) {
+    throw new Error(
+      'registerRecallWedgeDemoCommand: applicationId not provided and could not be derived from /applications/@me',
+    );
+  }
+
+  // Guild-scoped route ONLY — never the global `/applications/{app}/commands`.
+  const url = `${DISCORD_API_BASE}/applications/${applicationId}/guilds/${guildId}/commands`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${opts.botToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(RECALL_WEDGE_DEMO_COMMAND_DEFINITION),
+  });
+
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '<unreadable>');
+    throw new Error(
+      `registerRecallWedgeDemoCommand: Discord POST failed for guild=${guildId} status=${response.status} body=${txt}`,
+    );
+  }
+
+  const created = (await response.json()) as { id: string; name: string };
+  return {
+    registered: true,
+    scope: 'guild',
+    guildId,
+    command: { name: created.name, id: created.id },
+  };
 }
 
 /**
