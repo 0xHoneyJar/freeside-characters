@@ -303,9 +303,64 @@ Status as of Phase 37B:
   and the readiness checkpoint §6 preconditions still apply to any
   step beyond the operator/dev spike.
 
-If Phase 37C lands and Phase 37D accepts it, the next decision (Phase
-38A) is whether to expose a controlled public Discord test surface —
-not a relaxation of this gate.
+If Phase 37C lands and Phase 37D accepts it, the next implementation
+phase is **Phase 38A — the fixture/injected-result multi-surface
+Recall Wedge boundary harness**, followed by **Phase 38B — audit /
+acceptance of that harness**. Neither phase authorizes real surface
+wiring. The earliest decision point for a controlled public (or
+controlled dev-only) Discord test surface is **deferred to Phase 39A
+or later**, subject to its own decision gate and to the §5a Discord
+command operational gates. Real Discord, Telegram, private-chat,
+storage / admission, and character-voiced recall output remain
+blocked. None of those steps is a relaxation of this gate.
+
+---
+
+### 5c. Phase 37D addendum — next MVP proof is multi-surface boundary simulation, not real surface integration
+
+> Added by Phase 37D
+> (`docs/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md`). Targeted
+> addendum, not a rewrite of this section.
+
+Phase 37C (operator/dev-only live Dixie client and runner) **has
+landed and is accepted** by Phase 37D as the only live Dixie seam
+in the repo. Phase 37C does **not** authorize real public or
+private surface integration.
+
+The product context for the next MVP step is:
+
+- there is no ready private chat surface through Dixie;
+- there is no Telegram surface;
+- the public Discord surface is not yet optimized or gated.
+
+Therefore the next implementation phase is **not** real Discord /
+Telegram / private-chat integration. Instead:
+
+- **The next MVP proof is a fixture/injected-result multi-surface
+  Recall Wedge boundary harness.** It binds the same continuity
+  actor / same recall result to a taxonomy of surface frames
+  (operator, public Discord, public Telegram, authorized private
+  session, private chat, public character) and asserts each
+  frame's allowed projection or fail-closed refusal.
+- **Phase 38A should implement that harness.** Recommended files
+  are `packages/persona-engine/src/recall-wedge/multi-surface-recall-harness.ts`
+  and its `.test.ts` companion. The harness consumes injected /
+  fake `LiveDixieRecallResult`-shaped values and (optionally)
+  recorded fixture projections — it does **not** call the Phase
+  37C live client and does **not** make network calls.
+- **Real Discord / Telegram / private-chat / storage / admission /
+  voice remain blocked.** Each is gated on a later, separately
+  authorized phase. Phase 39A is where a controlled dev-only
+  Discord surface decision is made — not earlier, and not as part
+  of the harness.
+
+Detailed scope, allowed and disallowed Phase 38A behaviors, the
+surface-frame taxonomy, the harness acceptance criteria, and the
+post-37D phase ladder live in the Phase 37D gate doc
+(`docs/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md`). This
+addendum does not duplicate them; it only redirects the
+post-MVP option matrix's **next implementation phase** away from
+real surface wiring and toward the Phase 38A harness.
 
 ---
 

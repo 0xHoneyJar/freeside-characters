@@ -573,15 +573,74 @@ The recommended sequence after Phase 37B:
   enforce every invariant in §K; were any concrete divergences
   with Phase 32E found that require Dixie-side reconciliation;
   is the spike safe to extend.
-- **Phase 38A** — only if Phase 37C / 37D pass, decide whether to
-  expose a controlled public Discord test surface for Recall
-  Wedge. Subject to its own decision gate; this gate does not
-  authorize Phase 38A.
-- **Telegram, `authorized_private_session`, `public_telegram`,
-  storage / admission, Finn audit wiring, and character voice
-  remain later, separately authorized phases.** Each is gated on
-  its own decision artifact (multi-surface contract §5a / §8a /
-  §10; readiness checkpoint §6; post-MVP decision map §6 / §7).
+- **Phase 38A** — only if Phase 37C / 37D pass, implement the
+  fixture/injected-result multi-surface Recall Wedge boundary
+  harness per
+  `docs/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md`. The harness
+  consumes injected / fake `LiveDixieRecallResult`-shaped values
+  and (optionally) recorded fixture projections; it does not call
+  the Phase 37C live client and does not make network calls.
+  Phase 38A does not authorize real Discord / Telegram /
+  private-chat surface wiring.
+- **Phase 38B** — harness audit / acceptance of the Phase 38A
+  multi-surface boundary harness. Docs / acceptance phase only;
+  does not authorize real surface wiring.
+- **Phase 39A** — earliest decision point for a controlled
+  public (or controlled dev-only) Discord test surface for Recall
+  Wedge. Subject to its own decision gate and to the post-MVP
+  decision map §5a Discord command operational gates; this gate
+  does not authorize Phase 39A.
+- **Phase 39B** — may implement a tightly gated dev-only Discord
+  command **only if** Phase 39A explicitly authorizes it. Subject
+  to every constraint Phase 39A defines and to §5a operational
+  gates. Phase 39B is not authorized by this gate.
+- **Telegram, private chat, `authorized_private_session`,
+  `public_telegram`, storage / admission, Finn audit wiring, LLM
+  rewriting, and character-voiced recall output remain later,
+  separately authorized phases.** Each is gated on its own
+  decision artifact (multi-surface contract §5a / §8a / §10;
+  readiness checkpoint §6; post-MVP decision map §6 / §7).
+
+### L.1 Phase 37D addendum — Phase 37C accepted as operator/dev-only seam; next work is multi-surface harness
+
+> Added by Phase 37D
+> (`docs/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md`). Targeted
+> addendum to the future phase ladder, not a rewrite of this
+> section.
+
+Status of the ladder as of Phase 37D:
+
+- **Phase 37C implemented the live client spike** under this
+  gate — the operator/dev-only live Dixie client
+  (`live-dixie-client.ts`), its tests, the operator runner
+  (`run-live-dixie-recall-demo.ts`), and runner regression tests.
+  Phase 37C is the only live Dixie seam in the repo.
+- **Phase 37D accepts Phase 37C as operator/dev-only only.** It
+  does not authorize real public / private surface integration.
+  Phase 37C does not authorize Discord command wiring, Telegram
+  bot wiring, private chat integration, public renderer expansion,
+  positive `public_telegram` or `authorized_private_session`
+  support, production storage / admission, production auth /
+  consent implementation, direct Finn runtime / audit wiring,
+  LLM rewriting, or character-voiced recall output.
+- **The next implementation phase is the multi-surface boundary
+  harness, not real surface wiring.** Phase 37D redirects the
+  next MVP proof toward a fixture/injected-result multi-surface
+  Recall Wedge boundary harness (Phase 38A), per
+  `docs/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md` §G–§H. The
+  Phase 38A harness consumes injected / fake
+  `LiveDixieRecallResult`-shaped values; it does **not** call the
+  Phase 37C live client and does **not** make network calls.
+- **Discord / Telegram / private-chat wiring remain blocked.**
+  Phase 39A (or later) is the earliest decision point for a
+  controlled dev-only Discord surface, subject to its own
+  decision artifact and to the post-MVP decision map §5a
+  operational gates.
+
+This addendum does not relax any constraint in §C–§K of this gate.
+It records that Phase 37C cleared this gate at operator/dev level
+only and that the next implementation work is the Phase 38A
+multi-surface harness.
 
 ---
 
