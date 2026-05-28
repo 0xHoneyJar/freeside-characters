@@ -410,6 +410,45 @@ gate, not Phase 39B implementation."
 
 ---
 
+### 5e. Phase 39A addendum — next implementation chosen as dev-only Discord harness demo, not production recall
+
+> Added by Phase 39A
+> (`docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 39A:
+
+- **Phase 39A chooses the next implementation as a dev-only
+  Discord harness demo, not production recall.** The chosen
+  shape is a single guild-scoped, operator-invoked,
+  ephemeral-only slash command (`/recall-wedge-demo`) that
+  renders Phase 38A multi-surface harness output. It is
+  fixture-bound, not live-Dixie-backed.
+- **Phase 39B is allowed only under the new gate.** Phase 39B is
+  authorized only if every constraint in
+  `docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md` §C–§N
+  holds: disabled-by-default env gates
+  (`RECALL_WEDGE_DISCORD_DEMO_ENABLED`,
+  `RECALL_WEDGE_DISCORD_DEMO_GUILD_ID`,
+  `RECALL_WEDGE_DISCORD_DEMO_OPERATOR_USER_IDS`,
+  `RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS`); ephemeral
+  delivery only; harness output only; no live Dixie client
+  invocation; banned-substring scan on user-visible output;
+  no public renderer mutation; the §5a Discord command
+  operational gates of this doc tightened, not relaxed.
+- **Live Dixie-backed Discord, Telegram, private chat, storage /
+  admission, production auth / consent, LLM rewriting, and
+  character voice remain blocked.** None is authorized by Phase
+  39A. Each is gated on a later, separately authorized phase.
+
+This addendum does not duplicate the Phase 39A gate doc; it only
+updates the post-MVP option matrix's **next-implementation-phase**
+answer from "Phase 39A decision gate, not Phase 39B implementation"
+to "Phase 39B is allowed only under the Phase 39A gate, dev-only
+Discord harness demo only."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
