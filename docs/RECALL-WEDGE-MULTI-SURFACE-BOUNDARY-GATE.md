@@ -562,6 +562,43 @@ The recommended sequence after Phase 37D:
   readiness checkpoint §6; post-MVP decision map §6 / §7; the
   live-Dixie client gate §D).
 
+### K.1 Phase 38B addendum — harness accepted; next allowed step is the Phase 39A decision gate only
+
+> Added by Phase 38B
+> (`docs/RECALL-WEDGE-MULTI-SURFACE-HARNESS-ACCEPTANCE.md`).
+> Targeted addendum to the future phase ladder, not a rewrite of
+> this section.
+
+Status of the ladder as of Phase 38B:
+
+- **Phase 38A implemented the harness** under this gate — the
+  fixture/injected-result multi-surface Recall Wedge boundary
+  harness (`multi-surface-recall-harness.ts`) and its tests
+  (`multi-surface-recall-harness.test.ts`). All six required
+  frames in §F are modeled; the §H acceptance criteria are met.
+- **Phase 38B accepts the harness** as the fixture/injected-result
+  multi-surface Recall Wedge boundary proof. Phase 38B is docs /
+  audit / acceptance only and adds no source, test, fixture,
+  package, lockfile, config, CI, or generated change.
+- **The next allowed step is the Phase 39A decision gate only.**
+  Phase 39A may decide whether to authorize a future Phase 39B
+  tightly gated dev-only Discord command for Recall Wedge. Phase
+  39A is itself a decision / gate phase, not implementation.
+- **No Phase 39B implementation is authorized by Phase 38B.** No
+  Discord command code, Telegram code, private-chat code,
+  storage / admission code, public renderer expansion, live Dixie
+  call inside the harness, LLM rewriting, or character voice may
+  be added until Phase 39A is merged and explicitly authorizes
+  Phase 39B (and even then, only for the Discord scope Phase 39A
+  defines). Telegram, private chat, storage / admission, Finn
+  audit wiring, LLM rewriting, and character-voiced recall output
+  remain blocked.
+
+This addendum does not relax any constraint in §C–§I of this gate.
+It records that Phase 38A cleared §G–§H of this gate and that the
+next implementation step is gated on a separate Phase 39A
+decision artifact.
+
 ---
 
 ## L. Acceptance criteria for Phase 37D

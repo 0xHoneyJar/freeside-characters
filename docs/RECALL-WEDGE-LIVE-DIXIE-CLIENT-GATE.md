@@ -642,6 +642,33 @@ It records that Phase 37C cleared this gate at operator/dev level
 only and that the next implementation work is the Phase 38A
 multi-surface harness.
 
+### L.2 Phase 38B note — Phase 38A and Phase 38B did not invoke or expand the Phase 37C live client
+
+> Added by Phase 38B
+> (`docs/RECALL-WEDGE-MULTI-SURFACE-HARNESS-ACCEPTANCE.md`).
+> Short clarifying note, not a rewrite of this section.
+
+For audit trail completeness:
+
+- **Phase 38A did not invoke or expand the Phase 37C live client.**
+  The Phase 38A multi-surface boundary harness consumed
+  injected / locally-constructed `LiveDixieRecallResult`-shaped
+  values; it did not import `live-dixie-client.ts`, did not call
+  `runLiveDixieRecallDemo`, and did not perform any network call.
+- **Phase 38B did not invoke or expand the Phase 37C live client.**
+  Phase 38B is docs / audit / acceptance only and added no source,
+  test, fixture, package, lockfile, config, CI, or generated change.
+- **Phase 37C remains the only live Dixie seam in the repo.** The
+  client and runner remain operator/dev-only. Public Discord,
+  Telegram, private-chat, storage / admission, public renderer
+  expansion, LLM rewriting, character-voiced recall, positive
+  `public_telegram` support, and positive
+  `authorized_private_session` support remain blocked under §C–§K.
+
+This note does not relax any constraint in §C–§K of this gate; it
+records continued compliance with §D, §J, and §K through the Phase
+38A / 38B work.
+
 ---
 
 ## M. Acceptance criteria

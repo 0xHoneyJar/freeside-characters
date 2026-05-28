@@ -364,6 +364,52 @@ real surface wiring and toward the Phase 38A harness.
 
 ---
 
+### 5d. Phase 38B addendum — multi-surface harness accepted; Phase 39A may decide a tightly gated dev-only Discord surface
+
+> Added by Phase 38B
+> (`docs/RECALL-WEDGE-MULTI-SURFACE-HARNESS-ACCEPTANCE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status of the next-implementation-phase question as of Phase 38B:
+
+- **Phase 38A is merged and accepted.** The fixture/injected-result
+  multi-surface Recall Wedge boundary harness
+  (`packages/persona-engine/src/recall-wedge/multi-surface-recall-harness.ts`
+  and its `.test.ts` companion) is in place; all six frames in the
+  Phase 37D §F taxonomy (`operator_dev`, `public_discord_simulated`,
+  `public_telegram_simulated`,
+  `authorized_private_session_simulated`, `private_chat_simulated`,
+  `character_frame_public`) are modeled.
+- **The multi-surface proof is now accepted.** Phase 38B accepts the
+  Phase 38A harness as the fixture/injected-result multi-surface
+  Recall Wedge boundary proof. Same continuity actor / same recall
+  result across multiple frames; different projections / refusals
+  per frame; identical-output matrix rejected; no-leak proof
+  non-vacuous; no network / live-client / Discord / Telegram /
+  storage / LLM / Finn / `@loa/dixie` / `@loa/straylight`
+  integration.
+- **Phase 39A may decide whether to authorize a tightly gated
+  dev-only Discord surface.** Phase 39A is the next allowed phase
+  and is itself a decision / gate phase — not implementation.
+  Phase 39A is subject to the §5a Discord command operational
+  gates above and to the question list in
+  `docs/RECALL-WEDGE-MULTI-SURFACE-HARNESS-ACCEPTANCE.md` §H.
+- **Real Discord implementation remains blocked until Phase 39A
+  explicitly authorizes Phase 39B.** No Discord command code,
+  Telegram code, private-chat code, storage / admission code,
+  public renderer expansion, live Dixie call inside the harness,
+  LLM rewriting, or character voice may be added until Phase 39A
+  is merged and explicitly authorizes Phase 39B. Telegram, private
+  chat, storage / admission, Finn audit wiring, LLM rewriting, and
+  character-voiced recall output remain blocked.
+
+This addendum does not duplicate the Phase 38B acceptance doc; it
+only updates the post-MVP option matrix's **next-implementation-
+phase** answer from "Phase 38A harness" to "Phase 39A decision
+gate, not Phase 39B implementation."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
