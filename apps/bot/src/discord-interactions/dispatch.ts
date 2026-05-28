@@ -71,6 +71,10 @@ import {
   type DiscordInteraction,
   type DiscordInteractionResponse,
 } from './types.ts';
+import {
+  RECALL_WEDGE_DEMO_COMMAND_NAME,
+  handleRecallWedgeDemoInteraction,
+} from './recall-wedge-demo.ts';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const DISCORD_CHAR_LIMIT = 2000;
@@ -206,6 +210,24 @@ export async function dispatchSlashCommand(
         `(invoker=${invoker.username}/${invoker.id})`,
     );
     return ephemeralReply('characters do not respond to bot invocations.');
+  }
+
+  // ─── Phase 39B · dev-only Recall Wedge demo command ────────────────
+  // Authority: docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md (Phase
+  // 39A). The handler is self-contained (pure Phase 38A harness, no LLM, no
+  // live Dixie, no webhook, no deferred PATCH). It is async only because it
+  // lazily imports the harness AFTER its gates pass (Phase 39B patch · no
+  // harness evaluation at bot startup). It fails closed to a single generic
+  // ephemeral refusal unless the demo is
+  // enabled AND the guild + operator allowlists pass. Routed here — before
+  // character resolution / auth-bridge — because it is NOT character-bound
+  // and must not inherit the chat/imagegen async delivery path. No new
+  // logging is added: the handler enforces the §K no-raw-id posture.
+  if (!isQuest && interaction.data?.name === RECALL_WEDGE_DEMO_COMMAND_NAME) {
+    // Async: the Phase 38A harness is dynamically imported only after the
+    // handler's gates pass (no harness evaluation at bot startup). dispatch
+    // is already async, so we simply await the gated response.
+    return await handleRecallWedgeDemoInteraction(interaction);
   }
 
   // ─── Circuit breaker pre-check ─────────────────────────────────────
