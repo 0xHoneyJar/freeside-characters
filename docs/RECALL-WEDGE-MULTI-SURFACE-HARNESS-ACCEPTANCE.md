@@ -373,6 +373,46 @@ If a draft of Phase 39A finds it cannot answer §H without first doing
 implementation, the answer is to defer Phase 39A — not to relax the
 gate.
 
+### I.1 Phase 39A addendum — first controlled Discord surface shape decided
+
+> Added by Phase 39A
+> (`docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md`).
+> Targeted addendum to the Phase 39A decision-gate section, not a
+> rewrite.
+
+Status as of Phase 39A:
+
+- **Phase 39A decides the first controlled Discord surface shape.**
+  It answers every §H question of this acceptance doc and tightens
+  the §5a Discord command operational gates of
+  `docs/RECALL-WEDGE-POST-MVP-DECISION-MAP.md` for the dev-only
+  Discord demo command.
+- **Phase 39A authorizes future Phase 39B only as
+  dev-only / guild-scoped / operator-invoked / ephemeral /
+  harness-backed.** The chosen command name is
+  `/recall-wedge-demo`. Phase 39B is gated on
+  `RECALL_WEDGE_DISCORD_DEMO_ENABLED="true"` plus a guild-ID
+  allowlist plus an operator-user-ID allowlist; registration is
+  gated on `RECALL_WEDGE_DISCORD_DEMO_REGISTER_COMMANDS="true"`
+  and is guild-scoped only.
+- **Phase 39A does not authorize live Dixie-backed Discord recall
+  or public rollout.** Phase 39B may render only the Phase 38A
+  harness output (`public_discord_simulated` frame plus optional
+  no-leak-scanned per-frame outcome summary). It may not invoke
+  the Phase 37C live Dixie client. It may not produce
+  channel-visible, DM, follow-up, webhook, or scheduled output.
+  It may not admit memory, accept "remember this" intent, invoke
+  any LLM, or render character voice.
+- **Telegram, private chat, storage / admission, production
+  auth / consent, public renderer expansion, LLM rewriting, and
+  character voice remain blocked** per §G of this acceptance doc
+  and §N of the Phase 39A gate.
+
+This addendum does not relax §C–§I of this acceptance doc. It
+records that the Phase 39A decision point §H of this doc named has
+landed and that Phase 39B is now constrained to the shape Phase 39A
+defined.
+
 ---
 
 ## J. Updated ladder
