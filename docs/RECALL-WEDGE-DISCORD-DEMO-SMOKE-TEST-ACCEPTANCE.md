@@ -408,6 +408,23 @@ controlled smoke-test result. Each option above carries its own proof
 obligation and re-opens its own decision artifact; Phase 40A is the
 place to weigh them, not this acceptance.
 
+### N.1 Phase 40A note — next decision point resolved
+
+> Added by Phase 40A
+> (`docs/RECALL-WEDGE-POST-SMOKE-TEST-DECISION-GATE.md`).
+
+- **Phase 40A resolved this next decision point.** It is docs /
+  decision only and adds no runtime behavior; it keeps
+  `/recall-wedge-demo` as a controlled dev / operator demo.
+- The **next step is Phase 40B — an internal demo guide** (docs-only,
+  operator-facing, redacted placeholders only).
+- The **possible following step is Phase 40C — a guild-scoped
+  de-registration helper**, only after Phase 40B and only if still
+  needed.
+- **Live Dixie-backed Discord recall and public-channel-visible recall
+  remain blocked** behind separate later gates; the rest of the §J
+  blocked-work list also stays blocked.
+
 ---
 
 ## O. Acceptance criteria for Phase 39E

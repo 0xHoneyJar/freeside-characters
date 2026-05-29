@@ -509,6 +509,46 @@ Status as of Phase 39E:
 
 ---
 
+### 5h. Phase 40A addendum — post-smoke-test decision; demo kept, 40B guide then possible 40C de-registration
+
+> Added by Phase 40A
+> (`docs/RECALL-WEDGE-POST-SMOKE-TEST-DECISION-GATE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 40A:
+
+- **Phase 40A is docs / decision only.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change, and no
+  handler / registration behavior change. It does not authorize
+  implementation of the steps it selects.
+- **It keeps `/recall-wedge-demo` as a controlled dev / operator
+  demo** — the current operating state accepted by Phase 39E, kept
+  as-is.
+- **It selects Phase 40B — an internal demo guide — as the next
+  step.** Docs-only, operator-facing, no code, redacted placeholders
+  only, preserving the no-live-Dixie / no-memory-admission /
+  no-public-rollout posture.
+- **It selects Phase 40C — a guild-scoped de-registration helper — as
+  the likely following step, if still needed**, only after Phase 40B.
+  If implemented it must be guild-scoped only, must not global-delete,
+  must not touch handler behavior, must add no live Dixie / public
+  recall, and must include tests / static guards.
+- **It keeps live Dixie-backed Discord recall and
+  public-channel-visible recall blocked behind separate later gates.**
+  The Phase 37C live client is operator/dev-only and unreachable from
+  Discord; the smoke test proved the Discord surface gate, not live
+  recall, and the demo is ephemeral-only. Telegram, private chat,
+  storage / admission, production auth / consent, LLM rewriting, and
+  character voice also remain blocked.
+
+This addendum does not duplicate the Phase 40A gate doc; it only
+updates the post-MVP option matrix's **next-implementation-phase**
+answer from "Phase 40A — a post-smoke-test decision gate" to "Phase 40B
+internal demo guide, then possible Phase 40C guild-scoped
+de-registration helper."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:

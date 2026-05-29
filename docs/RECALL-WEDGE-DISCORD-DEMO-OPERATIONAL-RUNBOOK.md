@@ -59,6 +59,23 @@ admission, no public rollout.**
   §D blocked item stays blocked, and the demo stays a fixture-bound,
   guild-only, operator-only, ephemeral dev demo.
 
+### A.3 Phase 40A note — post-smoke-test decision; runbook unchanged
+
+> Added by Phase 40A
+> (`docs/RECALL-WEDGE-POST-SMOKE-TEST-DECISION-GATE.md`).
+
+- **Phase 40A is docs / decision only** and changes nothing in this
+  runbook — `/recall-wedge-demo` is kept as a controlled dev / operator
+  demo, and disable / removal still follow §K and §L here.
+- The **next step is Phase 40B — an internal demo guide** (docs-only,
+  layered on top of this runbook, not a replacement for it).
+- The **possible following step is Phase 40C — a guild-scoped
+  de-registration helper**, only after Phase 40B and only if still
+  needed. Until such a phase lands, the §L statement holds: **there is
+  no de-registration helper in this repo**, and removal is manual.
+- **Live Dixie-backed Discord recall and public-channel-visible recall
+  remain blocked** behind separate later gates (§D unchanged).
+
 ---
 
 ## B. Source evidence
