@@ -246,6 +246,18 @@ by Phase 40A.**
 - is a guide layered on top of the Phase 39D runbook, not a replacement
   for it.
 
+> **Phase 40B fulfilled** (`docs/RECALL-WEDGE-DISCORD-DEMO-INTERNAL-GUIDE.md`).
+> The selected internal-guide step is now in the repo: a docs-only,
+> operator-facing 5–10 minute demo guide with what-to-say /
+> what-not-to-claim guidance and redacted-placeholder expected outputs.
+> **Phase 40B authorizes no implementation / runtime scope** — it adds
+> no source / test / package / lockfile / fixture / config / CI /
+> generated change and does not touch `/recall-wedge-demo`. **Phase 40C
+> remains only a possible next step, if still needed** (the Phase 39D
+> runbook §L manual removal may suffice). **Live Dixie-backed Discord
+> recall and public-channel-visible recall remain blocked** behind
+> separate later gates (§F, §G, §I).
+
 ### Phase 40C — Guild-Scoped De-Registration Helper Gate / Implementation
 
 - **only after Phase 40B;**

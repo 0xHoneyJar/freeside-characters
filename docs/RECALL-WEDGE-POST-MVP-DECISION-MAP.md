@@ -549,6 +549,41 @@ de-registration helper."
 
 ---
 
+### 5i. Phase 40B addendum — internal demo guide added; docs-only, runtime unchanged
+
+> Added by Phase 40B
+> (`docs/RECALL-WEDGE-DISCORD-DEMO-INTERNAL-GUIDE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 40B:
+
+- **Phase 40B adds the internal demo guide** selected by Phase 40A — an
+  operator-facing how-to-demo-safely artifact layered on top of the
+  Phase 39D runbook.
+- **It is docs-only / operator-facing.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change.
+- **It does not change runtime behavior.** No handler / registration /
+  dispatch change; `/recall-wedge-demo` is untouched.
+- **It keeps `/recall-wedge-demo` controlled / guild-scoped /
+  operator-gated / ephemeral / harness-backed** and non-production —
+  the same posture Phase 39A / 39D / 39E / 40A hold.
+- **It gives a safe 5–10 minute demo script** (framing, command
+  visibility, served / default, denied / refusal, optional non-operator
+  fail-closed, boundaries, Q&A) plus **what-to-say / what-not-to-claim**
+  guidance and redacted-placeholder expected outputs.
+- **The next possible step remains Phase 40C — a guild-scoped
+  de-registration helper — only if still needed**, after Phase 40B (the
+  Phase 39D runbook §L manual removal may prove sufficient).
+- **Live Dixie-backed Discord recall and public-channel-visible recall
+  remain blocked** behind separate later gates. Telegram, private chat,
+  storage / admission, production auth / consent, LLM rewriting, and
+  character voice also remain blocked.
+
+This addendum does not duplicate the Phase 40B guide; it only records
+that the Phase 40A-selected internal-guide step is now fulfilled.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
