@@ -25,7 +25,9 @@
     "./events/announcement-dispatcher": "./src/events/announcement-dispatcher.ts",
     "./events/announce-mint": "./src/events/announce-mint.ts",
     "./events/mint-announcement-render": "./src/events/mint-announcement-render.ts",
-    "./recall-wedge/multi-surface-recall-harness": "./src/recall-wedge/multi-surface-recall-harness.ts"
+    "./recall-wedge/multi-surface-recall-harness": "./src/recall-wedge/multi-surface-recall-harness.ts",
+    "./onboarding": "./src/onboarding/index.ts",
+    "./onboarding/verify-card": "./src/onboarding/verify-card.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

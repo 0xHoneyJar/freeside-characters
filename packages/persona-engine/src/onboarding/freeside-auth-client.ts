@@ -44,36 +44,39 @@ export function makeFreesideAuthClient(cfg: FreesideAuthConfig) {
   const base = cfg.baseUrl.replace(/\/+$/, '');
   const retries = cfg.maxRetries ?? 2;
 
+  // retry on transient failures only (network blips + 5xx). 4xx (incl. 404) never retried.
+  const isRetryable = (e: AuthError): boolean =>
+    e._tag === 'AuthNetworkError' || (e._tag === 'AuthHttpError' && e.status >= 500);
+
   // one request → JSON T, with redacted tagged errors + bounded retry on transient failures.
-  const reqJson = <T>(endpoint: string, init: RequestInit): Effect.Effect<T, AuthError> =>
-    Effect.tryPromise({
+  const reqJson = <T>(endpoint: string, init: RequestInit): Effect.Effect<T, AuthError> => {
+    const once = Effect.tryPromise({
       try: () => doFetch(base + endpoint, init),
       catch: (e) => new AuthNetworkError({ endpoint, reason: e instanceof Error ? e.message.slice(0, 120) : 'fetch failed' }),
     }).pipe(
-      Effect.flatMap((res) =>
+      Effect.flatMap((res): Effect.Effect<T, AuthError> =>
         res.ok
           ? Effect.tryPromise({ try: () => res.json() as Promise<T>, catch: () => new AuthDecodeError({ endpoint }) })
           : Effect.fail(new AuthHttpError({ endpoint, status: res.status })),
       ),
-      Effect.retry({
-        times: retries,
-        while: (e: AuthError) => e._tag === 'AuthNetworkError' || (e._tag === 'AuthHttpError' && e.status >= 500),
-      }),
     );
+    return Effect.retry(once, { times: retries, while: isRetryable });
+  };
 
   // resolve → user_id or null (404 = not linked, the expected "new user" path).
-  const resolve = (endpoint: string): Effect.Effect<ResolveResult | null, AuthError> =>
-    Effect.tryPromise({
+  const resolve = (endpoint: string): Effect.Effect<ResolveResult | null, AuthError> => {
+    const once = Effect.tryPromise({
       try: () => doFetch(base + endpoint, { headers: { accept: 'application/json' } }),
       catch: (e) => new AuthNetworkError({ endpoint, reason: e instanceof Error ? e.message.slice(0, 120) : 'fetch failed' }),
     }).pipe(
-      Effect.flatMap((res) => {
+      Effect.flatMap((res): Effect.Effect<ResolveResult | null, AuthError> => {
         if (res.status === 404) return Effect.succeed(null);
         if (!res.ok) return Effect.fail(new AuthHttpError({ endpoint, status: res.status }));
         return Effect.tryPromise({ try: () => res.json() as Promise<ResolveResult>, catch: () => new AuthDecodeError({ endpoint }) });
       }),
-      Effect.retry({ times: retries, while: (e: AuthError) => e._tag === 'AuthNetworkError' || (e._tag === 'AuthHttpError' && e.status >= 500) }),
     );
+    return Effect.retry(once, { times: retries, while: isRetryable });
+  };
 
   return {
     /** DEP-A · Phase-2 (may be unbuilt → may HttpError; caller falls back to resolveByWallet). */

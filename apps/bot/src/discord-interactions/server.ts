@@ -155,10 +155,10 @@ async function handleDiscordPost(
     return jsonResponse(response);
   }
 
-  // cycle-Q · sprint-3 · Q3.5: forward MESSAGE_COMPONENT (button) and
-  // MODAL_SUBMIT into dispatchSlashCommand · the dispatch entry now
-  // intercepts quest_* custom_ids (per quest-dispatch.ts isQuestInteraction)
-  // before the per-character resolution. Non-quest button/modal interactions
+  // cycle-Q · sprint-3 · Q3.5 (+ cycle-009 · sprint-2): forward MESSAGE_COMPONENT
+  // (button) and MODAL_SUBMIT into dispatchSlashCommand · the dispatch entry
+  // intercepts quest_* (isQuestInteraction) AND onboard:* (isOnboardingInteraction)
+  // custom_ids before per-character resolution. Other button/modal interactions
   // fall through to the legacy ephemeral fallback below.
   if (
     interaction.type === InteractionType.MESSAGE_COMPONENT ||
@@ -167,7 +167,7 @@ async function handleDiscordPost(
     const customId =
       (interaction as unknown as { data?: { custom_id?: string } }).data
         ?.custom_id ?? '';
-    if (customId.startsWith('quest_')) {
+    if (customId.startsWith('quest_') || customId.startsWith('onboard:')) {
       const response = await dispatchSlashCommand(
         interaction,
         args.config,
