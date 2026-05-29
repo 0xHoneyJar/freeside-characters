@@ -39,7 +39,7 @@
       "name": "@freeside-characters/persona-engine",
       "version": "0.12.0",
       "dependencies": {
-        "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#7db6359e98739609f8f9d24f444822ad82f597a7",
+        "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#56585fd132941f9387b53d4916c905619dd0e8ea",
         "@0xhoneyjar/medium-registry": "^0.2.0",
         "@anthropic-ai/claude-agent-sdk": "^0.2.122",
         "@aws-sdk/client-bedrock-runtime": "^3.1048.0",
@@ -78,7 +78,7 @@
     },
   },
   "packages": {
-    "@0xhoneyjar/events": ["loa-freeside@github:0xHoneyJar/loa-freeside#7db6359", { "dependencies": { "aws-embedded-metrics": "^4.2.1" } }, "0xHoneyJar-loa-freeside-7db6359", "sha512-rbbpzDSXv8ZjILEydnJc9msE7ybqjHd/z/qnkT8iBEO/4hEymCxavDHSs5XGPWCf9djq13E5/+kUkfnBtS4bng=="],
+    "@0xhoneyjar/events": ["loa-freeside@github:0xHoneyJar/loa-freeside#56585fd", { "dependencies": { "aws-embedded-metrics": "^4.2.1" } }, "0xHoneyJar-loa-freeside-56585fd", "sha512-MdLmDkkyFApUsmcLtNEk1XtemcayyAviU7fDwV9ATb3U1oDu3WaBzVcc4TRq/V8iRrSXGIslfGFEj9IVDeNZ8Q=="],
 
     "@0xhoneyjar/medium-registry": ["@0xhoneyjar/medium-registry@0.2.0", "", { "peerDependencies": { "effect": "^3.10.0" } }, "sha512-A7Kpd8UjfymCzQ6Gdod8ZcGn2LvWmgaksYhiY8M3RpUWAziJ/0VSc0SBG7PLt5dCwtWdf0xiOLG3TPJ5qitIqw=="],
 
