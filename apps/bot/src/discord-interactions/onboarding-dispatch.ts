@@ -48,6 +48,12 @@ export interface OnboardingRuntime {
   readonly hasVerifiedRole?: (interaction: DiscordInteraction) => boolean | Promise<boolean>;
   /** optional re-grant for the `restored` branch (sprint-4 wires C6). */
   readonly regrantRole?: (interaction: DiscordInteraction) => Promise<void>;
+  /**
+   * T5.3 / IMP-002 slip-fallback. `resolve-by-discord` (default) uses the DEP-A idempotent
+   * pre-check; `resolve-by-wallet` SKIPS it (treat everyone as `new`) when DEP-A hasn't shipped —
+   * the web flow's link is idempotent, so a redundant verify is harmless (degraded idempotency).
+   */
+  readonly idempotentMode?: 'resolve-by-discord' | 'resolve-by-wallet';
   readonly noRuntime: boolean;
 }
 
@@ -163,8 +169,9 @@ export async function runOnboardingPrecheck(
     const discordId = invoker.id;
 
     // FR-2 idempotent pre-check (DEP-A). On any error → degrade to `new` (slip-fallback).
+    // T5.3/IMP-002: `resolve-by-wallet` mode skips the pre-check entirely (DEP-A not shipped).
     let linked = false;
-    if (runtime.authClient) {
+    if (runtime.authClient && runtime.idempotentMode !== 'resolve-by-wallet') {
       const exit = await Effect.runPromiseExit(runtime.authClient.resolveByDiscord(discordId));
       linked = Exit.isSuccess(exit) && exit.value !== null;
     }

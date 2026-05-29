@@ -135,4 +135,24 @@ describe('onboarding-dispatch C2 — pre-check (background)', () => {
     const body = JSON.parse(calls[0]!.body);
     expect(body.content).toMatch(/verify\/[0-9a-f]{32}/);
   });
+
+  test('T5.3/IMP-002 · resolve-by-wallet mode SKIPS resolveByDiscord (DEP-A not shipped)', async () => {
+    const { calls, fetchFn } = capture();
+    let resolveCalled = false;
+    const probeClient = {
+      resolveByDiscord: () => {
+        resolveCalled = true;
+        return Effect.succeed({ user_id: 'u1' }); // would say "linked" → restored, IF called
+      },
+    } as unknown as FreesideAuthClient;
+    const runtime: OnboardingRuntime = {
+      authClient: probeClient,
+      verifyBaseUrl: 'https://verify.test',
+      idempotentMode: 'resolve-by-wallet',
+      noRuntime: false,
+    };
+    await runOnboardingPrecheck(buttonClick('onboard:verify'), runtime, { fetchFn });
+    expect(resolveCalled).toBe(false); // pre-check skipped
+    expect(JSON.parse(calls[0]!.body).content).toMatch(/verify\/[0-9a-f]{32}/); // → new path
+  });
 });

@@ -61,6 +61,13 @@ export {
 export { grantVerifiedRole, type RoleGrantConfig } from './role-grant.ts';
 
 export {
+  recordVerifyEvent,
+  verifyMetricsSnapshot,
+  resetVerifyMetrics,
+  type VerifyEvent,
+} from './observability.ts';
+
+export {
   auditLink,
   recordConflictForReview,
   type ConflictKind,

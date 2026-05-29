@@ -40,8 +40,9 @@ import {
   startInteractionServer,
   type InteractionServerHandle,
 } from './discord-interactions/server.ts';
-import { setQuestRuntime } from './discord-interactions/dispatch.ts';
+import { setQuestRuntime, setOnboardingRuntime } from './discord-interactions/dispatch.ts';
 import { buildMemoryDevQuestRuntime } from './quest-runtime-bootstrap.ts';
+import { buildOnboardingWiringFromEnv } from './onboarding-runtime.ts';
 import {
   buildEnvTenantPgPoolFactory,
   buildProductionQuestRuntime,
@@ -490,8 +491,28 @@ async function main(): Promise<void> {
   // Disjoint from digest cron — failure here doesn't affect Pattern B writes.
   let interactionServer: InteractionServerHandle | null = null;
   if (config.DISCORD_PUBLIC_KEY) {
+    // cycle-009 · sprint-5 — onboarding wiring (C2 dispatch + C4 verify web surface).
+    // Off unless the full secret set is present (fail-safe). Live THJ deploy stays DEP-A-gated.
+    const onboardingWiring = buildOnboardingWiringFromEnv();
+    if (onboardingWiring) {
+      setOnboardingRuntime(onboardingWiring.onboarding);
+      console.log(
+        `onboarding:     ENABLED · verify @ ${onboardingWiring.verify.origin} · ` +
+          `idempotent-mode=${onboardingWiring.onboarding.idempotentMode}`,
+      );
+    } else {
+      console.log(
+        `onboarding:     DISABLED (set VERIFY_ORIGIN + DISCORD_OAUTH_* + IDENTITY_SERVICE_TOKEN + ` +
+          `DISCORD_BOT_TOKEN + ONBOARDING_VERIFIED_ROLE_ID + ONBOARDING_STATE_SECRET to enable)`,
+      );
+    }
     try {
-      interactionServer = startInteractionServer({ config, characters, port: config.INTERACTIONS_PORT });
+      interactionServer = startInteractionServer({
+        config,
+        characters,
+        port: config.INTERACTIONS_PORT,
+        verifyRuntime: onboardingWiring?.verify,
+      });
       console.log(
         `interactions:   listening on :${interactionServer.port} · ` +
           `commands /${characters.map((c) => c.id).join(' /')}`,

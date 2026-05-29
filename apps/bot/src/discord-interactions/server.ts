@@ -33,6 +33,7 @@ import {
   handleVerifyComplete,
   type VerifyRuntime,
 } from '../verify/verify-routes.ts';
+import { verifyMetricsSnapshot } from '@freeside-characters/persona-engine/onboarding';
 
 const DEFAULT_PORT = 3001;
 
@@ -77,6 +78,8 @@ export function startInteractionServer(args: InteractionServerArgs): Interaction
           status: 'ok',
           service: 'freeside-characters-interactions',
           characters: args.characters.map((c) => c.id),
+          // cycle-009 · T5.4 — verify metrics for the cutover monitor (only when onboarding is on).
+          onboarding: args.verifyRuntime?.enabled ? verifyMetricsSnapshot() : 'disabled',
         });
       }
 

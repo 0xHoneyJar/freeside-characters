@@ -27,6 +27,7 @@ import {
   verifySiweSignature,
   auditLink,
   recordConflictForReview,
+  recordVerifyEvent,
   type OAuthConfig,
   type FreesideAuthClient,
 } from '@freeside-characters/persona-engine/onboarding';
@@ -53,6 +54,7 @@ export function handleVerifyRoot(token: string, rt: VerifyRuntime): Response {
   if (!TOKEN_RE.test(token) || !validateToken(token)) {
     return errorPage('this verification link is invalid or has expired. start again from discord.', 400);
   }
+  recordVerifyEvent('verify_root');
   const state = issueOAuthState(token);
   const authorizeUrl = buildAuthorizeUrl(rt.oauth, state);
   return new Response(null, { status: 302, headers: { location: authorizeUrl, 'referrer-policy': 'no-referrer', 'cache-control': 'no-store' } });
@@ -78,8 +80,10 @@ export async function handleOAuthCallback(url: URL, rt: VerifyRuntime): Promise<
   // ATK-001 — the OAuth'd discord user MUST be the one the token was minted for. A leaked
   // verify URL signed-in by a stranger is rejected here (the discord_id binding is the gate).
   if (user.value.id !== handoff.did) {
+    recordVerifyEvent('oauth_mismatch');
     return errorPage('this verification link was issued for a different discord account.', 403);
   }
+  recordVerifyEvent('oauth_callback');
 
   const siwe = issueSiweNonce(claimed.token, handoff.did);
   return connectPage({
@@ -136,6 +140,7 @@ export async function handleVerifyComplete(token: string, request: Request, rt: 
   // a replayed nonce (already claimed / expired) → null → reject before any link side-effect.
   const session = claimSiweNonce(nonce);
   if (!session || session.token !== token || session.did !== handoff.did) {
+    recordVerifyEvent('nonce_replay');
     return jsonResponse({ error: 'invalid or used verification nonce' }, 400);
   }
 
@@ -158,7 +163,10 @@ export async function handleVerifyComplete(token: string, request: Request, rt: 
     rt.domain,
     rt.chainId,
   );
-  if (!verdict.ok) return jsonResponse({ error: 'signature verification failed' }, 400);
+  if (!verdict.ok) {
+    recordVerifyEvent('siwe_fail', { reason: verdict.reason });
+    return jsonResponse({ error: 'signature verification failed' }, 400);
+  }
 
   // ── per-step compensation transaction (IMP-009) ────────────────────────────
   // 1. link (identity-api owns idempotency; key is stable across retries).
@@ -167,6 +175,7 @@ export async function handleVerifyComplete(token: string, request: Request, rt: 
   );
   if (Exit.isFailure(linkExit)) {
     // FR-14 outage — handoff claim NOT consumed → the user can retry from discord.
+    recordVerifyEvent('link_outage');
     return jsonResponse({ error: 'cables got crossed linking your wallet. try again in a moment.' }, 503);
   }
   const link = linkExit.value;
@@ -182,6 +191,7 @@ export async function handleVerifyComplete(token: string, request: Request, rt: 
   //    operator review. A clean link (conflict == null) grants the role.
   let roleGranted = false;
   if (conflict) {
+    recordVerifyEvent('conflict', { kind: conflict });
     recordConflictForReview({ discordId: handoff.did, walletAddress: address, userId: link.user_id, conflict });
   } else if (rt.grantRole) {
     // FR-13 re-grant is idempotent; failure → restored on the next verify click.
@@ -197,6 +207,8 @@ export async function handleVerifyComplete(token: string, request: Request, rt: 
     conflict,
     roleGranted,
   });
+
+  if (!conflict) recordVerifyEvent('verified', { role_granted: roleGranted });
 
   return jsonResponse({
     ok: true,
