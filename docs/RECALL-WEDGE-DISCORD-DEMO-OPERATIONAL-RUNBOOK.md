@@ -544,3 +544,7 @@ Phase 39D is acceptable if:
   `/recall-wedge-demo` to the handler.
 - `packages/persona-engine/src/recall-wedge/multi-surface-recall-harness.ts`
   — Phase 38A harness; the only data path the demo renders from.
+- `docs/RECALL-WEDGE-DISCORD-DEMO-INTERNAL-GUIDE.md` — Phase 40B internal
+  demo guide; the how-to-demo-safely companion (5–10 minute script,
+  what-to-say / what-not-to-claim, expected outputs) layered on top of
+  this runbook. Disable / removal stays governed by §K / §L here.
