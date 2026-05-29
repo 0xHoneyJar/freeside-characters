@@ -694,6 +694,32 @@ blocker appears, Phase 39B must stop and a separate decision must
 be made before adding a dependency. Phase 39B must not add CI or
 generated files.
 
+### O.1 Phase 39D note — operational runbook for the implemented command
+
+> Added by Phase 39D
+> (`docs/RECALL-WEDGE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`).
+> Targeted note near the Phase 39B implementation contract / rollback,
+> not a rewrite of this gate.
+
+- **Phase 39B and Phase 39C implemented the handler and the
+  registration gate.** Phase 39B added the dev-only
+  `/recall-wedge-demo` handler
+  (`apps/bot/src/discord-interactions/recall-wedge-demo.ts`); Phase
+  39C added the disabled-by-default, guild-scoped-only registration
+  path (`registerRecallWedgeDemoCommand` in
+  `apps/bot/src/lib/publish-commands.ts`, wired in
+  `apps/bot/scripts/publish-commands.ts`), which never falls back to
+  the global route.
+- **Phase 39D is the operational runbook** for safely
+  enabling, registering, invoking, validating, disabling, and removing
+  the command — the §F delivery shape, §D / §D.1 visibility / env
+  gates, §K logs posture, and §M rollback / removal path restated as
+  operator steps.
+- **The operational runbook does not expand the Phase 39A
+  authorization.** Everything blocked by §N stays blocked; the runbook
+  authorizes controlled dev / operator testing only, with no live
+  Dixie, no memory admission, and no public rollout.
+
 ---
 
 ## P. Acceptance criteria for Phase 39A

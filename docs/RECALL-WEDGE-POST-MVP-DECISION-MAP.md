@@ -449,6 +449,31 @@ Discord harness demo only."
 
 ---
 
+### 5f. Phase 39D addendum — Phase 39B / 39C merged; operational runbook only
+
+> Added by Phase 39D
+> (`docs/RECALL-WEDGE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 39D:
+
+- **Phase 39B and Phase 39C are merged.** The dev-only
+  `/recall-wedge-demo` handler (Phase 39B) and the disabled-by-default,
+  guild-scoped-only registration gate (Phase 39C) are in place.
+- **Phase 39D adds only the operational runbook / acceptance path.** It
+  adds no source, test, package, lockfile, fixture, config, CI, or
+  generated change, and no registration / handler behavior change.
+- **Controlled operator testing is allowed only under the runbook** —
+  guild-scoped registration to one configured guild, operator-gated
+  invocation by an allowlist, ephemeral harness-backed output, with
+  immediate env / config disable.
+- **Live Dixie-backed Discord recall, public rollout, public
+  channel-visible recall, Telegram, private chat, storage / admission,
+  production auth / consent, LLM rewriting, and character voice remain
+  blocked.** Phase 39D does not expand the Phase 39A authorization.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
