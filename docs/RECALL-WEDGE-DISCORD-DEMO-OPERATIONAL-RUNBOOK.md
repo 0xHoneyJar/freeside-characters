@@ -43,6 +43,22 @@ Discord testing only: guild-scoped registration, operator-gated
 invocation, ephemeral harness-backed output, no live Dixie, no memory
 admission, no public rollout.**
 
+### A.2 Phase 39E note — controlled smoke test completed
+
+> Added by Phase 39E
+> (`docs/RECALL-WEDGE-DISCORD-DEMO-SMOKE-TEST-ACCEPTANCE.md`).
+
+- The **controlled smoke test described by this runbook has been
+  completed** by the human operator in a real Discord guild.
+- **Operator invocation** (served / default and `denied`) and
+  **non-operator fail-closed refusal** were observed and accepted (see
+  the Phase 39E acceptance report for the redacted evidence).
+- **This runbook remains the governing operating procedure** for any
+  further controlled dev / operator run.
+- **No new runtime scope is authorized** by the smoke test — every
+  §D blocked item stays blocked, and the demo stays a fixture-bound,
+  guild-only, operator-only, ephemeral dev demo.
+
 ---
 
 ## B. Source evidence

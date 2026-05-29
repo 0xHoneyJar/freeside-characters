@@ -474,6 +474,41 @@ Status as of Phase 39D:
 
 ---
 
+### 5g. Phase 39E addendum — controlled operator smoke-test accepted; demo only
+
+> Added by Phase 39E
+> (`docs/RECALL-WEDGE-DISCORD-DEMO-SMOKE-TEST-ACCEPTANCE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 39E:
+
+- **Phase 39E records controlled operator smoke-test acceptance.** The
+  human operator ran the Phase 39D smoke test in a real Discord guild
+  (redacted observations only — no raw IDs / tokens / screenshots
+  committed).
+- **Registration, operator invocation, served / default output, denied
+  output, and non-operator fail-closed refusal all passed.**
+  `/recall-wedge-demo` registered guild-scoped only (no global), the
+  allowlisted operator received ephemeral Phase 38A harness-backed
+  output for both `served` and `denied` cases, and a non-operator
+  account received the single generic ephemeral refusal.
+- **`/recall-wedge-demo` is accepted only for controlled dev / operator
+  demos.** Phase 39E adds no source, test, package, lockfile, fixture,
+  config, CI, or generated change, and no handler / registration
+  behavior change.
+- **No live Dixie-backed Discord recall, public rollout, public
+  channel-visible recall, Telegram, private chat, storage / admission,
+  production auth / consent, LLM rewriting, or character voice is
+  authorized.** Phase 39E does not expand the Phase 39A authorization.
+- **The next allowed step is Phase 40A — a post-smoke-test decision
+  gate** (keep the demo as-is, write an internal demo guide, add a
+  de-registration helper, move toward live Dixie-backed Discord recall
+  under a new gate, move toward public-channel-visible recall under a
+  new gate, or stop and harden operational docs). Phase 39E authorizes
+  none of those.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
