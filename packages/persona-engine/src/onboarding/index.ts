@@ -57,3 +57,13 @@ export {
   claimSiweNonce,
   type SiweNonceRecord,
 } from './verify-session.ts';
+
+export { grantVerifiedRole, type RoleGrantConfig } from './role-grant.ts';
+
+export {
+  auditLink,
+  recordConflictForReview,
+  type ConflictKind,
+  type LinkAuditRecord,
+  type ConflictReviewRecord,
+} from './onboarding-records.ts';

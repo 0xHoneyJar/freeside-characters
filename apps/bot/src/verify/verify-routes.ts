@@ -25,6 +25,8 @@ import {
   issueSiweNonce,
   claimSiweNonce,
   verifySiweSignature,
+  auditLink,
+  recordConflictForReview,
   type OAuthConfig,
   type FreesideAuthClient,
 } from '@freeside-characters/persona-engine/onboarding';
@@ -176,11 +178,25 @@ export async function handleVerifyComplete(token: string, request: Request, rt: 
   // 2. consume the handoff claim AFTER a successful link (IMP-009 · pre-link failure left it reusable).
   consumeToken(token);
 
-  // 3. grant the verified role (only when no conflict). Failure → FR-13 re-grant on next verify click.
+  // 3. conflict policy (FR-12/RT-4): a rebound link is provisional — withhold the role, queue for
+  //    operator review. A clean link (conflict == null) grants the role.
   let roleGranted = false;
-  if (!conflict && rt.grantRole) {
+  if (conflict) {
+    recordConflictForReview({ discordId: handoff.did, walletAddress: address, userId: link.user_id, conflict });
+  } else if (rt.grantRole) {
+    // FR-13 re-grant is idempotent; failure → restored on the next verify click.
     roleGranted = await rt.grantRole(handoff.did, handoff.gid).catch(() => false);
   }
+
+  // 4. audit the link (RT-3 — redacted; never the service token).
+  auditLink({
+    discordId: handoff.did,
+    walletAddress: address,
+    userId: link.user_id,
+    idempotent: link.idempotent,
+    conflict,
+    roleGranted,
+  });
 
   return jsonResponse({
     ok: true,

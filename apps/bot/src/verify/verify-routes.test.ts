@@ -55,6 +55,9 @@ const okClient = {
 const failClient = {
   link: () => Effect.fail(new Error('identity-api down')),
 } as unknown as FreesideAuthClient;
+const reboundClient = {
+  link: () => Effect.succeed({ ok: true, user_id: 'u9', idempotent: false, conflict_resolved: 'wallet_rebound' }),
+} as unknown as FreesideAuthClient;
 
 const oauthFetch = (discordId: string) =>
   (async (url: string) => {
@@ -198,6 +201,23 @@ describe('verify-routes — POST /complete', () => {
     // pre-link failure leaves the handoff token reusable.
     expect(validateToken(token)).not.toBeNull();
     expect(consumeToken(token)).toBe(true); // still claimable (was NOT consumed)
+  });
+
+  test('FR-12 · a rebound link → pending_review, role WITHHELD (provisional)', async () => {
+    const token = mkToken();
+    const signer = makeSigner();
+    let granted = false;
+    const { req } = signedComplete(token, signer);
+    const res = await handleVerifyComplete(
+      token,
+      req,
+      runtime({ authClient: reboundClient, grantRole: async () => { granted = true; return true; } }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; role_granted: boolean };
+    expect(body.status).toBe('pending_review');
+    expect(body.role_granted).toBe(false);
+    expect(granted).toBe(false); // grant never attempted on a rebound
   });
 
   test('a non-wallet address → 400 (RT-2)', async () => {
