@@ -572,6 +572,20 @@ boundary.
 - **Telegram, private chat, storage / admission, production auth /
   consent, LLM rewriting, and character voice** all remain blocked.
 
+> **Phase 41A note**
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md`). Phase 41A
+> **chooses not to proceed to Phase 40C immediately** — the Phase 39D
+> runbook §L manual removal is sufficient, so the de-registration helper
+> stays deferred / only-if-needed. **This harness demo guide remains
+> valid and unchanged** — `/recall-wedge-demo` stays controlled,
+> guild-scoped, operator-gated, ephemeral, harness-backed, and
+> non-production. **Any future live Dixie Discord demo must be separate
+> from `/recall-wedge-demo`** — a distinct dev/operator-only command
+> `/recall-wedge-live-demo` under its own strict gates, never a
+> live-producer replacement of this demo. **Live Dixie-backed recall and
+> public-channel-visible recall remain blocked** until separate later
+> gates authorize implementation; Phase 41A authorizes nothing here.
+
 ---
 
 ## P. Acceptance criteria for Phase 40B
@@ -623,3 +637,7 @@ Phase 40B is acceptable if:
   (unchanged by Phase 40B).
 - `apps/bot/src/discord-interactions/dispatch.ts` — routes
   `/recall-wedge-demo` to the handler (unchanged by Phase 40B).
+- `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md` — Phase 41A
+  live-Dixie Discord decision gate; chooses a separate
+  `/recall-wedge-live-demo` command for any future live-Dixie work and
+  defers Phase 40C (see the Phase 41A note in §O).

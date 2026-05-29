@@ -417,3 +417,32 @@ Phase 40A is acceptable if:
   (unchanged by Phase 40A).
 - `apps/bot/src/discord-interactions/dispatch.ts` — routes
   `/recall-wedge-demo` to the handler (unchanged by Phase 40A).
+- `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md` — Phase 41A
+  live-Dixie Discord decision gate; opens the separate-command live-Dixie
+  decision lane (see the Phase 41A note below).
+
+---
+
+## L. Phase 41A note — Phase 40B fulfilled; 40C deferred; a separate live-Dixie Discord decision lane opened
+
+> Added by Phase 41A
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md`). Short note,
+> not a rewrite of this gate.
+
+- **Phase 40B fulfilled the internal demo guide step** selected in §E
+  (`docs/RECALL-WEDGE-DISCORD-DEMO-INTERNAL-GUIDE.md`).
+- **Phase 40C remains optional / deferred.** The Phase 39D runbook §L
+  manual removal is sufficient; no current blocker requires a helper.
+- **Phase 41A opens a separate live-Dixie Discord decision lane only as a
+  decision gate** — it selects, for any future live-Dixie Discord work, a
+  separate dev/operator-only command `/recall-wedge-live-demo` under
+  strict disabled-by-default / guild-scoped / operator-gated /
+  ephemeral / no-freeform / no-history / no-memory-admission gates that
+  may call the Phase 37C live client only after Discord gates pass. It
+  implements nothing.
+- **`/recall-wedge-demo` remains harness-backed** and is not mutated into
+  a live command.
+- **No runtime scope is added** by Phase 41A — no source / test / package
+  / lockfile / fixture / config / CI / generated change. Live
+  Dixie-backed Discord recall and public-channel-visible recall remain
+  blocked behind separate later gates (§F, §G, §I).
