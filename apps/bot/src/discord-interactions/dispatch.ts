@@ -75,6 +75,10 @@ import {
   RECALL_WEDGE_DEMO_COMMAND_NAME,
   handleRecallWedgeDemoInteraction,
 } from './recall-wedge-demo.ts';
+import {
+  RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME,
+  handleRecallWedgeLiveDemoInteraction,
+} from './recall-wedge-live-demo.ts';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const DISCORD_CHAR_LIMIT = 2000;
@@ -228,6 +232,25 @@ export async function dispatchSlashCommand(
     // handler's gates pass (no harness evaluation at bot startup). dispatch
     // is already async, so we simply await the gated response.
     return await handleRecallWedgeDemoInteraction(interaction);
+  }
+
+  // ─── Phase 41B · dev/operator-only LIVE Dixie Recall Wedge demo ────
+  // Authority: docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md (Phase
+  // 41A). SEPARATE command from `/recall-wedge-demo` — it never mutates or
+  // aliases the harness command. The handler evaluates its own enable / guild
+  // / operator gates FIRST and only then lazily imports the Phase 37C live
+  // Dixie client (the sole live-egress seam); a refused interaction loads no
+  // client and makes no network request. It fails closed to a single generic
+  // ephemeral refusal on every refused / unknown / unsafe / error path. Routed
+  // here — before character resolution / auth-bridge — because it is NOT
+  // character-bound and must not inherit the chat/imagegen async delivery
+  // path. No new logging is added: the handler enforces the §K no-raw-id /
+  // no-secret posture.
+  if (
+    !isQuest &&
+    interaction.data?.name === RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME
+  ) {
+    return await handleRecallWedgeLiveDemoInteraction(interaction);
   }
 
   // ─── Circuit breaker pre-check ─────────────────────────────────────

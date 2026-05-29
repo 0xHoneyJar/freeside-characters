@@ -28,6 +28,17 @@ import {
   resolveRecallWedgeDiscordDemoGuildId,
   shouldRegisterRecallWedgeDiscordDemo,
 } from '../discord-interactions/recall-wedge-demo.ts';
+// Phase 41B: lightweight live-command METADATA only (a plain object) + the two
+// live registration env gates. Same posture as the Phase 39C import above —
+// recall-wedge-live-demo.ts reaches the Phase 37C live Dixie client ONLY via a
+// type-only import (erased at build) and a gated dynamic import() inside its
+// handler, so importing its metadata here adds NO live-client evaluation (and
+// no network egress) at startup / publish time.
+import {
+  RECALL_WEDGE_LIVE_DEMO_COMMAND_DEFINITION,
+  resolveRecallWedgeLiveDiscordDemoGuildId,
+  shouldRegisterRecallWedgeLiveDiscordDemo,
+} from '../discord-interactions/recall-wedge-live-demo.ts';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
@@ -324,6 +335,112 @@ export async function registerRecallWedgeDemoCommand(
     const txt = await response.text().catch(() => '<unreadable>');
     throw new Error(
       `registerRecallWedgeDemoCommand: Discord POST failed for guild=${guildId} status=${response.status} body=${txt}`,
+    );
+  }
+
+  const created = (await response.json()) as { id: string; name: string };
+  return {
+    registered: true,
+    scope: 'guild',
+    guildId,
+    command: { name: created.name, id: created.id },
+  };
+}
+
+// =====================================================================
+// Phase 41B · dev/operator-only LIVE Dixie demo registration (guild-scoped ONLY)
+// =====================================================================
+//
+// Authority: docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md §G / §M.
+//
+// SEPARATE registration path for `/recall-wedge-live-demo`, posture-identical
+// to the Phase 39C `registerRecallWedgeDemoCommand` helper above but using the
+// LIVE command's own env names + command definition. Like the harness helper,
+// it is deliberately NOT routed through `publishCommands` / `buildCommandSet`
+// (the global-capable PUT path), so the live command can NEVER appear in a
+// global payload. It registers with a single POST to the guild-scoped command
+// route, and ONLY when both live env gates pass:
+//
+//   - RECALL_WEDGE_LIVE_DISCORD_DEMO_REGISTER_COMMANDS === "true" (exact); and
+//   - RECALL_WEDGE_LIVE_DISCORD_DEMO_GUILD_ID is present + non-empty.
+//
+// Missing / near-truthy register flag, or a missing / blank guild id, skips
+// registration entirely (fail closed). There is NO global fallback: if the
+// guild id is absent the command is NOT registered anywhere (Phase 41A §G).
+
+export interface RegisterRecallWedgeLiveDemoOptions {
+  readonly botToken: string;
+  /** If absent, derived from `/applications/@me`. */
+  readonly applicationId?: string;
+  /** Defaults to `process.env`; the two §G gates are read from here. */
+  readonly env?: RegistrationEnv;
+}
+
+export type RegisterRecallWedgeLiveDemoResult =
+  | { readonly registered: false; readonly reason: 'gate_disabled' | 'no_guild' }
+  | {
+      readonly registered: true;
+      readonly scope: 'guild';
+      readonly guildId: string;
+      readonly command: { readonly name: string; readonly id: string };
+    };
+
+/**
+ * Register `/recall-wedge-live-demo` to the single configured guild,
+ * guild-scoped ONLY. Returns a skip result (without any network call) unless
+ * both live env gates pass. The Discord route used is ALWAYS the guild commands
+ * route (`/applications/{app}/guilds/{guild}/commands`); there is no branch
+ * that targets the global route.
+ *
+ * POST to the guild commands route is upsert-by-name (idempotent for this one
+ * command) and does NOT replace the guild's full command set — so it composes
+ * with both the separate `publishCommands` PUT and the Phase 39C harness-demo
+ * POST without clobbering other commands.
+ */
+export async function registerRecallWedgeLiveDemoCommand(
+  opts: RegisterRecallWedgeLiveDemoOptions,
+): Promise<RegisterRecallWedgeLiveDemoResult> {
+  if (!opts.botToken) {
+    throw new Error('registerRecallWedgeLiveDemoCommand: botToken is required');
+  }
+
+  const env = opts.env ?? process.env;
+
+  // Gate 1: exact-"true" register flag (near-truthy values fail closed).
+  if (!shouldRegisterRecallWedgeLiveDiscordDemo(env)) {
+    return { registered: false, reason: 'gate_disabled' };
+  }
+
+  // Gate 2: a present, non-empty guild id. Missing / blank / whitespace-only
+  // fails closed — and crucially does NOT fall back to global registration.
+  const guildId = resolveRecallWedgeLiveDiscordDemoGuildId(env);
+  if (!guildId) {
+    return { registered: false, reason: 'no_guild' };
+  }
+
+  const applicationId =
+    opts.applicationId ?? (await fetchApplicationId(opts.botToken));
+  if (!applicationId) {
+    throw new Error(
+      'registerRecallWedgeLiveDemoCommand: applicationId not provided and could not be derived from /applications/@me',
+    );
+  }
+
+  // Guild-scoped route ONLY — never the global `/applications/{app}/commands`.
+  const url = `${DISCORD_API_BASE}/applications/${applicationId}/guilds/${guildId}/commands`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${opts.botToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(RECALL_WEDGE_LIVE_DEMO_COMMAND_DEFINITION),
+  });
+
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '<unreadable>');
+    throw new Error(
+      `registerRecallWedgeLiveDemoCommand: Discord POST failed for guild=${guildId} status=${response.status} body=${txt}`,
     );
   }
 
