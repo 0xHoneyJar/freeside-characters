@@ -32,3 +32,28 @@ export {
   ONBOARD_VERIFY_CUSTOM_ID,
   type VerifyCardOpts,
 } from './verify-card.ts';
+
+export {
+  buildSiweMessage,
+  recoverPersonalSign,
+  verifySiweSignature,
+  type SiweMessageParams,
+  type SiweVerifyInput,
+  type SiweVerdict,
+} from './siwe.ts';
+
+export {
+  buildAuthorizeUrl,
+  exchangeCode,
+  fetchDiscordUser,
+  type OAuthConfig,
+  type OAuthResult,
+} from './oauth.ts';
+
+export {
+  issueOAuthState,
+  consumeOAuthState,
+  issueSiweNonce,
+  claimSiweNonce,
+  type SiweNonceRecord,
+} from './verify-session.ts';
