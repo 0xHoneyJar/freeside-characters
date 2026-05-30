@@ -12,7 +12,7 @@
  * Layout (top → bottom):
  *   Container (accent: Mibera Shadows purple)
  *     ├── Header  (## emoji collection · -# subtitle "<displayName> minted #<tokenId>")
- *     ├── Image   (Section + thumbnail) — OMITTED when imageUrl is null
+ *     ├── Image   (MediaGallery type 12 · full-bleed HERO) — OMITTED when imageUrl is null
  *     ├── Traits  (TextDisplay · two-column rows) — OMITTED when traits is null/empty
  *     └── Footer  (TextDisplay · "[tx](berascan link)" + chain marker)
  *
@@ -37,8 +37,10 @@ import { escapeDiscordMarkdown } from '../deliver/sanitize.ts';
 const COMPONENT_TEXT_DISPLAY = 10;
 const COMPONENT_CONTAINER = 17;
 const COMPONENT_SEPARATOR = 14;
-const SECTION_TYPE = 9;
-const THUMBNAIL_TYPE = 11;
+// MediaGallery (type 12) — full-bleed HERO image, the headline of the card.
+// Replaces the prior Section(9)+Thumbnail(11) 80px accessory so the minted
+// shadow renders large rather than as a sidebar thumbnail.
+const MEDIA_GALLERY_TYPE = 12;
 
 /** Mibera Shadows accent — matches the owsley-lab purple in enriched-render's ZONE_ACCENT. */
 const MST_ACCENT = 0x6f4ea1;
@@ -94,15 +96,14 @@ export function buildEnrichedMintAnnouncement(
     { type: COMPONENT_TEXT_DISPLAY, content: `${headerLine}\n${subtitleLine}` },
   ];
 
-  // Image section (omit if enrichment failed)
+  // Image HERO — full-bleed MediaGallery (type 12). Omit if enrichment failed.
+  // No caption: the header already says "<displayName> minted #<tokenId>", so
+  // the image is the hero rather than a thumbnail beside a token-id line.
   if (ctx.imageUrl) {
     blocks.push({ type: COMPONENT_SEPARATOR });
     blocks.push({
-      type: SECTION_TYPE,
-      components: [
-        { type: COMPONENT_TEXT_DISPLAY, content: `-# Token #${ctx.tokenId}` },
-      ],
-      accessory: { type: THUMBNAIL_TYPE, media: { url: ctx.imageUrl } },
+      type: MEDIA_GALLERY_TYPE,
+      items: [{ media: { url: ctx.imageUrl } }],
     });
   }
 
