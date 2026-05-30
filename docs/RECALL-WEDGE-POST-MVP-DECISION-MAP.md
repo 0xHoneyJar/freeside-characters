@@ -449,6 +449,196 @@ Discord harness demo only."
 
 ---
 
+### 5f. Phase 39D addendum — Phase 39B / 39C merged; operational runbook only
+
+> Added by Phase 39D
+> (`docs/RECALL-WEDGE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 39D:
+
+- **Phase 39B and Phase 39C are merged.** The dev-only
+  `/recall-wedge-demo` handler (Phase 39B) and the disabled-by-default,
+  guild-scoped-only registration gate (Phase 39C) are in place.
+- **Phase 39D adds only the operational runbook / acceptance path.** It
+  adds no source, test, package, lockfile, fixture, config, CI, or
+  generated change, and no registration / handler behavior change.
+- **Controlled operator testing is allowed only under the runbook** —
+  guild-scoped registration to one configured guild, operator-gated
+  invocation by an allowlist, ephemeral harness-backed output, with
+  immediate env / config disable.
+- **Live Dixie-backed Discord recall, public rollout, public
+  channel-visible recall, Telegram, private chat, storage / admission,
+  production auth / consent, LLM rewriting, and character voice remain
+  blocked.** Phase 39D does not expand the Phase 39A authorization.
+
+---
+
+### 5g. Phase 39E addendum — controlled operator smoke-test accepted; demo only
+
+> Added by Phase 39E
+> (`docs/RECALL-WEDGE-DISCORD-DEMO-SMOKE-TEST-ACCEPTANCE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 39E:
+
+- **Phase 39E records controlled operator smoke-test acceptance.** The
+  human operator ran the Phase 39D smoke test in a real Discord guild
+  (redacted observations only — no raw IDs / tokens / screenshots
+  committed).
+- **Registration, operator invocation, served / default output, denied
+  output, and non-operator fail-closed refusal all passed.**
+  `/recall-wedge-demo` registered guild-scoped only (no global), the
+  allowlisted operator received ephemeral Phase 38A harness-backed
+  output for both `served` and `denied` cases, and a non-operator
+  account received the single generic ephemeral refusal.
+- **`/recall-wedge-demo` is accepted only for controlled dev / operator
+  demos.** Phase 39E adds no source, test, package, lockfile, fixture,
+  config, CI, or generated change, and no handler / registration
+  behavior change.
+- **No live Dixie-backed Discord recall, public rollout, public
+  channel-visible recall, Telegram, private chat, storage / admission,
+  production auth / consent, LLM rewriting, or character voice is
+  authorized.** Phase 39E does not expand the Phase 39A authorization.
+- **The next allowed step is Phase 40A — a post-smoke-test decision
+  gate** (keep the demo as-is, write an internal demo guide, add a
+  de-registration helper, move toward live Dixie-backed Discord recall
+  under a new gate, move toward public-channel-visible recall under a
+  new gate, or stop and harden operational docs). Phase 39E authorizes
+  none of those.
+
+---
+
+### 5h. Phase 40A addendum — post-smoke-test decision; demo kept, 40B guide then possible 40C de-registration
+
+> Added by Phase 40A
+> (`docs/RECALL-WEDGE-POST-SMOKE-TEST-DECISION-GATE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 40A:
+
+- **Phase 40A is docs / decision only.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change, and no
+  handler / registration behavior change. It does not authorize
+  implementation of the steps it selects.
+- **It keeps `/recall-wedge-demo` as a controlled dev / operator
+  demo** — the current operating state accepted by Phase 39E, kept
+  as-is.
+- **It selects Phase 40B — an internal demo guide — as the next
+  step.** Docs-only, operator-facing, no code, redacted placeholders
+  only, preserving the no-live-Dixie / no-memory-admission /
+  no-public-rollout posture.
+- **It selects Phase 40C — a guild-scoped de-registration helper — as
+  the likely following step, if still needed**, only after Phase 40B.
+  If implemented it must be guild-scoped only, must not global-delete,
+  must not touch handler behavior, must add no live Dixie / public
+  recall, and must include tests / static guards.
+- **It keeps live Dixie-backed Discord recall and
+  public-channel-visible recall blocked behind separate later gates.**
+  The Phase 37C live client is operator/dev-only and unreachable from
+  Discord; the smoke test proved the Discord surface gate, not live
+  recall, and the demo is ephemeral-only. Telegram, private chat,
+  storage / admission, production auth / consent, LLM rewriting, and
+  character voice also remain blocked.
+
+This addendum does not duplicate the Phase 40A gate doc; it only
+updates the post-MVP option matrix's **next-implementation-phase**
+answer from "Phase 40A — a post-smoke-test decision gate" to "Phase 40B
+internal demo guide, then possible Phase 40C guild-scoped
+de-registration helper."
+
+---
+
+### 5i. Phase 40B addendum — internal demo guide added; docs-only, runtime unchanged
+
+> Added by Phase 40B
+> (`docs/RECALL-WEDGE-DISCORD-DEMO-INTERNAL-GUIDE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 40B:
+
+- **Phase 40B adds the internal demo guide** selected by Phase 40A — an
+  operator-facing how-to-demo-safely artifact layered on top of the
+  Phase 39D runbook.
+- **It is docs-only / operator-facing.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change.
+- **It does not change runtime behavior.** No handler / registration /
+  dispatch change; `/recall-wedge-demo` is untouched.
+- **It keeps `/recall-wedge-demo` controlled / guild-scoped /
+  operator-gated / ephemeral / harness-backed** and non-production —
+  the same posture Phase 39A / 39D / 39E / 40A hold.
+- **It gives a safe 5–10 minute demo script** (framing, command
+  visibility, served / default, denied / refusal, optional non-operator
+  fail-closed, boundaries, Q&A) plus **what-to-say / what-not-to-claim**
+  guidance and redacted-placeholder expected outputs.
+- **The next possible step remains Phase 40C — a guild-scoped
+  de-registration helper — only if still needed**, after Phase 40B (the
+  Phase 39D runbook §L manual removal may prove sufficient).
+- **Live Dixie-backed Discord recall and public-channel-visible recall
+  remain blocked** behind separate later gates. Telegram, private chat,
+  storage / admission, production auth / consent, LLM rewriting, and
+  character voice also remain blocked.
+
+This addendum does not duplicate the Phase 40B guide; it only records
+that the Phase 40A-selected internal-guide step is now fulfilled.
+
+---
+
+### 5j. Phase 41A addendum — live-Dixie Discord decision lane opened; separate `/recall-wedge-live-demo` command, Phase 40C deferred
+
+> Added by Phase 41A
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 41A:
+
+- **Phase 41A is docs / decision only.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change, and no
+  handler / registration / dispatch behavior change. It implements
+  nothing.
+- **Phase 40C de-registration helper is deferred / only-if-needed.** The
+  Phase 39D runbook §L manual removal remains sufficient; no current
+  blocker requires a helper. Phase 40C stays available later if manual
+  de-registration becomes risky or annoying.
+- **Future live Dixie-backed Discord work must use a separate command
+  `/recall-wedge-live-demo`.** It must not silently replace the harness
+  output of `/recall-wedge-demo`, which preserves the accepted harness
+  demo, keeps fixture proof distinct from live producer proof, keeps the
+  registration / runtime / env gates separable, and clarifies audit /
+  operator language.
+- **`/recall-wedge-demo` remains harness-backed.** It is untouched by
+  Phase 41A and must not be mutated into a live command by any future
+  phase.
+- **A future Phase 41B may be considered** only under strict
+  disabled-by-default / guild-scoped / operator-gated / ephemeral-only
+  gates, with no freeform query, no Discord message history input, no
+  memory admission, no candidate writes, no "remember this," no
+  production auth / consent, no Telegram / private chat, no LLM / voice,
+  and no public renderer expansion. It may call the Phase 37C live Dixie
+  client only after the Discord gates pass, behind separate env gates
+  (`RECALL_WEDGE_LIVE_DISCORD_DEMO_ENABLED` /
+  `RECALL_WEDGE_LIVE_DISCORD_DEMO_REGISTER_COMMANDS` /
+  `RECALL_WEDGE_LIVE_DISCORD_DEMO_GUILD_ID` /
+  `RECALL_WEDGE_LIVE_DISCORD_DEMO_OPERATOR_USER_IDS`), with response
+  narrowing, a no-leak scan, and fail-closed unknown / error paths.
+- **Public-channel-visible recall remains blocked** behind its own
+  separate later gate, as do memory admission, Telegram, private chat,
+  storage / admission, production auth / consent, LLM rewriting, and
+  character voice.
+- **No implementation is authorized by Phase 41A.** Phase 41B is
+  authorized only as a future gated decision / implementation slice with
+  its own scope, gates, and acceptance, defined in the Phase 41A gate
+  doc.
+
+This addendum does not duplicate the Phase 41A gate doc; it only updates
+the post-MVP option matrix's **next-decision-lane** answer from "Phase
+40B internal demo guide, then possible Phase 40C guild-scoped
+de-registration helper" to "Phase 40C deferred; the next meaningful
+proof boundary is a separate-command live-Dixie Discord decision (future
+Phase 41B), not implemented by Phase 41A."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:

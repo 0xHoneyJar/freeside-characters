@@ -24,6 +24,7 @@ import {
   fetchApplicationId,
   publishCommands,
   registerRecallWedgeDemoCommand,
+  registerRecallWedgeLiveDemoCommand,
 } from '../src/lib/publish-commands.ts';
 
 async function main(): Promise<void> {
@@ -93,6 +94,26 @@ async function main(): Promise<void> {
     } else {
       console.log(
         `publish-commands: /recall-wedge-demo NOT registered (${demo.reason})`,
+      );
+    }
+
+    // Phase 41B: dev/operator-only LIVE Dixie demo registration. SEPARATE from
+    // both the character publish above and the Phase 39C harness-demo POST — it
+    // never enters buildCommandSet (so it can never reach the global route).
+    // Skipped unless BOTH RECALL_WEDGE_LIVE_DISCORD_DEMO_REGISTER_COMMANDS ===
+    // "true" AND RECALL_WEDGE_LIVE_DISCORD_DEMO_GUILD_ID is set; always
+    // guild-scoped.
+    const liveDemo = await registerRecallWedgeLiveDemoCommand({
+      botToken,
+      applicationId,
+    });
+    if (liveDemo.registered) {
+      console.log(
+        `publish-commands: registered dev-only /recall-wedge-live-demo → guild ${liveDemo.guildId} (id ${liveDemo.command.id})`,
+      );
+    } else {
+      console.log(
+        `publish-commands: /recall-wedge-live-demo NOT registered (${liveDemo.reason})`,
       );
     }
   } catch (err) {

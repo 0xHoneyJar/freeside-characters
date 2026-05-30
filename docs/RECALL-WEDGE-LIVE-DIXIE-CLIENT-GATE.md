@@ -669,6 +669,38 @@ This note does not relax any constraint in §C–§K of this gate; it
 records continued compliance with §D, §J, and §K through the Phase
 38A / 38B work.
 
+### L.3 Phase 41A note — Discord-surface decision gate; future Discord use of the live client stays behind a separate command after Discord gates pass
+
+> Added by Phase 41A
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md`). Short
+> clarifying note, not a rewrite of this gate.
+
+- **Phase 41A is a Discord-surface decision gate, not a change to the
+  Phase 37C live client.** It does not modify
+  `live-dixie-client.ts`, `run-live-dixie-recall-demo.ts`, their tests,
+  or any constraint in §C–§K. The Phase 37C client remains the
+  operator/dev-only live Dixie seam this gate authorized.
+- **Future Discord use of the live client must remain behind a separate
+  command and must call the client only after Discord gates pass.** Phase
+  41A selects, for any future live-Dixie Discord work, a distinct
+  dev/operator-only command `/recall-wedge-live-demo` (never a mutation
+  of `/recall-wedge-demo`) that evaluates its own disabled-by-default /
+  guild-scoped / operator-gated / ephemeral-only Discord gates **before**
+  importing or calling the live client. The live client's own env / config
+  / secrets (§G) remain separate and unchanged; Phase 41A gates *whether
+  Discord may reach the client*, not *how the client authenticates to
+  Dixie*.
+- **Phase 41A does not authorize live network calls yet.** It opens a
+  future Phase 41B decision / implementation slice only; no live
+  Dixie-backed Discord recall, public-channel-visible recall, or memory
+  admission is authorized.
+- **This note does not rewrite the existing live client gate.** §C–§K
+  (allowed / disallowed scope, architecture, env / config, request /
+  idempotency, response classification, fixture relationship, required
+  tests / static guards) stand unchanged; a future Phase 41B that reaches
+  the live client must still satisfy them, plus the Discord gates the
+  Phase 41A gate doc defines.
+
 ---
 
 ## M. Acceptance criteria
@@ -738,3 +770,7 @@ Phase 37B is acceptable if:
   Phase 36C dev/operator runner over recorded Dixie envelopes
   (recorded fixtures only; Phase 37C's live runner is a distinct
   module per §F).
+- `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md` — Phase 41A
+  live-Dixie Discord decision gate; selects a separate
+  `/recall-wedge-live-demo` command, after Discord gates pass, as the
+  only future shape for Discord use of this live client (see §L.3).
