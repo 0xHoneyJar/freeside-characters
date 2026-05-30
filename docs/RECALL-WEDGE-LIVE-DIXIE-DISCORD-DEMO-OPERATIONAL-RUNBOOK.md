@@ -832,6 +832,28 @@ Restated together here for anyone repeating the smoke test:
   never a leak — but it will not exercise the seam reach. Disable /
   rotation handling is in §O.
 
+### R.2 Phase 42A note — seeded live estate is the next MVP need; both §R.1 caveats are secondary
+
+> Added by Phase 42A
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md`), 2026-05-30.
+
+- **Phase 42A is docs / decision gate only.** It changes nothing in this
+  runbook's procedure and authorizes no code. A future served-recall
+  smoke would reuse §F–§N of this runbook unchanged.
+- **Phase 42A ranks a seeded dev/operator live estate / storage fixture
+  as the next MVP need** — the only lane that moves the Phase 41D result
+  from safe live failure to a safe served live recall. The two §R.1
+  caveats are **operational irritants, ranked below seeding**:
+  service-token hardening (§R.1.b) is secondary and only if it becomes a
+  hard blocker for repeated smoke; command-registration hardening
+  (§R.1.a, the startup-auto-publish erasure) is third. Both stay behind
+  their own separate decisions.
+- **Public rollout, production memory admission, served memory as a
+  capability, and everything in §S remain blocked.** Seeded live memory,
+  if a future phase implements it, must be a reviewed operator/dev
+  fixture — not Discord history ingestion, not "remember this," not
+  candidate-memory admission.
+
 ---
 
 ## S. Blocked work remains blocked
@@ -887,6 +909,11 @@ Phase 41C is acceptable if:
 
 ## U. Cross-references
 
+- `docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md` — Phase 42A
+  seeded live estate / storage decision gate; selects a seeded
+  dev/operator estate as the next MVP need toward a safe served live
+  recall, and ranks both §R.1 caveats below seeding. This runbook's §R.2
+  records its note.
 - `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md` — Phase
   41D smoke-test acceptance; the redacted report for the controlled live
   run of this procedure (safe wiring + fail-closed, no served recall).

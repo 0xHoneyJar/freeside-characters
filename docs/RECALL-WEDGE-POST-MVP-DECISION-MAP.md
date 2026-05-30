@@ -738,6 +738,67 @@ safer-token work sequenced later under their own gates.
 
 ---
 
+### 5m. Phase 42A addendum — next MVP need is a seeded dev/operator live estate, not registration / token hardening
+
+> Added by Phase 42A
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md`), 2026-05-30.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 42A:
+
+- **Phase 42A is docs / decision gate only.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change, and no
+  handler / registration / dispatch / seed / storage change. It implements
+  nothing and seeds nothing.
+- **It selects the next MVP need: a seeded dev/operator live estate /
+  storage fixture.** Phase 41D proved the pipe works (live wiring, Dixie
+  reach, auth path, fail-closed classification, no-leak Discord render)
+  but fail-closed on `seam.storage_unavailable` because the live estate /
+  storage state is unseeded. The next meaningful MVP step is seeding a
+  tightly scoped dev/operator estate so the live path can prove a **safe
+  served live recall result**, not command-registration hardening and not
+  service-token hardening.
+- **It authorizes only a future seeded-estate lane (a future Phase 42B).**
+  The seed must be one dev/operator (or narrowly scoped fixture) estate
+  with one or a few reviewed deterministic assertions, deterministic /
+  reviewed / idempotent / safe-to-rerun, committing no secrets / live IDs
+  / tokens / URLs / keys, with tests / guards before any PR acceptance.
+  Seeded live memory must be a reviewed operator/dev fixture, **not user
+  chat ingestion**. It stays inside this doc's §6 (live Dixie client) and
+  §7 (live memory admission) gates.
+- **The accepted target proof is served live recall:** the controlled
+  operator `/recall-wedge-live-demo` path calls live Dixie, Dixie reads a
+  seeded live estate, Straylight returns a governed non-empty recall
+  result classified `served`, Freeside Characters renders only public /
+  operator-safe fields, and no raw / private / debug / source material
+  leaks.
+- **Priority ranking locked:** seeded live estate / storage first;
+  service-token hardening second (only if it becomes a hard blocker for
+  repeated smoke, behind its own decision); command-registration
+  hardening third (behind its own decision); public rollout remains
+  blocked throughout.
+- **Blocked work stays blocked.** Production memory admission,
+  candidate-memory writes, "remember this," arbitrary user writes, live
+  Discord message ingestion / history-as-memory, cross-user auth /
+  consent, public recall, public channel-visible recall, served recall as
+  a shipped capability, Telegram, private chat, LLM rewriting, character
+  voice, public renderer expansion, and Finn integration remain blocked
+  behind separate later gates. Phase 42A authorizes none of them and makes
+  no served-memory acceptance claim.
+- **Next decision options:** Phase 42B seeded live estate / storage design
+  or fixture spike (recommended); a separate token-hardening gate; a
+  separate command-registration-hardening gate; or stop and preserve Phase
+  41D as safe-failure acceptance.
+
+This addendum does not duplicate the Phase 42A gate doc; it only updates
+the post-MVP option matrix's **next-MVP-need** answer from "preserve /
+harden docs now, seeded-storage later" (Phase 41D §5l) to "a seeded
+dev/operator live estate / storage fixture (future Phase 42B) is the
+selected next MVP step, ahead of token and registration hardening, to
+prove a safe served live recall result."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
