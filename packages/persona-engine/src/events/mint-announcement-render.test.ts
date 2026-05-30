@@ -21,7 +21,9 @@ import {
 const TYPE_CONTAINER = 17;
 const TYPE_TEXT_DISPLAY = 10;
 const TYPE_SEPARATOR = 14;
-const TYPE_SECTION = 9;
+// Full-bleed HERO image — MediaGallery (type 12), replacing the prior
+// Section(9)+Thumbnail(11) 80px accessory.
+const TYPE_MEDIA_GALLERY = 12;
 
 const BASE_CTX: MintAnnouncementContext = {
   displayName: 'shadowmaker',
@@ -48,8 +50,8 @@ function countSeparators(blocks: unknown[]): number {
   return blocks.filter((b) => (b as { type: number }).type === TYPE_SEPARATOR).length;
 }
 
-function findSection(blocks: unknown[]): unknown | null {
-  return blocks.find((b) => (b as { type: number }).type === TYPE_SECTION) ?? null;
+function findMediaGallery(blocks: unknown[]): unknown | null {
+  return blocks.find((b) => (b as { type: number }).type === TYPE_MEDIA_GALLERY) ?? null;
 }
 
 function textContents(blocks: unknown[]): string[] {
@@ -65,15 +67,15 @@ describe('DEP-2 · buildEnrichedMintAnnouncement · happy path', () => {
     const out = buildEnrichedMintAnnouncement(BASE_CTX);
     const blocks = extractBlocks(out.components);
 
-    // header (text) + sep + image-section (section) + sep + traits (text) + sep + footer (text)
+    // header (text) + sep + image-gallery (type 12) + sep + traits (text) + sep + footer (text)
     expect(countSeparators(blocks)).toBe(3);
 
-    // image section present
-    const section = findSection(blocks);
-    expect(section).not.toBeNull();
-    expect((section as { accessory: { media: { url: string } } }).accessory.media.url).toBe(
-      'https://cdn.test/shadow-234.png',
-    );
+    // image HERO present as a full-bleed MediaGallery (type 12), not a thumbnail
+    const gallery = findMediaGallery(blocks);
+    expect(gallery).not.toBeNull();
+    expect(
+      (gallery as { items: Array<{ media: { url: string } }> }).items[0]!.media.url,
+    ).toBe('https://cdn.test/shadow-234.png');
 
     // text contents
     const texts = textContents(blocks);
@@ -116,12 +118,12 @@ describe('DEP-2 · buildEnrichedMintAnnouncement · happy path', () => {
 });
 
 describe('DEP-2 · buildEnrichedMintAnnouncement · image omitted', () => {
-  test('imageUrl null → no image section; header + traits + footer remain', () => {
+  test('imageUrl null → no image gallery; header + traits + footer remain', () => {
     const out = buildEnrichedMintAnnouncement({ ...BASE_CTX, imageUrl: null });
     const blocks = extractBlocks(out.components);
 
-    // section type 9 should NOT appear
-    expect(findSection(blocks)).toBeNull();
+    // MediaGallery (type 12) should NOT appear
+    expect(findMediaGallery(blocks)).toBeNull();
 
     // traits still rendered
     const traitsText = textContents(blocks).find((t) => t.includes('Traits'));
@@ -142,8 +144,8 @@ describe('DEP-2 · buildEnrichedMintAnnouncement · traits omitted', () => {
     // no "Traits" text content
     expect(textContents(blocks).some((t) => t.includes('Traits'))).toBe(false);
 
-    // image section still present
-    expect(findSection(blocks)).not.toBeNull();
+    // image gallery still present
+    expect(findMediaGallery(blocks)).not.toBeNull();
   });
 
   test('traits empty array → treated like null (no traits text)', () => {
@@ -162,7 +164,7 @@ describe('DEP-2 · buildEnrichedMintAnnouncement · both image + traits omitted 
     });
     const blocks = extractBlocks(out.components);
 
-    expect(findSection(blocks)).toBeNull();
+    expect(findMediaGallery(blocks)).toBeNull();
     const texts = textContents(blocks);
     // header + footer = 2 text displays
     expect(texts.length).toBe(2);
