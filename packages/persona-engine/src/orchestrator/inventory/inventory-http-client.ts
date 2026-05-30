@@ -46,6 +46,33 @@ interface InventoryMetadataResponse {
   attributes?: Array<{ trait_type?: string; value?: string | number }> | null;
 }
 
+/** Image hosts allowed into a rendered Discord card (THJ sovereign assets). */
+const ALLOWED_IMAGE_HOSTS = new Set([
+  'assets.0xhoneyjar.xyz',
+  'metadata.0xhoneyjar.xyz',
+]);
+
+/**
+ * Allowlist guard for the upstream `image` before it lands in a Discord card.
+ * The 200 body is untrusted (inventory-api → storage-api JSON): reject anything
+ * that isn't `https` on a known THJ asset host, so a compromised/buggy upstream
+ * can't inject an arbitrary-scheme (`javascript:`, `data:`) or off-domain URL
+ * into the announcement card or its plain-text fallback. null → render omits the
+ * image (fail-soft), exactly as for missing metadata.
+ */
+function safeImageUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:') return null;
+  if (!ALLOWED_IMAGE_HOSTS.has(u.hostname)) return null;
+  return raw;
+}
+
 /**
  * Fetch a single token's metadata from inventory-api over HTTP.
  *
@@ -89,9 +116,22 @@ export async function fetchNftMetadataHttp(opts: {
     return {
       name: body.name ?? null,
       description: body.description ?? null,
-      image: typeof body.image === 'string' ? body.image : null,
+      image: safeImageUrl(body.image),
       attributes: Array.isArray(body.attributes) ? body.attributes : null,
     };
+  } catch (err) {
+    // Honor this seam's contract ("never throws past this seam"): a network
+    // failure, timeout-abort, or malformed JSON fail-softs to null rather than
+    // propagating. (announce-mint's outer catch is then belt-and-suspenders.)
+    opts.logger.warn(
+      {
+        err: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+        contract: opts.contract,
+        tokenId: opts.tokenId,
+      },
+      '[announce-mint] inventory-api fetch errored → fail-soft (no image / no traits)',
+    );
+    return null;
   } finally {
     clearTimeout(timer);
   }

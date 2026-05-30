@@ -226,7 +226,7 @@ describe('DEP-2 · announceMint · happy path', () => {
       fetchFn,
       metadataFetchFn: makeInventoryFetch({
         metadata: {
-          image: 'https://cdn.test/shadow-234.png',
+          image: 'https://assets.0xhoneyjar.xyz/Mibera/generated/234.webp',
           attributes: [
             { trait_type: 'Background', value: 'Void' },
             { trait_type: 'Eyes', value: 'Glowing' },
@@ -243,7 +243,36 @@ describe('DEP-2 · announceMint · happy path', () => {
     // ensure plain-text fallback carries the nym
     expect(msg.contentFallback).toContain('shadowmaker');
     expect(msg.contentFallback).toContain('#234');
-    expect(msg.contentFallback).toContain('https://cdn.test/shadow-234.png');
+    expect(msg.contentFallback).toContain('https://assets.0xhoneyjar.xyz/Mibera/generated/234.webp');
+  });
+
+  test('off-domain / non-allowlisted image URL is dropped (no injection into the card)', async () => {
+    const logger = makeSpyLogger();
+    const sender = makeSpySender();
+    const fetchFn = makeFakeFetch({ nym: 'shadowmaker' });
+
+    const result = await announceMint({
+      payload: PAYLOAD,
+      identityApiBaseUrl: 'https://identity.test',
+      inventoryApiBaseUrl: 'https://inventory.test',
+      discordWebhookSendFn: sender.send,
+      channelId: 'CHAN_123',
+      logger,
+      fetchFn,
+      metadataFetchFn: makeInventoryFetch({
+        // off-domain host — an injection vector if rendered. The client's
+        // allowlist guard must drop it; traits still flow.
+        metadata: {
+          image: 'https://cdn.evil/pwn.png',
+          attributes: [{ trait_type: 'Background', value: 'Void' }],
+        },
+      }),
+    });
+
+    expect(result.posted).toBe(true);
+    const msg = sender.calls[0]!;
+    expect(msg.contentFallback).not.toContain('cdn.evil'); // image omitted
+    expect(msg.contentFallback).toContain('shadowmaker'); // announcement still ships
   });
 });
 
@@ -262,7 +291,7 @@ describe('DEP-2 · announceMint · identity-api fail-soft', () => {
       fetchFn,
       inventoryApiBaseUrl: 'https://inventory.test',
       metadataFetchFn: makeInventoryFetch({
-        metadata: { image: 'https://cdn.test/x.png', attributes: [] },
+        metadata: { image: 'https://assets.0xhoneyjar.xyz/Mibera/generated/234.webp', attributes: [] },
       }),
     });
 
@@ -338,8 +367,10 @@ describe('DEP-2 · announceMint · inventory-api fail-soft', () => {
     const fallback = sender.calls[0]!.contentFallback ?? '';
     expect(fallback).toContain('shadowmaker');
     expect(fallback).not.toContain('https://cdn.');
+    // F2: the HTTP client self-catches the throw (honors "never throws past this
+    // seam") and logs here, rather than propagating to announce-mint's outer catch.
     const warns = logger.warns.filter((w) =>
-      w.msg?.includes('inventory-api unavailable'),
+      w.msg?.includes('inventory-api fetch errored'),
     );
     expect(warns.length).toBe(1);
   });
