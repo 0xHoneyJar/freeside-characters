@@ -598,6 +598,19 @@ boundary.
 > **The live Dixie smoke-test acceptance is a future Phase 41D** (after a
 > controlled live run), not part of this guide.
 
+> **Phase 41D note**
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md`).
+> The future Phase 41D has now occurred: a controlled live-Dixie run of
+> `/recall-wedge-live-demo` was accepted (docs-only) for **safe wiring +
+> fail-closed rendering only** — the live path reached the Dixie
+> `/api/recall/intake` seam and fail-closed on `seam.storage_unavailable`
+> (unseeded estate / storage), with no served recall, no memory
+> admission, and no leak. **This harness `/recall-wedge-demo` guide is
+> unaffected** — it still governs only the fixture-bound harness demo.
+> **Served recall, public recall, and public-channel-visible recall
+> remain blocked**; served recall is blocked on the unseeded estate /
+> storage state.
+
 ---
 
 ## P. Acceptance criteria for Phase 40B

@@ -777,6 +777,61 @@ Concise triage. Keep secrets and raw IDs out of chat and docs throughout.
   public-channel-visible recall, Telegram / private chat, LLM / voice, or
   production auth / consent.
 
+> ### Phase 41D acceptance note — done (2026-05-30)
+>
+> Added by Phase 41D
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md`).
+>
+> - **A controlled live run of this procedure has occurred and is
+>   accepted.** A human operator deployed Dixie live (Railway, healthy
+>   service + Postgres, `GET /api/health` → 200), wired the **Freeside
+>   Characters** service with the live Dixie env (§D / §I), registered
+>   `/recall-wedge-live-demo` to the configured guild, and invoked it as
+>   an allowlisted operator.
+> - **The live path reached the Dixie `/api/recall/intake` seam and
+>   fail-closed safely.** The authenticated intake returned
+>   `seam.storage_unavailable` (unseeded live estate / storage); the
+>   command classified it as `upstream_unavailable` and rendered the
+>   ephemeral §J.1 category-2 safe summary — **no `raw_reasons`, no raw
+>   payload, no bounded-store scope, no tenant / debug / JWT / token /
+>   stack-trace / private-ID exposure.**
+> - **Accepted scope: safe live wiring + fail-closed rendering, not
+>   served recall.** Served recall is blocked on the unseeded estate /
+>   storage state (acceptance §J). The run claims no production rollout,
+>   no public recall, no served memory, no healthy Finn integration
+>   (Finn was intentionally unreachable), and no cross-user auth /
+>   consent.
+> - **The two operational caveats in §R.1 below were load-bearing in the
+>   run:** the startup auto-publish path can erase the dev-only live
+>   command (register after restart, do not restart before invocation),
+>   and the manually minted Dixie JWT is short-lived (refresh + restart
+>   if expired). They are now confirmed against a real run, not just
+>   anticipated.
+> - **This runbook still records no acceptance itself** — the acceptance
+>   lives in the Phase 41D report; this note only points to it.
+
+### R.1 Operational caveats confirmed by the Phase 41D run
+
+The Phase 41D run confirmed two operational caveats are load-bearing.
+Restated together here for anyone repeating the smoke test:
+
+- **R.1.a — startup auto-publish can remove the dev-only live command.**
+  The startup auto-publish path bulk-syncs the normal command set and
+  **can remove `/recall-wedge-live-demo`** from the configured guild —
+  this is a newly-surfaced caveat from the Phase 41D run, not previously
+  called out in this runbook. For smoke: **register the live command
+  after the restart (§H), and do not restart Freeside Characters again
+  before invocation.** In the Phase 41D run the command was manually
+  re-registered after restart for exactly this reason.
+- **R.1.b — the manually minted Dixie JWT is short-lived.** The service
+  token / JWT used to reach the seam (the `RECALL_WEDGE_DIXIE_SERVICE_TOKEN`
+  material in §D.4 / §I) is short-lived and manually minted. **Before
+  repeating the smoke test, refresh the token and restart Freeside
+  Characters if it has expired.** An expired token surfaces as a safe
+  classification (e.g. `service_unauthorized`) or the generic refusal —
+  never a leak — but it will not exercise the seam reach. Disable /
+  rotation handling is in §O.
+
 ---
 
 ## S. Blocked work remains blocked
@@ -832,6 +887,10 @@ Phase 41C is acceptable if:
 
 ## U. Cross-references
 
+- `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md` — Phase
+  41D smoke-test acceptance; the redacted report for the controlled live
+  run of this procedure (safe wiring + fail-closed, no served recall).
+  This runbook's §R gains the Phase 41D acceptance note.
 - `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md` — Phase 41A
   decision gate; gains a Phase 41C note.
 - `docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md` — Phase 37B live Dixie
