@@ -639,6 +639,49 @@ Phase 41B), not implemented by Phase 41A."
 
 ---
 
+### 5k. Phase 41C addendum — live-demo operational runbook added; docs-only, runtime unchanged
+
+> Added by Phase 41C
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 41C (note: Phase 41B — the separate
+`/recall-wedge-live-demo` command — is merged via PR #137; Phase 41A §N
+predates that and calls the future acceptance "Phase 41C," but the
+ladder advanced one slot, so the future smoke-test acceptance is **Phase
+41D**):
+
+- **Phase 41C adds the operational runbook for
+  `/recall-wedge-live-demo`.** It documents the controlled setup,
+  registration, invocation, fail-closed, disable, removal, and
+  evidence-capture procedure for the Phase 41B live command.
+- **It is docs-only.** It adds no source, test, package, lockfile,
+  fixture, config, CI, or generated change, and no handler /
+  registration / dispatch behavior change.
+- **It does not change runtime behavior.** Both `/recall-wedge-live-demo`
+  and `/recall-wedge-demo` are untouched; the two commands stay distinct
+  (separate names, handlers, env gates, registration paths).
+- **It prepares the registration / invocation / fail-closed / disable /
+  evidence procedure** — guild-scoped registration to one configured
+  guild, operator-gated invocation, ephemeral safe/classified output or
+  generic fail-closed refusal, with redacted-placeholder env and no
+  secrets.
+- **It does not record smoke-test acceptance.** A **future Phase 41D**
+  may record smoke-test acceptance after a controlled live run (a
+  docs-only redacted report similar to the Phase 39E harness-demo
+  acceptance).
+- **Public-channel-visible recall, memory admission, public rollout,
+  Telegram / private chat, LLM / voice remain blocked** behind separate
+  later gates. Candidate writes, "remember this," storage / admission,
+  production auth / consent, direct Finn runtime / audit wiring beyond
+  existing seams, and public renderer expansion also remain blocked.
+
+This addendum does not duplicate the Phase 41C runbook; it only records
+that the Phase 41B live command now has an operational runbook and that
+the next acceptance step is a future Phase 41D, not Phase 41C.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
