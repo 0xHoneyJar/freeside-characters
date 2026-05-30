@@ -95,6 +95,33 @@ boundary (§K), and its own acceptance criteria (§M). Everything Phase
   future Phase 41D add no runtime scope; everything §O blocks stays
   blocked.
 
+### A.3 Phase 41D note — controlled live-Dixie Discord smoke test accepted; safe wiring only
+
+> Added by Phase 41D
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md`),
+> 2026-05-30.
+
+- **The future Phase 41D anticipated in §A.2 / §N has occurred and is
+  accepted (docs-only).** A human operator deployed Dixie live (Railway,
+  healthy service + Postgres), wired the **Freeside Characters** service
+  with the live Dixie env, registered `/recall-wedge-live-demo` to one
+  configured guild, and invoked it as an allowlisted operator.
+- **Accepted scope: safe live wiring + fail-closed rendering, not served
+  recall.** The authenticated `/api/recall/intake` call reached the
+  Straylight seam and returned `seam.storage_unavailable` (unseeded live
+  estate / storage); the command classified it as `upstream_unavailable`
+  and rendered an ephemeral operator-safe summary with no raw reasons,
+  payload, IDs, or tokens — exactly the §I output / §J lazy-load / §K
+  logging boundaries this gate set.
+- **No new authorization.** Phase 41D adds no runtime scope. It claims no
+  production rollout, no public recall, no served memory, no healthy Finn
+  integration, and no cross-user auth / consent. Everything §O blocks
+  stays blocked; served recall is blocked on the unseeded estate /
+  storage state.
+- **Ladder note:** §N below (written before Phase 41B landed) calls this
+  acceptance "Phase 41C"; read it as **Phase 41D**, consistent with the
+  §A.2 ladder reconciliation.
+
 ---
 
 ## B. Source evidence
@@ -631,6 +658,13 @@ Phase 41A is acceptable if:
 
 ## Q. Cross-references
 
+- `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md` — Phase
+  41D smoke-test acceptance; the redacted report for the controlled
+  live-Dixie Discord run (safe wiring + fail-closed, no served recall);
+  §A.3 records its acceptance note.
+- `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md` —
+  Phase 41C operational runbook; the governing procedure the Phase 41D
+  run followed.
 - `docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md` — Phase 37B live Dixie
   client gate; the live client seam, its env config, and its
   classification vocabulary; gains a Phase 41A note.
