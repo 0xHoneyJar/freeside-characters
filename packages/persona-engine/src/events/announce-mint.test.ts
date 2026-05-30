@@ -9,9 +9,11 @@
  *   - discordWebhookSendFn throws → returns { posted: false, reason } (subscriber stays alive)
  *   - Timeout: identity fetch exceeds fetchTimeoutMs → treated as failure
  *
- * Bypasses the lazy-import path for @0xhoneyjar/inventory via the
- * inventoryModule option (test seam). identity-api uses the injectable
- * fetchFn (test seam). No real network I/O.
+ * Both enrichment paths are HTTP. identity-api uses the injectable `fetchFn`
+ * seam; inventory-api (GET /nfts/{contract}/{tokenId}) uses the dedicated
+ * `metadataFetchFn` seam so the two stay independently mockable. No real
+ * network I/O. The `@0xhoneyjar/inventory` dynamic import (phantom dep) is
+ * gone — inventory-api is consumed over the wire, never as a package.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -112,6 +114,42 @@ function makeFakeFetch(opts: {
   }) as unknown as typeof fetch;
 }
 
+/**
+ * Build a fake fetch for the inventory-api endpoint
+ * (GET /nfts/{contract}/{tokenId} → metadata document, unwrapped).
+ *   - `metadata` set → 200 with that body (image + attributes).
+ *   - `status` (e.g. 404) → non-OK → client fail-softs to null.
+ *   - `throwError` → network failure.
+ *   - `delayMs` → slow response (honors abort signal for timeout testing).
+ */
+function makeInventoryFetch(opts: {
+  metadata?: { image?: string | null; attributes?: Array<{ trait_type?: string; value?: string | number }> } | null;
+  status?: number;
+  throwError?: boolean;
+  delayMs?: number;
+}): typeof fetch {
+  return (async (_url: string | URL, init?: RequestInit) => {
+    if (opts.throwError) {
+      throw new Error('inventory unreachable');
+    }
+    if (opts.delayMs) {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, opts.delayMs);
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new Error('aborted'));
+        });
+      });
+    }
+    const status = opts.status ?? 200;
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => opts.metadata ?? { error: { status, message: 'not found' } },
+    } as Response;
+  }) as unknown as typeof fetch;
+}
+
 // ── helper exports tests ─────────────────────────────────────────────────────
 
 describe('DEP-2 · helpers', () => {
@@ -181,19 +219,20 @@ describe('DEP-2 · announceMint · happy path', () => {
     const result = await announceMint({
       payload: PAYLOAD,
       identityApiBaseUrl: 'https://identity.test',
+      inventoryApiBaseUrl: 'https://inventory.test',
       discordWebhookSendFn: sender.send,
       channelId: 'CHAN_123',
       logger,
       fetchFn,
-      inventoryModule: {
-        getNftMetadata: async () => ({
+      metadataFetchFn: makeInventoryFetch({
+        metadata: {
           image: 'https://cdn.test/shadow-234.png',
           attributes: [
             { trait_type: 'Background', value: 'Void' },
             { trait_type: 'Eyes', value: 'Glowing' },
           ],
-        }),
-      },
+        },
+      }),
     });
 
     expect(result.posted).toBe(true);
@@ -221,9 +260,10 @@ describe('DEP-2 · announceMint · identity-api fail-soft', () => {
       channelId: 'CHAN_123',
       logger,
       fetchFn,
-      inventoryModule: {
-        getNftMetadata: async () => ({ image: 'https://cdn.test/x.png', attributes: [] }),
-      },
+      inventoryApiBaseUrl: 'https://inventory.test',
+      metadataFetchFn: makeInventoryFetch({
+        metadata: { image: 'https://cdn.test/x.png', attributes: [] },
+      }),
     });
 
     expect(result.posted).toBe(true);
@@ -247,7 +287,8 @@ describe('DEP-2 · announceMint · identity-api fail-soft', () => {
       channelId: 'CHAN_123',
       logger,
       fetchFn,
-      inventoryModule: { getNftMetadata: async () => null },
+      inventoryApiBaseUrl: 'https://inventory.test',
+      metadataFetchFn: makeInventoryFetch({ status: 404 }),
     });
 
     expect(result.posted).toBe(true);
@@ -266,7 +307,8 @@ describe('DEP-2 · announceMint · identity-api fail-soft', () => {
       channelId: 'CHAN_123',
       logger,
       fetchFn,
-      inventoryModule: { getNftMetadata: async () => null },
+      inventoryApiBaseUrl: 'https://inventory.test',
+      metadataFetchFn: makeInventoryFetch({ status: 404 }),
     });
 
     expect(result.posted).toBe(true);
@@ -287,11 +329,8 @@ describe('DEP-2 · announceMint · inventory-api fail-soft', () => {
       channelId: 'CHAN_123',
       logger,
       fetchFn,
-      inventoryModule: {
-        getNftMetadata: async () => {
-          throw new Error('inventory unhealthy');
-        },
-      },
+      inventoryApiBaseUrl: 'https://inventory.test',
+      metadataFetchFn: makeInventoryFetch({ throwError: true }),
     });
 
     expect(result.posted).toBe(true);
@@ -300,7 +339,7 @@ describe('DEP-2 · announceMint · inventory-api fail-soft', () => {
     expect(fallback).toContain('shadowmaker');
     expect(fallback).not.toContain('https://cdn.');
     const warns = logger.warns.filter((w) =>
-      w.msg?.includes('inventory module unavailable'),
+      w.msg?.includes('inventory-api unavailable'),
     );
     expect(warns.length).toBe(1);
   });
@@ -317,7 +356,8 @@ describe('DEP-2 · announceMint · inventory-api fail-soft', () => {
       channelId: 'CHAN_123',
       logger,
       fetchFn,
-      inventoryModule: { getNftMetadata: async () => null },
+      inventoryApiBaseUrl: 'https://inventory.test',
+      metadataFetchFn: makeInventoryFetch({ status: 404 }),
     });
 
     expect(result.posted).toBe(true);
@@ -326,24 +366,32 @@ describe('DEP-2 · announceMint · inventory-api fail-soft', () => {
     expect(fallback).not.toContain('https://cdn.');
   });
 
-  test('inventory module missing getNftMetadata function → fail-soft', async () => {
+  test('inventoryApiBaseUrl unset (pre-deploy / CI) → no fetch, fail-soft no image', async () => {
     const logger = makeSpyLogger();
     const sender = makeSpySender();
     const fetchFn = makeFakeFetch({ nym: 'shadowmaker' });
+    let inventoryCalled = false;
+    const metadataFetchFn = (async () => {
+      inventoryCalled = true;
+      throw new Error('should not be called when baseUrl is unset');
+    }) as unknown as typeof fetch;
 
     const result = await announceMint({
       payload: PAYLOAD,
       identityApiBaseUrl: 'https://identity.test',
+      // inventoryApiBaseUrl intentionally omitted — the dormant-until-deploy case
       discordWebhookSendFn: sender.send,
       channelId: 'CHAN_123',
       logger,
       fetchFn,
-      inventoryModule: {}, // no getNftMetadata
+      metadataFetchFn,
     });
 
     expect(result.posted).toBe(true);
+    expect(inventoryCalled).toBe(false); // no baseUrl → no fetch at all
     const fallback = sender.calls[0]!.contentFallback ?? '';
     expect(fallback).toContain('shadowmaker');
+    expect(fallback).not.toContain('https://cdn.');
   });
 });
 
@@ -360,11 +408,8 @@ describe('DEP-2 · announceMint · both fail-soft (canary-safe minimal post)', (
       channelId: 'CHAN_123',
       logger,
       fetchFn,
-      inventoryModule: {
-        getNftMetadata: async () => {
-          throw new Error('inventory down');
-        },
-      },
+      inventoryApiBaseUrl: 'https://inventory.test',
+      metadataFetchFn: makeInventoryFetch({ throwError: true }),
     });
 
     expect(result.posted).toBe(true);
@@ -390,7 +435,8 @@ describe('DEP-2 · announceMint · discord send failure', () => {
       channelId: 'CHAN_123',
       logger,
       fetchFn,
-      inventoryModule: { getNftMetadata: async () => null },
+      inventoryApiBaseUrl: 'https://inventory.test',
+      metadataFetchFn: makeInventoryFetch({ status: 404 }),
     });
 
     expect(result.posted).toBe(false);
@@ -417,11 +463,107 @@ describe('DEP-2 · announceMint · timeout', () => {
       logger,
       fetchFn,
       fetchTimeoutMs: 30,
-      inventoryModule: { getNftMetadata: async () => null },
+      inventoryApiBaseUrl: 'https://inventory.test',
+      metadataFetchFn: makeInventoryFetch({ status: 404 }),
     });
 
     expect(result.posted).toBe(true);
     // timed-out identity fetch → fell back to shortAddress
     expect(sender.calls[0]!.contentFallback).toContain('0x0000…abcd');
+  });
+
+  test('inventory fetch exceeds fetchTimeoutMs → no image, announcement still ships', async () => {
+    const logger = makeSpyLogger();
+    const sender = makeSpySender();
+    const fetchFn = makeFakeFetch({ nym: 'shadowmaker' });
+    // slow inventory-api: 200ms response, timeout 30ms → AbortController aborts
+    const metadataFetchFn = makeInventoryFetch({
+      metadata: { image: 'https://cdn.test/slow.png', attributes: [] },
+      delayMs: 200,
+    });
+
+    const result = await announceMint({
+      payload: PAYLOAD,
+      identityApiBaseUrl: 'https://identity.test',
+      inventoryApiBaseUrl: 'https://inventory.test',
+      discordWebhookSendFn: sender.send,
+      channelId: 'CHAN_123',
+      logger,
+      fetchFn,
+      fetchTimeoutMs: 30,
+      metadataFetchFn,
+    });
+
+    expect(result.posted).toBe(true);
+    const fallback = sender.calls[0]!.contentFallback ?? '';
+    expect(fallback).toContain('shadowmaker'); // identity still resolved
+    expect(fallback).not.toContain('https://cdn.'); // image timed out → omitted
+  });
+});
+
+describe('DEP-2 · announceMint · inventory-api HTTP contract', () => {
+  test('inventory fetch hits GET {base}/nfts/{contract}/{tokenId} and renders the image', async () => {
+    const logger = makeSpyLogger();
+    const sender = makeSpySender();
+    const fetchFn = makeFakeFetch({ nym: 'shadowmaker' });
+
+    const seenUrls: string[] = [];
+    const metadataFetchFn = (async (url: string | URL) => {
+      seenUrls.push(String(url));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          name: 'Shadow #234',
+          description: 'a shadow',
+          image: 'https://metadata.0xhoneyjar.xyz/mibera-shadow/234.png',
+          attributes: [{ trait_type: 'Element', value: 'Shadow' }],
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const result = await announceMint({
+      payload: PAYLOAD,
+      identityApiBaseUrl: 'https://identity.test',
+      inventoryApiBaseUrl: 'https://inventory.test/', // trailing slash → stripped
+      discordWebhookSendFn: sender.send,
+      channelId: 'CHAN_123',
+      logger,
+      fetchFn,
+      metadataFetchFn,
+    });
+
+    expect(result.posted).toBe(true);
+    // URL shape: trailing slash stripped, contract + tokenId path-encoded
+    expect(seenUrls.length).toBe(1);
+    expect(seenUrls[0]).toBe(
+      `https://inventory.test/nfts/${encodeURIComponent(MST_CONTRACT)}/${encodeURIComponent('234')}`,
+    );
+    // image flowed through to the fallback (and thus the MediaGallery)
+    expect(sender.calls[0]!.contentFallback).toContain(
+      'https://metadata.0xhoneyjar.xyz/mibera-shadow/234.png',
+    );
+  });
+
+  test('inventory 400 (bad input) → fail-soft no image, warn logged', async () => {
+    const logger = makeSpyLogger();
+    const sender = makeSpySender();
+    const fetchFn = makeFakeFetch({ nym: 'shadowmaker' });
+
+    const result = await announceMint({
+      payload: PAYLOAD,
+      identityApiBaseUrl: 'https://identity.test',
+      inventoryApiBaseUrl: 'https://inventory.test',
+      discordWebhookSendFn: sender.send,
+      channelId: 'CHAN_123',
+      logger,
+      fetchFn,
+      metadataFetchFn: makeInventoryFetch({ status: 400 }),
+    });
+
+    expect(result.posted).toBe(true);
+    expect(sender.calls[0]!.contentFallback).not.toContain('https://cdn.');
+    const warns = logger.warns.filter((w) => w.msg?.includes('inventory-api non-OK'));
+    expect(warns.length).toBe(1);
   });
 });
