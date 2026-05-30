@@ -8,7 +8,7 @@
  * Pipeline:
  *   1. Parallel-fetch enrichment (Promise.allSettled, fail-soft):
  *      - identity-api `/v1/profile?world=mibera&wallet=<minter>` → nym
- *      - inventory-api `getNftMetadata(contract, token_id)` → image + traits
+ *      - inventory-api `GET /nfts/{contract}/{tokenId}` → image + traits
  *   2. Derive display name: identity nym → shortenAddress (NEVER ENS).
  *   3. Build Components V2 payload via buildEnrichedMintAnnouncement.
  *   4. discordWebhookSendFn(payload) — wrapped in try/catch; never throws.
@@ -20,13 +20,17 @@
  *     + no traits (canary-safe minimal post; visible rather than silent).
  *   - Either enrichment fetch exceeds `fetchTimeoutMs` (default 3000ms) → treated
  *     as failure (matches the resolve-nft-pfp.ts pattern).
+ *   - `inventoryApiBaseUrl` unset (CI / dev / pre-deploy) → no image / no traits,
+ *     announcement still ships. Image enrichment is dormant-until-deploy.
  *   - discordWebhookSendFn throws → returns { posted: false, reason } without
  *     bubbling — the subscriber must stay alive for the next envelope.
  *
- * Lazy-import shape for @0xhoneyjar/inventory mirrors
- * `packages/persona-engine/src/orchestrator/inventory/resolve-nft-pfp.ts`:
- * dynamic specifier so the package builds without the dependency present;
- * runtime resolves via the deploy/gateway. CI + dev without it fail-soft.
+ * inventory-api is a deployed Hyper (Bun) HTTP+MCP service, consumed over the
+ * wire via the thin typed client in
+ * `packages/persona-engine/src/orchestrator/inventory/inventory-http-client.ts`
+ * — NEVER as an npm package (the earlier `@0xhoneyjar/inventory` dynamic-import
+ * plan was a phantom dep; dead). The image path mirrors the identity-api fetch
+ * posture exactly: bounded fetch, fail-soft to null.
  *
  * Identity API: plain HTTP fetch (no SDK exists yet). The endpoint
  * `/v1/profile?world=<slug>&wallet=<addr>` returns
@@ -40,6 +44,7 @@ import {
   buildEnrichedMintAnnouncement,
   type MintTraitInput,
 } from './mint-announcement-render.ts';
+import { fetchNftMetadataHttp } from '../orchestrator/inventory/inventory-http-client.ts';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -62,7 +67,12 @@ export interface AnnounceMintOpts {
   payload: NftMintDetected;
   /** identity-api base URL — e.g. https://identity.0xhoneyjar.xyz */
   identityApiBaseUrl: string;
-  /** Optional dev override for inventory-api; prod uses gateway-routed @0xhoneyjar/inventory. */
+  /**
+   * inventory-api base URL — e.g. https://inventory.0xhoneyjar.xyz. When set,
+   * the image/traits enrichment fetches `GET {base}/nfts/{contract}/{tokenId}`.
+   * When unset (CI / dev / pre-deploy), the announcement ships imageless +
+   * traitless (fail-soft). Plumbed from announcement-dispatcher.
+   */
   inventoryApiBaseUrl?: string;
   /** Injectable Discord send — keeps announceMint substrate-clean for tests. */
   discordWebhookSendFn: DiscordSendFn;
@@ -79,14 +89,16 @@ export interface AnnounceMintOpts {
    */
   collectionDisplayOverride?: string;
   /**
-   * Test seam: override the @0xhoneyjar/inventory dynamic import. Used by
-   * the bun:test suite to avoid the lazy-import path entirely.
-   */
-  inventoryModule?: InventoryModule;
-  /**
    * Test seam: override the global fetch (for identity-api requests).
    */
   fetchFn?: typeof fetch;
+  /**
+   * Test seam: override the fetch used for inventory-api metadata requests.
+   * Kept distinct from `fetchFn` so the two enrichment paths stay
+   * independently mockable (mirrors the identity-api fetchFn seam). Defaults
+   * to `fetchFn ?? fetch` when unset.
+   */
+  metadataFetchFn?: typeof fetch;
 }
 
 export interface AnnounceMintResult {
@@ -98,18 +110,11 @@ export interface AnnounceMintResult {
 // internal types
 // ──────────────────────────────────────────────────────────────────────────────
 
-interface InventoryModule {
-  /**
-   * Optional in the deployed gateway-routed module — present in v2 when the
-   * token-entity gap closes. Today returns null if not implemented; we
-   * fail-soft to null on absence.
-   */
-  getNftMetadata?: (
-    contract: string,
-    tokenId: string,
-  ) => Promise<NftMetadata | null>;
-}
-
+/**
+ * Renderer-facing metadata shape (image + attributes are all the renderer
+ * consumes). Returned by the inventory-api HTTP client; mapped from the
+ * `GET /nfts/{contract}/{tokenId}` 200 body.
+ */
 interface NftMetadata {
   image?: string | null;
   attributes?: Array<{ trait_type?: string; value?: string | number }> | null;
@@ -137,6 +142,7 @@ export async function announceMint(
 ): Promise<AnnounceMintResult> {
   const timeoutMs = opts.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
   const doFetch = opts.fetchFn ?? fetch;
+  const metadataFetch = opts.metadataFetchFn ?? doFetch;
 
   // 1. Parallel-fetch enrichment, both bounded by timeoutMs, both fail-soft.
   const [identityRes, metadataRes] = await Promise.allSettled([
@@ -149,11 +155,12 @@ export async function announceMint(
       logger: opts.logger,
     }),
     fetchNftMetadata({
+      baseUrl: opts.inventoryApiBaseUrl,
       contract: opts.payload.contract,
       tokenId: opts.payload.token_id,
       timeoutMs,
+      doFetch: metadataFetch,
       logger: opts.logger,
-      moduleOverride: opts.inventoryModule,
     }),
   ]);
 
@@ -330,46 +337,47 @@ async function fetchIdentityProfile(opts: {
   }
 }
 
+/**
+ * Fetch token metadata (image + traits) from inventory-api over HTTP.
+ *
+ * Delegates to the thin typed client (inventory-http-client.ts) which mirrors
+ * fetchIdentityProfile's posture (AbortController + timeout, accept JSON,
+ * non-OK → null, fail-soft). When `baseUrl` is unset (pre-deploy), the client
+ * returns null without fetching → announcement ships imageless.
+ *
+ * The outer try/catch is a defense-in-depth fail-soft seam: the client already
+ * fails soft internally, but a malformed JSON body (`res.json()` throws) or any
+ * unexpected error here must NEVER bubble past enrichment — the canary stays
+ * visible. Mirrors the Promise.allSettled rejection handling in announceMint.
+ */
 async function fetchNftMetadata(opts: {
+  baseUrl: string | undefined;
   contract: string;
   tokenId: string;
   timeoutMs: number;
+  doFetch: typeof fetch;
   logger: MintEventSubscriberLogger;
-  moduleOverride?: InventoryModule;
 }): Promise<NftMetadata | null> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    let mod: InventoryModule;
-    if (opts.moduleOverride) {
-      mod = opts.moduleOverride;
-    } else {
-      // Dynamic specifier — package builds without @0xhoneyjar/inventory
-      // present; runtime resolves at the gateway. Mirrors resolve-nft-pfp.ts.
-      mod = (await import('@0xhoneyjar/inventory' as string)) as unknown as InventoryModule;
-    }
-    if (typeof mod.getNftMetadata !== 'function') {
-      // Token-entity gap: per-token lookup may not be present yet in the
-      // deployed inventory-api module. Fail-soft.
-      return null;
-    }
-    return await Promise.race([
-      mod.getNftMetadata(opts.contract, opts.tokenId),
-      new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), opts.timeoutMs);
-      }),
-    ]);
+    if (!opts.baseUrl) return null; // pre-deploy / unconfigured → no image, fail-soft
+    return await fetchNftMetadataHttp({
+      baseUrl: opts.baseUrl,
+      contract: opts.contract,
+      tokenId: opts.tokenId,
+      timeoutMs: opts.timeoutMs,
+      doFetch: opts.doFetch,
+      logger: opts.logger,
+    });
   } catch (err) {
-    // Building unavailable / errored — fail-soft to no metadata.
+    // inventory-api unavailable / errored / malformed body — fail-soft to no metadata.
     opts.logger.warn(
       {
         err: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
         contract: opts.contract,
         tokenId: opts.tokenId,
       },
-      '[announce-mint] inventory module unavailable',
+      '[announce-mint] inventory-api unavailable',
     );
     return null;
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }

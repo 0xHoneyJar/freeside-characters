@@ -40,8 +40,9 @@ import {
   startInteractionServer,
   type InteractionServerHandle,
 } from './discord-interactions/server.ts';
-import { setQuestRuntime } from './discord-interactions/dispatch.ts';
+import { setQuestRuntime, setOnboardingRuntime } from './discord-interactions/dispatch.ts';
 import { buildMemoryDevQuestRuntime } from './quest-runtime-bootstrap.ts';
+import { buildOnboardingWiringFromEnv } from './onboarding-runtime.ts';
 import {
   buildEnvTenantPgPoolFactory,
   buildProductionQuestRuntime,
@@ -385,6 +386,14 @@ async function main(): Promise<void> {
       const mstCanaryChannelId = process.env.MST_CANARY_CHANNEL_ID?.trim() ?? '';
       const identityApiBaseUrl =
         process.env.IDENTITY_API_URL?.trim() ?? 'https://identity.0xhoneyjar.xyz';
+      // inventory-api (Hyper Bun HTTP+MCP service) — the mint-image/traits
+      // enrichment source. Consumed over the wire via the persona-engine HTTP
+      // client (announce-mint → fetchNftMetadataHttp). Defaults to the live
+      // Railway deployment; override per-env with INVENTORY_API_URL. Unset →
+      // announce-mint fail-softs to imageless (dormant-until-configured).
+      const inventoryApiBaseUrl =
+        process.env.INVENTORY_API_URL?.trim() ??
+        'https://inventory-api-production-3f25.up.railway.app';
 
       // Build the dispatcher only when the bot client is available — it's
       // the discord.js Client carrying the Bot token for the Components-V2 REST
@@ -395,6 +404,7 @@ async function main(): Promise<void> {
         botClient && mstCanaryEnabled && mstCanaryChannelId
           ? createAnnouncementDispatcher({
               identityApiBaseUrl,
+              inventoryApiBaseUrl,
               discordSendFn: async (msg) => {
                 await postToChannel(botClient, msg.channelId, {
                   content: msg.contentFallback ?? '',
@@ -490,8 +500,28 @@ async function main(): Promise<void> {
   // Disjoint from digest cron — failure here doesn't affect Pattern B writes.
   let interactionServer: InteractionServerHandle | null = null;
   if (config.DISCORD_PUBLIC_KEY) {
+    // cycle-009 · sprint-5 — onboarding wiring (C2 dispatch + C4 verify web surface).
+    // Off unless the full secret set is present (fail-safe). Live THJ deploy stays DEP-A-gated.
+    const onboardingWiring = buildOnboardingWiringFromEnv();
+    if (onboardingWiring) {
+      setOnboardingRuntime(onboardingWiring.onboarding);
+      console.log(
+        `onboarding:     ENABLED · verify @ ${onboardingWiring.verify.origin} · ` +
+          `idempotent-mode=${onboardingWiring.onboarding.idempotentMode}`,
+      );
+    } else {
+      console.log(
+        `onboarding:     DISABLED (set VERIFY_ORIGIN + DISCORD_OAUTH_* + IDENTITY_SERVICE_TOKEN + ` +
+          `DISCORD_BOT_TOKEN + ONBOARDING_VERIFIED_ROLE_ID + ONBOARDING_STATE_SECRET to enable)`,
+      );
+    }
     try {
-      interactionServer = startInteractionServer({ config, characters, port: config.INTERACTIONS_PORT });
+      interactionServer = startInteractionServer({
+        config,
+        characters,
+        port: config.INTERACTIONS_PORT,
+        verifyRuntime: onboardingWiring?.verify,
+      });
       console.log(
         `interactions:   listening on :${interactionServer.port} · ` +
           `commands /${characters.map((c) => c.id).join(' /')}`,
