@@ -385,6 +385,14 @@ async function main(): Promise<void> {
       const mstCanaryChannelId = process.env.MST_CANARY_CHANNEL_ID?.trim() ?? '';
       const identityApiBaseUrl =
         process.env.IDENTITY_API_URL?.trim() ?? 'https://identity.0xhoneyjar.xyz';
+      // inventory-api (Hyper Bun HTTP+MCP service) — the mint-image/traits
+      // enrichment source. Consumed over the wire via the persona-engine HTTP
+      // client (announce-mint → fetchNftMetadataHttp). Defaults to the live
+      // Railway deployment; override per-env with INVENTORY_API_URL. Unset →
+      // announce-mint fail-softs to imageless (dormant-until-configured).
+      const inventoryApiBaseUrl =
+        process.env.INVENTORY_API_URL?.trim() ??
+        'https://inventory-api-production-3f25.up.railway.app';
 
       // Build the dispatcher only when the bot client is available — it's
       // the discord.js Client carrying the Bot token for the Components-V2 REST
@@ -395,6 +403,7 @@ async function main(): Promise<void> {
         botClient && mstCanaryEnabled && mstCanaryChannelId
           ? createAnnouncementDispatcher({
               identityApiBaseUrl,
+              inventoryApiBaseUrl,
               discordSendFn: async (msg) => {
                 await postToChannel(botClient, msg.channelId, {
                   content: msg.contentFallback ?? '',
