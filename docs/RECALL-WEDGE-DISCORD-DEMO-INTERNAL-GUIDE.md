@@ -586,6 +586,18 @@ boundary.
 > public-channel-visible recall remain blocked** until separate later
 > gates authorize implementation; Phase 41A authorizes nothing here.
 
+> **Phase 41B / 41C note**
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`).
+> The separate `/recall-wedge-live-demo` command (Phase 41B, PR #137) now
+> has **its own operational runbook** (Phase 41C). **This harness demo
+> guide remains separate** and continues to govern the harness
+> `/recall-wedge-demo` only. **Do not use this harness guide as the live
+> Dixie runbook** — the live command has different gates
+> (`RECALL_WEDGE_LIVE_DISCORD_DEMO_*`), a live Dixie call path, and
+> safe-classification output, all documented in the Phase 41C runbook.
+> **The live Dixie smoke-test acceptance is a future Phase 41D** (after a
+> controlled live run), not part of this guide.
+
 ---
 
 ## P. Acceptance criteria for Phase 40B

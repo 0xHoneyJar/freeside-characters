@@ -69,6 +69,32 @@ pre-approve any Phase 41B PR. A future Phase 41B carries its own scope
 boundary (§K), and its own acceptance criteria (§M). Everything Phase
 39A / 39D / 39E / 40A / 40B blocked stays blocked here (§O).
 
+### A.2 Phase 41B / 41C note — implemented, then documented; Phase 41D is the future acceptance
+
+> Added by Phase 41C
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`).
+
+- **Phase 41B implemented the separate command.** The
+  `/recall-wedge-live-demo` command (disabled-by-default,
+  guild-scoped-only registration, operator-gated, ephemeral-only, fixed
+  deterministic input, no options, lazy Phase 37C live-client load only
+  after the Discord gates pass, safe classification / outcome / route /
+  reason output, final no-leak scan, generic fail-closed refusal) is
+  merged via PR #137 under the §F–§M constraints.
+- **Phase 41C documents the operational procedure.** It is the docs-only
+  runbook for safely configuring, registering, invoking,
+  fail-closed-testing, disabling, removing, and capturing evidence for
+  the live command. It changes no runtime behavior.
+- **Phase 41D is the future smoke-test acceptance** if a controlled live
+  run occurs — a docs-only redacted report similar to the Phase 39E
+  harness-demo acceptance. **Ladder note:** §N below predates Phase 41B
+  and labels that future acceptance "Phase 41C"; the ladder advanced one
+  slot (41B = implementation, 41C = runbook), so read §N's "Phase 41C
+  smoke-test acceptance" as **Phase 41D**.
+- **No new authorization beyond Phase 41A / 41B.** Phase 41C and the
+  future Phase 41D add no runtime scope; everything §O blocks stays
+  blocked.
+
 ---
 
 ## B. Source evidence
