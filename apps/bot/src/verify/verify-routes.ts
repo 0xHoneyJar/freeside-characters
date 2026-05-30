@@ -85,7 +85,13 @@ export async function handleOAuthCallback(url: URL, rt: VerifyRuntime): Promise<
   }
   recordVerifyEvent('oauth_callback');
 
+  // C4 — at most one SIWE nonce per handoff token. A second concurrent flow on the same token URL
+  // is refused here, so a token can never reach two independently-completable /complete requests.
   const siwe = issueSiweNonce(claimed.token, handoff.did);
+  if (!siwe) {
+    recordVerifyEvent('nonce_reissue_blocked');
+    return errorPage('a verification is already in progress for this link. finish that one, or re-click verify in discord.', 409);
+  }
   return connectPage({
     token: claimed.token,
     domain: rt.domain,
@@ -174,9 +180,13 @@ export async function handleVerifyComplete(token: string, request: Request, rt: 
     rt.authClient.link({ discordId: handoff.did, walletAddress: address }, `${token}:${address.toLowerCase()}`),
   );
   if (Exit.isFailure(linkExit)) {
-    // FR-14 outage — handoff claim NOT consumed → the user can retry from discord.
+    // FR-14 outage. The handoff claim is NOT consumed, but the SIWE nonce WAS already claimed
+    // (single-use · ATK-002), so the recovery path is NOT a resubmit of this page — it is to
+    // re-click verify in discord, which mints a FRESH token + nonce. (C6 · BB #138: the older
+    // comment misleadingly implied an in-page retry would work.) consume-after-link (option a)
+    // is kept over moving the claim later, which would reopen the ATK-002 race.
     recordVerifyEvent('link_outage');
-    return jsonResponse({ error: 'cables got crossed linking your wallet. try again in a moment.' }, 503);
+    return jsonResponse({ error: 'cables got crossed linking your wallet. re-click verify in discord to try again.' }, 503);
   }
   const link = linkExit.value;
 
@@ -196,6 +206,9 @@ export async function handleVerifyComplete(token: string, request: Request, rt: 
   } else if (rt.grantRole) {
     // FR-13 re-grant is idempotent; failure → restored on the next verify click.
     roleGranted = await rt.grantRole(handoff.did, handoff.gid).catch(() => false);
+    // C19 — surface a systemic grant problem (role hierarchy / missing MANAGE_ROLES / API) vs an
+    // occasional Discord hiccup. The link already succeeded; only the role is missing.
+    if (!roleGranted) recordVerifyEvent('grant_failed');
   }
 
   // 4. audit the link (RT-3 — redacted; never the service token).

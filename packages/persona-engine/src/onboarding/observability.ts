@@ -11,6 +11,9 @@ export type VerifyEvent =
   | 'oauth_mismatch' // ATK-001 — discord_id != token.did
   | 'siwe_fail' // signature verification failed
   | 'nonce_replay' // ATK-002 — nonce already claimed
+  | 'nonce_reissue_blocked' // C4 — a second SIWE nonce refused for an already-issued handoff token
+  | 'precheck_resolve_failed' // C8 — DEP-A resolveByDiscord errored (identity-api degradation)
+  | 'grant_failed' // C19 — role grant returned false (role-hierarchy / Discord API)
   | 'link_outage' // FR-14 — identity-api link failed
   | 'conflict' // FR-12 — rebound, pending review
   | 'verified'; // success
@@ -21,6 +24,9 @@ const counters: Record<VerifyEvent, number> = {
   oauth_mismatch: 0,
   siwe_fail: 0,
   nonce_replay: 0,
+  nonce_reissue_blocked: 0,
+  precheck_resolve_failed: 0,
+  grant_failed: 0,
   link_outage: 0,
   conflict: 0,
   verified: 0,

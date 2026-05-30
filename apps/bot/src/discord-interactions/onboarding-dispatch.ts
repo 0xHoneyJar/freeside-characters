@@ -29,6 +29,7 @@ import {
   ONBOARD_PREFIX,
   ONBOARD_VERIFY_CUSTOM_ID,
   mintToken,
+  recordVerifyEvent,
   type FreesideAuthClient,
 } from '@freeside-characters/persona-engine/onboarding';
 import { Effect, Exit } from 'effect';
@@ -173,7 +174,14 @@ export async function runOnboardingPrecheck(
     let linked = false;
     if (runtime.authClient && runtime.idempotentMode !== 'resolve-by-wallet') {
       const exit = await Effect.runPromiseExit(runtime.authClient.resolveByDiscord(discordId));
-      linked = Exit.isSuccess(exit) && exit.value !== null;
+      if (Exit.isFailure(exit)) {
+        // C8 (BB #138) — the pre-check degraded to `new` (slip-fallback UX), but surface the
+        // identity-api degradation so an outage is visible on /health, not silent until a user
+        // reports a duplicate. UX is unchanged.
+        recordVerifyEvent('precheck_resolve_failed');
+      } else {
+        linked = exit.value !== null;
+      }
     }
     const hasRole = linked ? Boolean(await runtime.hasVerifiedRole?.(interaction)) : false;
     const branch = decideOnboardingBranch({ linked, hasRole });

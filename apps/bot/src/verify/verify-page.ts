@@ -15,6 +15,12 @@ const SECURITY_HEADERS: Record<string, string> = {
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'cache-control': 'no-store',
+  // C17 (BB #138) — CSP as the perimeter so any FUTURE XSS surface is structurally contained, not
+  // just the username (which esc() already handles). The page's only script is the inline connect
+  // handler ('unsafe-inline'); it talks to its own origin (the /complete POST) + the injected
+  // wallet provider (window.ethereum, in-page, needs no connect-src). data: img covers inline svg.
+  'content-security-policy':
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'",
 };
 
 export function htmlResponse(body: string, status = 200): Response {

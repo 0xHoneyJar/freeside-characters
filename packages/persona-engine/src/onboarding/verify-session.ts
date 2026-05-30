@@ -20,6 +20,9 @@ const STATE_DIR = '.run/onboarding-oauth-state';
 const STATE_CLAIMS = '.run/onboarding-oauth-state-claims';
 const NONCE_DIR = '.run/onboarding-siwe-nonce';
 const NONCE_CLAIMS = '.run/onboarding-siwe-nonce-claims';
+// C4 (BB #138) — at-most-one SIWE nonce per handoff token. A token clicked/opened twice would
+// otherwise mint two nonces, each independently completable → two link() calls for one token.
+const NONCE_PER_TOKEN_CLAIMS = '.run/onboarding-siwe-token-claims';
 
 const STATE_TTL_MS = 10 * 60 * 1000; // OAuth round-trip window
 const NONCE_TTL_MS = 5 * 60 * 1000; // ≤5m (T3.0 criterion)
@@ -96,8 +99,16 @@ export interface SiweNonceRecord {
   nonce: string;
 }
 
-/** Issue a single-use SIWE nonce (≤5m) after OAuth proves discord_id == token.did. */
-export function issueSiweNonce(token: string, did: string, now: number = Date.now()): SiweNonceRecord {
+/**
+ * Issue a single-use SIWE nonce (≤5m) after OAuth proves discord_id == token.did.
+ * At most ONE nonce per handoff token (C4 · BB #138): returns null if a nonce was already issued
+ * for this token (a second concurrent verify flow on the same token URL). The token is itself
+ * single-use + ≤5m TTL, so a legitimate re-attempt comes from a fresh button click → fresh token.
+ */
+export function issueSiweNonce(token: string, did: string, now: number = Date.now()): SiweNonceRecord | null {
+  if (!ID_RE.test(token)) return null;
+  // atomic per-token claim — the first callback for a token wins; a racing second gets null.
+  if (!claim(NONCE_PER_TOKEN_CLAIMS, token)) return null;
   const nonce = randomBytes(16).toString('hex');
   const issuedAt = new Date(now).toISOString();
   const expirationTime = new Date(now + NONCE_TTL_MS).toISOString();

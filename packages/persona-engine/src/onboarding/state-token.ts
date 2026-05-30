@@ -42,9 +42,18 @@ function secret(): { key: string; kid: string } {
   return { key, kid: process.env.ONBOARDING_STATE_KID ?? 'k1' };
 }
 
-/** MAC over the canonical (stable-order, JSON-encoded) state + kid. */
+/**
+ * MAC over an EXPLICIT field-order canonical form (C1/C10 · BB review #138).
+ * Earlier this used `JSON.stringify` of an object literal — correct today (Node preserves
+ * insertion order) but its integrity property silently depended on field declaration order and
+ * on JS's serializer, which a refactor or a cross-language (Python/Go) audit reader would break.
+ * The fixed-order `|`-joined form makes the canonical bytes independent of how the state object is
+ * constructed or which runtime reads it. The fields are all server-controlled + `|`-free (Discord
+ * snowflakes are digits, nonce is hex, exp is a number, kid is env alphanumeric), so the separator
+ * is unambiguous. Mirrors the repo's own Loa L1 audit discipline (lib/jcs.sh).
+ */
 function computeMac(s: HandoffState, kid: string, key: string): string {
-  const canon = JSON.stringify({ did: s.did, nonce: s.nonce, iid: s.iid, gid: s.gid, exp: s.exp, kid });
+  const canon = `v1|${s.did}|${s.nonce}|${s.iid}|${s.gid}|${s.exp}|${kid}`;
   return createHmac('sha256', key).update(canon).digest('base64url');
 }
 

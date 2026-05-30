@@ -10,7 +10,11 @@ import {
   noOnboardingRuntime,
   type OnboardingRuntime,
 } from './onboarding-dispatch.ts';
-import type { FreesideAuthClient } from '@freeside-characters/persona-engine/onboarding';
+import {
+  verifyMetricsSnapshot,
+  resetVerifyMetrics,
+  type FreesideAuthClient,
+} from '@freeside-characters/persona-engine/onboarding';
 import type { DiscordInteraction } from './types.ts';
 
 beforeAll(() => {
@@ -134,6 +138,24 @@ describe('onboarding-dispatch C2 — pre-check (background)', () => {
     await runOnboardingPrecheck(buttonClick('onboard:verify'), runtime, { fetchFn });
     const body = JSON.parse(calls[0]!.body);
     expect(body.content).toMatch(/verify\/[0-9a-f]{32}/);
+  });
+
+  test('C8 · resolveByDiscord failure degrades to `new` AND records precheck_resolve_failed', async () => {
+    resetVerifyMetrics();
+    const { calls, fetchFn } = capture();
+    const failingClient = {
+      resolveByDiscord: () => Effect.fail(new Error('identity-api 503')),
+    } as unknown as FreesideAuthClient;
+    const runtime: OnboardingRuntime = {
+      authClient: failingClient,
+      verifyBaseUrl: 'https://verify.test',
+      noRuntime: false,
+    };
+    await runOnboardingPrecheck(buttonClick('onboard:verify'), runtime, { fetchFn });
+    // UX unchanged: still mints + hands back a verify URL (the `new` path).
+    expect(JSON.parse(calls[0]!.body).content).toMatch(/verify\/[0-9a-f]{32}/);
+    // but the degradation is now visible to operators.
+    expect(verifyMetricsSnapshot().precheck_resolve_failed).toBe(1);
   });
 
   test('T5.3/IMP-002 · resolve-by-wallet mode SKIPS resolveByDiscord (DEP-A not shipped)', async () => {

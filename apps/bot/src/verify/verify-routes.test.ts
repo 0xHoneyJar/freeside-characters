@@ -10,6 +10,8 @@ import {
   issueOAuthState,
   issueSiweNonce,
   buildSiweMessage,
+  verifyMetricsSnapshot,
+  resetVerifyMetrics,
   type FreesideAuthClient,
 } from '@freeside-characters/persona-engine/onboarding';
 import { handleVerifyRoot, handleOAuthCallback, handleVerifyComplete, type VerifyRuntime } from './verify-routes.ts';
@@ -123,12 +125,21 @@ describe('verify-routes — OAuth callback (ATK-001)', () => {
     expect((await handleOAuthCallback(url, runtime())).status).toBe(200);
     expect((await handleOAuthCallback(url, runtime())).status).toBe(400); // replayed state
   });
+
+  test('C4 · a SECOND callback for the same token → 409 (one SIWE nonce per token)', async () => {
+    const token = mkToken();
+    // two distinct OAuth states for the SAME handoff token (token URL opened twice).
+    const url1 = new URL(`${ORIGIN}/verify/oauth/callback?code=abc&state=${issueOAuthState(token)}`);
+    const url2 = new URL(`${ORIGIN}/verify/oauth/callback?code=def&state=${issueOAuthState(token)}`);
+    expect((await handleOAuthCallback(url1, runtime())).status).toBe(200); // first issues the nonce
+    expect((await handleOAuthCallback(url2, runtime())).status).toBe(409); // second refused → no 2nd nonce
+  });
 });
 
 describe('verify-routes — POST /complete', () => {
   // build a signed /complete request for a freshly-issued nonce.
   const signedComplete = (token: string, signer: { address: string; sign: (m: string) => string }, origin = ORIGIN) => {
-    const s = issueSiweNonce(token, DISCORD_ID);
+    const s = issueSiweNonce(token, DISCORD_ID)!; // fresh token → non-null (C4 single-use is per-token)
     const message = buildSiweMessage({
       domain: DOMAIN,
       address: signer.address,
@@ -162,6 +173,18 @@ describe('verify-routes — POST /complete', () => {
     expect(consumeToken(token)).toBe(false);
   });
 
+  test('C19 · grant failure → 200 verified, role_granted false, grant_failed metric recorded', async () => {
+    resetVerifyMetrics();
+    const token = mkToken();
+    const { req } = signedComplete(token, makeSigner());
+    const res = await handleVerifyComplete(token, req, runtime({ grantRole: async () => false }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; role_granted: boolean };
+    expect(body.status).toBe('verified'); // link succeeded — only the role is missing
+    expect(body.role_granted).toBe(false);
+    expect(verifyMetricsSnapshot().grant_failed).toBe(1);
+  });
+
   test('RT-7/ATK-006 · missing Origin → 403 (CSRF)', async () => {
     const token = mkToken();
     const { req } = signedComplete(token, makeSigner(), '');
@@ -179,7 +202,7 @@ describe('verify-routes — POST /complete', () => {
   test('ATK-002 · a replayed nonce → 400 (single-use)', async () => {
     const token = mkToken();
     const signer = makeSigner();
-    const s = issueSiweNonce(token, DISCORD_ID);
+    const s = issueSiweNonce(token, DISCORD_ID)!; // fresh token → non-null (C4 single-use is per-token)
     const message = buildSiweMessage({
       domain: DOMAIN, address: signer.address, statement: STATEMENT, uri: ORIGIN,
       chainId: CHAIN, nonce: s.nonce, issuedAt: s.issuedAt, expirationTime: s.expirationTime,
