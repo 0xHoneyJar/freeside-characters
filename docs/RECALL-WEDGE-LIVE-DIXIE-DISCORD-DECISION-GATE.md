@@ -122,6 +122,28 @@ boundary (§K), and its own acceptance criteria (§M). Everything Phase
   acceptance "Phase 41C"; read it as **Phase 41D**, consistent with the
   §A.2 ladder reconciliation.
 
+### A.4 Phase 42A note — seeded live estate selected as the next MVP need; this gate's live-command shape preserved
+
+> Added by Phase 42A
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md`), 2026-05-30.
+
+- **Phase 42A is a separate docs-only decision gate** that selects the
+  next MVP need *after* Phase 41D: a seeded dev/operator live estate /
+  storage fixture, so the live path can prove a safe served live recall
+  result. It implements nothing and seeds nothing.
+- **It preserves everything this gate set.** A future seeded-estate proof
+  reuses the separate `/recall-wedge-live-demo` command and its §F scope,
+  §G env gates, §H fixed/finite input boundary, §I response-narrowing /
+  no-leak output boundary, §J lazy-load boundary, and §K logging
+  boundary — unchanged. Seeding adds a governed `served` case; it does
+  not relax any boundary here.
+- **Nothing this gate blocked is unblocked.** Everything in §O remains
+  blocked. Seeded live memory must be a reviewed operator/dev fixture,
+  not user chat ingestion; production memory admission, public recall,
+  cross-user auth / consent, and public channel-visible recall stay
+  blocked behind separate later gates. Phase 42A makes no served-memory
+  acceptance claim.
+
 ---
 
 ## B. Source evidence
@@ -658,6 +680,11 @@ Phase 41A is acceptable if:
 
 ## Q. Cross-references
 
+- `docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md` — Phase 42A
+  seeded live estate / storage decision gate; selects a seeded
+  dev/operator estate as the next MVP need toward a safe served live
+  recall while preserving this gate's live-command shape and gates; §A.4
+  records its note.
 - `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md` — Phase
   41D smoke-test acceptance; the redacted report for the controlled
   live-Dixie Discord run (safe wiring + fail-closed, no served recall);

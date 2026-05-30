@@ -506,6 +506,29 @@ docs), with options **c / d / e** sequenced later under their own gates,
 and option **f** held throughout. Phase 41D authorizes none of them; the
 next phase is the place to weigh them.
 
+### N.1 Phase 42A note — seeded live estate selected as the next MVP need
+
+> Added by Phase 42A
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md`), 2026-05-30.
+
+- **Phase 42A picked option `d` above** — "design a seeded live estate /
+  storage path" — as the next MVP need, ahead of option `c`
+  (registration hardening) and option `e` (service-token hardening). The
+  unseeded estate / storage state recorded in §J is the blocker to served
+  recall; seeding is the only lane that moves the proof from this safe
+  live failure to a safe served live recall.
+- **Phase 42A is docs / decision gate only.** It authorizes a future
+  seeded-estate lane (a future Phase 42B) under tight seed constraints
+  (one dev/operator estate, a few reviewed deterministic assertions,
+  deterministic / reviewed / idempotent, no committed secrets or live
+  IDs, tests / guards before any PR) — a reviewed operator/dev fixture,
+  **not** user chat ingestion. It implements nothing and seeds nothing.
+- **Nothing this acceptance blocked is unblocked.** Service-token
+  hardening (§N.e) and registration hardening (§N.c) stay behind their
+  own separate decisions; production memory admission, public recall,
+  served memory as a capability, and everything in §K remain blocked.
+  Phase 42A makes no served-memory acceptance claim.
+
 ---
 
 ## O. Acceptance criteria for Phase 41D
@@ -534,6 +557,10 @@ Phase 41D is acceptable if:
 
 ## P. Cross-references
 
+- `docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md` — Phase 42A
+  seeded live estate / storage decision gate; selects the seeded
+  dev/operator estate (this acceptance's §N option `d`) as the next MVP
+  need toward a safe served live recall; §N.1 records its note.
 - `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md` —
   Phase 41C operational runbook; the governing procedure for this run;
   gains a Phase 41D acceptance note.
