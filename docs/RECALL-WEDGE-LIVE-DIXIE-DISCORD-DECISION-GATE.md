@@ -144,6 +144,35 @@ boundary (§K), and its own acceptance criteria (§M). Everything Phase
   blocked behind separate later gates. Phase 42A makes no served-memory
   acceptance claim.
 
+### A.5 Phase 42D note — this gate's live-command shape served a seeded recall, accepted as a controlled dev/operator proof
+
+> Added by Phase 42D
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md`),
+> 2026-05-31.
+
+- **The separate `/recall-wedge-live-demo` command this gate scoped served
+  a seeded recall and is accepted (docs-only).** After Dixie-side seeding
+  (direct Dixie Phase 32K v4b seeded smoke) and Freeside Characters Phase
+  42B (safe pre-Dixie gate diagnostics) / Phase 42C (seeded request /
+  signature alignment), an allowlisted operator invoked the command in the
+  configured guild and received `classification` / `outcome` / `route` /
+  `reason` all `served` / `/api/recall/intake`.
+- **Every §F–§K boundary this gate set was preserved.** The run used the
+  separate command (§E / §F), the separate `RECALL_WEDGE_LIVE_DISCORD_DEMO_*`
+  gates plus the separate `RECALL_WEDGE_DIXIE_*` client config (§G), the
+  fixed / finite seeded input (§H), the Phase 37C classifier + final
+  no-leak scan on the output (§I), the lazy live-client load only after the
+  Discord gates pass (§J), and the safe-reason-code logging posture (§K).
+  Seeding added a governed `served` case; it did not relax any boundary
+  here. Phase 42C only aligned the request / signature *shape* the §H
+  fixed/finite input takes, within the §H boundary.
+- **No new authorization.** Phase 42D adds no runtime scope. It accepts a
+  controlled dev/operator seeded live recall only — no production rollout,
+  no production memory admission, no durable production storage, no
+  user-chat ingestion, no public recall, no cross-user auth / consent, and
+  no healthy Finn integration. Everything §O blocks stays blocked; the
+  recommended next step is a docs-only Admission Wedge decision gate.
+
 ---
 
 ## B. Source evidence
@@ -680,6 +709,11 @@ Phase 41A is acceptable if:
 
 ## Q. Cross-references
 
+- `docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md` — Phase 42D
+  seeded live Discord smoke acceptance; records that this gate's separate
+  `/recall-wedge-live-demo` command served a seeded recall under every
+  §F–§K boundary, accepted as a controlled dev/operator proof; §A.5
+  records its note.
 - `docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md` — Phase 42A
   seeded live estate / storage decision gate; selects a seeded
   dev/operator estate as the next MVP need toward a safe served live

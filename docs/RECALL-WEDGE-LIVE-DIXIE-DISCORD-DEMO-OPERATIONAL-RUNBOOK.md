@@ -874,6 +874,46 @@ Restated together here for anyone repeating the smoke test:
   fixture — not Discord history ingestion, not "remember this," not
   candidate-memory admission.
 
+### R.3 Phase 42D note — this procedure produced a served seeded recall; accepted as a controlled dev/operator proof
+
+> Added by Phase 42D
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md`),
+> 2026-05-31.
+
+- **A controlled seeded run of this procedure has occurred and is
+  accepted (docs-only).** After the Dixie-side seeded estate work (direct
+  Dixie Phase 32K v4b seeded smoke) and the Freeside Characters Phase 42B
+  (safe pre-Dixie gate diagnostics) / Phase 42C (seeded request /
+  signature alignment) work, an operator reused §F–§N of this runbook
+  unchanged, published `/recall-wedge-live-demo` after the restart, and
+  invoked it in the configured guild.
+- **This time the live path returned `served`, not the §R fail-closed.**
+  The direct Dixie precondition passed (allowlist HTTP 201, token verify
+  HTTP 200, recall HTTP 200, `outcome = served`, pack present, receipt
+  present, raw reasons absent), and the gated live command rendered the
+  §J.1 served-category ephemeral summary (`classification` / `outcome` /
+  `route` / `reason` — all `served` / `/api/recall/intake`) with **no
+  `raw_reasons`, no raw payload, no recall pack body, no receipt body, no
+  IDs / tokens / tenant / debug / stack-trace exposure.**
+- **Accepted scope: a controlled dev/operator seeded live recall, not
+  production memory.** The served result came from a reviewed dev/operator
+  seed admitted through a Straylight-owned path. The run claims no
+  production rollout, no production memory admission, no user-chat
+  ingestion, no public recall, no cross-user consent / sharing, and no
+  healthy Finn integration.
+- **The §R.1 caveats remain load-bearing, joined by two seeded-run
+  specifics.** Confirmed against this run: the manually minted Dixie JWT
+  is short-lived and **must be refreshed for future demos** (§R.1.b); the
+  startup auto-publish path can **overwrite the live command registration**
+  so `/recall-wedge-live-demo` must be **published after a restart**
+  (§R.1.a). New seeded-run caveats: the **Dixie wallet allowlist may be
+  runtime / in-memory** and may need re-adding after a Dixie redeploy /
+  restart; **Freeside Characters must be restarted after setting a fresh
+  Dixie token**; and the **direct Dixie v4b smoke should be re-run before
+  future Discord demos** if the environment has changed.
+- **This runbook still records no acceptance itself** — the seeded
+  acceptance lives in the Phase 42D report; this note only points to it.
+
 ---
 
 ## S. Blocked work remains blocked
@@ -929,6 +969,10 @@ Phase 41C is acceptable if:
 
 ## U. Cross-references
 
+- `docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md` — Phase 42D
+  seeded live Discord smoke acceptance; the redacted report for the
+  controlled seeded run of this procedure that returned `served` from a
+  seeded dev/operator estate. This runbook's §R.3 records its note.
 - `docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md` — Phase 42A
   seeded live estate / storage decision gate; selects a seeded
   dev/operator estate as the next MVP need toward a safe served live
