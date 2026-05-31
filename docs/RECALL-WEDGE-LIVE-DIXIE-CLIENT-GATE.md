@@ -700,6 +700,13 @@ records continued compliance with §D, §J, and §K through the Phase
   tests / static guards) stand unchanged; a future Phase 41B that reaches
   the live client must still satisfy them, plus the Discord gates the
   Phase 41A gate doc defines.
+- **Phase 41B implemented that separate command and Phase 41C documented
+  its operation.** `/recall-wedge-live-demo` (PR #137) reaches this
+  client only after its Discord gates pass, reading this client's own
+  `RECALL_WEDGE_DIXIE_*` env (§G) — unchanged here. The Phase 41C runbook
+  (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`) is
+  the operator procedure; the future Phase 41D is its smoke-test
+  acceptance. Neither modifies this gate or the Phase 37C client.
 
 ---
 

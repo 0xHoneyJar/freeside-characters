@@ -586,6 +586,31 @@ boundary.
 > public-channel-visible recall remain blocked** until separate later
 > gates authorize implementation; Phase 41A authorizes nothing here.
 
+> **Phase 41B / 41C note**
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`).
+> The separate `/recall-wedge-live-demo` command (Phase 41B, PR #137) now
+> has **its own operational runbook** (Phase 41C). **This harness demo
+> guide remains separate** and continues to govern the harness
+> `/recall-wedge-demo` only. **Do not use this harness guide as the live
+> Dixie runbook** — the live command has different gates
+> (`RECALL_WEDGE_LIVE_DISCORD_DEMO_*`), a live Dixie call path, and
+> safe-classification output, all documented in the Phase 41C runbook.
+> **The live Dixie smoke-test acceptance is a future Phase 41D** (after a
+> controlled live run), not part of this guide.
+
+> **Phase 41D note**
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md`).
+> The future Phase 41D has now occurred: a controlled live-Dixie run of
+> `/recall-wedge-live-demo` was accepted (docs-only) for **safe wiring +
+> fail-closed rendering only** — the live path reached the Dixie
+> `/api/recall/intake` seam and fail-closed on `seam.storage_unavailable`
+> (unseeded estate / storage), with no served recall, no memory
+> admission, and no leak. **This harness `/recall-wedge-demo` guide is
+> unaffected** — it still governs only the fixture-bound harness demo.
+> **Served recall, public recall, and public-channel-visible recall
+> remain blocked**; served recall is blocked on the unseeded estate /
+> storage state.
+
 ---
 
 ## P. Acceptance criteria for Phase 40B

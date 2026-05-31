@@ -639,6 +639,166 @@ Phase 41B), not implemented by Phase 41A."
 
 ---
 
+### 5k. Phase 41C addendum — live-demo operational runbook added; docs-only, runtime unchanged
+
+> Added by Phase 41C
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 41C (note: Phase 41B — the separate
+`/recall-wedge-live-demo` command — is merged via PR #137; Phase 41A §N
+predates that and calls the future acceptance "Phase 41C," but the
+ladder advanced one slot, so the future smoke-test acceptance is **Phase
+41D**):
+
+- **Phase 41C adds the operational runbook for
+  `/recall-wedge-live-demo`.** It documents the controlled setup,
+  registration, invocation, fail-closed, disable, removal, and
+  evidence-capture procedure for the Phase 41B live command.
+- **It is docs-only.** It adds no source, test, package, lockfile,
+  fixture, config, CI, or generated change, and no handler /
+  registration / dispatch behavior change.
+- **It does not change runtime behavior.** Both `/recall-wedge-live-demo`
+  and `/recall-wedge-demo` are untouched; the two commands stay distinct
+  (separate names, handlers, env gates, registration paths).
+- **It prepares the registration / invocation / fail-closed / disable /
+  evidence procedure** — guild-scoped registration to one configured
+  guild, operator-gated invocation, ephemeral safe/classified output or
+  generic fail-closed refusal, with redacted-placeholder env and no
+  secrets.
+- **It does not record smoke-test acceptance.** A **future Phase 41D**
+  may record smoke-test acceptance after a controlled live run (a
+  docs-only redacted report similar to the Phase 39E harness-demo
+  acceptance).
+- **Public-channel-visible recall, memory admission, public rollout,
+  Telegram / private chat, LLM / voice remain blocked** behind separate
+  later gates. Candidate writes, "remember this," storage / admission,
+  production auth / consent, direct Finn runtime / audit wiring beyond
+  existing seams, and public renderer expansion also remain blocked.
+
+This addendum does not duplicate the Phase 41C runbook; it only records
+that the Phase 41B live command now has an operational runbook and that
+the next acceptance step is a future Phase 41D, not Phase 41C.
+
+### 5l. Phase 41D addendum — controlled live-Dixie Discord smoke test accepted; safe wiring + fail-closed only, no served recall
+
+> Added by Phase 41D
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 41D (2026-05-30):
+
+- **Phase 41D records controlled operator smoke-test acceptance for the
+  live command.** A human operator deployed Dixie live (Railway, healthy
+  service + Postgres, `GET /api/health` → 200), wired the **Freeside
+  Characters** service with the live Dixie env, and invoked
+  `/recall-wedge-live-demo` in one configured guild. The live path
+  reached the Dixie `/api/recall/intake` seam and **fail-closed safely**.
+- **It is docs-only.** It adds no source, test, package, lockfile,
+  fixture, config, CI, or generated change, and no handler /
+  registration / dispatch behavior change.
+- **It accepts safe wiring + fail-closed rendering, not served recall.**
+  The authenticated intake reached the Straylight seam and returned
+  `seam.storage_unavailable`; the command classified it as
+  `upstream_unavailable` and rendered an ephemeral operator-safe summary
+  (`classification` / `outcome` / `route` / `reason`) with **no
+  `raw_reasons`, no raw payload, no IDs / tokens / tenant / debug
+  material**.
+- **The current blocker for served recall is the unseeded live estate /
+  storage state.** Until it is seeded (and the seeding / admission path
+  is itself designed and gated — §7), the live command can prove safe
+  reach + safe fail-closed, not served recall content.
+- **No production / public claim, no Finn-healthy claim.** The run does
+  not claim production rollout, public recall, served memory, healthy
+  Finn integration (Finn was intentionally unreachable), persistent
+  production storage / admission, or cross-user auth / consent.
+- **Two documented operational caveats.** Startup auto-publish can remove
+  the dev-only live command (register after restart; do not restart
+  before invocation); and the manually minted Dixie JWT is short-lived
+  (refresh + restart before re-running if expired).
+- **Next decision options are recorded, none authorized here:** preserve
+  as controlled smoke acceptance; harden the runbook (docs-only); a tiny
+  operational patch so startup auto-publish does not erase the gated dev
+  command; design a seeded live estate / storage path; design a
+  longer-lived / safer dev service-token path; keep public rollout
+  blocked.
+- **Public-channel-visible recall, public recall, served memory, memory
+  admission, storage / admission, production / public rollout, Telegram /
+  private chat, LLM / voice, candidate writes, "remember this," cross-user
+  auth / consent, direct Finn runtime / audit wiring beyond existing
+  seams, and public renderer expansion all remain blocked** behind
+  separate later gates.
+
+This addendum does not duplicate the Phase 41D acceptance report; it only
+records that a controlled live-Dixie Discord run was accepted for safe
+wiring + fail-closed rendering, that served recall remains blocked on the
+unseeded estate / storage state, and that the **recommended next phase**
+answer is preserve / harden docs now, with seeded-storage and
+safer-token work sequenced later under their own gates.
+
+---
+
+### 5m. Phase 42A addendum — next MVP need is a seeded dev/operator live estate, not registration / token hardening
+
+> Added by Phase 42A
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md`), 2026-05-30.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 42A:
+
+- **Phase 42A is docs / decision gate only.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change, and no
+  handler / registration / dispatch / seed / storage change. It implements
+  nothing and seeds nothing.
+- **It selects the next MVP need: a seeded dev/operator live estate /
+  storage fixture.** Phase 41D proved the pipe works (live wiring, Dixie
+  reach, auth path, fail-closed classification, no-leak Discord render)
+  but fail-closed on `seam.storage_unavailable` because the live estate /
+  storage state is unseeded. The next meaningful MVP step is seeding a
+  tightly scoped dev/operator estate so the live path can prove a **safe
+  served live recall result**, not command-registration hardening and not
+  service-token hardening.
+- **It authorizes only a future seeded-estate lane (a future Phase 42B).**
+  The seed must be one dev/operator (or narrowly scoped fixture) estate
+  with one or a few reviewed deterministic assertions, deterministic /
+  reviewed / idempotent / safe-to-rerun, committing no secrets / live IDs
+  / tokens / URLs / keys, with tests / guards before any PR acceptance.
+  Seeded live memory must be a reviewed operator/dev fixture, **not user
+  chat ingestion**. It stays inside this doc's §6 (live Dixie client) and
+  §7 (live memory admission) gates.
+- **The accepted target proof is served live recall:** the controlled
+  operator `/recall-wedge-live-demo` path calls live Dixie, Dixie reads a
+  seeded live estate, Straylight returns a governed non-empty recall
+  result classified `served`, Freeside Characters renders only public /
+  operator-safe fields, and no raw / private / debug / source material
+  leaks.
+- **Priority ranking locked:** seeded live estate / storage first;
+  service-token hardening second (only if it becomes a hard blocker for
+  repeated smoke, behind its own decision); command-registration
+  hardening third (behind its own decision); public rollout remains
+  blocked throughout.
+- **Blocked work stays blocked.** Production memory admission,
+  candidate-memory writes, "remember this," arbitrary user writes, live
+  Discord message ingestion / history-as-memory, cross-user auth /
+  consent, public recall, public channel-visible recall, served recall as
+  a shipped capability, Telegram, private chat, LLM rewriting, character
+  voice, public renderer expansion, and Finn integration remain blocked
+  behind separate later gates. Phase 42A authorizes none of them and makes
+  no served-memory acceptance claim.
+- **Next decision options:** Phase 42B seeded live estate / storage design
+  or fixture spike (recommended); a separate token-hardening gate; a
+  separate command-registration-hardening gate; or stop and preserve Phase
+  41D as safe-failure acceptance.
+
+This addendum does not duplicate the Phase 42A gate doc; it only updates
+the post-MVP option matrix's **next-MVP-need** answer from "preserve /
+harden docs now, seeded-storage later" (Phase 41D §5l) to "a seeded
+dev/operator live estate / storage fixture (future Phase 42B) is the
+selected next MVP step, ahead of token and registration hardening, to
+prove a safe served live recall result."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:

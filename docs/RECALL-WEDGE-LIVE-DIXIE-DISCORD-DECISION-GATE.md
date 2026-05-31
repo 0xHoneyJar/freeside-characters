@@ -69,6 +69,81 @@ pre-approve any Phase 41B PR. A future Phase 41B carries its own scope
 boundary (§K), and its own acceptance criteria (§M). Everything Phase
 39A / 39D / 39E / 40A / 40B blocked stays blocked here (§O).
 
+### A.2 Phase 41B / 41C note — implemented, then documented; Phase 41D is the future acceptance
+
+> Added by Phase 41C
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md`).
+
+- **Phase 41B implemented the separate command.** The
+  `/recall-wedge-live-demo` command (disabled-by-default,
+  guild-scoped-only registration, operator-gated, ephemeral-only, fixed
+  deterministic input, no options, lazy Phase 37C live-client load only
+  after the Discord gates pass, safe classification / outcome / route /
+  reason output, final no-leak scan, generic fail-closed refusal) is
+  merged via PR #137 under the §F–§M constraints.
+- **Phase 41C documents the operational procedure.** It is the docs-only
+  runbook for safely configuring, registering, invoking,
+  fail-closed-testing, disabling, removing, and capturing evidence for
+  the live command. It changes no runtime behavior.
+- **Phase 41D is the future smoke-test acceptance** if a controlled live
+  run occurs — a docs-only redacted report similar to the Phase 39E
+  harness-demo acceptance. **Ladder note:** §N below predates Phase 41B
+  and labels that future acceptance "Phase 41C"; the ladder advanced one
+  slot (41B = implementation, 41C = runbook), so read §N's "Phase 41C
+  smoke-test acceptance" as **Phase 41D**.
+- **No new authorization beyond Phase 41A / 41B.** Phase 41C and the
+  future Phase 41D add no runtime scope; everything §O blocks stays
+  blocked.
+
+### A.3 Phase 41D note — controlled live-Dixie Discord smoke test accepted; safe wiring only
+
+> Added by Phase 41D
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md`),
+> 2026-05-30.
+
+- **The future Phase 41D anticipated in §A.2 / §N has occurred and is
+  accepted (docs-only).** A human operator deployed Dixie live (Railway,
+  healthy service + Postgres), wired the **Freeside Characters** service
+  with the live Dixie env, registered `/recall-wedge-live-demo` to one
+  configured guild, and invoked it as an allowlisted operator.
+- **Accepted scope: safe live wiring + fail-closed rendering, not served
+  recall.** The authenticated `/api/recall/intake` call reached the
+  Straylight seam and returned `seam.storage_unavailable` (unseeded live
+  estate / storage); the command classified it as `upstream_unavailable`
+  and rendered an ephemeral operator-safe summary with no raw reasons,
+  payload, IDs, or tokens — exactly the §I output / §J lazy-load / §K
+  logging boundaries this gate set.
+- **No new authorization.** Phase 41D adds no runtime scope. It claims no
+  production rollout, no public recall, no served memory, no healthy Finn
+  integration, and no cross-user auth / consent. Everything §O blocks
+  stays blocked; served recall is blocked on the unseeded estate /
+  storage state.
+- **Ladder note:** §N below (written before Phase 41B landed) calls this
+  acceptance "Phase 41C"; read it as **Phase 41D**, consistent with the
+  §A.2 ladder reconciliation.
+
+### A.4 Phase 42A note — seeded live estate selected as the next MVP need; this gate's live-command shape preserved
+
+> Added by Phase 42A
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md`), 2026-05-30.
+
+- **Phase 42A is a separate docs-only decision gate** that selects the
+  next MVP need *after* Phase 41D: a seeded dev/operator live estate /
+  storage fixture, so the live path can prove a safe served live recall
+  result. It implements nothing and seeds nothing.
+- **It preserves everything this gate set.** A future seeded-estate proof
+  reuses the separate `/recall-wedge-live-demo` command and its §F scope,
+  §G env gates, §H fixed/finite input boundary, §I response-narrowing /
+  no-leak output boundary, §J lazy-load boundary, and §K logging
+  boundary — unchanged. Seeding adds a governed `served` case; it does
+  not relax any boundary here.
+- **Nothing this gate blocked is unblocked.** Everything in §O remains
+  blocked. Seeded live memory must be a reviewed operator/dev fixture,
+  not user chat ingestion; production memory admission, public recall,
+  cross-user auth / consent, and public channel-visible recall stay
+  blocked behind separate later gates. Phase 42A makes no served-memory
+  acceptance claim.
+
 ---
 
 ## B. Source evidence
@@ -605,6 +680,18 @@ Phase 41A is acceptable if:
 
 ## Q. Cross-references
 
+- `docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md` — Phase 42A
+  seeded live estate / storage decision gate; selects a seeded
+  dev/operator estate as the next MVP need toward a safe served live
+  recall while preserving this gate's live-command shape and gates; §A.4
+  records its note.
+- `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md` — Phase
+  41D smoke-test acceptance; the redacted report for the controlled
+  live-Dixie Discord run (safe wiring + fail-closed, no served recall);
+  §A.3 records its acceptance note.
+- `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DEMO-OPERATIONAL-RUNBOOK.md` —
+  Phase 41C operational runbook; the governing procedure the Phase 41D
+  run followed.
 - `docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md` — Phase 37B live Dixie
   client gate; the live client seam, its env config, and its
   classification vocabulary; gains a Phase 41A note.
