@@ -63,10 +63,12 @@
 // runtime is pulled in lazily via defaultLoadLiveClient ONLY after every
 // Discord gate passes (see the handler below).
 import type {
+  BuildDevSeededSignatureInput,
   LiveDixieClientConfig,
   LiveDixieRecallClassification,
   LiveDixieRecallResult,
   LiveRecallInput,
+  LiveRecallSignatureEnvelopeInput,
 } from '@freeside-characters/persona-engine/recall-wedge/live-dixie-client';
 import {
   InteractionResponseType,
@@ -311,40 +313,77 @@ function logRecallWedgeLiveDemoGateRefusal(
   );
 }
 
-// -- fixed deterministic operator/dev request shape (Phase 41A §H) ---------
+// -- fixed deterministic operator/dev request shape (Phase 41A §H · Phase 42C) --
 
 /**
- * The ONLY input that reaches the live Dixie request from Discord — a FIXED
- * synthetic operator/dev probe (Phase 41A §H option 1). It is a code-reviewed
- * constant, NOT derived from the interaction: no option is read, no message
- * history is read, no channel content is read, and there is no fallback to
- * interaction text. Its shape mirrors the Phase 37C runner's
- * `DEFAULT_OPERATOR_INPUT` (operator-supplied tenant / caller / request-key
- * inputs the live client already constructs). It carries no real secret value
- * — secrets live only in the Phase 37C client's own `RECALL_WEDGE_DIXIE_*`
- * env (§G), which this module does not read. No fixed idempotencyKey is set,
- * so the live client mints a fresh key per call (no reuse).
+ * The fixed synthetic operator/dev probe SHAPE (Phase 41A §H option 1) — every
+ * field except the signature, which is computed per call (Phase 42C). It is a
+ * code-reviewed constant, NOT derived from the interaction: no option is read,
+ * no message history is read, no channel content is read, and there is no
+ * fallback to interaction text.
+ *
+ * Phase 42C aligns this probe with Dixie's Phase 32K dev/operator seeded-estate
+ * smoke (the only shape that passes against live seeded Dixie):
+ *   - `environmentFrame: 'private_chat'` (was `private_operator`);
+ *   - `detailLevel: 'standard'` / `receiptDetail: 'standard'` (were `minimal`).
+ * The signature itself is NOT a constant here — it binds to
+ * `actor_id === estate_id === wallet`, and the wallet only exists once the
+ * Phase 37C client's `RECALL_WEDGE_DIXIE_*` config is loaded. So the handler
+ * computes a fresh Phase 32K `dev_signature` (via the client's
+ * `buildDevSeededRecallSignature`) AFTER config load, using the configured
+ * tenant wallet — never any Discord input, never a hard-coded placeholder.
+ * This carries no secret value: the signer / key_ref are PUBLIC dev-seed
+ * labels fixed by Dixie's seed contract, and the live Dixie secrets live only
+ * in the Phase 37C client's own env (§G), which this module does not read.
+ * No fixed idempotencyKey is set, so the live client mints a fresh key per
+ * call (no reuse).
  */
-const RECALL_WEDGE_LIVE_DEMO_FIXED_INPUT: LiveRecallInput = {
+const RECALL_WEDGE_LIVE_DEMO_PROBE = {
   recallRequestId: 'recall-wedge-live-demo-1',
   task: 'recall-wedge-live-demo operator/dev probe',
-  environmentFrame: 'private_operator',
+  environmentFrame: 'private_chat',
   riskProfile: 'low',
-  detailLevel: 'minimal',
-  receiptDetail: 'minimal',
-  signature: {
-    signature_id: 'recall-wedge-live-demo-sig',
-    signer_id: 'recall-wedge-live-demo-signer',
-    signer_type: 'operator',
-    signature_type: 'dev_signature',
-    signed_payload_hash:
-      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
-    signature: 'devsig',
-    signed_at: '2026-05-18T00:00:00Z',
-    key_ref: 'recall-wedge-live-demo-kref',
-  },
+  detailLevel: 'standard',
+  receiptDetail: 'standard',
+  signatureId: 'recall-wedge-live-demo-sig',
+  signedAt: '2026-05-18T00:00:00Z',
   createdAt: '2026-05-18T00:00:00Z',
-};
+} as const;
+
+/**
+ * Build the full live recall input for the fixed probe by computing a Phase
+ * 32K-compatible `dev_signature` from the configured tenant wallet
+ * (`config.tenantId`, which the live client already binds to
+ * `actor_id === estate_id === requested_by`). The crypto lives in the Phase
+ * 37C client (`buildDevSeededRecallSignature`); this module only assembles the
+ * already-fixed probe fields around it. The wallet is read from config (env),
+ * never from the interaction, and is used ONLY to sign — it is never logged or
+ * rendered.
+ */
+function buildRecallWedgeLiveDemoInput(
+  client: RecallWedgeLiveDixieClientModule,
+  config: LiveDixieClientConfig,
+): LiveRecallInput {
+  const probe = RECALL_WEDGE_LIVE_DEMO_PROBE;
+  const signature = client.buildDevSeededRecallSignature({
+    wallet: config.tenantId,
+    task: probe.task,
+    environmentFrame: probe.environmentFrame,
+    riskProfile: probe.riskProfile,
+    signatureId: probe.signatureId,
+    signedAt: probe.signedAt,
+  });
+  return {
+    recallRequestId: probe.recallRequestId,
+    task: probe.task,
+    environmentFrame: probe.environmentFrame,
+    riskProfile: probe.riskProfile,
+    detailLevel: probe.detailLevel,
+    receiptDetail: probe.receiptDetail,
+    signature,
+    createdAt: probe.createdAt,
+  };
+}
 
 // -- live Dixie client seam (Phase 41A §J · lazy after gates) --------------
 
@@ -363,6 +402,12 @@ export interface RecallWedgeLiveDixieClientModule {
     input: LiveRecallInput,
     config: LiveDixieClientConfig,
   ) => Promise<LiveDixieRecallResult>;
+  // Phase 42C · computes a self-consistent Phase 32K dev/operator seeded-estate
+  // `dev_signature` envelope from the configured tenant wallet (the crypto and
+  // the public dev-seed labels live in the client, never here).
+  readonly buildDevSeededRecallSignature: (
+    input: BuildDevSeededSignatureInput,
+  ) => LiveRecallSignatureEnvelopeInput;
   readonly findBannedPublicSubstring: (value: unknown) => string | null;
 }
 
@@ -586,12 +631,14 @@ export async function handleRecallWedgeLiveDemoInteraction(
   let summary: RenderableLiveSummary;
   try {
     const config = client.loadLiveDixieClientConfigFromEnv(env);
+    // Phase 42C: assemble the fixed probe with a per-call Phase 32K-compatible
+    // dev signature bound to the configured tenant wallet (from env via
+    // config, never from the interaction). The request shape is otherwise the
+    // code-reviewed constant above — no option is read.
+    const input = buildRecallWedgeLiveDemoInput(client, config);
     let result: LiveDixieRecallResult;
     try {
-      result = await client.liveRecallViaDixie(
-        RECALL_WEDGE_LIVE_DEMO_FIXED_INPUT,
-        config,
-      );
+      result = await client.liveRecallViaDixie(input, config);
     } catch {
       // A thrown live client fails closed (Phase 41A §I / §J).
       return recallWedgeLiveDemoRefusal();
