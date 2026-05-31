@@ -9,6 +9,10 @@
 // The `onboard:` custom_id namespace is RESERVED here (RT-6 prefix-ownership) — the dispatch
 // rejects any foreign component that squats the prefix.
 
+// DB-0 (arrakis-ojm0): the per-world config read-shim. Only buildVerifyCardForWorld (the
+// async live resolver) touches it; buildVerifyCard stays pure (no network, no identity).
+import { getSurfaceConfig } from './surface-config.ts';
+
 // Discord component type ids (mirror deliver/enriched-render.ts).
 const COMPONENT_CONTAINER = 17;
 const COMPONENT_TEXT_DISPLAY = 10;
@@ -67,4 +71,22 @@ export function buildVerifyCard(opts: VerifyCardOpts = {}): unknown[] {
       ],
     },
   ];
+}
+
+/**
+ * DB-0 (arrakis-ojm0) · config-aware live resolver. The async entry the LIVE verify-card
+ * post path uses (the preview gallery stays synchronous + byte-identical · see
+ * preview/adapters/discord/post-type-gallery.ts galleryVerify).
+ *
+ * SHIPS DARK / DEFAULT-OFF: reads surface_config for (worldId, 'onboarding:verify'). The
+ * config copy is applied ONLY when the row exists AND `enabled = true`. Every other path —
+ * no DB, no row, disabled row, read error/timeout — resolves to `{}` and therefore to the
+ * exact code-constant card buildVerifyCard() renders today.
+ *
+ * @param worldId world slug. The caller MUST supply this; there is no world default here so
+ *        the per-world contract is explicit at the call site.
+ */
+export async function buildVerifyCardForWorld(worldId: string): Promise<unknown[]> {
+  const cfg = await getSurfaceConfig(worldId, 'onboarding:verify');
+  return buildVerifyCard(cfg?.enabled ? cfg.copy : {});
 }

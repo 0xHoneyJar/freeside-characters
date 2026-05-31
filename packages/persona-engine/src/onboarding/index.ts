@@ -28,10 +28,13 @@ export {
 
 export {
   buildVerifyCard,
+  buildVerifyCardForWorld,
   ONBOARD_PREFIX,
   ONBOARD_VERIFY_CUSTOM_ID,
   type VerifyCardOpts,
 } from './verify-card.ts';
+
+export { getSurfaceConfig, type SurfaceConfig } from './surface-config.ts';
 
 export {
   buildSiweMessage,
