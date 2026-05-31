@@ -708,6 +708,26 @@ Concise triage. Keep secrets and raw IDs out of chat and docs throughout.
   the guild, and the operator's ID is in
   `RECALL_WEDGE_LIVE_DISCORD_DEMO_OPERATOR_USER_IDS`. The refusal is
   intentionally generic.
+  - **Phase 42B safe diagnostic (operator logs only).** To see *which*
+    pre-Dixie gate tripped without changing the generic refusal, read the
+    runtime's operator log for the single line
+    `interactions: recall-wedge-live-demo pre-dixie gate refusal · …`. It
+    carries **booleans + a stable reason code only** — `enabled_gate`,
+    `guild_gate`, `operator_gate`, `has_configured_guild`,
+    `has_interaction_guild`, `has_operator_allowlist`, `has_invoker_id`,
+    and `refusal_code` (one of `disabled` / `missing_or_wrong_guild` /
+    `empty_allowlist` / `non_operator` / `missing_invoker` /
+    `unknown_gate_refusal`). It logs **no** guild / user / channel /
+    command IDs, **no** operator allowlist contents, **no** tokens, **no**
+    Dixie URL / token, **no** env names or values, and **no** raw
+    interaction / Dixie payload or stack trace. Map the code:
+    `disabled` → fix the enable flag (exact `"true"`);
+    `missing_or_wrong_guild` → fix the configured / interaction guild
+    (see `has_configured_guild` vs `has_interaction_guild` to tell which
+    side is missing); `empty_allowlist` → set the operator allowlist;
+    `non_operator` → the invoker is not allowlisted; `missing_invoker` →
+    no invoker id was present on the interaction. The Discord-facing
+    refusal stays the single generic string regardless.
 - **Command appears but returns a safe config summary** — the Discord
   gates passed but the Dixie env is missing / invalid. Set / fix the
   `RECALL_WEDGE_DIXIE_*` env (§D.4 / §I) and redeploy. The summary names
