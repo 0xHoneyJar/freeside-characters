@@ -172,6 +172,145 @@ export function isRecallWedgeLiveDiscordDemoOperator(
   return operatorIds.includes(invokerId);
 }
 
+// -- pre-Dixie gate diagnostics (Phase 42B · §K safe operator diagnostics) -
+//
+// Phase 41A §K explicitly permits "safe operator diagnostics ... if they
+// contain no IDs / secrets / private fields — stable reason codes are fine."
+// Phase 42B adds exactly that for the pre-Dixie refusal path: a single safe
+// log line of BOOLEANS and a stable refusal CODE so an operator can see WHICH
+// gate tripped without the public/ephemeral refusal ever revealing it.
+//
+// Hard no-leak contract (mirrors §K + the runbook §M "do not record" list):
+// the diagnostics carry NO guild IDs, NO user IDs, NO operator allowlist
+// contents, NO tokens, NO Dixie URL / token, NO raw interaction or Dixie
+// payload, NO channel / message IDs, NO env names or values, and NO stack
+// traces — only booleans and a fixed reason-code enum. The booleans answer
+// "is the value present / does the gate pass" without ever surfacing the
+// value itself.
+
+/**
+ * Stable, no-leak reason codes for a pre-Dixie gate refusal. These name
+ * WHICH gate tripped for the operator log ONLY — they never reach Discord
+ * (the public refusal stays the single generic string). `unknown_gate_refusal`
+ * is a defensive fallback that should never be emitted in practice (it would
+ * mean the refusal path ran with all gate booleans passing).
+ */
+export type RecallWedgeLiveDemoRefusalCode =
+  | 'disabled'
+  | 'missing_or_wrong_guild'
+  | 'empty_allowlist'
+  | 'non_operator'
+  | 'missing_invoker'
+  | 'unknown_gate_refusal';
+
+/**
+ * The safe, booleans-only snapshot of the pre-Dixie gate state. Every field is
+ * a boolean or the fixed reason-code enum — there is intentionally no slot for
+ * an ID, env value, token, or payload. `refusal_code` is null when ALL pre-Dixie
+ * gates pass (the handler then proceeds to the gated live path).
+ */
+export interface RecallWedgeLiveDemoGateDiagnostics {
+  readonly command: typeof RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME;
+  readonly stage: 'pre_dixie_gate';
+  readonly enabled_gate: boolean;
+  readonly guild_gate: boolean;
+  readonly operator_gate: boolean;
+  readonly has_configured_guild: boolean;
+  readonly has_interaction_guild: boolean;
+  readonly has_operator_allowlist: boolean;
+  readonly has_invoker_id: boolean;
+  readonly refusal_code: RecallWedgeLiveDemoRefusalCode | null;
+}
+
+/**
+ * Compute the safe pre-Dixie gate diagnostics. Pure: reads only env + the
+ * presence/equality of interaction fields, evaluates the same three gate
+ * helpers the handler uses, and derives a stable `refusal_code` following the
+ * handler's precedence (enabled → guild → operator). Calls no client, makes no
+ * network request, and copies NO id / value / token / payload into its result.
+ *
+ * `refusal_code` is null exactly when `enabled_gate && guild_gate &&
+ * operator_gate` — i.e. when the handler would NOT refuse before Dixie. The
+ * operator-gate failure is split into `empty_allowlist` (no allowlist
+ * configured), `missing_invoker` (allowlist present but no invoker id), and
+ * `non_operator` (invoker present but not allowlisted) so the operator log
+ * distinguishes a misconfiguration from a genuinely-unauthorized caller —
+ * still without ever logging the allowlist or the id.
+ */
+export function computeRecallWedgeLiveDemoGateDiagnostics(
+  interaction: DiscordInteraction,
+  env: Env,
+): RecallWedgeLiveDemoGateDiagnostics {
+  const enabled_gate = shouldEnableRecallWedgeLiveDiscordDemo(env);
+  const guild_gate = isRecallWedgeLiveDiscordDemoAllowedGuild(interaction, env);
+  const operator_gate = isRecallWedgeLiveDiscordDemoOperator(interaction, env);
+
+  const has_configured_guild =
+    resolveRecallWedgeLiveDiscordDemoGuildId(env) !== null;
+  const has_interaction_guild = Boolean(interaction.guild_id);
+  const has_operator_allowlist =
+    parseRecallWedgeLiveDiscordDemoOperatorIds(env).length > 0;
+  const has_invoker_id = Boolean(
+    interaction.member?.user?.id ?? interaction.user?.id,
+  );
+
+  let refusal_code: RecallWedgeLiveDemoRefusalCode | null;
+  if (!enabled_gate) {
+    refusal_code = 'disabled';
+  } else if (!guild_gate) {
+    refusal_code = 'missing_or_wrong_guild';
+  } else if (!operator_gate) {
+    refusal_code = !has_operator_allowlist
+      ? 'empty_allowlist'
+      : !has_invoker_id
+        ? 'missing_invoker'
+        : 'non_operator';
+  } else {
+    refusal_code = null;
+  }
+
+  return {
+    command: RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME,
+    stage: 'pre_dixie_gate',
+    enabled_gate,
+    guild_gate,
+    operator_gate,
+    has_configured_guild,
+    has_interaction_guild,
+    has_operator_allowlist,
+    has_invoker_id,
+    refusal_code,
+  };
+}
+
+/**
+ * Emit the safe pre-Dixie gate diagnostics as ONE operator log line. Called
+ * only on the refusal path (so the line always carries a refusal code; a null
+ * code is coerced to the defensive `unknown_gate_refusal`). The line is
+ * booleans + the reason code only — it matches the repo's `interactions: …`
+ * single-line key=value log convention and the lowercase-log voice rule, and
+ * it contains no id / env value / token / payload by construction (the
+ * `RecallWedgeLiveDemoGateDiagnostics` shape has nowhere to put one).
+ */
+function logRecallWedgeLiveDemoGateRefusal(
+  diagnostics: RecallWedgeLiveDemoGateDiagnostics,
+): void {
+  const refusal_code = diagnostics.refusal_code ?? 'unknown_gate_refusal';
+  console.warn(
+    `interactions: ${diagnostics.command} pre-dixie gate refusal · ` +
+      `command=${diagnostics.command} ` +
+      `stage=${diagnostics.stage} ` +
+      `enabled_gate=${diagnostics.enabled_gate} ` +
+      `guild_gate=${diagnostics.guild_gate} ` +
+      `operator_gate=${diagnostics.operator_gate} ` +
+      `has_configured_guild=${diagnostics.has_configured_guild} ` +
+      `has_interaction_guild=${diagnostics.has_interaction_guild} ` +
+      `has_operator_allowlist=${diagnostics.has_operator_allowlist} ` +
+      `has_invoker_id=${diagnostics.has_invoker_id} ` +
+      `refusal_code=${refusal_code}`,
+  );
+}
+
 // -- fixed deterministic operator/dev request shape (Phase 41A §H) ---------
 
 /**
@@ -414,13 +553,20 @@ export async function handleRecallWedgeLiveDemoInteraction(
   // Gate order is irrelevant to the user: all gates fail to the SAME refusal.
   // No client load — and therefore no network egress — happens before these
   // checks, so a refused interaction never reaches the live path.
-  if (!shouldEnableRecallWedgeLiveDiscordDemo(env)) {
-    return recallWedgeLiveDemoRefusal();
-  }
-  if (!isRecallWedgeLiveDiscordDemoAllowedGuild(interaction, env)) {
-    return recallWedgeLiveDemoRefusal();
-  }
-  if (!isRecallWedgeLiveDiscordDemoOperator(interaction, env)) {
+  //
+  // Phase 42B (§K safe operator diagnostics): compute the booleans-only gate
+  // snapshot up front. The PUBLIC refusal is unchanged — still the single
+  // generic ephemeral string with no hint of which gate tripped — but on a
+  // pre-Dixie refusal we emit ONE safe operator log line (booleans + stable
+  // reason code, no IDs / tokens / env values / payloads) so operators can
+  // diagnose which gate is failing. `refusal_code` is null only when all three
+  // gates pass, so the log fires exactly on the refusal branch below.
+  const gateDiagnostics = computeRecallWedgeLiveDemoGateDiagnostics(
+    interaction,
+    env,
+  );
+  if (gateDiagnostics.refusal_code !== null) {
+    logRecallWedgeLiveDemoGateRefusal(gateDiagnostics);
     return recallWedgeLiveDemoRefusal();
   }
 
