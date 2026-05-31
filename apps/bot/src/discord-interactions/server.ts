@@ -27,6 +27,13 @@ import {
   type DiscordInteractionResponse,
 } from './types.ts';
 import { dispatchSlashCommand } from './dispatch.ts';
+import {
+  handleVerifyRoot,
+  handleOAuthCallback,
+  handleVerifyComplete,
+  type VerifyRuntime,
+} from '../verify/verify-routes.ts';
+import { verifyMetricsSnapshot } from '@freeside-characters/persona-engine/onboarding';
 
 const DEFAULT_PORT = 3001;
 
@@ -42,6 +49,8 @@ export interface InteractionServerArgs {
   characters: CharacterConfig[];
   /** Optional override for tests · production reads INTERACTIONS_PORT from env. */
   port?: number;
+  /** cycle-009 · sprint-3 — the onboarding verify web surface (C4). Off when absent/disabled. */
+  verifyRuntime?: VerifyRuntime;
 }
 
 export function startInteractionServer(args: InteractionServerArgs): InteractionServerHandle {
@@ -69,11 +78,33 @@ export function startInteractionServer(args: InteractionServerArgs): Interaction
           status: 'ok',
           service: 'freeside-characters-interactions',
           characters: args.characters.map((c) => c.id),
+          // cycle-009 · T5.4 — verify metrics for the cutover monitor (only when onboarding is on).
+          onboarding: args.verifyRuntime?.enabled ? verifyMetricsSnapshot() : 'disabled',
         });
       }
 
       if (request.method === 'POST' && url.pathname === '/webhooks/discord') {
         return handleDiscordPost(request, publicKey, args);
+      }
+
+      // ─── cycle-009 · sprint-3 — onboarding verify web surface (C4) ──────
+      // Gated by the verify runtime (off → 404, never leaks the routes). The
+      // SIWE/OAuth flow is entirely separate from the Discord-signed webhook above.
+      const vrt = args.verifyRuntime;
+      if (vrt?.enabled) {
+        if (request.method === 'GET' && url.pathname === '/verify/oauth/callback') {
+          return handleOAuthCallback(url, vrt);
+        }
+        const complete = request.method === 'POST' && /^\/verify\/[0-9a-f]{32}\/complete$/.test(url.pathname);
+        if (complete) {
+          const token = url.pathname.split('/')[2]!;
+          return handleVerifyComplete(token, request, vrt);
+        }
+        const root = request.method === 'GET' && /^\/verify\/[0-9a-f]{32}$/.test(url.pathname);
+        if (root) {
+          const token = url.pathname.split('/')[2]!;
+          return handleVerifyRoot(token, vrt);
+        }
       }
 
       return new Response('Not Found', { status: 404 });
@@ -155,10 +186,10 @@ async function handleDiscordPost(
     return jsonResponse(response);
   }
 
-  // cycle-Q · sprint-3 · Q3.5: forward MESSAGE_COMPONENT (button) and
-  // MODAL_SUBMIT into dispatchSlashCommand · the dispatch entry now
-  // intercepts quest_* custom_ids (per quest-dispatch.ts isQuestInteraction)
-  // before the per-character resolution. Non-quest button/modal interactions
+  // cycle-Q · sprint-3 · Q3.5 (+ cycle-009 · sprint-2): forward MESSAGE_COMPONENT
+  // (button) and MODAL_SUBMIT into dispatchSlashCommand · the dispatch entry
+  // intercepts quest_* (isQuestInteraction) AND onboard:* (isOnboardingInteraction)
+  // custom_ids before per-character resolution. Other button/modal interactions
   // fall through to the legacy ephemeral fallback below.
   if (
     interaction.type === InteractionType.MESSAGE_COMPONENT ||
@@ -167,7 +198,7 @@ async function handleDiscordPost(
     const customId =
       (interaction as unknown as { data?: { custom_id?: string } }).data
         ?.custom_id ?? '';
-    if (customId.startsWith('quest_')) {
+    if (customId.startsWith('quest_') || customId.startsWith('onboard:')) {
       const response = await dispatchSlashCommand(
         interaction,
         args.config,
