@@ -1038,7 +1038,10 @@ corresponding gates above are satisfied.
 
 **Recommended next phase: Phase 43B — Admission Wedge MVP design (docs /
 design or fixture-design only).** Suggested doc:
-`docs/ADMISSION-WEDGE-MVP-DESIGN.md`.
+`docs/ADMISSION-WEDGE-MVP-DESIGN.md` — **now authored** (docs / design
+only): it defines the candidate / admission packet shapes, the admission
+transition, the admission receipt, and the §7-governed acceptance tests
+as concrete targets, preferring Lane A, and implements no admission.
 
 > **Supersession note.** This section originally recommended **Phase 35B
 > — explicit dev/operator Recall Wedge demo runner** (preserved as

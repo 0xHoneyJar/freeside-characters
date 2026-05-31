@@ -551,6 +551,14 @@ still has no governed write path until an admission wedge proves one.
 
 ## M. Recommended next phase
 
+> **Status note (Phase 43B authored).** Phase 43B has since been written
+> as `docs/ADMISSION-WEDGE-MVP-DESIGN.md` (docs / design only). It
+> discharges the §M list below — candidate / admission packet shapes, the
+> admission transition, the admission receipt, and the §I acceptance
+> criteria made concrete as test targets, preferring Lane A — and
+> implements no admission. The recommendation below is preserved as
+> written.
+
 - **Recommended next: Phase 43B — Admission Wedge MVP design (docs / design
   only or fixture-design only).** Suggested doc:
   `docs/ADMISSION-WEDGE-MVP-DESIGN.md`. It should:
