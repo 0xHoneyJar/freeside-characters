@@ -914,6 +914,31 @@ Restated together here for anyone repeating the smoke test:
 - **This runbook still records no acceptance itself** — the seeded
   acceptance lives in the Phase 42D report; this note only points to it.
 
+### R.4 Phase 43A note — the next wedge is Admission, not a change to this procedure
+
+> Added by Phase 43A
+> (`docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md`),
+> 2026-05-31.
+
+- **Phase 43A is docs / decision gate only.** It changes nothing in this
+  runbook's procedure and authorizes no code. It selects the **Admission
+  Wedge MVP** (the write/admission half) as the next product wedge after
+  the Phase 42D seeded recall acceptance — it does not open admission.
+- **A future admission proof would reuse this runbook unchanged for its
+  recall-after-admission step.** The Admission Wedge's acceptance arc ends
+  by recalling a now-admitted state through the same gated
+  `/recall-wedge-live-demo` path; §F–§N of this runbook apply unchanged to
+  that recall step. The §R.1 / §R.3 caveats (short-lived Dixie JWT; Dixie
+  allowlist may need re-adding after restart; startup auto-publish can
+  overwrite the live command registration; restart after a fresh token;
+  current live recall proof is dev/operator only) carry forward.
+- **This runbook does not gain an admission procedure.** Admission packet
+  creation, the admission transition, and the admission receipt belong to a
+  future Phase 43B design (`docs/ADMISSION-WEDGE-MVP-DESIGN.md`) and a later
+  implementation under decision-map §7 — not to this runbook. Everything in
+  §S remains blocked; candidate memory is not admitted memory, and no chat
+  / history ingestion or "remember this" surface is authorized here.
+
 ---
 
 ## S. Blocked work remains blocked
@@ -969,6 +994,11 @@ Phase 41C is acceptable if:
 
 ## U. Cross-references
 
+- `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
+  Phase 43A Admission Wedge decision gate; selects the Admission Wedge MVP
+  as the next product wedge after the Phase 42D seeded recall acceptance,
+  and notes a future admission proof reuses §F–§N of this runbook unchanged
+  for its recall-after-admission step. This runbook's §R.4 records its note.
 - `docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md` — Phase 42D
   seeded live Discord smoke acceptance; the redacted report for the
   controlled seeded run of this procedure that returned `served` from a

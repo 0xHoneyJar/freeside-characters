@@ -134,6 +134,33 @@ blocked here (§L).
   recommended next step is a **docs-only Admission Wedge decision gate**,
   not production rollout.
 
+### A.4 Phase 43A note — the Admission Wedge is the next wedge after the seeded recall this gate enabled was accepted
+
+> Added by Phase 43A
+> (`docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md`),
+> 2026-05-31.
+
+- **This gate's seeded lane proved the read/recall half; Phase 43A selects
+  the write/admission half as the next wedge.** The seeded dev/operator
+  estate this gate authorized (§A.1) was served and accepted (Phase 42D,
+  §A.3). Phase 43A reads that as: recall is proven for seeded / already-
+  admitted continuity, so the **Admission Wedge MVP** — how a candidate
+  *becomes* admitted continuity through an explicit governed transition — is
+  the next product wedge.
+- **Phase 43A is docs / decision gate only.** It implements no admission;
+  it adds no source, test, command, Dixie route, Straylight store, seed, or
+  memory write. Its core invariant: **candidate memory is not admitted
+  memory, and a candidate is not recallable as governed continuity until an
+  explicit admission transition accepts it.** It does not authorize
+  production admission, public remember-this, Discord history ingestion, or
+  a full production Straylight architecture.
+- **This gate's seed constraints (§F) anticipate the boundary.** §F already
+  bars candidate-memory admission, "no raw → candidate → admitted flow" on
+  the *recall* side; the Admission Wedge is the separately gated place where
+  a controlled dev/operator candidate → admitted transition may eventually
+  be *designed* — under decision-map §7, never by relaxing this gate.
+  Everything in §L of this gate remains blocked.
+
 ---
 
 ## B. Source evidence
@@ -625,6 +652,10 @@ Phase 42A is acceptable if:
 
 ## O. Cross-references
 
+- `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
+  Phase 43A Admission Wedge decision gate; selects the Admission Wedge MVP
+  (the write/admission half) as the next product wedge after the seeded
+  recall this gate enabled was accepted; §A.4 records its note.
 - `docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md` — Phase 42D
   seeded live Discord smoke acceptance; records the served result of the
   seeded-estate lane this gate selected (Dixie-side Phase 32K seeding +

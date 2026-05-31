@@ -863,6 +863,72 @@ decision-gate as the recommended next product wedge."
 
 ---
 
+### 5o. Phase 43A addendum — Admission Wedge MVP selected as the next product wedge; write/admission half, not full production Straylight
+
+> Added by Phase 43A
+> (`docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md`),
+> 2026-05-31. Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 43A:
+
+- **Phase 43A is docs / decision gate only.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change, and no
+  command / Dixie route / Straylight store / seed / admission / memory
+  write. It **selects the next product wedge**; it does not implement it.
+- **The next wedge is the Admission Wedge MVP, not full production
+  Straylight.** Recall Wedge (accepted Phase 42D, §5n) proved read/recall:
+  already-admitted or seeded continuity state can be recalled safely
+  through a live Discord surface. The Admission Wedge is the missing
+  write/admission half: a candidate memory becomes admitted continuity
+  state through an explicit governed admission transition, then is recalled
+  later through the already-accepted Recall Wedge path. The product is not
+  real memory until there is a governed path for something to *become*
+  memory — but this is built as a **bounded second wedge**, not a giant
+  production system.
+- **Core invariant fixed:** candidate memory is not admitted memory;
+  candidate memory must not be recallable as governed continuity until an
+  explicit admission transition accepts it. No implicit promotion (consistent
+  with §7's raw → candidate → admitted separation); rejected candidates
+  never become recallable.
+- **Implementation lanes ranked (none authorized here):** Lane A —
+  fixture / operator admission packet (safest, recommended first); Lane B —
+  dev/operator-only explicit candidate command (a dev-only
+  `/remember-this`, riskier, separately gated, later); Lane C — automatic
+  Discord chat ingestion (**blocked**, §8); Lane D — full production
+  Straylight admission / storage / auth / consent (**blocked for now**,
+  reachable only under §7 in full).
+- **Posture held:** storage stays fixture / dev-operator deterministic
+  packet (durable Postgres-backed production estate storage remains later,
+  §7); authority stays synthetic / operator-dev only (cross-user consent
+  and production auth remain blocked); no public-channel output, no public
+  remember-this, no automatic memory from chat, no ambient listening, no raw
+  candidate payloads in public output.
+- **Cross-repo boundaries (decision level only, no implementation
+  authorized):** Straylight would own canonical admission / estate /
+  receipt semantics; Dixie would own the admission service route / policy /
+  auth boundary; Freeside Characters would be the live Discord surface /
+  controlled operator demo. All subject to §7 and a future gate.
+- **Does not authorize:** production memory admission, public remember-this,
+  Discord history ingestion, durable production storage, production auth /
+  consent, cross-user sharing, public rollout, a Discord command
+  implementation, a live Dixie admission route, a Straylight production
+  store, memory writes from Discord, LLM rewriting, character voice
+  admission / rendering, or forget / revoke / correction implementation.
+  Everything in §5l / §5n's blocked lists, §7, and §8 remains in force.
+- **Recommended next decision: Phase 43B — Admission Wedge MVP design
+  (docs / design or fixture-design only)** (`docs/ADMISSION-WEDGE-MVP-DESIGN.md`):
+  define the candidate / admission packet shape, the explicit admission
+  transition, the admission receipt / audit event, and the acceptance tests
+  **before** implementation, preferring Lane A — under the §7 gates. Phase
+  43A implements no admission.
+
+This addendum does not duplicate the Phase 43A gate doc; it only updates
+this section's **next-wedge** answer from "Admission Wedge decision-gate
+recommended" (Phase 42D §5n) to "Admission Wedge MVP selected as the next
+product wedge; Phase 43B docs/design-only is the recommended next step."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
@@ -970,10 +1036,61 @@ corresponding gates above are satisfied.
 
 ## 9. Recommended next phase
 
-**Recommended next phase: Phase 35B — explicit dev/operator Recall
-Wedge demo runner.**
+**Recommended next phase: Phase 43B — Admission Wedge MVP design (docs /
+design or fixture-design only).** Suggested doc:
+`docs/ADMISSION-WEDGE-MVP-DESIGN.md`.
 
-Suggested scope:
+> **Supersession note.** This section originally recommended **Phase 35B
+> — explicit dev/operator Recall Wedge demo runner** (preserved as
+> historical context below). That recommendation is **superseded.** The
+> Recall Wedge ladder has since been built and accepted all the way
+> through **Phase 42D** (controlled dev/operator seeded live recall served
+> through Dixie and safely summarized in Discord — see §5n), and **Phase
+> 43A** (`docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md`,
+> see §5o) selected the **Admission Wedge MVP** — the write/admission half
+> — as the next product wedge. The §5b–§5o addenda are the authoritative
+> ladder record; this section's current recommendation follows them.
+
+Per Phase 43A (§5o) and its gate doc §M, the current recommended next
+phase is **Phase 43B — Admission Wedge MVP design**. Suggested scope:
+
+- docs / design or fixture-design only — **no implementation** of the
+  admission wedge;
+- define the candidate / admission packet shape and the gate doc §G
+  candidate-vs-admitted taxonomy in concrete (but still design-level)
+  terms;
+- define the explicit admission transition (the candidate → admitted
+  door) and the admission receipt / audit event;
+- define the §I acceptance tests (made concrete) **before**
+  implementation;
+- prefer **Lane A** (fixture / operator admission packet) as the first
+  proof;
+- keep storage at fixture / dev-operator deterministic packet, authority
+  synthetic / operator-dev only, and every public-surface posture intact;
+- preserve the core invariant: candidate memory is not admitted memory,
+  and a candidate is not recallable as governed continuity until an
+  explicit admission transition accepts it;
+- subject to §7 (live memory admission gates); everything in §8 and the
+  Phase 43A §N blocked list stays blocked.
+
+A later **Phase 43C** (or equivalent) would be the first reviewed Lane A
+implementation, only after 43B's design is accepted. A dev-only
+`/remember-this` (Lane B) is a separately gated, riskier, later follow-up
+— not Phase 43B, not the MVP wedge's first step.
+
+### 9.1 Historical context — superseded Phase 35B recommendation
+
+> **Superseded.** Kept for ladder continuity only. The recommendation
+> below was the original next step when this map was written at Phase 35A;
+> it was carried out and the ladder has since advanced through Phase 42D
+> and the Phase 43A Admission Wedge decision gate (see the supersession
+> note above and §5b–§5o). Do **not** treat the following as the current
+> recommended next phase.
+
+**Original (superseded) recommended next phase: Phase 35B — explicit
+dev/operator Recall Wedge demo runner.**
+
+Suggested scope (historical):
 
 - small / medium implementation PR;
 - **package script or CLI runner** over the existing cross-interface

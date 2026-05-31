@@ -131,6 +131,32 @@ Characters Phase 42B (diagnostics) + Phase 42C (seeded-signature
 alignment), accepted here as Phase 42D.** No boundary in Phase 42A's seed
 constraints (§F of that gate) was relaxed by this resolution.
 
+### A.4 Phase 43A note — the Admission Wedge decision gate this acceptance recommended has been opened
+
+> Added by Phase 43A
+> (`docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md`),
+> 2026-05-31.
+
+- **The §N.b recommendation has been acted on (docs-only).** This
+  acceptance recommended opening a docs-only Admission Wedge decision gate
+  as the next product wedge; Phase 43A is that gate. It **selects** the
+  Admission Wedge MVP — the write/admission half that pairs with this
+  accepted read/recall half — as the next wedge, and authorizes only future
+  decision / design work for a controlled dev/operator admission proof.
+- **Phase 43A opens no admission.** It implements no source, test, command,
+  Dixie route, Straylight store, seed, or memory write; it does not
+  authorize production admission, public remember-this, Discord history
+  ingestion, or a full production Straylight architecture. Its core
+  invariant: **candidate memory is not admitted memory, and a candidate is
+  not recallable as governed continuity until an explicit admission
+  transition accepts it.**
+- **Nothing this acceptance scoped is widened.** Phase 43A makes no
+  production-memory, production-admission, durable-storage, user-chat-
+  ingestion, or public-recall claim; everything in §H / §K of this
+  acceptance remains blocked. Its recommended next step is **Phase 43B**, a
+  docs/design-only or fixture-design-only Admission Wedge MVP design
+  (`docs/ADMISSION-WEDGE-MVP-DESIGN.md`) — not implementation.
+
 ---
 
 ## B. Source evidence
@@ -666,6 +692,11 @@ Phase 42D is acceptable if:
 
 ## P. Cross-references
 
+- `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
+  Phase 43A Admission Wedge decision gate; selects the Admission Wedge MVP
+  (the write/admission half) as the next product wedge after this
+  acceptance, acting on this report's §N.b recommendation; this acceptance's
+  §A.4 records its note.
 - `docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md` — Phase 42A
   seeded live estate / storage decision gate; the authority that scoped
   this seeded lane and its served target proof / seed constraints /
