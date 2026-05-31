@@ -515,12 +515,27 @@ async function main(): Promise<void> {
           `DISCORD_BOT_TOKEN + ONBOARDING_VERIFIED_ROLE_ID + ONBOARDING_STATE_SECRET to enable)`,
       );
     }
+    // World manifests for the `/guild-roles` role-awareness surface. Derived
+    // from the same guild env the quest runtime uses (QUEST_GUILD_ID falls
+    // back to DISCORD_GUILD_ID). Single-world (mongolian) until the
+    // freeside-worlds registry loader lands (cycle-B B-1.12 swap target);
+    // empty guild_ids → `/guild-roles` resolves 404 world_not_found.
+    const roleAwarenessGuildId =
+      process.env.QUEST_GUILD_ID ?? process.env.DISCORD_GUILD_ID;
+    const roleAwarenessManifests: readonly WorldManifestQuestSubset[] = [
+      {
+        slug: 'mongolian',
+        tenant_id: 'mibera',
+        guild_ids: roleAwarenessGuildId ? [roleAwarenessGuildId] : [],
+      },
+    ];
     try {
       interactionServer = startInteractionServer({
         config,
         characters,
         port: config.INTERACTIONS_PORT,
         verifyRuntime: onboardingWiring?.verify,
+        manifests: roleAwarenessManifests,
       });
       console.log(
         `interactions:   listening on :${interactionServer.port} · ` +
