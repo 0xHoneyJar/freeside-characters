@@ -251,6 +251,21 @@ export async function fetchVerifyMessageConfig(
       return null;
     }
     const body = (await res.json()) as SurfaceConfigResponse;
+    // TENANT-ISOLATION (HIGH-2): trust config ONLY when its envelope is stamped
+    // for the world we asked for. A misconfigured / compromised config service
+    // returning world B's config for a world-A request is a cross-tenant
+    // leak/spoof on a verify surface — refuse it and fail-soft to defaults.
+    // The envelope's own `world_slug` is the tenant binding; the bot is the
+    // verifier (ACVP: agents reason, substrate verifies).
+    const responseWorld = body.envelope?.world_slug;
+    if (responseWorld !== opts.worldSlug) {
+      log.warn(
+        `[world-config] config-service world mismatch: asked '${opts.worldSlug}' got '${
+          responseWorld ?? '<none>'
+        }' → defaults (refusing cross-tenant config)`,
+      );
+      return null;
+    }
     const config = body.envelope?.config;
     if (!config || typeof config.enabled !== 'boolean' || !config.copy) {
       log.warn(`[world-config] config-service body missing verify-message config for ${opts.worldSlug} → defaults`);

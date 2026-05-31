@@ -192,6 +192,69 @@ describe('fetchVerifyMessageConfig — mocked config-service', () => {
     expect(cfg).toBeNull();
   });
 
+  // ── TENANT-ISOLATION (HIGH-2): envelope.world_slug must match the request ──
+
+  test('cross-tenant config (envelope world_slug ≠ requested) → null (rejected, fail-soft)', async () => {
+    // Asked for purupuru, the service returns world B's (mibera) config.
+    // A misconfigured/compromised config service must NOT leak/spoof across
+    // tenants on a verify surface — the bot trusts only matching-world config.
+    const fetchFn = mockFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            envelope: { schema_version: '1.0', world_slug: 'mibera', surface: 'verify-message', config: sampleConfig },
+            version: 3,
+          }),
+          { status: 200 },
+        ),
+    );
+    const cfg = await fetchVerifyMessageConfig({
+      configBaseUrl: 'https://cfg.example',
+      worldSlug: 'purupuru', // ≠ envelope world_slug ('mibera')
+      fetchFn,
+      logger: silentLogger,
+    });
+    expect(cfg).toBeNull(); // refused → falls through to code defaults
+  });
+
+  test('matching-tenant config (envelope world_slug === requested) → returns config', async () => {
+    // Same envelope shape, but asked for the world it is actually stamped for.
+    const fetchFn = mockFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            envelope: { schema_version: '1.0', world_slug: 'purupuru', surface: 'verify-message', config: sampleConfig },
+            version: 3,
+          }),
+          { status: 200 },
+        ),
+    );
+    const cfg = await fetchVerifyMessageConfig({
+      configBaseUrl: 'https://cfg.example',
+      worldSlug: 'purupuru', // === envelope world_slug
+      fetchFn,
+      logger: silentLogger,
+    });
+    expect(cfg).toEqual(sampleConfig); // matching world → trusted
+  });
+
+  test('envelope missing world_slug → null (cannot confirm tenant binding)', async () => {
+    const fetchFn = mockFetch(
+      () =>
+        new Response(
+          JSON.stringify({ envelope: { schema_version: '1.0', surface: 'verify-message', config: sampleConfig } }),
+          { status: 200 },
+        ),
+    );
+    const cfg = await fetchVerifyMessageConfig({
+      configBaseUrl: 'https://cfg.example',
+      worldSlug: 'mibera',
+      fetchFn,
+      logger: silentLogger,
+    });
+    expect(cfg).toBeNull(); // unstamped → cannot trust → defaults
+  });
+
   test('thrown fetch (network error) → null, never throws', async () => {
     const fetchFn = (() => Promise.reject(new Error('ECONNREFUSED'))) as unknown as typeof fetch;
     const cfg = await fetchVerifyMessageConfig({
