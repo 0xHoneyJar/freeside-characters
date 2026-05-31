@@ -72,6 +72,12 @@ import {
 // for the test's own assertions + to feed the injected client seam.
 import {
   LIVE_DIXIE_CLIENT_BANNED_PUBLIC_SUBSTRINGS,
+  RECALL_DEV_SEED_KEY_REF,
+  RECALL_DEV_SEED_SIGNER_ID,
+  RECALL_DEV_SEED_SIGNER_TYPE,
+  buildDevSeededRecallSignature,
+  computeDevSeededSignature,
+  computeDevSeededSignedPayloadHash,
   findBannedPublicSubstring,
   type LiveDixieClientConfig,
   type LiveDixieRecallClassification,
@@ -118,12 +124,15 @@ function interaction(
 }
 
 // A dummy live Dixie config — the injected client never uses it for a real
-// call, so its field values are inert placeholders (no secrets).
+// call, so its field values are inert placeholders (no secrets). The tenant /
+// caller wallet is a synthetic 0x+40-hex value (all-lowercase) so the Phase
+// 32C signature the handler computes from it is shaped like a real request.
+const DUMMY_WALLET = '0xabcdef0000000000000000000000000000000032';
 const DUMMY_CONFIG = {
   baseUrl: 'https://dixie.example.test',
   serviceToken: 'inert',
-  tenantId: '0xinert',
-  callerActorId: '0xinert',
+  tenantId: DUMMY_WALLET,
+  callerActorId: DUMMY_WALLET,
   requestKeyPrefix: 'p41b',
   timeoutMs: 10_000,
 } satisfies LiveDixieClientConfig;
@@ -178,6 +187,9 @@ function countingClient(
       if (opts.throwOnRecall) throw new Error('simulated live client failure');
       return result;
     },
+    // Use the REAL signature builder so captured-input assertions exercise the
+    // genuine Phase 32K dev-sign algorithm (canonical → sha256 → hmac).
+    buildDevSeededRecallSignature,
     findBannedPublicSubstring,
   };
   return {
@@ -946,7 +958,10 @@ describe('Phase 41B · input source is the fixed synthetic probe (no freeform qu
     // Fixed probe identity — not derived from any option.
     expect(captured!.recallRequestId).toBe('recall-wedge-live-demo-1');
     expect(captured!.task).toContain('operator/dev probe');
-    expect(captured!.environmentFrame).toBe('private_operator');
+    // Phase 42C: the probe uses the Phase 32K-compatible request shape.
+    expect(captured!.environmentFrame).toBe('private_chat');
+    expect(captured!.detailLevel).toBe('standard');
+    expect(captured!.receiptDetail).toBe('standard');
     // None of the smuggled freeform values reached the request.
     const serialized = JSON.stringify(captured);
     expect(serialized).not.toContain('remember my secret');
@@ -984,6 +999,164 @@ describe('Phase 41B · input source is the fixed synthetic probe (no freeform qu
     expect(moduleSource).not.toMatch(/\.options\?\./);
     expect(moduleSource).not.toMatch(/message[_-]?history/i);
     expect(moduleSource).not.toMatch(/getMessages|fetchMessages|channel\.messages/);
+  });
+});
+
+// =====================================================================
+// D2. Phase 42C · Phase 32K-compatible dev/operator seeded request + signature
+//
+// The old Phase 37C-style fixed probe (environmentFrame=private_operator,
+// detailLevel/receiptDetail=minimal, signed_payload_hash=sha256:0000…,
+// signature=devsig, key_ref=recall-wedge-live-demo-kref) was REFUSED live with
+// seam.signer_not_competent. Phase 42C aligns the probe with Dixie's Phase 32K
+// dev/operator seeded-estate smoke: private_chat + standard + standard, a
+// signed payload hash computed over {actor_id, estate_id, task,
+// environment_frame, risk_profile} bound to the configured tenant wallet, and a
+// dev:<hmac_sha256(key_ref, hash)> signature using the PUBLIC dev-seed labels.
+// =====================================================================
+
+describe('Phase 42C · live request uses the Phase 32K-compatible seeded shape', () => {
+  test('the captured request frame/detail are private_chat / standard / standard', async () => {
+    const client = countingClient(liveResult('served'));
+    await handleRecallWedgeLiveDemoInteraction(interaction(), fullEnv(), {
+      loadLiveClient: async () => client.module,
+    });
+    const captured = client.capturedInput();
+    expect(captured).toBeDefined();
+    expect(captured!.environmentFrame).toBe('private_chat');
+    expect(captured!.detailLevel).toBe('standard');
+    expect(captured!.receiptDetail).toBe('standard');
+  });
+
+  test('signed_payload_hash is computed over {actor_id, estate_id, task, environment_frame, risk_profile}', async () => {
+    const client = countingClient(liveResult('served'));
+    await handleRecallWedgeLiveDemoInteraction(interaction(), fullEnv(), {
+      loadLiveClient: async () => client.module,
+    });
+    const captured = client.capturedInput()!;
+    // Recompute the expected hash the same way the client does — over the five
+    // canonical fields bound to the configured tenant wallet (DUMMY_WALLET).
+    const expectedHash = computeDevSeededSignedPayloadHash({
+      actor_id: DUMMY_WALLET,
+      estate_id: DUMMY_WALLET,
+      task: captured.task,
+      environment_frame: captured.environmentFrame,
+      risk_profile: captured.riskProfile,
+    });
+    expect(captured.signature.signed_payload_hash).toBe(expectedHash);
+    expect(captured.signature.signed_payload_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    // It is NOT the old zero placeholder.
+    expect(captured.signature.signed_payload_hash).not.toBe(
+      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    );
+  });
+
+  test('signature is dev:<hmac_sha256(key_ref, signed_payload_hash)>', async () => {
+    const client = countingClient(liveResult('served'));
+    await handleRecallWedgeLiveDemoInteraction(interaction(), fullEnv(), {
+      loadLiveClient: async () => client.module,
+    });
+    const captured = client.capturedInput()!;
+    const expectedSig = computeDevSeededSignature(
+      captured.signature.key_ref,
+      captured.signature.signed_payload_hash,
+    );
+    expect(captured.signature.signature).toBe(expectedSig);
+    expect(captured.signature.signature).toMatch(/^dev:[0-9a-f]{64}$/);
+    // It is NOT the old placeholder.
+    expect(captured.signature.signature).not.toBe('devsig');
+  });
+
+  test('signer_id / signer_type / key_ref are the public Phase 32K dev-seed labels', async () => {
+    const client = countingClient(liveResult('served'));
+    await handleRecallWedgeLiveDemoInteraction(interaction(), fullEnv(), {
+      loadLiveClient: async () => client.module,
+    });
+    const sig = client.capturedInput()!.signature;
+    expect(sig.signer_id).toBe(RECALL_DEV_SEED_SIGNER_ID);
+    expect(sig.signer_type).toBe(RECALL_DEV_SEED_SIGNER_TYPE);
+    expect(sig.key_ref).toBe(RECALL_DEV_SEED_KEY_REF);
+    expect(sig.signature_type).toBe('dev_signature');
+  });
+
+  test('the old Phase 37C placeholders never appear in the live request', async () => {
+    const client = countingClient(liveResult('served'));
+    await handleRecallWedgeLiveDemoInteraction(interaction(), fullEnv(), {
+      loadLiveClient: async () => client.module,
+    });
+    const serialized = JSON.stringify(client.capturedInput());
+    expect(serialized).not.toContain('devsig');
+    expect(serialized).not.toContain(
+      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    );
+    expect(serialized).not.toContain('recall-wedge-live-demo-kref');
+    expect(serialized).not.toContain('recall-wedge-live-demo-signer');
+    expect(serialized).not.toContain('private_operator');
+  });
+
+  test('the signing wallet comes from config (env), not the interaction', async () => {
+    // A distinctive wallet supplied via the config loader (the env path) must
+    // be the one bound into the signed payload — proving the actor/estate
+    // identity is env-driven, never read from Discord input.
+    const ENV_WALLET = '0xabcdef0000000000000000000000000000000aaa';
+    const client = countingClient(liveResult('served'), {
+      loadConfig: () => ({ ...DUMMY_CONFIG, tenantId: ENV_WALLET, callerActorId: ENV_WALLET }),
+    });
+    await handleRecallWedgeLiveDemoInteraction(
+      interaction({
+        // Smuggle a different wallet-shaped option; it must be ignored.
+        data: {
+          id: 'cmd',
+          name: RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME,
+          options: [{ name: 'wallet', type: 3, value: '0xdeadbeef' }],
+        },
+      }),
+      fullEnv(),
+      { loadLiveClient: async () => client.module },
+    );
+    const captured = client.capturedInput()!;
+    const expectedHash = computeDevSeededSignedPayloadHash({
+      actor_id: ENV_WALLET,
+      estate_id: ENV_WALLET,
+      task: captured.task,
+      environment_frame: captured.environmentFrame,
+      risk_profile: captured.riskProfile,
+    });
+    expect(captured.signature.signed_payload_hash).toBe(expectedHash);
+    expect(JSON.stringify(captured)).not.toContain('0xdeadbeef');
+  });
+
+  test('the rendered output never leaks the wallet, hash, or signature material', async () => {
+    const client = countingClient(liveResult('served'));
+    const res = await handleRecallWedgeLiveDemoInteraction(interaction(), fullEnv(), {
+      loadLiveClient: async () => client.module,
+    });
+    const content = res.data?.content ?? '';
+    expect(content).not.toContain(DUMMY_WALLET);
+    expect(content).not.toContain('dev:');
+    expect(content).not.toContain('sha256:');
+    expect(content).not.toContain(RECALL_DEV_SEED_KEY_REF);
+    expect(findBannedPublicSubstring(content)).toBeNull();
+    expect(content).toContain('classification: served');
+  });
+
+  test('handler module hard-codes none of the Phase 32K dev-seed labels (they live in the client)', () => {
+    const moduleSource = readFileSync(
+      resolve(__dirname, 'recall-wedge-live-demo.ts'),
+      'utf8',
+    );
+    // The public labels are owned by the live client; the handler reaches them
+    // only through buildDevSeededRecallSignature, never as inline string copies.
+    expect(moduleSource).not.toContain('dev-seed-key:dixie-operator-smoke');
+    expect(moduleSource).not.toContain('signer:dixie-dev-seeded-operator');
+    // No leftover Phase 37C placeholder signature material either.
+    expect(moduleSource).not.toContain('devsig');
+    expect(moduleSource).not.toContain('recall-wedge-live-demo-kref');
+    expect(moduleSource).not.toContain(
+      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    );
+    // The handler reaches the dev-sign builder on the live client.
+    expect(moduleSource).toContain('buildDevSeededRecallSignature');
   });
 });
 
