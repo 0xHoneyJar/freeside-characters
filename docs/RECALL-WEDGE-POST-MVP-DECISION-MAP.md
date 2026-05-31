@@ -799,6 +799,70 @@ prove a safe served live recall result."
 
 ---
 
+### 5n. Phase 42D addendum — controlled dev/operator seeded live recall accepted; live `served` from Discord, not fixture-only; Admission Wedge is the next product wedge
+
+> Added by Phase 42D
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md`),
+> 2026-05-31. Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 42D:
+
+- **Phase 42D is docs / smoke-test acceptance only.** It adds no source,
+  test, package, lockfile, fixture, config, CI, or generated change, and no
+  handler / registration / dispatch / seed / storage change. It records a
+  single controlled dev/operator run.
+- **The seeded-estate lane Phase 42A selected (§5m) has been exercised and
+  accepted as served.** The lane resolved across the substrate boundary as:
+  Dixie-side seeding (direct Dixie Phase 32K v4b seeded smoke) + Freeside
+  Characters Phase 42B (safe pre-Dixie gate diagnostics) + Phase 42C
+  (seeded request / signature alignment), accepted here as Phase 42D. No
+  Phase 42A seed constraint was relaxed.
+- **The direct Dixie Phase 32K (v4b) seeded smoke passed** (off-Discord,
+  precondition): allowlist HTTP 201, token verify HTTP 200, recall HTTP
+  200, `outcome = served`, recall pack present, receipt present, raw
+  reasons absent.
+- **The Discord `/recall-wedge-live-demo` smoke passed**: an allowlisted
+  operator invoked it in the configured guild; the gated handler lazily
+  loaded the Phase 37C client; the client called live Dixie with the Phase
+  42C seeded-aligned request; Dixie's service token / seeded signer /
+  keyring accepted the call and read the seeded dev/operator estate; the
+  result classified `served` and rendered an **ephemeral** operator-safe
+  summary (`classification` / `outcome` / `route` / `reason` — all
+  `served` / `/api/recall/intake`).
+- **No leak.** The Discord output exposed **no** `raw_reasons`, raw Dixie
+  payload, recall pack body, receipt body, bounded-store scope, tenant /
+  debug material, JWT / token, seeded assertion IDs, stack traces, or
+  private IDs; output was guild-scoped, operator-gated, ephemeral, and
+  never public-channel-visible.
+- **MVP status: the live seeded recall proof is accepted as a controlled
+  dev/operator seeded live recall — not as production memory, production
+  memory admission, durable production storage, user-chat ingestion, or
+  public recall.** The current MVP proof is now live, not fixture-only. The
+  Phase 41D safe-fail-closed baseline still holds (seeding added the served
+  case without removing the safe-failure case).
+- **Does not prove:** production memory admission, user chat becoming
+  memory, remember-this / candidate writes, Discord history ingestion,
+  durable production storage, production auth / consent, cross-user consent
+  / sharing, public rollout, public-channel recall, Telegram / private-chat
+  surfaces, LLM rewriting, character voice rendering, or forget / revoke /
+  correction UI. Everything in §5l / §5m's blocked lists and §7 remains
+  blocked.
+- **Recommended next decision: open a docs-only Admission Wedge decision
+  gate** (e.g. `RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md`),
+  scoping the safe future shape of an admission wedge under the §7 gates —
+  **not** full production Straylight all at once. Phase 42D implements no
+  admission. Token-hardening and command-registration-hardening stay behind
+  their own separate decisions; public rollout stays blocked.
+
+This addendum does not duplicate the Phase 42D acceptance report; it only
+updates the option matrix's **proven-state** answer from "seeded estate
+selected as the next MVP need" (Phase 42A §5m) to "a controlled
+dev/operator seeded live recall has been served through Dixie and safely
+summarized in Discord, and is accepted — with the Admission Wedge
+decision-gate as the recommended next product wedge."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:

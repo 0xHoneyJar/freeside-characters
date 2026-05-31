@@ -99,6 +99,41 @@ blocked here (§L).
   app. **"Freeside platform"** is reserved for the future broader
   platform and is out of scope for this gate.
 
+### A.3 Phase 42D note — the seeded lane this gate selected has been served and accepted (controlled dev/operator proof)
+
+> Added by Phase 42D
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md`),
+> 2026-05-31.
+
+- **The seeded-estate lane this gate authorized (§A.1, §M.a) has been
+  exercised and accepted as served (docs-only).** It resolved across the
+  substrate boundary as: Dixie-side seeding (direct Dixie Phase 32K v4b
+  seeded smoke) + Freeside Characters Phase 42B (safe pre-Dixie gate
+  diagnostics) + Phase 42C (seeded request / signature alignment),
+  accepted as Phase 42D. Read this gate's "future Phase 42B" as realized
+  by that sequence.
+- **The accepted target proof of §E was delivered.** The controlled
+  operator `/recall-wedge-live-demo` path reached live Dixie with the
+  Phase 42C seeded-aligned request, Dixie read the seeded dev/operator
+  estate, Straylight returned a governed served result classified
+  `served`, and Freeside Characters rendered only the ephemeral
+  operator-safe `classification` / `outcome` / `route` / `reason` lines
+  with no raw / private / debug / source material — exactly the §E target
+  and §H acceptance criteria.
+- **No §F seed constraint was relaxed.** The seed remained a reviewed
+  deterministic dev/operator fixture admitted through a Straylight-owned
+  path — not user chat ingestion, not production admission, not candidate
+  writes, not cross-user, not public-channel-visible. The direct Dixie
+  precondition confirmed a pack and receipt present and raw reasons absent;
+  no pack / receipt / raw-reasons body was reproduced in Discord or in any
+  doc.
+- **Nothing this gate blocked is unblocked.** Everything in §L remains
+  blocked. Phase 42D makes **no** production-memory, production-admission,
+  durable-storage, user-chat-ingestion, or public-recall acceptance claim;
+  it accepts a controlled dev/operator seeded live recall only. Its
+  recommended next step is a **docs-only Admission Wedge decision gate**,
+  not production rollout.
+
 ---
 
 ## B. Source evidence
@@ -590,6 +625,11 @@ Phase 42A is acceptable if:
 
 ## O. Cross-references
 
+- `docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md` — Phase 42D
+  seeded live Discord smoke acceptance; records the served result of the
+  seeded-estate lane this gate selected (Dixie-side Phase 32K seeding +
+  Freeside Characters Phase 42B / 42C, accepted as Phase 42D); §A.3
+  records its note.
 - `docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md` — Phase
   41D smoke-test acceptance; the safe-live-failure result and the
   unseeded-estate blocker this gate builds on; gains a Phase 42A note.
