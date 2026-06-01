@@ -1,0 +1,22 @@
+{
+  "fixture_kind": "admission_transition",
+  "transition_kind": "admission_transition",
+  "transition_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.2)",
+  "synthetic": true,
+  "transition_id": "trans-002",
+  "candidate_id": "cand-002",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "admission_authority": "operator_dev_synthetic",
+  "admission_authority_note": "synthetic operator/dev authority only; never an arbitrary user; audit material, never rendered to any public surface",
+  "admission_decision": "rejected",
+  "admitted_assertion_id": null,
+  "supersedes_assertion_id": null,
+  "reason_code": "operator_reviewed_reject",
+  "decided_at": "fixture-logical-stamp-0004",
+  "receipt_ref": "rcpt-002",
+  "audit_ref": "rcpt-002",
+  "terminality_note": "rejection is terminal for this candidate's recallability; there is no path back to admitted without a new candidate and a new transition"
+}

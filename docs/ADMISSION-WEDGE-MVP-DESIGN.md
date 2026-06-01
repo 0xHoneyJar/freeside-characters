@@ -738,7 +738,12 @@ re-opens its own decision artifact under the decision-map §7 gates:
   transition that moves between them under synthetic / operator-dev
   authority — fixture / deterministic packet only, no production store,
   no Discord admission command, no live admission route. **The
-  recommended sequel — but it is not authorized here.**
+  recommended sequel — but it is not authorized here.** *Status note: a
+  Phase 43C **fixture / operator-contract** now exists at
+  `docs/admission-wedge/fixtures/` — it proves the §D invariant against a
+  deterministic fixture graph with a dependency-free validator, but it is
+  contract-only and is **not** this Lane A implementation; the runtime
+  Lane A implementation remains separately gated.*
 - **b. Phase 43C-alt — Straylight / Dixie cross-repo contract request
   first.** Before any implementation, a docs-level contract request to
   Straylight (canonical admission / estate / receipt semantics) and Dixie
@@ -765,6 +770,15 @@ commit to one, under its own gate.
 
 ## O. Cross-references
 
+- `docs/admission-wedge/fixtures/` — **Phase 43C** Admission Wedge
+  fixture / operator-contract (added after this design). It makes the §D
+  invariant and the §H / §I / §J proof obligations mechanically checkable
+  against a small deterministic candidate → transition → admitted →
+  recall-proof fixture graph, with a dependency-free validator. It is
+  **fixture / operator-contract only** — **not** the §N(a) Lane A
+  implementation, **no** runtime, **no** Discord command, **no** live
+  admission route, **no** storage. The Lane A implementation remains a
+  later, separately gated phase.
 - `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
   Phase 43A decision gate (PR #151); the authority that selected the
   Admission Wedge and recommended this design (its §M). This design

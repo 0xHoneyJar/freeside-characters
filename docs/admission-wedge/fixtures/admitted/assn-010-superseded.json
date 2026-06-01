@@ -1,0 +1,32 @@
+{
+  "fixture_kind": "admitted_memory_packet",
+  "fixture_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.3, J)",
+  "synthetic": true,
+  "assertion_id": "assn-010",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "assertion_class": "preference",
+  "assertion_status": "superseded",
+  "admission_state": "superseded",
+  "source_candidate_id": "cand-010",
+  "admission_transition_id": "trans-010",
+  "admission_receipt_ref": "rcpt-010",
+  "superseded_by_assertion_id": "assn-011",
+  "superseded_by_transition_id": "trans-011",
+  "supersedes_assertion_id": null,
+  "recall_eligibility": "ineligible",
+  "visibility_class": "superseded_audit_only",
+  "summary_public": "operator prefers the morning festival slot",
+  "body_private": "prior admitted body retained for audit only — SUPERSEDED_PRIVATE_SENTINEL_010 — wrong prior state, never rendered as active governed continuity",
+  "provenance": {
+    "source_kind": "reviewed_deterministic_operator_fixture",
+    "admission_authority": "operator_dev_synthetic",
+    "note": "originally admitted from cand-010 via trans-010; superseded by assn-011 via trans-011; retained for audit reconstruction, not ordinary recall"
+  },
+  "created_at": "fixture-logical-stamp-0005",
+  "admitted_at": "fixture-logical-stamp-0006",
+  "superseded_at": "fixture-logical-stamp-0008",
+  "authorization_note": "synthetic, reviewed, fixture/operator-only; superseded record kept for auditability; not ordinary-recall-eligible; this is the wrong prior state and must not leak as active memory"
+}

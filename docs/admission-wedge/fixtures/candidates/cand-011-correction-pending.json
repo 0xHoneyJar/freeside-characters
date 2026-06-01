@@ -1,0 +1,30 @@
+{
+  "fixture_kind": "candidate_memory_packet",
+  "fixture_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.1)",
+  "synthetic": true,
+  "candidate_id": "cand-011",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "source_kind": "reviewed_deterministic_operator_fixture",
+  "source_ref": "fixture:docs/admission-wedge/fixtures/candidates/cand-011-correction-pending.json",
+  "proposed_assertion_class": "preference",
+  "proposed_supersedes_assertion_id": "assn-010",
+  "admission_state": "candidate_pending",
+  "recall_eligibility": "ineligible",
+  "visibility_class": "candidate_never_rendered",
+  "candidate_payload": {
+    "boundary": "public_safe",
+    "summary_public": "operator prefers the evening festival slot",
+    "body_private": "candidate body for the corrected preference — CANDIDATE_PRIVATE_SENTINEL_011 — never rendered while pending"
+  },
+  "created_at": "fixture-logical-stamp-0007",
+  "provenance": {
+    "source_kind": "reviewed_deterministic_operator_fixture",
+    "source_material": "synthetic operator-authored candidate text — SOURCE_SENTINEL_011 — audit only, never rendered",
+    "admission_authority_hint": "operator_dev_synthetic",
+    "note": "reviewed operator fixture; corrects an earlier admitted assertion; not derived from prior messages, not from chat; authority is synthetic operator/dev only"
+  },
+  "authorization_note": "synthetic, reviewed, fixture/operator-only; not for any live or durable use; this candidate corrects (supersedes) assn-010"
+}

@@ -1,0 +1,29 @@
+{
+  "fixture_kind": "admitted_memory_packet",
+  "fixture_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.3)",
+  "synthetic": true,
+  "assertion_id": "assn-001",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "assertion_class": "observation",
+  "assertion_status": "active",
+  "admission_state": "admitted",
+  "source_candidate_id": "cand-001",
+  "admission_transition_id": "trans-001",
+  "admission_receipt_ref": "rcpt-001",
+  "supersedes_assertion_id": null,
+  "recall_eligibility": "eligible",
+  "visibility_class": "public_safe_summary",
+  "summary_public": "operator participates in the admission-wedge fixture proof",
+  "body_private": "admitted body retained for governed continuity — ADMITTED_PRIVATE_SENTINEL_001 — never rendered on a public surface",
+  "provenance": {
+    "source_kind": "reviewed_deterministic_operator_fixture",
+    "admission_authority": "operator_dev_synthetic",
+    "note": "admitted from cand-001 via trans-001 under synthetic operator/dev authority; audit only"
+  },
+  "created_at": "fixture-logical-stamp-0001",
+  "admitted_at": "fixture-logical-stamp-0002",
+  "authorization_note": "synthetic, reviewed, fixture/operator-only; read-compatible with the accepted Recall Wedge path; no production storage, no production admission"
+}

@@ -1,0 +1,23 @@
+{
+  "fixture_kind": "admission_transition",
+  "transition_kind": "admission_transition",
+  "transition_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.2)",
+  "synthetic": true,
+  "transition_id": "trans-011",
+  "candidate_id": "cand-011",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "admission_authority": "operator_dev_synthetic",
+  "admission_authority_note": "synthetic operator/dev authority only; never an arbitrary user; audit material, never rendered to any public surface",
+  "admission_decision": "accepted",
+  "admission_subdecision": "supersede",
+  "admitted_assertion_id": "assn-011",
+  "supersedes_assertion_id": "assn-010",
+  "reason_code": "operator_reviewed_correction",
+  "decided_at": "fixture-logical-stamp-0008",
+  "receipt_ref": "rcpt-011",
+  "audit_ref": "rcpt-011",
+  "supersession_note": "this accept corrects assn-010; assn-010 becomes superseded and is no longer ordinary-recall-eligible; the supersedes link is preserved for audit only"
+}
