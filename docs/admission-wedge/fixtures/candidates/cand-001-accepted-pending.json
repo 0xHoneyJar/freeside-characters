@@ -1,0 +1,29 @@
+{
+  "fixture_kind": "candidate_memory_packet",
+  "fixture_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.1)",
+  "synthetic": true,
+  "candidate_id": "cand-001",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "source_kind": "reviewed_deterministic_operator_fixture",
+  "source_ref": "fixture:docs/admission-wedge/fixtures/candidates/cand-001-accepted-pending.json",
+  "proposed_assertion_class": "observation",
+  "admission_state": "candidate_pending",
+  "recall_eligibility": "ineligible",
+  "visibility_class": "candidate_never_rendered",
+  "candidate_payload": {
+    "boundary": "public_safe",
+    "summary_public": "operator participates in the admission-wedge fixture proof",
+    "body_private": "candidate body held for review only — CANDIDATE_PRIVATE_SENTINEL_001 — never rendered while pending"
+  },
+  "created_at": "fixture-logical-stamp-0001",
+  "provenance": {
+    "source_kind": "reviewed_deterministic_operator_fixture",
+    "source_material": "synthetic operator-authored candidate text — SOURCE_SENTINEL_001 — audit only, never rendered",
+    "admission_authority_hint": "operator_dev_synthetic",
+    "note": "reviewed operator fixture; not derived from prior messages, not from chat; authority is synthetic operator/dev only"
+  },
+  "authorization_note": "synthetic, reviewed, fixture/operator-only; not for any live or durable use; a candidate is only a proposal and is not governed continuity"
+}

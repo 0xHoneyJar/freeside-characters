@@ -1081,6 +1081,17 @@ implementation, only after 43B's design is accepted. A dev-only
 `/remember-this` (Lane B) is a separately gated, riskier, later follow-up
 — not Phase 43B, not the MVP wedge's first step.
 
+> **Status note (Phase 43C fixture / operator-contract).** A Phase 43C
+> **fixture / operator-contract** now exists at
+> `docs/admission-wedge/fixtures/`: deterministic candidate → transition
+> → admitted → recall-proof fixtures plus a dependency-free validator
+> that proves the §43A/§43B invariant (candidate is not admitted memory,
+> not recallable before admission, recallable only after an explicit
+> accept; rejected never recalls; supersession does not leak the wrong
+> prior state). It is **contract-only** — no runtime, no command, no live
+> admission route, no storage. The runtime Lane A implementation and the
+> §7 live-memory-admission gates remain in force and separately gated.
+
 ### 9.1 Historical context — superseded Phase 35B recommendation
 
 > **Superseded.** Kept for ladder continuity only. The recommendation
