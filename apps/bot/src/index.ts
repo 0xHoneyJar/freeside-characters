@@ -517,14 +517,18 @@ async function main(): Promise<void> {
     }
     // World manifests for the `/guild-roles` role-awareness surface. Derived
     // from the same guild env the quest runtime uses (QUEST_GUILD_ID falls
-    // back to DISCORD_GUILD_ID). Single-world (mongolian) until the
+    // back to DISCORD_GUILD_ID). Single-world (mibera) until the
     // freeside-worlds registry loader lands (cycle-B B-1.12 swap target);
     // empty guild_ids → `/guild-roles` resolves 404 world_not_found.
+    // NOTE: the WORLD is `mibera`. "mongolian" is a CHARACTER within mibera,
+    // not a world — the dashboard, config service, and P4 all key this guild's
+    // role-map by the world slug `mibera`, so the role-awareness manifest must
+    // resolve `world=mibera` (not the character name).
     const roleAwarenessGuildId =
       process.env.QUEST_GUILD_ID ?? process.env.DISCORD_GUILD_ID;
     const roleAwarenessManifests: readonly WorldManifestQuestSubset[] = [
       {
-        slug: 'mongolian',
+        slug: 'mibera',
         tenant_id: 'mibera',
         guild_ids: roleAwarenessGuildId ? [roleAwarenessGuildId] : [],
       },
