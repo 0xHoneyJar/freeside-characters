@@ -814,6 +814,18 @@ commit to one, under its own gate.
   production admission, live Dixie admission, a Dixie-owned admission
   contract, a public command, a package export, or Finn production wiring;
   the §M blocked work and the §N(a) Lane A gate stay in force.
+- `docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md` — **Phase 45A**
+  Dixie-side admission contract request / handoff (docs / cross-repo
+  request only). Authored on the Freeside Characters side, it summarizes
+  this proof stack (43B design · 43C fixtures · 44A reducer · 44C runner),
+  carries the §D invariant, and enumerates the candidate-intake /
+  transition / admitted / rejection / supersession / receipt /
+  recall-eligibility / auth / no-leak contract decisions it asks the
+  Dixie / Straylight owners to define or accept *later*. It is request /
+  handoff only: it implements nothing in any repo, changes no Dixie code,
+  accepts no contract, and does **not** claim a Dixie admission contract
+  already exists. The §M blocked work and the §N(a) Lane A gate stay in
+  force.
 - `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
   Phase 43A decision gate (PR #151); the authority that selected the
   Admission Wedge and recommended this design (its §M). This design

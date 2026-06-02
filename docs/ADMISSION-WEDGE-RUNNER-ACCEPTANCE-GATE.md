@@ -482,3 +482,27 @@ Other related artifacts (read only; **unchanged by Phase 44D**):
   responsibility boundaries (Straylight owns the canonical admission /
   estate / receipt semantics; Dixie owns the admission route / policy /
   auth boundary) the selected Phase 45A request would address.
+
+---
+
+## 12. Phase 45A status note — Dixie-side contract request authored
+
+> Added by Phase 45A
+> (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`), 2026-06-02. Status
+> note only; the decision in §5–§9 is unchanged and the §8.2 boundaries
+> stay in force.
+
+The Phase 45A lane this gate selected (§7) has been authored as
+`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md` — a Freeside
+Characters-side docs / cross-repo request that summarizes the proof stack
+(43B design · 43C fixtures · 44A reducer · 44C runner), carries the §D
+invariant, and enumerates the candidate-intake / transition / admitted /
+rejection / supersession / receipt / recall-eligibility / auth / no-leak
+contract decisions it asks the Dixie / Straylight owners to define or
+accept *later*. It is request / handoff only: it implements nothing in any
+repo, changes no Dixie code, accepts no contract, and does **not** claim a
+Dixie admission contract already exists. Live Dixie admission, a
+Dixie-owned admission contract, production admission / storage / auth /
+consent, a public command, `/remember-this`, package exports, and Finn
+production wiring all remain blocked; the §8.2 boundaries and the
+decision-map §7 / §8 gates stay in force.

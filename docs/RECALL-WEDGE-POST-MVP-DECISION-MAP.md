@@ -1073,6 +1073,54 @@ admission implementation."
 
 ---
 
+### 5s. Phase 45A addendum — Dixie-side admission contract request authored; cross-repo request only, no live admission implementation
+
+> Added by Phase 45A
+> (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`), 2026-06-02.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 45A:
+
+- **Phase 45A is a docs / cross-repo request only.** It adds no source,
+  test, fixture JSON, package, lockfile, config, CI, or generated change,
+  and no handler / registration / dispatch / package-export change. It
+  implements nothing in any repo and changes no Dixie code.
+- **It authors the Phase 44D-selected lane (§5r):** a Freeside
+  Characters-side request / handoff
+  (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`) that summarizes the
+  accepted proof stack (43B design · 43C fixtures · 44A reducer · 44C
+  runner), carries the invariant that candidate memory is not admitted
+  memory until an explicit admission transition accepts it, and enumerates
+  the contract decisions it asks the Dixie / Straylight owners to define or
+  accept *later* — candidate intake envelope, explicit admission
+  transition, admitted assertion shape, rejection transition, supersession /
+  correction transition, admission receipt / audit fields, recall-eligibility
+  boundary, service-auth-vs-end-user-authorization distinction, storage /
+  admission non-goals, and no-leak public-response requirements. It also
+  carries a clearly non-authoritative proposed minimum vocabulary the owner
+  must confirm, rename, or reject.
+- **It does not claim a Dixie admission contract already exists**, accepts
+  no contract, and authorizes no implementation. The next possible phases
+  it lists but does not authorize are a Dixie-side / cross-repo contract
+  acceptance or response (Phase 45B), a Freeside Characters reconciliation
+  against an accepted contract (Phase 45C), and — only after a contract
+  exists — a later live Dixie admission route gate and a later separately
+  gated dev/operator candidate command.
+- **Live Dixie-backed admission, a Dixie-owned admission contract,
+  production storage / admission, public remember-this, Discord
+  message-history ingestion, user chat becoming memory, production auth /
+  consent, public rollout, Telegram / private chat, LLM / voice, a forget /
+  revoke / correction UI, package exports, and Finn production wiring all
+  remain blocked** behind separate later gates. Phase 45A expands the Phase
+  43A / 43B / 44B / 44C / 44D authorization in no way, and §7 (live memory
+  admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45A request doc; it only records
+that the Phase 44D-selected lane is now authored as a docs / cross-repo
+Dixie-side admission contract request, not a live admission implementation.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
@@ -1180,13 +1228,24 @@ corresponding gates above are satisfied.
 
 ## 9. Recommended next phase
 
-> **Current recommendation (updated Phase 44D, 2026-06-02 · authoritative
-> in §5r).** The current recommended next phase is **Phase 45A — a
-> docs / cross-repo Dixie-side Admission Wedge contract request / handoff**
-> (a Freeside Characters-side request that hands the accepted proof stack —
-> 43B design · 43C fixtures · 44A reducer · 44C runner — to the Dixie /
-> Straylight owners and asks them to define or accept a live admission
-> contract *later*; it authorizes no implementation in any repo). The
+> **Current status (updated Phase 45A, 2026-06-02 · authoritative in §5s).**
+> Phase 44D selected **Phase 45A — a docs / cross-repo Dixie-side Admission
+> Wedge contract request / handoff**, and that selection is now
+> **satisfied**: Phase 45A is authored as this contract request / handoff
+> (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`, §5s) — a Freeside
+> Characters-side request that hands the accepted proof stack (43B design ·
+> 43C fixtures · 44A reducer · 44C runner) to the Dixie / Straylight owners
+> and asks them to define or accept a live admission contract *later*. Phase
+> 45A authored only that Freeside Characters-side docs / cross-repo request /
+> handoff: it implements nothing in any repo, changes no Dixie code, accepts
+> no contract, and does **not** claim a Dixie admission contract already
+> exists. **Phase 45A is therefore no longer a future / current recommended
+> next phase; it is the current authored artifact.** Future possible phases
+> remain **Phase 45B** (a Dixie-side / cross-repo response or contract
+> acceptance), **Phase 45C** (a Freeside Characters reconciliation against an
+> accepted contract), or — only after a contract exists — later separately
+> gated live Dixie admission route / dev-operator candidate command work;
+> **none of those future phases are authorized by Phase 45A.** The
 > intervening recommendation (**Phase 44C — a fixture-bound dev/operator
 > reducer runner**) is **completed**: the runner landed via PR #158 and is
 > accepted by Phase 44D (§5r). The Phase 43A-era recommendation that
@@ -1218,9 +1277,15 @@ tests as concrete targets, preferring Lane A, and implements no admission.
 
 Per Phase 43A (§5o) and its gate doc §M, the then-recommended next phase
 was **Phase 43B — Admission Wedge MVP design** (now completed; the
-**Phase 44C** runner then recommended per §5p is likewise completed, and
-the current recommended next phase is now **Phase 45A** per §5r and the
-current Phase 44D banner above).
+**Phase 44C** runner then recommended per §5p is likewise completed; and
+the **Phase 45A** docs / cross-repo Dixie-side admission contract request
+that Phase 44D then selected per §5r is now **authored and satisfied** —
+see §5s and the current banner above. Phase 45A is no longer a future /
+current recommendation; it is the current authored artifact. Future
+possible phases (Phase 45B Dixie-side / cross-repo response or contract
+acceptance, Phase 45C Freeside Characters reconciliation against an
+accepted contract, or later separately gated live-route / candidate-command
+work) remain listed but are **not authorized by Phase 45A**).
 Phase 43B's scope was:
 
 - docs / design or fixture-design only — **no implementation** of the
@@ -1319,6 +1384,19 @@ implementation, only after 43B's design is accepted. A dev-only
 > storage, live Dixie admission, a Dixie-owned admission contract, a public
 > command, a user-facing write path, a package export, or Finn production
 > wiring. See §5r. The runtime Lane A implementation and the §7
+> live-memory-admission gates remain in force and separately gated.
+
+> **Status note (Phase 45A Dixie-side admission contract request).** Phase
+> 45A (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`, docs / cross-repo
+> request only) authors the Phase 44D-selected lane: a Freeside
+> Characters-side request / handoff that summarizes the proof stack (43B
+> design · 43C fixtures · 44A reducer · 44C runner), carries the §D
+> invariant, and enumerates the candidate-intake / transition / admitted /
+> rejection / supersession / receipt / recall-eligibility / auth / no-leak
+> contract decisions it asks the Dixie / Straylight owners to define or
+> accept *later*. It implements nothing in any repo, changes no Dixie code,
+> accepts no contract, and does **not** claim a Dixie admission contract
+> already exists. See §5s. The runtime Lane A implementation and the §7
 > live-memory-admission gates remain in force and separately gated.
 
 ### 9.1 Historical context — superseded Phase 35B recommendation
