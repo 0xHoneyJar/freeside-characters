@@ -17,6 +17,7 @@ import type { Discrepancy } from "@freeside-worlds/shadow-substrate";
 import {
   renderDiscrepancyCV2,
   discrepancyCV2Payload,
+  escapeRoleName,
   IS_COMPONENTS_V2,
 } from "./discrepancy-cv2.ts";
 
@@ -90,6 +91,48 @@ describe("405.5 — Discord CV2 render of the same Discrepancy (G-5)", () => {
     expect(text).toContain("254");
     // accent flips to the warn color when over the limit.
     expect(c.accent_color).toBe(0xe0a83d);
+  });
+
+  test("FAGAN iter-2 — INJECTION: the payload carries allowed_mentions:{parse:[]} (mentions inert)", () => {
+    const p = discrepancyCV2Payload(DISCREPANCY);
+    expect(p.allowed_mentions).toEqual({ parse: [] });
+  });
+
+  test("FAGAN iter-2 — INJECTION: a malicious role NAME (@everyone / markdown) is escaped in the preview", () => {
+    // A low-priv member created guild roles with mention + markdown payloads.
+    const malicious: Discrepancy = {
+      ...DISCREPANCY,
+      preexisting: {
+        roles: [
+          { role_key: "@everyone", members: 1, managed: false },
+          { role_key: "<@&999888777>", members: 1, managed: false },
+          { role_key: "# pwn **bold** `code`", members: 1, managed: false },
+        ],
+      },
+    };
+    const text = renderDiscrepancyCV2(malicious)
+      .components.filter((c): c is { type: 10; content: string } => c.type === 10)
+      .map((c) => c.content)
+      .join("\n");
+    // no LIVE @everyone / @here mention token survives (the @ is broken).
+    expect(text).not.toMatch(/(^|[^\\@])@everyone/);
+    expect(text).not.toMatch(/(^|[^\\@])@here/);
+    // no raw role-mention angle-bracket form survives.
+    expect(text).not.toContain("<@&999888777>");
+    // markdown control chars are escaped (the heading/bold/code cannot render).
+    expect(text).toContain("\\#");
+    expect(text).toContain("\\*");
+    expect(text).toContain("\\`");
+  });
+
+  test("FAGAN iter-2 — escapeRoleName neutralizes mention + markdown, keeps benign text", () => {
+    expect(escapeRoleName("purupuru:holder")).toBe("purupuru:holder");
+    // @ broken with a zero-width space; angle brackets + markdown escaped.
+    expect(escapeRoleName("@everyone")).not.toContain("@e"); // the @ no longer abuts "everyone"
+    expect(escapeRoleName("<@&1>")).toContain("\\<");
+    expect(escapeRoleName("**bold**")).toBe("\\*\\*bold\\*\\*");
+    // newlines collapsed (no extra-line injection).
+    expect(escapeRoleName("line1\nline2")).toBe("line1 line2");
   });
 
   test("G-5 parity: the renderer consumes the Discrepancy contract verbatim (no extra fields needed)", () => {

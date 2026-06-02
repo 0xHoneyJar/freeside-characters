@@ -35,13 +35,15 @@ import {
   type ModeControl,
 } from "./substrate.ts";
 import type { ApplyMode } from "@freeside-worlds/shadow-substrate";
+import type { WriteCapability } from "@freeside-worlds/shadow-substrate";
 import { makeRosterSourceLive, type LiveRosterConfig } from "./roster-source.live.ts";
 import { RosterSourceMock } from "./roster-source.mock.ts";
-import { makeRoleWriterLive, type LiveWriterConfig } from "./role-writer.live.ts";
+import { makeRoleWriterLive, makeGatedRoleGc, type LiveWriterConfig } from "./role-writer.live.ts";
 import { RoleWriterMock } from "./role-writer.mock.ts";
 import { makeAcvpEmitterLive } from "./acvp-emitter.live.ts";
 import { makeAdminAllowlistLive, type LiveAllowlistConfig } from "./admin-allowlist.live.ts";
 import { makeInMemoryWorldLock } from "./world-lock.ts";
+import { computeRollbackPlan, type RolesCreatedEntry, type RoleAssignmentCount } from "./coexistence.ts";
 
 // ── Per-world wiring resolved from the world manifest (purupuru.yaml) ────────
 
@@ -72,21 +74,37 @@ export interface LiveAuditDeps {
   readonly prevHashStore?: PrevHashStore;
 }
 
+/**
+ * SHARED world→guild resolver (CLEANUP, FAGAN iter-2): the single helper the
+ * roster reader, the live writer, AND the rollback GC all derive their per-world
+ * wiring from. One place maps a world slug → `{ guild_id, namespace_prefix }`, so
+ * the namespace prefix the writer/GC guard against can never drift from the one
+ * the roster reader classifies `managed` with.
+ */
+function resolveGuild(
+  deps: ShadowDeps,
+  world: string,
+): { readonly guild_id: string; readonly namespace_prefix: string } | undefined {
+  const wiring = deps.resolveWorld(world);
+  return wiring && { guild_id: wiring.guild_id, namespace_prefix: wiring.namespace_prefix };
+}
+
 function liveRosterCfg(deps: ShadowDeps): LiveRosterConfig {
-  return {
-    resolve: (w) => {
-      const wiring = deps.resolveWorld(w);
-      return wiring && { guild_id: wiring.guild_id, namespace_prefix: wiring.namespace_prefix };
-    },
-  };
+  return { resolve: (w) => resolveGuild(deps, w) };
 }
 function liveWriterCfg(deps: ShadowDeps): LiveWriterConfig {
+  const wiring = resolveGuild(deps, deps.world);
   return {
     resolve: (w) => {
-      const wiring = deps.resolveWorld(w);
-      return wiring && { guild_id: wiring.guild_id };
+      const g = resolveGuild(deps, w);
+      return g && { guild_id: g.guild_id };
     },
     world: deps.world,
+    // FR-9 prefix the live writer's create/assign guard enforces. Resolved from
+    // the SAME manifest wiring the roster reader uses (resolveGuild). A missing
+    // wiring → empty prefix, which makes the writer's guard refuse EVERY role_key
+    // (fail-safe: no namespaced write can slip through an unconfigured world).
+    namespacePrefix: wiring?.namespace_prefix ?? "",
   };
 }
 function liveAllowlistCfg(deps: ShadowDeps): LiveAllowlistConfig {
@@ -170,11 +188,66 @@ export function liveApplyLayer(
   ) as Layer.Layer<GateCheckedRoleWriter | RosterSource>;
 }
 
+/**
+ * Wire the rollback-GC execution path (B2, FAGAN iter-2). Sprint 405 / Task
+ * 405.4 added the pure `computeRollbackPlan` + the gated `makeGatedRoleGc`, but
+ * nothing connected them — so a rollback could not actually delete the orphan
+ * empty roles. THIS is the only allowlisted delete path (the GC lives in the
+ * single gated adapter; the namespace guard + member-cache-hydrated zero-member
+ * guard live there).
+ *
+ * Computes the plan from the substrate's `roles_created` ledger + the current
+ * per-role assignment counts (from the live roster), then executes ONLY the
+ * `gc` (zero-assignment Freeside-namespaced) deletes under the provided
+ * `WriteCapability`. Assigned roles are KEPT (R-6 — never strip users); the
+ * returned `warnings` surface them. A per-role GC failure is collected, not
+ * thrown (a failed delete frees no budget but must not abort the rollback).
+ *
+ * The `cap` is minted by the substrate's authorized `rollback`/`goLive` path —
+ * the GC requires it exactly like the write path (a delete is a mutation).
+ */
+export function executeRollbackGc(
+  deps: ShadowDeps,
+  cap: WriteCapability,
+  rolesCreated: readonly RolesCreatedEntry[],
+  assignments: readonly RoleAssignmentCount[],
+  sleep?: (ms: number) => Promise<void>,
+): Effect.Effect<{
+  readonly gc_attempted: number;
+  readonly gc_deleted: number;
+  readonly kept: number;
+  readonly warnings: readonly string[];
+  readonly errors: readonly string[];
+}> {
+  const plan = computeRollbackPlan(rolesCreated, assignments);
+  const wiring = resolveGuild(deps, deps.world);
+  const namespacePrefix = wiring?.namespace_prefix ?? "";
+  const gc = makeGatedRoleGc(deps.getBotClient, liveWriterCfg(deps), namespacePrefix, sleep);
+
+  return Effect.gen(function* () {
+    const errors: string[] = [];
+    let deleted = 0;
+    for (const r of plan.gc) {
+      const res = yield* Effect.either(gc(cap, r.role_id, r.role_key));
+      if (res._tag === "Right") deleted += 1;
+      else errors.push(`GC '${r.role_key}' (${r.role_id}): ${res.left.kind}: ${res.left.message}`);
+    }
+    return {
+      gc_attempted: plan.gc.length,
+      gc_deleted: deleted,
+      kept: plan.keep.length,
+      warnings: plan.warnings,
+      errors,
+    };
+  });
+}
+
 /** Re-exported for tests / callers that need the raw building blocks. */
 export {
   makeRosterSourceLive,
   RosterSourceMock,
   makeRoleWriterLive,
+  makeGatedRoleGc,
   RoleWriterMock,
   makeAcvpEmitterLive,
   makeAdminAllowlistLive,

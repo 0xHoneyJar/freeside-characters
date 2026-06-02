@@ -26,11 +26,46 @@
  *   text      = { type: 10, content }
  *   separator = { type: 14 }
  * Send with the IS_COMPONENTS_V2 flag (1<<15) — content/embeds MUST be empty.
+ *
+ * ── INJECTION GUARD (FAGAN iter-2) ───────────────────────────────────────────
+ * Role NAMES (`role_key`) are attacker-controllable: a low-priv guild member can
+ * create a guild role named `@everyone`, `<@&123>`, or with markdown
+ * (`# heading`, `**bold**`, backticks) and it surfaces here verbatim through the
+ * pre-existing-roles context (D2). TWO defenses, both required:
+ *   1. `allowed_mentions: { parse: [] }` on the payload — renders any mention
+ *      syntax INERT (no role/user/@everyone ping fires) regardless of text.
+ *   2. `escapeRoleName` neutralizes mention syntax + markdown control chars in
+ *      role-name text BEFORE interpolation — so a malicious name cannot spoof the
+ *      preview's structure (fake headings, fake code spans) or read as a mention.
+ * A low-priv member must not be able to turn the preview into a mass-ping or
+ * spoof its layout.
  */
 import type { Discrepancy } from "@freeside-worlds/shadow-substrate";
 
 /** The CV2 message-flags bit (IS_COMPONENTS_V2 = 1 << 15). */
 export const IS_COMPONENTS_V2 = 1 << 15;
+
+/**
+ * Neutralize attacker-controllable role-NAME text before interpolating it into a
+ * CV2 text component. Strips/escapes:
+ *   • mention syntax — `@` (→ `@​`, breaks `@everyone`/`@here`) and the
+ *     `<@&id>`/`<@id>`/`<#id>` angle-bracket mention forms (angle brackets escaped);
+ *   • Discord markdown control chars — backtick, asterisk, underscore, tilde,
+ *     pipe, `#`/`>`/`-` line-leading structure — so a name cannot forge a heading,
+ *     bold/italic, code span, spoiler, or quote in the preview.
+ * Defense-in-depth alongside `allowed_mentions: { parse: [] }` (which already
+ * makes mentions inert). Returns a single-line, render-safe string.
+ */
+export function escapeRoleName(raw: string): string {
+  return raw
+    // collapse newlines/control whitespace so a name cannot inject extra lines.
+    .replace(/[\r\n\t]+/g, " ")
+    // break @everyone / @here / @user by inserting a zero-width space after @.
+    .replace(/@/g, "@​")
+    // escape Discord markdown + mention angle brackets.
+    .replace(/[<>`*_~|#]/g, (ch) => `\\${ch}`)
+    .trim();
+}
 
 /** Accent: warm honey by default, alert amber when the 250-limit is exceeded. */
 const ACCENT_OK = 0x6f4ea1;
@@ -59,9 +94,10 @@ export function renderDiscrepancyCV2(d: Discrepancy): ContainerComponent {
   const accent = rc.exceeds ? ACCENT_WARN : ACCENT_OK;
 
   // BEFORE — current managed roles (pre-existing rendered separately as context).
+  // role_key is an attacker-controllable Discord role NAME → escapeRoleName.
   const beforeManaged = d.before.roles.filter((r) => r.managed);
   const beforeLines = beforeManaged.length
-    ? beforeManaged.map((r) => `• \`${r.role_key}\` — ${r.members} member${r.members === 1 ? "" : "s"}`).join("\n")
+    ? beforeManaged.map((r) => `• \`${escapeRoleName(r.role_key)}\` — ${r.members} member${r.members === 1 ? "" : "s"}`).join("\n")
     : "_(no Freeside roles yet)_";
 
   // AFTER — proposed managed roles; `created` marks not-yet-created ones.
@@ -70,7 +106,7 @@ export function renderDiscrepancyCV2(d: Discrepancy): ContainerComponent {
     ? afterManaged
         .map((r) => {
           const tag = r.created ? "🆕 " : "";
-          return `• ${tag}\`${r.role_key}\` — ${r.members} member${r.members === 1 ? "" : "s"}`;
+          return `• ${tag}\`${escapeRoleName(r.role_key)}\` — ${r.members} member${r.members === 1 ? "" : "s"}`;
         })
         .join("\n")
     : "_(none proposed)_";
@@ -78,14 +114,15 @@ export function renderDiscrepancyCV2(d: Discrepancy): ContainerComponent {
   // Latent qualified (MOCKED — honest provenance flag, FR-6/§8.5).
   const latentLines = d.latent_qualified.length
     ? d.latent_qualified
-        .map((l) => `• \`${l.role_key}\`: ${l.count} qualify off-server  _(${l.source})_`)
+        .map((l) => `• \`${escapeRoleName(l.role_key)}\`: ${l.count} qualify off-server  _(${l.source})_`)
         .join("\n")
     : "_(none)_";
 
   // Pre-existing / Collab.Land roles — LOCKED CONTEXT (D2), NEVER "would change".
+  // These are the clearest attacker surface: arbitrary guild role names.
   const preexisting = d.preexisting.roles;
   const preexistingLine = preexisting.length
-    ? `🔒 Untouched (Collab.Land / pre-existing): ${preexisting.map((r) => `\`${r.role_key}\``).join(", ")}`
+    ? `🔒 Untouched (Collab.Land / pre-existing): ${preexisting.map((r) => `\`${escapeRoleName(r.role_key)}\``).join(", ")}`
     : "🔒 No pre-existing roles to preserve.";
 
   // D3 — predictive 250-role projection.
@@ -115,6 +152,14 @@ export function renderDiscrepancyCV2(d: Discrepancy): ContainerComponent {
 export function discrepancyCV2Payload(d: Discrepancy): {
   flags: number;
   components: ContainerComponent[];
+  allowed_mentions: { parse: never[] };
 } {
-  return { flags: IS_COMPONENTS_V2, components: [renderDiscrepancyCV2(d)] };
+  return {
+    flags: IS_COMPONENTS_V2,
+    components: [renderDiscrepancyCV2(d)],
+    // INJECTION GUARD: make every mention inert (no @everyone / role / user ping
+    // can fire from an attacker-named role surfaced in the preview). Pairs with
+    // escapeRoleName above (which neutralizes the text form).
+    allowed_mentions: { parse: [] },
+  };
 }

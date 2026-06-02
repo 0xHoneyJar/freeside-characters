@@ -33,10 +33,33 @@
  * composition of (lock-serialized span) × (check-then-create against live
  * state). `assignRole` is naturally idempotent (re-assign is a Discord no-op).
  *
- * ── FR-9 namespacing ─────────────────────────────────────────────────────────
+ * ── FR-9 namespacing (ENFORCED, not just claimed) ───────────────────────────
  * Freeside touches ONLY namespaced roles (the substrate's `role_key` carries the
  * namespace prefix, e.g. `purupuru:holder`). The writer never creates or
- * assigns a non-namespaced role — Collab.Land roles are never contended.
+ * assigns a non-namespaced role — Collab.Land roles are never contended. This is
+ * ENFORCED at the top of BOTH `createRole` and `assignRole`: a `role_key` that
+ * does not start with the world's `namespacePrefix` is REFUSED with a typed
+ * `WriteError("op_failed", …)` BEFORE any Discord read or mutation. This bounds
+ * the confused-deputy: a batch can never create/assign a NON-namespaced role
+ * (e.g. an admin role or a Collab.Land role), even if a malicious `role_key`
+ * reached the intent. The composition root supplies the prefix to the live
+ * writer (threaded through `LiveWriterConfig`, like the GC).
+ *
+ * ── CONFUSED-DEPUTY: bind to the role WE created, not a same-named pre-existing
+ *    one (FAGAN iter-2). `createRole`'s check-then-create still adopts a
+ *    same-named pre-existing role for cross-batch idempotency (the port contract,
+ *    B10), but within ONE batch the writer threads a local
+ *    `{role_key → created_role_id}` map: a create records the id it created, and
+ *    a subsequent assign in the SAME batch resolves the target by THAT id rather
+ *    than re-resolving purely by name. This shrinks the window where an attacker
+ *    pre-creates a `<namespace>:holder` role to get it adopted by an in-batch
+ *    assign. The namespace guard above is the hard bound; the id-map is the
+ *    extra precision. NOTE the cross-batch case (assign in a LATER batch than the
+ *    create) cannot bind by id on the consumer side: the substrate's gate
+ *    dispatches `assignRole(cap, {role_key, member_id})` with NO `role_id`, and
+ *    its `roles_created` ledger id is not threaded into the assign call. Carrying
+ *    `role_id` into the assign would be a substrate (freeside-worlds governor)
+ *    change — FLAGGED as a follow-up, NOT hacked here.
  */
 import { Effect, Layer } from "effect";
 import type { Client, Guild, Role } from "discord.js";
@@ -47,11 +70,17 @@ import type {
   AssignRoleIntent,
 } from "@freeside-worlds/shadow-substrate";
 
-/** Per-world wiring the LIVE writer needs (guild snowflake). */
+/** Per-world wiring the LIVE writer needs (guild snowflake + namespace prefix). */
 export interface LiveWriterConfig {
   readonly resolve: (world: string) => { readonly guild_id: string } | undefined;
   /** the world the batch targets — threaded from the composition root. */
   readonly world: string;
+  /**
+   * the world's FR-9 namespace prefix (e.g. `purupuru:`). The live writer REFUSES
+   * to create/assign any `role_key` that does not start with this — the enforced
+   * confused-deputy bound. Supplied by the composition root from the manifest.
+   */
+  readonly namespacePrefix: string;
 }
 
 const DEFAULT_MAX_RETRIES = 4;
@@ -117,6 +146,24 @@ export function makeRoleWriterLive(
     return client.guilds.fetch(wiring.guild_id);
   };
 
+  // FR-9 namespace guard (ENFORCED): refuse any role_key not under the world's
+  // prefix BEFORE any Discord read/mutation. The hard confused-deputy bound on
+  // BOTH create and assign.
+  const assertNamespaced = (roleKey: string, op: string): void => {
+    if (!roleKey.startsWith(cfg.namespacePrefix)) {
+      throw new WriteError({
+        kind: "op_failed",
+        message: `refused non-namespaced role '${roleKey}' in ${op} (FR-9: writer touches ONLY '${cfg.namespacePrefix}…' roles — confused-deputy guard)`,
+      });
+    }
+  };
+
+  // Local PER-BATCH id binding (this Layer instance lives for one batch's
+  // applyBatch). createRole records the id it created; an assign in the SAME
+  // batch binds to THAT id instead of re-resolving by name (confused-deputy
+  // precision). Cross-batch binding requires a substrate change — see header.
+  const createdInBatch = new Map<string, string>();
+
   return Layer.succeed(
     RoleWriter,
     RoleWriter.of({
@@ -126,6 +173,13 @@ export function makeRoleWriterLive(
       createRole: (_cap: WriteCapability, intent: CreateRoleIntent) =>
         Effect.tryPromise({
           try: async () => {
+            // FR-9 hard guard FIRST — before any Discord read or mutation.
+            assertNamespaced(intent.role_key, `createRole`);
+            // same-batch fast-path: we already created this key in THIS batch.
+            const priorInBatch = createdInBatch.get(intent.role_key);
+            if (priorInBatch !== undefined) {
+              return priorInBatch as never;
+            }
             const guild = await guildFor();
             const roles = await guild.roles.fetch();
             const existing: Role | undefined = roles.find(
@@ -133,7 +187,8 @@ export function makeRoleWriterLive(
             );
             if (existing) {
               // Idempotent: a role with this namespaced key already exists —
-              // reuse its id, no second create (the cross-batch dedup).
+              // reuse its id, no second create (the cross-batch dedup, B10).
+              createdInBatch.set(intent.role_key, existing.id);
               return existing.id as never;
             }
             // ── THE role mutation. The ONLY allowlisted create in the repo. ──
@@ -141,6 +196,10 @@ export function makeRoleWriterLive(
               () => guild.roles.create({ name: intent.role_key, reason: "freeside shadow-onboarding" }),
               sleep,
             );
+            // Bind the id WE created so a same-batch assign uses it, not a name
+            // re-resolve (confused-deputy: never adopt an attacker's same-named
+            // role for an in-batch assign).
+            createdInBatch.set(intent.role_key, created.id);
             return created.id as never;
           },
           catch: (e) => classifyWriteError(e, `createRole(${intent.role_key})`),
@@ -150,9 +209,22 @@ export function makeRoleWriterLive(
       assignRole: (_cap: WriteCapability, intent: AssignRoleIntent) =>
         Effect.tryPromise({
           try: async () => {
+            // FR-9 hard guard FIRST — before any Discord read or mutation.
+            assertNamespaced(intent.role_key, `assignRole`);
             const guild = await guildFor();
-            const roles = await guild.roles.fetch();
-            const role = roles.find((r) => r.name === intent.role_key);
+            // Prefer the id WE created in THIS batch (confused-deputy: do not
+            // re-resolve a same-named pre-existing role an attacker may have
+            // planted). Fall back to a name re-resolve only when this batch did
+            // not create the role (e.g. it pre-existed and was adopted by
+            // createRole, which also records the adopted id).
+            const boundId = createdInBatch.get(intent.role_key);
+            let role: Role | null;
+            if (boundId !== undefined) {
+              role = await guild.roles.fetch(boundId);
+            } else {
+              const roles = await guild.roles.fetch();
+              role = roles.find((r) => r.name === intent.role_key) ?? null;
+            }
             if (!role) {
               throw new Error(
                 `assignRole: role '${intent.role_key}' not found — create it first`,
@@ -166,7 +238,7 @@ export function makeRoleWriterLive(
             }
             // ── THE role mutation (assign). The ONLY allowlisted add in the repo. ──
             await withRateLimitBackoff(
-              () => member.roles.add(role, "freeside shadow-onboarding"),
+              () => member.roles.add(role!, "freeside shadow-onboarding"),
               sleep,
             );
           },
@@ -219,6 +291,12 @@ export function makeGatedRoleGc(
         const guild = await client.guilds.fetch(wiring.guild_id);
         const role = await guild.roles.fetch(roleId);
         if (!role) return; // already gone — idempotent
+        // HYDRATE the member cache before reading membership: discord.js derives
+        // `role.members` from the guild MEMBER cache, which is empty until fetched.
+        // Without this, an assigned role reads `members.size === 0` and the guard
+        // below would wrongly delete it — stripping users (violates R-6). Fetching
+        // all members makes `role.members.size` reflect LIVE membership.
+        await guild.members.fetch();
         if (role.members.size > 0) {
           // defense-in-depth: never strip users even if the plan was stale.
           throw new Error(
@@ -234,6 +312,10 @@ export function makeGatedRoleGc(
 
 /** Map a thrown Discord error to the substrate's typed WriteError. */
 function classifyWriteError(e: unknown, ctx: string): WriteError {
+  // An already-typed WriteError (e.g. the FR-9 namespace refusal thrown inside
+  // the try) passes through verbatim — do NOT re-wrap it (would bury the precise
+  // refusal message inside an op_failed string).
+  if (e instanceof WriteError) return e;
   const status = (e as { status?: number; httpStatus?: number })?.status
     ?? (e as { httpStatus?: number })?.httpStatus;
   if (status === 429) {

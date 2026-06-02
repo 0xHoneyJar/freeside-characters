@@ -31,12 +31,17 @@ const botRoot = dirname(dirname(shadowDir)); // apps/bot
 const repoRoot = dirname(dirname(botRoot)); // repo root
 const LINT = join(repoRoot, "scripts/lint-shadow-import-boundary.sh");
 
+// The lint spawns `bash` + ~233 grep passes; under the test runner that is a few
+// seconds. Give the lint-invoking tests a generous timeout so a slow CI box does
+// not flap them (the default 5s is too tight for a real subprocess scan).
+const LINT_TIMEOUT_MS = 30_000;
+
 describe("405.3 — cross-repo import-boundary lint", () => {
   test("the lint PASSES on the clean tree (no role mutation outside the gated adapter)", () => {
     // exits 0 — throws on non-zero, so a clean run just returns.
     const out = execFileSync("bash", [LINT], { cwd: repoRoot, encoding: "utf8" });
     expect(out).toContain("no discord.js role mutation outside the gated adapter");
-  });
+  }, LINT_TIMEOUT_MS);
 
   test("PROOF: a raw `guild.roles.create` outside the gated adapter FAILS the lint (exit 1)", () => {
     const plant = join(botRoot, "src/shadow/__planted_violation_TEST__.ts");
@@ -65,7 +70,60 @@ describe("405.3 — cross-repo import-boundary lint", () => {
     } finally {
       rmSync(plant, { force: true });
     }
-  });
+  }, LINT_TIMEOUT_MS);
+
+  test("FAGAN iter-2 — PROOF: a raw `role.delete()` outside the gated adapter FAILS the lint", () => {
+    const plant = join(botRoot, "src/shadow/__planted_delete_TEST__.ts");
+    writeFileSync(
+      plant,
+      [
+        'import type { Role } from "discord.js";',
+        "export async function bypass(role: Role) {",
+        '  await role.delete("ungated bypass");',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    try {
+      let failed = false;
+      let stderr = "";
+      try {
+        execFileSync("bash", [LINT], { cwd: repoRoot, encoding: "utf8", stdio: "pipe" });
+      } catch (e) {
+        failed = true;
+        stderr = String((e as { stderr?: Buffer }).stderr ?? "");
+      }
+      expect(failed).toBe(true); // the new delete/edit patterns MUST catch this
+      expect(stderr).toContain("VIOLATION");
+      expect(stderr).toContain("__planted_delete_TEST__.ts");
+    } finally {
+      rmSync(plant, { force: true });
+    }
+  }, LINT_TIMEOUT_MS);
+
+  test("FAGAN iter-2 — NO FALSE POSITIVE: a Map/Set `.delete()` does NOT fail the lint", () => {
+    const plant = join(botRoot, "src/shadow/__planted_map_delete_TEST__.ts");
+    writeFileSync(
+      plant,
+      [
+        "export function clean(cache: Map<string, number>, id: string) {",
+        "  cache.delete(id);",
+        "  const sseClients = new Set<string>();",
+        "  sseClients.delete(id);",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    try {
+      // exits 0 (no role mutation) — execFileSync throws on non-zero, so a clean
+      // run just returns. A regression that broadened the delete pattern to all
+      // receivers would make this throw.
+      const out = execFileSync("bash", [LINT], { cwd: repoRoot, encoding: "utf8" });
+      expect(out).toContain("no discord.js role mutation outside the gated adapter");
+    } finally {
+      rmSync(plant, { force: true });
+    }
+  }, LINT_TIMEOUT_MS);
 });
 
 describe("405.3 — un-gated-path invariant (the stronger check, B9)", () => {

@@ -94,13 +94,27 @@ const monorepoRoot = dirname(dirname(botRoot));
 
 // ── 1. bun.lock substrate pin == canonical ──────────────────────────────────
 (() => {
-  const lockPath = join(monorepoRoot, "bun.lock");
+  // CONFORMANCE_BUN_LOCK_PATH is a test-only override (lets a test point at a
+  // missing/alternate lockfile to exercise the deterministic-FAIL guard without
+  // moving the real bun.lock). Production always resolves the monorepo lockfile.
+  const lockPath = process.env.CONFORMANCE_BUN_LOCK_PATH || join(monorepoRoot, "bun.lock");
+  if (!existsSync(lockPath)) {
+    // deterministic FAIL (not a thrown stack) — a missing/mis-pathed lockfile is
+    // a conformance failure, not a crash. Surfaces as [FAIL] + exit 1.
+    fail("bun.lock missing", `expected at ${lockPath} — cannot verify the substrate pin`);
+    return;
+  }
   const lock = readFileSync(lockPath, "utf8");
-  const subSha = lock.match(/freeside-worlds#([0-9a-f]{40})/)?.[1] ?? "";
+  // SCOPE the SHA match to the `@freeside-worlds/shadow-substrate` dependency
+  // entry (the line is `"@freeside-worlds/shadow-substrate": "github:…#<sha>"`),
+  // so an unrelated package that also pins a freeside-worlds SHA cannot produce a
+  // false pass. The `[^"]*` allows the resolution-table form on either side.
+  const subSha =
+    lock.match(/@freeside-worlds\/shadow-substrate"[^#]*freeside-worlds#([0-9a-f]{40})/)?.[1] ?? "";
   if (subSha === CANONICAL_SUBSTRATE_SHA) {
     ok(`bun.lock substrate pin == canonical (${subSha.slice(0, 12)}…)`);
   } else {
-    fail("substrate lockfile pin skew", `bun.lock has "${subSha}", canonical is ${CANONICAL_SUBSTRATE_SHA} — run lockstep rollout (substrate-sha.lock)`);
+    fail("substrate lockfile pin skew", `bun.lock @freeside-worlds/shadow-substrate pin is "${subSha}", canonical is ${CANONICAL_SUBSTRATE_SHA} — run lockstep rollout (substrate-sha.lock)`);
   }
 })();
 

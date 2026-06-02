@@ -56,12 +56,29 @@ GATED_ADAPTER="apps/bot/src/shadow/role-writer.live.ts"
 #   member.roles.add / .roles.set / .roles.remove   (member role mutation)
 #   <role>.delete( / <role>.edit( / .setPermissions( on a role
 # We match the method-call shapes that mutate.
+#
+# ── .delete( / .edit( FALSE-POSITIVE GUARD (FAGAN iter-2) ────────────────────
+# `.delete(` / `.edit(` are used widely on non-Discord receivers (Map/Set/
+# Collection caches: `sseClients.delete(id)`, `cache.delete(url)`, …). A bare
+# `\.delete\s*\(` would flag all of them. So the role DELETE/EDIT patterns are
+# SCOPED to a role-ish receiver: a token that is `role`/`roles` or ends in
+# `Role`/`Roles` (case-insensitive) immediately before the method. This catches a
+# planted `role.delete()` / `someRole.edit()` OUTSIDE the gated adapter while
+# leaving Map/Set deletes untouched. `.setPermissions(` is Discord role/channel-
+# only (no false-positive surface in this repo) so it is matched broadly.
+# KNOWN LIMIT (documented in the header): a bare aliased variable
+# (`const r = guild.roles.cache.get(id); r.delete()`) escapes the receiver-name
+# scope — the same call-graph-blind limit the header already declares; the
+# RUNTIME gate is the enforced boundary.
 PATTERNS=(
-  '\.roles\.create[[:space:]]*\('          # guild.roles.create(
-  '\.roles\.add[[:space:]]*\('             # member.roles.add(
-  '\.roles\.set[[:space:]]*\('             # member.roles.set(
-  '\.roles\.remove[[:space:]]*\('          # member.roles.remove(
-  '\.setRoles[[:space:]]*\('               # member.setRoles(
+  '\.roles\.create[[:space:]]*\('                       # guild.roles.create(
+  '\.roles\.add[[:space:]]*\('                          # member.roles.add(
+  '\.roles\.set[[:space:]]*\('                          # member.roles.set(
+  '\.roles\.remove[[:space:]]*\('                       # member.roles.remove(
+  '\.setRoles[[:space:]]*\('                            # member.setRoles(
+  '\b[A-Za-z_]*[Rr]ole[s]?\.delete[[:space:]]*\('       # role.delete( / roles.delete( / fooRole.delete(
+  '\b[A-Za-z_]*[Rr]ole[s]?\.edit[[:space:]]*\('         # role.edit( / fooRole.edit(
+  '\.setPermissions[[:space:]]*\('                      # <role>.setPermissions(
 )
 
 # Search ONLY first-party RUNTIME source (apps/, packages/, scripts/) — never
@@ -69,38 +86,47 @@ PATTERNS=(
 # mutation patterns in string literals (the lint's own proof test plants a
 # violation; the gate tests describe the rule) and perform no real role mutation
 # (they run the MOCK writer). The runtime boundary is what this lint guards.
+# -prune node_modules/dist (do NOT descend into them) — far faster than a
+# post-hoc `-not -path` filter, which still walks every node_modules entry.
 mapfile -t SEARCH_FILES < <(
   find "$REPO_ROOT/apps" "$REPO_ROOT/packages" "$REPO_ROOT/scripts" \
-    -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' \) \
-    -not -path '*/node_modules/*' -not -path '*/dist/*' \
-    -not -name '*.test.ts' -not -name '*.test.tsx' -not -name '*.spec.ts' 2>/dev/null | sort
+    \( -type d \( -name node_modules -o -name dist \) -prune \) -o \
+    \( -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' \) \
+       ! -name '*.test.ts' ! -name '*.test.tsx' ! -name '*.spec.ts' -print \) 2>/dev/null | sort
 )
 
 violations=0
 echo "$TAG scanning $((${#SEARCH_FILES[@]})) source file(s) for discord.js role mutation outside the gated adapter…"
+
+# Collapse the PATTERNS into ONE ERE alternation and grep each file ONCE (vs once
+# per pattern). This keeps the scan fast (one grep per file, not N) — the
+# multi-pass form was O(patterns × files) grep spawns and blew the test-runner
+# latency budget once the delete/edit patterns were added (FAGAN iter-2).
+COMBINED_ERE=""
+for pat in "${PATTERNS[@]}"; do
+  COMBINED_ERE="${COMBINED_ERE:+$COMBINED_ERE|}($pat)"
+done
 
 for f in "${SEARCH_FILES[@]}"; do
   rel="${f#"$REPO_ROOT"/}"
   # The gated adapter is the single allowlisted module — skip it.
   [[ "$rel" == "$GATED_ADAPTER" ]] && continue
 
-  for pat in "${PATTERNS[@]}"; do
-    # grep -nE; ignore comment-only lines (leading // or *) to reduce false hits
-    # on documentation that mentions the pattern. The gated adapter (the only
-    # place these legitimately appear) is already excluded above.
-    while IFS= read -r hit; do
-      [[ -z "$hit" ]] && continue
-      line_no="${hit%%:*}"
-      content="${hit#*:}"
-      trimmed="${content#"${content%%[![:space:]]*}"}"   # left-trim
-      case "$trimmed" in
-        '//'*|'*'*|'/*'*|'#'*) continue ;;  # comment line — not executable
-      esac
-      echo "$TAG  ✗ VIOLATION: $rel:$line_no" >&2
-      echo "$TAG      $trimmed" >&2
-      violations=$((violations+1))
-    done < <(grep -nE "$pat" "$f" 2>/dev/null || true)
-  done
+  # grep -nE; ignore comment-only lines (leading // or *) to reduce false hits
+  # on documentation that mentions the pattern. The gated adapter (the only
+  # place these legitimately appear) is already excluded above.
+  while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    line_no="${hit%%:*}"
+    content="${hit#*:}"
+    trimmed="${content#"${content%%[![:space:]]*}"}"   # left-trim
+    case "$trimmed" in
+      '//'*|'*'*|'/*'*|'#'*) continue ;;  # comment line — not executable
+    esac
+    echo "$TAG  ✗ VIOLATION: $rel:$line_no" >&2
+    echo "$TAG      $trimmed" >&2
+    violations=$((violations+1))
+  done < <(grep -nE "$COMBINED_ERE" "$f" 2>/dev/null || true)
 done
 
 echo

@@ -56,10 +56,16 @@ function extractAdminPrincipals(yamlText: string): readonly string[] {
   return list.filter((x): x is string => typeof x === "string");
 }
 
+/** The B6 hard ceiling: a revoked admin MUST lose read+write within ≤10s. */
+const MAX_TTL_MS = 10_000;
+
 export function makeAdminAllowlistLive(
   cfg: LiveAllowlistConfig,
 ): Layer.Layer<AdminAllowlistSource> {
-  const ttlMs = cfg.ttlMs ?? 10_000;
+  // CLAMP the TTL to the B6 ≤10s ceiling. A caller passing a larger ttlMs (or
+  // none) can NEVER extend the revocation window past 10s — revocation latency is
+  // a security property, not a tunable. (Smaller values are honored.)
+  const ttlMs = Math.min(cfg.ttlMs ?? MAX_TTL_MS, MAX_TTL_MS);
   const now = cfg.now ?? (() => Date.now());
   const read = cfg.readFile ?? ((p: string) => readFileSync(p, "utf8"));
   const cache = new Map<string, CacheEntry>();
