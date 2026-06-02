@@ -248,3 +248,11 @@ it (decision-map §7) — Phase 43C authorizes none of them.
 - `docs/recall-wedge/fixtures/` — the accepted Recall Wedge fixture
   pattern this directory mirrors (deterministic fixtures + a
   dependency-free no-leak validator).
+- `docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md` — **Phase 44B**
+  reducer acceptance / next-lane decision gate (docs / decision only). It
+  accepts the Phase 44A reducer over these fixtures as the fixture-bound
+  local reducer proof and selects **Phase 44C — a fixture-bound
+  dev/operator reducer runner** as the next lane. A future Phase 44C runner
+  would *read* these fixtures and *call* that reducer; it would **not**
+  add, mutate, or regenerate any fixture here, and it authorizes no live
+  admission, storage, command, or Dixie route.

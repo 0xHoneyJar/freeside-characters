@@ -792,6 +792,15 @@ commit to one, under its own gate.
   command registration, or any package export. It is **not** the §N(a) Lane
   A implementation and **does not** authorize a live admission
   implementation; the blocked work in §M and the Lane A gate stay in force.
+- `docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md` — **Phase 44B**
+  reducer acceptance / next-lane decision gate (docs / decision only,
+  added after the Phase 44A reducer). It accepts the Phase 44A reducer
+  (PR #156) as the fixture-bound local reducer proof and selects **Phase
+  44C — a fixture-bound dev/operator reducer runner** (Option A) as the
+  next lane. It implements nothing, and it does **not** authorize
+  production admission, runtime storage, a public command, a user-facing
+  write path, a live Dixie admission route, or any Finn production wiring;
+  the §M blocked work and the §N(a) Lane A gate stay in force.
 - `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
   Phase 43A decision gate (PR #151); the authority that selected the
   Admission Wedge and recommended this design (its §M). This design

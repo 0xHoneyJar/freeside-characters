@@ -929,6 +929,55 @@ product wedge; Phase 43B docs/design-only is the recommended next step."
 
 ---
 
+### 5p. Phase 44B addendum — fixture-bound reducer accepted; next lane is a fixture-bound dev/operator reducer runner (Phase 44C), not a live admission implementation
+
+> Added by Phase 44B
+> (`docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md`), 2026-06-02.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 44B:
+
+- **Phase 44B is docs / decision only.** It adds no source, test, fixture
+  JSON, package, lockfile, config, CI, or generated change, and no
+  handler / registration / dispatch / package-export change. It implements
+  nothing.
+- **It accepts the Phase 44A fixture-bound reducer (PR #156) as the local
+  reducer proof.** Phase 44A — the pure, dependency-free reducer / adapter
+  over the Phase 43C fixtures
+  (`packages/persona-engine/src/recall-wedge/admission-wedge-fixture-reducer.ts`)
+  — is accepted as sufficient proof of fixture-bound reducer semantics, the
+  local reducer input / output contract, fail-closed malformed-input
+  behavior, the safe-projection / no-leak posture, and the
+  candidate / admitted / rejected / superseded distinctions. It is **not**
+  accepted as production admission, runtime storage, a public command, or a
+  user-facing write path.
+- **It selects Phase 44C — a fixture-bound dev/operator reducer runner —
+  as the next lane.** A local script / test-only runner that reads the
+  existing Phase 43C fixtures, calls the existing Phase 44A reducer, and
+  prints operator-safe scenario summaries (before-admission excluded;
+  accepted included; rejected excluded; supersession corrected-only;
+  malformed fail-closed). It would add no fixtures, mutate no reducer
+  semantics, and call no Discord / Dixie / storage / network / LLM /
+  production auth. Exporting the reducer as a package surface is deferred;
+  a Dixie-side admission contract request is sequenced after the runner; a
+  live Dixie admission route and a dev/operator candidate command stay
+  blocked / separately gated.
+- **Live Dixie-backed admission, production storage / admission, public
+  remember-this, Discord history ingestion, user chat becoming memory,
+  production auth / consent, public rollout, Telegram / private chat, LLM /
+  voice, a forget / revoke / correction UI, and Finn production wiring all
+  remain blocked** behind separate later gates. Phase 44B expands the Phase
+  43A / 43B authorization in no way, and §7 (live memory admission gates)
+  and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 44B gate doc; it only updates
+this section's **next-lane** answer to "the Phase 44A fixture-bound
+reducer is accepted as the local reducer proof, and the next lane is a
+fixture-bound dev/operator reducer runner (Phase 44C), not a live
+admission implementation."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
@@ -1036,12 +1085,25 @@ corresponding gates above are satisfied.
 
 ## 9. Recommended next phase
 
-**Recommended next phase: Phase 43B — Admission Wedge MVP design (docs /
-design or fixture-design only).** Suggested doc:
-`docs/ADMISSION-WEDGE-MVP-DESIGN.md` — **now authored** (docs / design
-only): it defines the candidate / admission packet shapes, the admission
-transition, the admission receipt, and the §7-governed acceptance tests
-as concrete targets, preferring Lane A, and implements no admission.
+> **Current recommendation (updated Phase 44B, 2026-06-02 · authoritative
+> in §5p).** The current recommended next phase is **Phase 44C — a
+> fixture-bound dev/operator reducer runner** (a local script / test-only
+> runner that reads the Phase 43C fixtures, calls the Phase 44A reducer,
+> and prints operator-safe scenario summaries). The Phase 43A-era
+> recommendation that follows (**Phase 43B — Admission Wedge MVP design**)
+> is **historical and already completed**: the Phase 43B design was
+> authored, the Phase 43C fixture contract landed via PR #155, and the
+> Phase 44A fixture-bound reducer landed via PR #156 (accepted by Phase
+> 44B, §5p). Read the remainder of this section as the superseded ladder
+> trail, not the current next step. §7 (live memory admission gates) and §8
+> (prohibitions) stay in force; no blocked lane is unblocked.
+
+**Phase 43A-era recommended next phase (historical / completed): Phase 43B
+— Admission Wedge MVP design (docs / design or fixture-design only).**
+Suggested doc: `docs/ADMISSION-WEDGE-MVP-DESIGN.md` — **now authored** (docs
+/ design only): it defines the candidate / admission packet shapes, the
+admission transition, the admission receipt, and the §7-governed acceptance
+tests as concrete targets, preferring Lane A, and implements no admission.
 
 > **Supersession note.** This section originally recommended **Phase 35B
 > — explicit dev/operator Recall Wedge demo runner** (preserved as
@@ -1054,8 +1116,10 @@ as concrete targets, preferring Lane A, and implements no admission.
 > — as the next product wedge. The §5b–§5o addenda are the authoritative
 > ladder record; this section's current recommendation follows them.
 
-Per Phase 43A (§5o) and its gate doc §M, the current recommended next
-phase is **Phase 43B — Admission Wedge MVP design**. Suggested scope:
+Per Phase 43A (§5o) and its gate doc §M, the then-recommended next phase
+was **Phase 43B — Admission Wedge MVP design** (now completed; the current
+recommended next phase is **Phase 44C** per §5p and the banner above).
+Phase 43B's scope was:
 
 - docs / design or fixture-design only — **no implementation** of the
   admission wedge;
@@ -1108,6 +1172,18 @@ implementation, only after 43B's design is accepted. A dev-only
 > production auth / consent, public remember-this, Discord history
 > ingestion, user chat becoming memory, a live Dixie admission route, or
 > any Finn production wiring. The runtime Lane A implementation and the §7
+> live-memory-admission gates remain in force and separately gated.
+
+> **Status note (Phase 44B reducer acceptance / next-lane gate).** Phase
+> 44B (`docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md`, docs / decision
+> only) accepts the Phase 44A reducer (PR #156) as the fixture-bound local
+> reducer proof and selects **Phase 44C — a fixture-bound dev/operator
+> reducer runner** (a local script / test-only runner that reads the Phase
+> 43C fixtures, calls the Phase 44A reducer, and prints operator-safe
+> scenario summaries) as the next lane. It implements nothing; it
+> authorizes no production admission, runtime storage, public command,
+> user-facing write path, live Dixie admission route, or Finn production
+> wiring. See §5p. The runtime Lane A implementation and the §7
 > live-memory-admission gates remain in force and separately gated.
 
 ### 9.1 Historical context — superseded Phase 35B recommendation
