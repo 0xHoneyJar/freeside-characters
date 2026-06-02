@@ -85,6 +85,39 @@ export interface LiveWriterConfig {
 
 const DEFAULT_MAX_RETRIES = 4;
 
+/**
+ * The ONE fail-closed namespace predicate (FR-9 confused-deputy guard), shared by
+ * all three role-mutation sites (createRole, assignRole, GC delete). Extracting it
+ * means a future change to the empty/missing-prefix ⇒ refuse-all invariant can't
+ * update one path and silently miss another.
+ *
+ * Throws a typed `WriteError` (kind `op_failed`) when refused; the create/assign
+ * paths surface it verbatim and the GC path's `classifyWriteError` passes a
+ * `WriteError` through unchanged — so the final typed error is identical at every
+ * site.
+ *
+ * Two refusal classes (behavior identical to the prior inline guards):
+ *   1. EMPTY/missing prefix ⇒ refuse ALL mutations. `"".startsWith("")` is always
+ *      true, so a `startsWith`-only guard on a misconfigured world would PASS
+ *      EVERYTHING — fail-closed instead.
+ *   2. A `role_key` not under the world's prefix ⇒ refuse (bounds the
+ *      confused-deputy: never touch a non-namespaced / Collab.Land role).
+ *
+ * @param messages  the two op-specific refusal strings (kept exact per call site).
+ */
+function assertNamespacedKey(
+  roleKey: string,
+  prefix: string,
+  messages: { readonly unconfigured: string; readonly nonNamespaced: string },
+): void {
+  if (!prefix || prefix.length === 0) {
+    throw new WriteError({ kind: "op_failed", message: messages.unconfigured });
+  }
+  if (!roleKey.startsWith(prefix)) {
+    throw new WriteError({ kind: "op_failed", message: messages.nonNamespaced });
+  }
+}
+
 /** Sleep helper (overridable in tests). */
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((r) => setTimeout(r, ms));
@@ -148,29 +181,13 @@ export function makeRoleWriterLive(
 
   // FR-9 namespace guard (ENFORCED): refuse any role_key not under the world's
   // prefix BEFORE any Discord read/mutation. The hard confused-deputy bound on
-  // BOTH create and assign.
-  //
-  // FAIL-CLOSED (FAGAN iter-3): an EMPTY/missing namespacePrefix REFUSES every
-  // mutation. In JS `anything.startsWith("") === true`, so a `startsWith`-only
-  // guard would PASS EVERYTHING when a world is misconfigured (guild wiring
-  // present but `namespace_prefix` absent → ""). A misconfigured world must
-  // refuse ALL role mutations — the fail-safe the iter-2 brief intended — so an
-  // unconfigured prefix can never grant create/assign over arbitrary (e.g.
-  // Collab.Land) roles.
-  const assertNamespaced = (roleKey: string, op: string): void => {
-    if (!cfg.namespacePrefix || cfg.namespacePrefix.length === 0) {
-      throw new WriteError({
-        kind: "op_failed",
-        message: `${op}: refused — no namespace_prefix configured for this world (fail-closed: a misconfigured world refuses ALL role mutations, FR-9 confused-deputy guard)`,
-      });
-    }
-    if (!roleKey.startsWith(cfg.namespacePrefix)) {
-      throw new WriteError({
-        kind: "op_failed",
-        message: `refused non-namespaced role '${roleKey}' in ${op} (FR-9: writer touches ONLY '${cfg.namespacePrefix}…' roles — confused-deputy guard)`,
-      });
-    }
-  };
+  // BOTH create and assign. Delegates to the shared `assertNamespacedKey`
+  // predicate (one fail-closed invariant for all three mutation sites).
+  const assertNamespaced = (roleKey: string, op: string): void =>
+    assertNamespacedKey(roleKey, cfg.namespacePrefix, {
+      unconfigured: `${op}: refused — no namespace_prefix configured for this world (fail-closed: a misconfigured world refuses ALL role mutations, FR-9 confused-deputy guard)`,
+      nonNamespaced: `refused non-namespaced role '${roleKey}' in ${op} (FR-9: writer touches ONLY '${cfg.namespacePrefix}…' roles — confused-deputy guard)`,
+    });
 
   // Local PER-BATCH id binding (this Layer instance lives for one batch's
   // applyBatch). createRole records the id it created; an assign in the SAME
@@ -291,20 +308,13 @@ export function makeGatedRoleGc(
   ): Effect.Effect<void, WriteError> =>
     Effect.tryPromise({
       try: async () => {
-        // FAIL-CLOSED (FAGAN iter-3): an EMPTY/missing prefix refuses EVERY GC.
-        // `startsWith("")` is always true, so a `startsWith`-only guard on a
-        // misconfigured world (no namespace_prefix) would permit deleting
-        // arbitrary (e.g. Collab.Land) roles. Refuse-all when unconfigured.
-        if (!namespacePrefix || namespacePrefix.length === 0) {
-          throw new Error(
-            `refused GC — no namespace_prefix configured for this world (fail-closed: a misconfigured world refuses ALL role deletes) — coexistence guard`,
-          );
-        }
-        if (!roleKey.startsWith(namespacePrefix)) {
-          throw new Error(
-            `refused GC of non-namespaced role '${roleKey}' (not Freeside-managed) — coexistence guard`,
-          );
-        }
+        // FAIL-CLOSED namespace guard via the shared `assertNamespacedKey`
+        // predicate — same invariant the create/assign paths use. A thrown
+        // WriteError passes through `classifyWriteError` verbatim.
+        assertNamespacedKey(roleKey, namespacePrefix, {
+          unconfigured: `refused GC — no namespace_prefix configured for this world (fail-closed: a misconfigured world refuses ALL role deletes) — coexistence guard`,
+          nonNamespaced: `refused GC of non-namespaced role '${roleKey}' (not Freeside-managed) — coexistence guard`,
+        });
         const wiring = cfg.resolve(cfg.world);
         if (!wiring) throw new Error(`no guild wiring for world '${cfg.world}'`);
         const client = await getBotClient();

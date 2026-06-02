@@ -1,69 +1,68 @@
 /**
- * conformance-guard.test.ts — FAGAN iter-2 proof that the B7 substrate
- * conformance check (scripts/check-substrate-conformance.ts) FAILS DETERMINISTICALLY
- * (exit 1 + `[FAIL]`) on a missing/mis-pathed bun.lock, rather than throwing an
- * unguarded ENOENT stack.
+ * conformance-guard.test.ts — FAGAN proof that the B7 substrate conformance
+ * check (scripts/check-substrate-conformance.ts) FAILS DETERMINISTICALLY
+ * (returns failures > 0 + emits `[FAIL]`) on a missing/mis-pathed bun.lock,
+ * rather than throwing an unguarded ENOENT stack.
+ *
+ * FAGAN iter-4: the lockfile is injected via the FUNCTION PARAMETER
+ * (`runConformance({ lockPath })`), NOT an env var. There is no
+ * caller/env-controlled override in the production path, so the test exercises
+ * the missing-lockfile + deterministic-FAIL guards by passing a bogus
+ * `lockPath` directly to the exported routine.
  */
-import { describe, expect, test } from "bun:test";
-import { execFileSync, spawnSync } from "node:child_process";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const shadowDir = dirname(fileURLToPath(import.meta.url)); // apps/bot/src/shadow
-const botRoot = dirname(dirname(shadowDir)); // apps/bot
-const SCRIPT = join(botRoot, "scripts/check-substrate-conformance.ts");
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { runConformance } from "./substrate-conformance.ts";
 
 describe("405.1 — substrate conformance lockfile guard (B7)", () => {
-  test("a missing bun.lock yields a deterministic [FAIL] + exit 1 (no thrown ENOENT stack)", () => {
-    let failed = false;
-    let stdout = "";
-    let stderr = "";
+  // Capture console output so we can assert on the deterministic [FAIL] line
+  // without it spamming the test runner's stdout.
+  const logged: string[] = [];
+  const origLog = console.log;
+  const origError = console.error;
+
+  beforeEach(() => {
+    logged.length = 0;
+    console.log = (...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    };
+    console.error = (...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    };
+  });
+
+  afterEach(() => {
+    console.log = origLog;
+    console.error = origError;
+  });
+
+  test("a missing bun.lock yields a deterministic [FAIL] (no thrown ENOENT) and a non-zero failure count", () => {
+    let failures = -1;
+    let threw: unknown;
     try {
-      execFileSync("bun", ["run", SCRIPT], {
-        cwd: botRoot,
-        encoding: "utf8",
-        stdio: "pipe",
-        // FAGAN iter-3: the lockfile override is gated behind CONFORMANCE_TEST_MODE
-        // — set BOTH so the override is honored and the missing-lockfile proof
-        // still exercises the deterministic-FAIL guard.
-        env: {
-          ...process.env,
-          CONFORMANCE_TEST_MODE: "1",
-          CONFORMANCE_BUN_LOCK_PATH: "/nonexistent/__no_such_bun__.lock",
-        },
-      });
+      // Inject the bogus lockfile path via the PARAMETER — no env, no subprocess.
+      failures = runConformance({ lockPath: "/nonexistent/__no_such_bun__.lock" });
     } catch (e) {
-      failed = true;
-      stdout = String((e as { stdout?: Buffer }).stdout ?? "");
-      stderr = String((e as { stderr?: Buffer }).stderr ?? "");
+      threw = e;
     }
-    expect(failed).toBe(true); // exit 1
-    const out = stdout + stderr;
-    // deterministic conformance failure, NOT an unhandled throw.
+
+    // The missing-lockfile guard is a deterministic conformance FAILURE, NOT a
+    // thrown ENOENT stack.
+    expect(threw).toBeUndefined();
+    expect(failures).toBeGreaterThan(0);
+
+    const out = logged.join("\n");
     expect(out).toContain("[FAIL] bun.lock missing");
     expect(out).not.toMatch(/ENOENT|Uncaught|no such file or directory/);
-  }, 30_000);
+  });
 
-  test("the lockfile override is IGNORED without CONFORMANCE_TEST_MODE (B7 bypass closed) — uses the real bun.lock", () => {
-    // Override env set but TEST_MODE absent → the script must IGNORE the override,
-    // use the real monorepo bun.lock (which exists), and warn on stderr. The
-    // "bun.lock missing" FAIL must NOT appear (it would mean the bogus override
-    // path was honored — the bypass we closed). spawnSync captures stdout+stderr
-    // regardless of exit code (the script exits 0 when the real lockfile passes).
-    const r = spawnSync("bun", ["run", SCRIPT], {
-      cwd: botRoot,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        CONFORMANCE_TEST_MODE: "",
-        CONFORMANCE_BUN_LOCK_PATH: "/nonexistent/__no_such_bun__.lock",
-      },
-    });
-    const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-    // the bogus override was NOT honored — the real bun.lock was read, so the
-    // missing-lockfile FAIL never fires.
+  test("the default lockPath verifies the REAL monorepo bun.lock (no caller/env override exists)", () => {
+    // Called with NO argument — exactly the production CLI path. The real
+    // bun.lock exists and pins the canonical substrate SHA, so the missing-
+    // lockfile FAIL must NOT fire. (A non-zero count here would mean a genuine
+    // pin/shape drift, not the bypass we closed.)
+    const failures = runConformance();
+    const out = logged.join("\n");
     expect(out).not.toContain("[FAIL] bun.lock missing");
-    // the attempt is surfaced (production-safe visibility).
-    expect(out).toContain("CONFORMANCE_BUN_LOCK_PATH is set but CONFORMANCE_TEST_MODE");
-  }, 30_000);
+    expect(failures).toBe(0);
+  });
 });
