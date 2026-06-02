@@ -96,8 +96,24 @@ const monorepoRoot = dirname(dirname(botRoot));
 (() => {
   // CONFORMANCE_BUN_LOCK_PATH is a test-only override (lets a test point at a
   // missing/alternate lockfile to exercise the deterministic-FAIL guard without
-  // moving the real bun.lock). Production always resolves the monorepo lockfile.
-  const lockPath = process.env.CONFORMANCE_BUN_LOCK_PATH || join(monorepoRoot, "bun.lock");
+  // moving the real bun.lock). FAGAN iter-3 (B7 bypass): the override is honored
+  // ONLY when CONFORMANCE_TEST_MODE === "1" is ALSO set — otherwise ANY caller
+  // who can set the env could point the substrate-pin integrity check at an
+  // arbitrary lockfile and bypass the B7 gate. In production the override is
+  // ignored and the real monorepo bun.lock is used; if the override env is
+  // present WITHOUT the test-mode flag we emit a stderr warning so the attempt
+  // is visible. (Mirrors the cluster's dual-condition test-only env pattern.)
+  const overrideRequested = !!process.env.CONFORMANCE_BUN_LOCK_PATH;
+  const testMode = process.env.CONFORMANCE_TEST_MODE === "1";
+  if (overrideRequested && !testMode) {
+    console.error(
+      `${TAG} [warn] CONFORMANCE_BUN_LOCK_PATH is set but CONFORMANCE_TEST_MODE!="1" — IGNORING the override and using the real bun.lock (production-safe; the override is test-only)`,
+    );
+  }
+  const lockPath =
+    overrideRequested && testMode
+      ? (process.env.CONFORMANCE_BUN_LOCK_PATH as string)
+      : join(monorepoRoot, "bun.lock");
   if (!existsSync(lockPath)) {
     // deterministic FAIL (not a thrown stack) — a missing/mis-pathed lockfile is
     // a conformance failure, not a crash. Surfaces as [FAIL] + exit 1.

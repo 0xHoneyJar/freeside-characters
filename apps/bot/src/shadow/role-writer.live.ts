@@ -149,7 +149,21 @@ export function makeRoleWriterLive(
   // FR-9 namespace guard (ENFORCED): refuse any role_key not under the world's
   // prefix BEFORE any Discord read/mutation. The hard confused-deputy bound on
   // BOTH create and assign.
+  //
+  // FAIL-CLOSED (FAGAN iter-3): an EMPTY/missing namespacePrefix REFUSES every
+  // mutation. In JS `anything.startsWith("") === true`, so a `startsWith`-only
+  // guard would PASS EVERYTHING when a world is misconfigured (guild wiring
+  // present but `namespace_prefix` absent → ""). A misconfigured world must
+  // refuse ALL role mutations — the fail-safe the iter-2 brief intended — so an
+  // unconfigured prefix can never grant create/assign over arbitrary (e.g.
+  // Collab.Land) roles.
   const assertNamespaced = (roleKey: string, op: string): void => {
+    if (!cfg.namespacePrefix || cfg.namespacePrefix.length === 0) {
+      throw new WriteError({
+        kind: "op_failed",
+        message: `${op}: refused — no namespace_prefix configured for this world (fail-closed: a misconfigured world refuses ALL role mutations, FR-9 confused-deputy guard)`,
+      });
+    }
     if (!roleKey.startsWith(cfg.namespacePrefix)) {
       throw new WriteError({
         kind: "op_failed",
@@ -277,6 +291,15 @@ export function makeGatedRoleGc(
   ): Effect.Effect<void, WriteError> =>
     Effect.tryPromise({
       try: async () => {
+        // FAIL-CLOSED (FAGAN iter-3): an EMPTY/missing prefix refuses EVERY GC.
+        // `startsWith("")` is always true, so a `startsWith`-only guard on a
+        // misconfigured world (no namespace_prefix) would permit deleting
+        // arbitrary (e.g. Collab.Land) roles. Refuse-all when unconfigured.
+        if (!namespacePrefix || namespacePrefix.length === 0) {
+          throw new Error(
+            `refused GC — no namespace_prefix configured for this world (fail-closed: a misconfigured world refuses ALL role deletes) — coexistence guard`,
+          );
+        }
         if (!roleKey.startsWith(namespacePrefix)) {
           throw new Error(
             `refused GC of non-namespaced role '${roleKey}' (not Freeside-managed) — coexistence guard`,

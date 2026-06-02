@@ -102,8 +102,9 @@ function liveWriterCfg(deps: ShadowDeps): LiveWriterConfig {
     world: deps.world,
     // FR-9 prefix the live writer's create/assign guard enforces. Resolved from
     // the SAME manifest wiring the roster reader uses (resolveGuild). A missing
-    // wiring → empty prefix, which makes the writer's guard refuse EVERY role_key
-    // (fail-safe: no namespaced write can slip through an unconfigured world).
+    // wiring → empty prefix, which the writer's FAIL-CLOSED guard treats as
+    // refuse-EVERY-role_key (fail-safe: no write can slip through an unconfigured
+    // world; the guard refuses on "" rather than passing via startsWith("")).
     namespacePrefix: wiring?.namespace_prefix ?? "",
   };
 }
@@ -220,9 +221,14 @@ export function executeRollbackGc(
   readonly errors: readonly string[];
 }> {
   const plan = computeRollbackPlan(rolesCreated, assignments);
-  const wiring = resolveGuild(deps, deps.world);
-  const namespacePrefix = wiring?.namespace_prefix ?? "";
-  const gc = makeGatedRoleGc(deps.getBotClient, liveWriterCfg(deps), namespacePrefix, sleep);
+  // CLEANUP (FAGAN iter-3): derive the GC's namespace prefix from the SAME config
+  // object the live writer's create/assign guard uses (`liveWriterCfg`). Both the
+  // writer Layer config and the GC guard now read ONE `namespacePrefix` field, so
+  // they can never drift (and both share the fail-closed "" → refuse-all
+  // semantics). Previously the GC recomputed `wiring?.namespace_prefix ?? ""`
+  // independently — a second source of truth that could skew from the writer's.
+  const writerCfg = liveWriterCfg(deps);
+  const gc = makeGatedRoleGc(deps.getBotClient, writerCfg, writerCfg.namespacePrefix, sleep);
 
   return Effect.gen(function* () {
     const errors: string[] = [];

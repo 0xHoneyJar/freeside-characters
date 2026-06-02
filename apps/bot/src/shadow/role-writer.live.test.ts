@@ -121,11 +121,25 @@ const cfg = (resolveTo: { guild_id: string } | undefined = { guild_id: "g1" }): 
   world: "purupuru",
   namespacePrefix: NS,
 });
+/** A MISCONFIGURED world: guild wiring present but no namespace_prefix (→ ""). */
+const cfgNoPrefix = (prefix = ""): LiveWriterConfig => ({
+  resolve: () => ({ guild_id: "g1" }),
+  world: "purupuru",
+  namespacePrefix: prefix,
+});
 const CAP = {} as WriteCapability; // gate already verified; the live writer never inspects it
 const noSleep = () => Promise.resolve();
 
 async function getWriter(getClient: () => Promise<Client | null>) {
   const layer = makeRoleWriterLive(getClient, cfg(), noSleep);
+  return Effect.runPromise(RoleWriter.pipe(Effect.provide(layer)));
+}
+
+async function getWriterWithCfg(
+  getClient: () => Promise<Client | null>,
+  c: LiveWriterConfig,
+) {
+  const layer = makeRoleWriterLive(getClient, c, noSleep);
   return Effect.runPromise(RoleWriter.pipe(Effect.provide(layer)));
 }
 
@@ -172,6 +186,70 @@ describe("405.2 — FR-9 namespace guard ENFORCED on create AND assign (confused
     expect(freshM.assigned[0]!.role_id).toBe(createdId); // bound to the id WE created
     // sanity: the planted-role scenario still namespace-passes (it IS namespaced)
     expect(planted.name.startsWith(NS)).toBe(true);
+  });
+});
+
+describe("405.2 — FAIL-CLOSED: an empty/missing namespace_prefix refuses ALL mutations (FAGAN iter-3)", () => {
+  test("createRole is REFUSED when namespace_prefix is '' (misconfigured world) — fail-closed, no mutation", async () => {
+    const m = makeMockGuild([]);
+    const writer = await getWriterWithCfg(makeClient(m.guild), cfgNoPrefix(""));
+    // a key that WOULD pass startsWith("") (anything) — the fail-closed guard
+    // must still refuse it because no prefix is configured.
+    const intent: CreateRoleIntent = { role_key: "purupuru:holder", display_name: "H" };
+    const res = await Effect.runPromise(Effect.either(writer.createRole(CAP, intent)));
+    expect(res._tag).toBe("Left");
+    expect((res as { left: WriteError }).left).toBeInstanceOf(WriteError);
+    expect((res as { left: WriteError }).left.kind).toBe("op_failed");
+    expect((res as { left: WriteError }).left.message).toContain("no namespace_prefix configured");
+    expect((res as { left: WriteError }).left.message).toContain("fail-closed");
+    // proves the guard fired BEFORE the mutation: zero roles created.
+    expect(m.created.length).toBe(0);
+  });
+
+  test("assignRole is REFUSED when namespace_prefix is '' (misconfigured world) — fail-closed, no mutation", async () => {
+    const m = makeMockGuild([{ id: "x", name: "purupuru:holder", members: { size: 0 } }]);
+    const writer = await getWriterWithCfg(makeClient(m.guild), cfgNoPrefix(""));
+    const intent: AssignRoleIntent = { role_key: "purupuru:holder", member_id: "member-1" as never };
+    const res = await Effect.runPromise(Effect.either(writer.assignRole(CAP, intent)));
+    expect(res._tag).toBe("Left");
+    expect((res as { left: WriteError }).left.message).toContain("no namespace_prefix configured");
+    expect(m.assigned.length).toBe(0);
+  });
+
+  test("the rollback GC delete is REFUSED when namespace_prefix is '' — fail-closed, never deletes arbitrary roles", async () => {
+    // A genuinely zero-member role that WOULD be deletable under a configured
+    // prefix. With "" prefix the GC must refuse-all (a misconfigured world cannot
+    // delete arbitrary, e.g. Collab.Land, roles).
+    const role: MockRole = { id: "r-empty", name: "purupuru:empty", members: { size: 0 } };
+    const m = makeMockGuild([role]);
+    const gc = makeGatedRoleGc(makeClient(m.guild), cfgNoPrefix(""), "", noSleep);
+    const res = await Effect.runPromise(Effect.either(gc(CAP, "r-empty", "purupuru:empty")));
+    expect(res._tag).toBe("Left");
+    expect((res as { left: WriteError }).left.message).toContain("no namespace_prefix configured");
+    // the role was NOT deleted.
+    expect(role.deleted).toBeUndefined();
+  });
+
+  test("a correctly-namespaced world still works (create succeeds under a configured prefix)", async () => {
+    const m = makeMockGuild([]);
+    const writer = await getWriterWithCfg(makeClient(m.guild), cfg());
+    const id = await Effect.runPromise(
+      writer.createRole(CAP, { role_key: "purupuru:holder", display_name: "H" }),
+    );
+    expect(typeof id).toBe("string");
+    expect(m.created.length).toBe(1);
+    expect(m.created[0]!.name).toBe("purupuru:holder");
+  });
+
+  test("a non-namespaced key under a CONFIGURED prefix is still refused (prefix-mismatch, not fail-closed)", async () => {
+    const m = makeMockGuild([]);
+    const writer = await getWriterWithCfg(makeClient(m.guild), cfg());
+    const res = await Effect.runPromise(
+      Effect.either(writer.createRole(CAP, { role_key: "admin", display_name: "Admin" })),
+    );
+    expect(res._tag).toBe("Left");
+    expect((res as { left: WriteError }).left.message).toContain("refused non-namespaced role");
+    expect(m.created.length).toBe(0);
   });
 });
 
