@@ -456,3 +456,23 @@ repo; live Dixie admission, a Dixie-owned admission contract, production
 admission / storage / auth / consent, a public command, `/remember-this`,
 and Finn production wiring all remain blocked. The §8.2 boundaries and the
 decision-map §7 / §8 gates stay in force.
+
+---
+
+## 14. Phase 45A status note — Dixie-side contract request authored
+
+> Added by Phase 45A
+> (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`), 2026-06-02. Status
+> note only; the decision in §5–§9 is unchanged and the §8.2 boundaries
+> stay in force.
+
+The Phase 44C runner accepted by Phase 44D
+(`docs/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md`) has since been handed
+off by **Phase 45A** (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`,
+docs / cross-repo request only). Phase 45A summarizes the proof stack this
+gate's reducer acceptance anchors (43B design · 43C fixtures · 44A
+reducer · 44C runner), carries the §D invariant, and asks the Dixie /
+Straylight owners to define or accept a live admission contract *later*. It
+implements nothing in any repo, changes no Dixie code, accepts no contract,
+and does **not** claim a Dixie admission contract already exists. The §8.2
+boundaries and the decision-map §7 / §8 gates stay in force.

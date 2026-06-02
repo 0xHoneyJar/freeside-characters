@@ -274,3 +274,12 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   contract request / handoff** as the next lane. It mutates nothing here and
   authorizes no live admission, a Dixie-owned admission contract, storage,
   command, Dixie route, or package export.
+- `docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md` — **Phase 45A** Dixie-side
+  admission contract request / handoff (docs / cross-repo request only). It
+  hands off this fixture / operator-contract (alongside the Phase 44A reducer
+  and Phase 44C runner) to the Dixie / Straylight owners and asks them to
+  define or accept a live admission contract *later*, carrying the invariant
+  these fixtures prove. It mutates nothing here, reads these fixtures only as
+  evidence of the local proof, implements nothing in any repo, changes no
+  Dixie code, accepts no contract, and does **not** claim a Dixie admission
+  contract already exists.
