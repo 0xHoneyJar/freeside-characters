@@ -1019,6 +1019,60 @@ dev/operator runner, not a live admission implementation.
 
 ---
 
+### 5r. Phase 44D addendum — fixture-bound runner accepted; next lane is a docs/cross-repo Dixie-side admission contract request (Phase 45A), not a live admission implementation
+
+> Added by Phase 44D
+> (`docs/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md`), 2026-06-02.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 44D:
+
+- **Phase 44D is docs / decision only.** It adds no source, test, fixture
+  JSON, package, lockfile, config, CI, or generated change, and no
+  handler / registration / dispatch / package-export change. It implements
+  nothing.
+- **It accepts the Phase 44C fixture-bound dev/operator reducer runner
+  (PR #158) as the local runner proof.** The runner
+  (`packages/persona-engine/src/recall-wedge/run-admission-wedge-fixture-demo.ts`)
+  — which *reads* the Phase 43C fixtures and *calls* the Phase 44A reducer
+  to print operator-safe scenario summaries (before-admission excluded;
+  accepted included; rejected excluded; supersession corrected-only;
+  malformed fail-closed) — is accepted as sufficient proof of fixture-bound
+  operator-readable runner behavior, the local demo / report output, the
+  five safe scenario summaries, the no-leak runner output posture, reducer
+  integration without runtime wiring, and the end-to-end local proof stack
+  (fixtures → reducer → runner). It is **not** accepted as production
+  admission, runtime storage, live Dixie admission, a public command, a
+  user-facing write path, or platform-level admission UX.
+- **It selects Phase 45A — a Dixie-side Admission Wedge contract request /
+  handoff — as the next lane.** A docs / cross-repo request artifact,
+  authored on the Freeside Characters side, that summarizes the proof stack
+  (43B design · 43C fixtures · 44A reducer · 44C runner), enumerates the
+  candidate / admitted / rejected / superseded semantics, and asks the
+  Dixie / Straylight owners to define or accept a live admission contract
+  *later* — carrying forward the invariant that candidate memory is not
+  admitted memory until an explicit admission transition accepts it. It
+  authorizes no implementation in any repo. Local hardening / an operator
+  runbook is deferred; a live Dixie admission route and a dev/operator
+  candidate command stay blocked / separately gated; a package export is
+  deferred until a consumer requires it.
+- **Live Dixie-backed admission, a Dixie-owned admission contract,
+  production storage / admission, public remember-this, Discord history
+  ingestion, user chat becoming memory, production auth / consent, public
+  rollout, Telegram / private chat, LLM / voice, a forget / revoke /
+  correction UI, package exports, and Finn production wiring all remain
+  blocked** behind separate later gates. Phase 44D expands the Phase 43A /
+  43B / 44B / 44C authorization in no way, and §7 (live memory admission
+  gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 44D gate doc; it only updates
+this section's **next-lane** answer to "the Phase 44C fixture-bound runner
+is accepted as the local runner proof, and the next lane is a docs /
+cross-repo Dixie-side admission contract request (Phase 45A), not a live
+admission implementation."
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
@@ -1126,18 +1180,23 @@ corresponding gates above are satisfied.
 
 ## 9. Recommended next phase
 
-> **Current recommendation (updated Phase 44B, 2026-06-02 · authoritative
-> in §5p).** The current recommended next phase is **Phase 44C — a
-> fixture-bound dev/operator reducer runner** (a local script / test-only
-> runner that reads the Phase 43C fixtures, calls the Phase 44A reducer,
-> and prints operator-safe scenario summaries). The Phase 43A-era
-> recommendation that follows (**Phase 43B — Admission Wedge MVP design**)
-> is **historical and already completed**: the Phase 43B design was
-> authored, the Phase 43C fixture contract landed via PR #155, and the
-> Phase 44A fixture-bound reducer landed via PR #156 (accepted by Phase
-> 44B, §5p). Read the remainder of this section as the superseded ladder
-> trail, not the current next step. §7 (live memory admission gates) and §8
-> (prohibitions) stay in force; no blocked lane is unblocked.
+> **Current recommendation (updated Phase 44D, 2026-06-02 · authoritative
+> in §5r).** The current recommended next phase is **Phase 45A — a
+> docs / cross-repo Dixie-side Admission Wedge contract request / handoff**
+> (a Freeside Characters-side request that hands the accepted proof stack —
+> 43B design · 43C fixtures · 44A reducer · 44C runner — to the Dixie /
+> Straylight owners and asks them to define or accept a live admission
+> contract *later*; it authorizes no implementation in any repo). The
+> intervening recommendation (**Phase 44C — a fixture-bound dev/operator
+> reducer runner**) is **completed**: the runner landed via PR #158 and is
+> accepted by Phase 44D (§5r). The Phase 43A-era recommendation that
+> follows (**Phase 43B — Admission Wedge MVP design**) is **historical and
+> already completed**: the Phase 43B design was authored, the Phase 43C
+> fixture contract landed via PR #155, and the Phase 44A fixture-bound
+> reducer landed via PR #156 (accepted by Phase 44B, §5p). Read the
+> remainder of this section as the superseded ladder trail, not the current
+> next step. §7 (live memory admission gates) and §8 (prohibitions) stay in
+> force; no blocked lane is unblocked.
 
 **Phase 43A-era recommended next phase (historical / completed): Phase 43B
 — Admission Wedge MVP design (docs / design or fixture-design only).**
@@ -1158,8 +1217,10 @@ tests as concrete targets, preferring Lane A, and implements no admission.
 > ladder record; this section's current recommendation follows them.
 
 Per Phase 43A (§5o) and its gate doc §M, the then-recommended next phase
-was **Phase 43B — Admission Wedge MVP design** (now completed; the current
-recommended next phase is **Phase 44C** per §5p and the banner above).
+was **Phase 43B — Admission Wedge MVP design** (now completed; the
+**Phase 44C** runner then recommended per §5p is likewise completed, and
+the current recommended next phase is now **Phase 45A** per §5r and the
+current Phase 44D banner above).
 Phase 43B's scope was:
 
 - docs / design or fixture-design only — **no implementation** of the
@@ -1242,6 +1303,23 @@ implementation, only after 43B's design is accepted. A dev-only
 > `docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md` §12. The runtime Lane A
 > implementation and the §7 live-memory-admission gates remain in force and
 > separately gated.
+
+> **Status note (Phase 44D runner acceptance / next-lane gate).** Phase
+> 44D (`docs/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md`, docs / decision
+> only) accepts the Phase 44C runner (PR #158) as the fixture-bound local
+> runner proof — fixtures → reducer → runner, with operator-safe scenario
+> summaries and a no-leak output posture — and selects **Phase 45A — a
+> docs / cross-repo Dixie-side admission contract request / handoff** as the
+> next lane. The Phase 45A artifact would summarize the Freeside Characters
+> proof stack (43B design · 43C fixtures · 44A reducer · 44C runner),
+> enumerate the candidate / admitted / rejected / superseded semantics, and
+> ask the Dixie / Straylight owners to define or accept a live admission
+> contract *later*; it authorizes no implementation in any repo. Phase 44D
+> implements nothing; it authorizes no production admission, runtime
+> storage, live Dixie admission, a Dixie-owned admission contract, a public
+> command, a user-facing write path, a package export, or Finn production
+> wiring. See §5r. The runtime Lane A implementation and the §7
+> live-memory-admission gates remain in force and separately gated.
 
 ### 9.1 Historical context — superseded Phase 35B recommendation
 

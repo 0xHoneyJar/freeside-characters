@@ -436,3 +436,23 @@ behavior, or Finn production wiring. The runner is imported only by its own
 test and the local `import.meta.main` CLI guard; it is not exported from the
 package surface and is wired into no runtime path. The §8.2 boundaries and
 the decision-map §7 / §8 gates remain in force.
+
+---
+
+## 13. Phase 44D status note — runner accepted; next lane is a Dixie-side contract request (Phase 45A)
+
+> Added by Phase 44D, 2026-06-02. Status note only; the decision in §5–§9
+> is unchanged and the §8.2 boundaries stay in force.
+
+The Phase 44C runner this gate selected (§7) has been accepted by **Phase
+44D** (`docs/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md`, docs / decision
+only). Phase 44D accepts the runner as the fixture-bound operator-readable
+proof over the existing fixtures and reducer, and selects **Phase 45A — a
+Dixie-side Admission Wedge contract request / handoff** (a docs / cross-repo
+request artifact that hands the proof stack to Dixie / Straylight and asks
+them to define or accept a live admission contract *later*) as the next
+lane. Phase 44D implements nothing and authorizes no implementation in any
+repo; live Dixie admission, a Dixie-owned admission contract, production
+admission / storage / auth / consent, a public command, `/remember-this`,
+and Finn production wiring all remain blocked. The §8.2 boundaries and the
+decision-map §7 / §8 gates stay in force.
