@@ -779,6 +779,19 @@ commit to one, under its own gate.
   implementation, **no** runtime, **no** Discord command, **no** live
   admission route, **no** storage. The Lane A implementation remains a
   later, separately gated phase.
+- `packages/persona-engine/src/recall-wedge/admission-wedge-fixture-reducer.ts`
+  (+ `.test.ts`) — **Phase 44A** fixture-bound reducer / adapter (added
+  after the Phase 43C contract). It turns the Phase 43C fixture shapes into
+  a pure, dependency-free local reducer that proves the §D invariant *in
+  code* (candidate classification · admission transition · recall-proof
+  projection · whole-scenario reduction) with stable fail-closed reason
+  codes and a no-leak seal over every safe projection. It is
+  **fixture-bound only**: it admits nothing, stores nothing, reaches no
+  network, and is imported only by its own test — **not** wired into
+  Discord, Dixie, the public renderer, the live client, dispatch, startup,
+  command registration, or any package export. It is **not** the §N(a) Lane
+  A implementation and **does not** authorize a live admission
+  implementation; the blocked work in §M and the Lane A gate stay in force.
 - `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
   Phase 43A decision gate (PR #151); the authority that selected the
   Admission Wedge and recommended this design (its §M). This design

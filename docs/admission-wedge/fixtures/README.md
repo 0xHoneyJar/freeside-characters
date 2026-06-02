@@ -15,6 +15,18 @@ production admission.
 > history. A future live implementation remains separately gated under
 > the decision-map §7 gates.
 
+> **Phase 44A status note (fixture-bound reducer / adapter).** Phase 44A
+> adds a pure, dependency-free local reducer / adapter over these fixtures
+> at
+> `packages/persona-engine/src/recall-wedge/admission-wedge-fixture-reducer.ts`
+> (+ test) that proves the invariant below *in code*. It is **fixture-bound
+> only** — it admits nothing, stores nothing, reaches no network, and is
+> imported only by its own test (not wired into Discord, Dixie, the public
+> renderer, the live client, dispatch, startup, command registration, or
+> any package export). It does **not** mutate these fixtures and does
+> **not** authorize a live admission implementation. The runtime Lane A
+> implementation and the decision-map §7 gates remain separately gated.
+
 ## What this proves
 
 The load-bearing invariant, carried verbatim from Phase 43B §D / Phase
