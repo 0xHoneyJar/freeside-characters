@@ -267,3 +267,10 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   wired into no runtime path — and it authorizes no live admission, storage,
   command, Dixie route, network call, package export, LLM / voice, or Finn
   production wiring.
+- `docs/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md` — **Phase 44D** runner
+  acceptance / next-lane decision gate (docs / decision only). It accepts
+  the Phase 44C runner over these fixtures as the fixture-bound local runner
+  proof and selects **Phase 45A — a docs / cross-repo Dixie-side admission
+  contract request / handoff** as the next lane. It mutates nothing here and
+  authorizes no live admission, a Dixie-owned admission contract, storage,
+  command, Dixie route, or package export.

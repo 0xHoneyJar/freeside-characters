@@ -801,6 +801,19 @@ commit to one, under its own gate.
   production admission, runtime storage, a public command, a user-facing
   write path, a live Dixie admission route, or any Finn production wiring;
   the §M blocked work and the §N(a) Lane A gate stay in force.
+- `packages/persona-engine/src/recall-wedge/run-admission-wedge-fixture-demo.ts`
+  (+ `.test.ts`) — **Phase 44C** fixture-bound dev/operator reducer runner
+  (PR #158). It *reads* the Phase 43C fixtures and *calls* the Phase 44A
+  reducer to print operator-safe scenario summaries; it mutates no fixture,
+  reimplements no reducer semantics, is imported only by its own test + a
+  local CLI guard, and authorizes no live admission. **Phase 44D**
+  (`docs/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md`, docs / decision only)
+  accepts this runner as the fixture-bound local runner proof and selects
+  **Phase 45A — a docs / cross-repo Dixie-side admission contract request /
+  handoff** as the next lane; it implements nothing and authorizes no
+  production admission, live Dixie admission, a Dixie-owned admission
+  contract, a public command, a package export, or Finn production wiring;
+  the §M blocked work and the §N(a) Lane A gate stay in force.
 - `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
   Phase 43A decision gate (PR #151); the authority that selected the
   Admission Wedge and recommended this design (its §M). This design
