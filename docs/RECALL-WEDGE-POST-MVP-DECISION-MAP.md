@@ -1092,6 +1092,24 @@ implementation, only after 43B's design is accepted. A dev-only
 > admission route, no storage. The runtime Lane A implementation and the
 > §7 live-memory-admission gates remain in force and separately gated.
 
+> **Status note (Phase 44A fixture-bound reducer / adapter).** Phase 44A
+> adds a pure, dependency-free local reducer / adapter over the Phase 43C
+> fixtures at
+> `packages/persona-engine/src/recall-wedge/admission-wedge-fixture-reducer.ts`
+> (+ test), proving the §43A/§43B invariant *in code* against the
+> already-existing fixture graph (classify candidate · apply transition ·
+> project recall proof · reduce scenario, with stable fail-closed reason
+> codes and a no-leak seal on every safe projection). It is **fixture-bound
+> only**: it admits nothing, stores nothing, reaches no network, and is
+> imported only by its own test — **not** wired into Discord, Dixie, the
+> public renderer, the live client, dispatch, startup, command
+> registration, or any package export. It **does not** authorize a live
+> admission implementation, production admission, production storage,
+> production auth / consent, public remember-this, Discord history
+> ingestion, user chat becoming memory, a live Dixie admission route, or
+> any Finn production wiring. The runtime Lane A implementation and the §7
+> live-memory-admission gates remain in force and separately gated.
+
 ### 9.1 Historical context — superseded Phase 35B recommendation
 
 > **Superseded.** Kept for ladder continuity only. The recommendation
