@@ -978,6 +978,47 @@ admission implementation."
 
 ---
 
+### 5q. Phase 44C addendum — fixture-bound dev/operator reducer runner added; runner only, no live admission
+
+> Added by Phase 44C, 2026-06-02. Targeted addendum, not a rewrite of this
+> section.
+
+Status as of Phase 44C:
+
+- **Phase 44C implements the Option A lane Phase 44B selected (§5p).** It
+  adds a local dev/operator runner
+  (`packages/persona-engine/src/recall-wedge/run-admission-wedge-fixture-demo.ts`
+  + `.test.ts`) that *reads* the existing Phase 43C fixtures and *calls* the
+  existing Phase 44A reducer to print operator-safe scenario summaries
+  (before-admission excluded; accepted included; rejected excluded;
+  supersession corrected-only; a synthetic malformed fail-closed case
+  constructed in memory, never written to fixture JSON). Each summary carries
+  only safe fields — scenario name, outcome, stable reducer reason code,
+  short fixture ids, an audit-link presence boolean, a canned one-liner — and
+  is sealed through the reducer's own no-leak scan.
+- **It mutates no fixture and reimplements no reducer semantics.** The runner
+  reads the Phase 43C fixtures read-only and composes the Phase 44A reducer;
+  it is the analogue of the accepted Recall Wedge Phase 35B dev/operator
+  runner.
+- **It is wired into no runtime path.** The runner is imported only by its
+  own test and a local `import.meta.main` CLI guard; it is not exported from
+  the package surface and is not reachable from Discord, Dixie, the renderer,
+  dispatch, startup, or command registration.
+- **Live Dixie-backed admission, production storage / admission, public
+  remember-this, Discord history ingestion, user chat becoming memory,
+  production auth / consent, public rollout, Telegram / private chat, LLM /
+  voice, a forget / revoke / correction UI, package exports, and Finn
+  production wiring all remain blocked** behind separate later gates. Phase
+  44C expands the Phase 43A / 43B / 44B authorization in no way, and §7 (live
+  memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 44C status note in
+`docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md` §12; it only records that
+the Phase 44B-selected runner lane is now implemented as a fixture-bound
+dev/operator runner, not a live admission implementation.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
@@ -1185,6 +1226,22 @@ implementation, only after 43B's design is accepted. A dev-only
 > user-facing write path, live Dixie admission route, or Finn production
 > wiring. See §5p. The runtime Lane A implementation and the §7
 > live-memory-admission gates remain in force and separately gated.
+
+> **Status note (Phase 44C fixture-bound dev/operator reducer runner).**
+> Phase 44C implements the Phase 44B-selected Option A lane: a local
+> dev/operator runner
+> (`packages/persona-engine/src/recall-wedge/run-admission-wedge-fixture-demo.ts`
+> + test) that reads the Phase 43C fixtures, calls the Phase 44A reducer,
+> and prints operator-safe scenario summaries (before-admission excluded;
+> accepted included; rejected excluded; supersession corrected-only; a
+> synthetic malformed fail-closed case). It mutates no fixture, reimplements
+> no reducer semantics, is imported only by its own test + a local CLI guard
+> (not exported, wired into no runtime path), and authorizes no live
+> admission, storage, command, Dixie route, network call, package export,
+> LLM / voice, or Finn production wiring. See §5q and
+> `docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md` §12. The runtime Lane A
+> implementation and the §7 live-memory-admission gates remain in force and
+> separately gated.
 
 ### 9.1 Historical context — superseded Phase 35B recommendation
 

@@ -392,3 +392,47 @@ Other related artifacts (read only; **unchanged by Phase 44B**):
   accepted controlled dev/operator seeded live recall (PR #150); the
   read-side primitive a future recall-after-admission proof would reuse
   unchanged, well beyond this gate.
+
+---
+
+## 12. Phase 44C status note — fixture-bound dev/operator reducer runner added
+
+> Added by Phase 44C, 2026-06-02. Status note only; the decision in §5–§9
+> is unchanged and the §8.2 boundaries stay in force.
+
+Phase 44C implements the Option A lane this gate selected (§7), inside the
+§8.1 scope and under the §8.2 boundaries:
+
+- `packages/persona-engine/src/recall-wedge/run-admission-wedge-fixture-demo.ts`
+  (+ `.test.ts`) — a local dev/operator runner that *reads* the existing
+  Phase 43C fixtures, *calls* the existing Phase 44A reducer
+  (`reduceAdmissionFixtureScenario`), and prints operator-safe scenario
+  summaries for the five §8.1 scenarios:
+  - `before_admission_excluded` — candidate excluded before admission;
+  - `accepted_admitted_included` — admitted assertion included;
+  - `rejected_excluded` — rejected candidate excluded, nothing minted;
+  - `supersession_corrected_only` — corrected active included, prior excluded;
+  - `malformed_fail_closed` — a synthetic, in-memory malformed candidate
+    (carrying a private sentinel + a long-id run, never written to fixture
+    JSON) routed through the same reducer entry point, proving fail-closed
+    behavior without leaking its unsafe input.
+- Each summary carries only safe fields: scenario name, outcome
+  (`excluded` / `included` / `fail_closed`), a stable reducer reason code,
+  short fixture ids (included / excluded), an audit-link **presence**
+  boolean (never the raw audit body), and a canned one-line summary. Every
+  summary is sealed through the Phase 44A reducer's `scanForUnsafeProjection`
+  no-leak scan.
+- It runs the existing acceptance set: `git diff --check` clean, both
+  fixture validators pass, the Phase 44A reducer test passes, the new runner
+  test passes, and the multi-surface + live-Dixie regressions pass
+  (proving no live-egress regression).
+
+Phase 44C does **not** authorize live admission, a Discord command,
+`/remember-this`, public remember-this, Discord history ingestion, user
+chat becoming memory, storage writes, production auth / consent, a live
+Dixie admission route, network calls, package exports, public renderer
+changes, dispatch / startup / command-registration changes, LLM / voice
+behavior, or Finn production wiring. The runner is imported only by its own
+test and the local `import.meta.main` CLI guard; it is not exported from the
+package surface and is wired into no runtime path. The §8.2 boundaries and
+the decision-map §7 / §8 gates remain in force.

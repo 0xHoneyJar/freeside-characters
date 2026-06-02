@@ -256,3 +256,14 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   would *read* these fixtures and *call* that reducer; it would **not**
   add, mutate, or regenerate any fixture here, and it authorizes no live
   admission, storage, command, or Dixie route.
+- `packages/persona-engine/src/recall-wedge/run-admission-wedge-fixture-demo.ts`
+  (+ `.test.ts`) — **Phase 44C** fixture-bound dev/operator reducer runner.
+  It *reads* these fixtures (read-only; it adds, mutates, and regenerates
+  nothing here) and *calls* the Phase 44A reducer to print operator-safe
+  scenario summaries (before-admission excluded; accepted included; rejected
+  excluded; supersession corrected-only; a synthetic malformed fail-closed
+  case constructed in memory, never written here). It is imported only by
+  its own test and a local CLI guard — not exported from the package and
+  wired into no runtime path — and it authorizes no live admission, storage,
+  command, Dixie route, network call, package export, LLM / voice, or Finn
+  production wiring.
