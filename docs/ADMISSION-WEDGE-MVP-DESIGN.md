@@ -826,6 +826,20 @@ commit to one, under its own gate.
   accepts no contract, and does **not** claim a Dixie admission contract
   already exists. The §M blocked work and the §N(a) Lane A gate stay in
   force.
+- `docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md` — **Phase 45C**
+  Dixie response reconciliation (docs / reconciliation only). It reads the
+  Dixie **Phase 33A / PR #118** contract response against the Phase 45A
+  request and this proof stack: Dixie accepted the *need* for a Dixie-side /
+  cross-repo-owned contract, the §D invariant, the no-leak / fail-closed
+  posture, a provisional **draft v0** vocabulary, and the need to reconcile
+  candidate / admitted / rejected / superseded semantics against the
+  canonical Straylight lifecycle — but froze no production schema and
+  implemented no live route. Phase 45C selects **Phase 45D — a docs /
+  decision reconciliation matrix gate** as the next lane; it implements
+  nothing, accepts no contract on Dixie's behalf, and authorizes no
+  production admission, live route, storage, command, package export, or
+  Finn production wiring. The §M blocked work and the §N(a) Lane A gate stay
+  in force.
 - `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
   Phase 43A decision gate (PR #151); the authority that selected the
   Admission Wedge and recommended this design (its §M). This design

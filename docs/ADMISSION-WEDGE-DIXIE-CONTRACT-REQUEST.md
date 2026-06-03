@@ -649,3 +649,33 @@ Other related artifacts (read only; **unchanged by Phase 45A**):
   responsibility boundaries (Straylight owns the canonical admission /
   estate / receipt semantics; Dixie owns the admission route / policy /
   auth boundary) this request addresses.
+
+---
+
+## 13. Phase 45C status note — Dixie responded; reconciliation authored
+
+> Added by Phase 45C
+> (`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`), 2026-06-03.
+> Status note only; this request's §1–§12 are unchanged.
+
+Dixie answered this request with **Phase 33A / PR #118**
+(`../loa-dixie/docs/ADMISSION-WEDGE-CONTRACT-RESPONSE.md`), a docs-only,
+code-inspection-grounded contract response / acceptance gate. Dixie accepted
+the **need** for a Dixie-side or cross-repo-owned Admission Wedge contract
+before any live implementation, accepted the §4 core invariant and the
+no-leak / fail-closed posture, accepted the need to reconcile the candidate /
+admitted / rejected / superseded vocabulary against the canonical Straylight
+lifecycle (its §6 maps most of the §7 proposed terms onto existing canonical
+names), and accepted a provisional **draft v0** vocabulary for *future*
+fixture / probe alignment. Dixie did **not** freeze a final production
+schema, did **not** implement a live route, and explicitly kept storage
+writes, production admission / auth / consent, a public command,
+`/remember-this`, Discord history ingestion, chat-becomes-memory, package
+exports, LLM / voice, Finn production wiring, and a forget / revoke /
+correction UI blocked. Freeside Characters' reading of that response,
+the vocabulary / contract-area reconciliation, and the conservative next
+lane (Phase 45D — a docs / decision reconciliation matrix gate; live work
+still blocked) are recorded in
+`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`. No Dixie admission
+contract is frozen and no live admission route exists; the §8 boundaries and
+the decision-map §7 / §8 gates stay in force.

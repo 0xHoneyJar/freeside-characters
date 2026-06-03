@@ -506,3 +506,30 @@ Dixie-owned admission contract, production admission / storage / auth /
 consent, a public command, `/remember-this`, package exports, and Finn
 production wiring all remain blocked; the §8.2 boundaries and the
 decision-map §7 / §8 gates stay in force.
+
+---
+
+## 13. Phase 45C status note — Dixie responded; reconciliation authored
+
+> Added by Phase 45C
+> (`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`), 2026-06-03.
+> Status note only; the decision in §5–§9 is unchanged and the §8.2
+> boundaries stay in force.
+
+The Phase 45A request this gate selected (§7) was answered by Dixie **Phase
+33A / PR #118** and reconciled on the Freeside Characters side by **Phase
+45C** (`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`, docs /
+reconciliation only). Dixie accepted the *need* for a Dixie-side or
+cross-repo-owned admission contract, accepted the core invariant and the
+no-leak / fail-closed posture, accepted a provisional **draft v0**
+vocabulary, and accepted the need to reconcile candidate / admitted /
+rejected / superseded semantics against the canonical Straylight
+lifecycle — but **did not** freeze a production schema, **did not** implement
+a live route, and kept storage / production admission / auth / consent, a
+public command, `/remember-this`, package exports, LLM / voice, and Finn
+production wiring blocked. Phase 45C records that reconciliation and selects
+**Phase 45D — a docs / decision reconciliation matrix / fixture-probe
+alignment gate** as the conservative next lane, with implementation still
+blocked. Phase 45C implements nothing and authorizes no implementation in
+any repo; the §8.2 boundaries and the decision-map §7 / §8 gates stay in
+force.
