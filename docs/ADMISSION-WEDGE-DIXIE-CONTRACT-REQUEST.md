@@ -679,3 +679,26 @@ still blocked) are recorded in
 `docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`. No Dixie admission
 contract is frozen and no live admission route exists; the §8 boundaries and
 the decision-map §7 / §8 gates stay in force.
+
+---
+
+## 14. Phase 45D status note — reconciliation matrix authored
+
+> Added by Phase 45D
+> (`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`), 2026-06-03.
+> Status note only; this request's §1–§12 are unchanged.
+
+The A–J contract decisions this request enumerated (§6) and the
+non-authoritative proposed vocabulary (§7) have now been reconciled against
+the Dixie Phase 33A response and converted into an explicit matrix by
+**Phase 45D** (`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`,
+docs / decision · docs-planning only). The matrix records, per contract
+area, the Dixie position, the local proof status, the field / shape
+mismatch, and a future action — and flags that several §7 proposed terms
+are draft-v0 only (notably `unsupported_admission_shape`, which is **not**
+an emitted reducer code; the emitted code is `unsupported_fixture_shape`).
+Phase 45D renames no fixture label, mutates no reducer reason code, freezes
+no schema, and authorizes no implementation; it selects **Phase 45E — a
+fixture-probe alignment decision / Dixie-first handoff** as the conservative
+next lane. No Dixie admission contract is frozen and no live admission route
+exists; the §8 boundaries and the decision-map §7 / §8 gates stay in force.

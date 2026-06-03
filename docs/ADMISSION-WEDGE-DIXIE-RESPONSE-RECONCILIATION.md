@@ -752,3 +752,29 @@ Other related artifacts (read only; **unchanged by Phase 45C**):
   (Straylight owns the canonical admission / estate / receipt semantics;
   Dixie owns the admission route / policy / auth boundary) this
   reconciliation reads the Dixie response against.
+
+---
+
+## 15. Phase 45D status note — reconciliation matrix authored
+
+> Added by Phase 45D
+> (`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`), 2026-06-03.
+> Status note only; this reconciliation's §1–§14 are unchanged.
+
+The §6 vocabulary direction and the §7 A–J implications of this
+reconciliation are now made **precise** by **Phase 45D**
+(`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`, docs / decision ·
+docs-planning only). Phase 45D converts the narrative reconciliation into
+three explicit tables — a per-label vocabulary matrix, a per-field
+field / shape matrix, and an A–J contract-area matrix — each pinning a
+status and a future action. It surfaces, among others, the 3-way
+`rejected` / `candidate_not_admitted` / `candidate_rejected` synonym
+collision, the proposal-only `unsupported_admission_shape` vs the
+emitted `unsupported_fixture_shape`, the missing idempotency key, and the
+`admission_authority` → canonical `SignerType` mismatch. Phase 45D renames
+no fixture label, mutates no reducer reason code, freezes no schema, and
+authorizes no implementation; it selects **Phase 45E — a fixture-probe
+alignment decision / Dixie-first handoff (docs / decision)** as the
+conservative next lane, with a Dixie-first posture (Dixie Phase 33B as the
+likely first canonical fixture / probe owner) and live work still blocked.
+The §11 blocked list and the decision-map §7 / §8 gates stay in force.

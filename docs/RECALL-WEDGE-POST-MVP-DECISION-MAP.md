@@ -1171,6 +1171,49 @@ records that the Dixie response is now reconciled on the Freeside side and
 that the next lane is a docs / decision reconciliation matrix gate, not a
 live admission implementation.
 
+### 5u. Phase 45D addendum — reconciliation matrix authored; fixture-probe alignment decision (Dixie-first) is the next lane, not an implementation
+
+> Added by Phase 45D
+> (`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`), 2026-06-03.
+> Targeted addendum, not a rewrite of this section; §5t stays in force.
+
+Status as of Phase 45D:
+
+- **Phase 45D is docs / decision · docs-planning only.** It authors the
+  reconciliation matrix the §5t / Phase 45C lane selected and adds small
+  cross-reference back-notes; it adds no source, test, fixture JSON,
+  package, lockfile, config, CI, or generated change, renames no fixture
+  label, mutates no reducer reason code, and freezes no schema.
+- **The matrix converts the Phase 45C narrative reconciliation into three
+  explicit tables** — a per-label vocabulary matrix, a per-field
+  field / shape matrix, and an A–J contract-area matrix — each pinning a
+  status and a future action against the Dixie Phase 33A direction. It
+  surfaces the 3-way `rejected` / `candidate_not_admitted` /
+  `candidate_rejected` synonym collision, the proposal-only
+  `unsupported_admission_shape` vs the emitted `unsupported_fixture_shape`,
+  the missing idempotency key, and the `admission_authority` → canonical
+  `SignerType` mismatch.
+- **Phase 45D selects Phase 45E — a fixture-probe alignment decision /
+  Dixie-first handoff (docs / decision)** as the conservative next lane,
+  with a Dixie-first posture: Dixie / Straylight own the canonical
+  vocabulary, and Dixie Phase 33B is the likely first canonical
+  fixture / probe owner. Waiting for Dixie Phase 33B with no new Freeside
+  gate is an acceptable alternative.
+- **Live Dixie-backed admission, a live Dixie admission route, a frozen
+  final production schema, production storage / admission / auth / consent,
+  public remember-this, Discord message-history ingestion, user chat
+  becoming memory, public rollout, Telegram / private chat, LLM / voice, a
+  forget / revoke / correction UI, package exports, and Finn production
+  wiring all remain blocked** behind separate later gates. The current local
+  fixture / reducer / runner vocabulary remains valid local proof labels
+  until a separately-authorized fixture / probe alignment implementation
+  changes them. Phase 45D expands the prior authorization in no way, and §7
+  (live memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45D matrix; it only records that
+the matrix is authored and that the next lane is a fixture-probe alignment
+decision / Dixie-first handoff, not a live admission implementation.
+
 ---
 
 ## 6. Decision gates before live Dixie client (Option C)
