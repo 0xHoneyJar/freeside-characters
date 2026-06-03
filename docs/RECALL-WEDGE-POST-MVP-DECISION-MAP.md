@@ -1119,6 +1119,58 @@ This addendum does not duplicate the Phase 45A request doc; it only records
 that the Phase 44D-selected lane is now authored as a docs / cross-repo
 Dixie-side admission contract request, not a live admission implementation.
 
+### 5t. Phase 45C addendum — Dixie responded (Phase 33A / PR #118); Freeside reconciliation authored; reconciliation matrix is the next lane, not a live admission implementation
+
+> Added by Phase 45C
+> (`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`), 2026-06-03.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 45C:
+
+- **Phase 45C is docs / reconciliation only.** It adds no source, test,
+  fixture JSON, package, lockfile, config, CI, or generated change, and no
+  handler / registration / dispatch / package-export change. It implements
+  nothing in any repo and changes no Dixie code.
+- **Dixie answered the Phase 45A request (§5s) with Phase 33A / PR #118**
+  (`../loa-dixie/docs/ADMISSION-WEDGE-CONTRACT-RESPONSE.md`), a docs-only,
+  code-inspection-grounded contract response. Dixie **accepted** the *need*
+  for a Dixie-side or cross-repo-owned Admission Wedge contract before any
+  live implementation, the core candidate / admitted invariant, the no-leak /
+  fail-closed posture, the need to reconcile candidate / admitted / rejected /
+  superseded semantics against the canonical Straylight lifecycle vocabulary
+  (its §6 maps most proposed terms onto canonical names —
+  `candidate_pending` → `proposed`, `admitted` → the `admit_assertion` /
+  `assertion_admitted` act with resulting status `active`, `rejected` /
+  `candidate_not_admitted` / `candidate_rejected` → `transition_denied`,
+  `superseded` as-is), and a provisional **draft v0** vocabulary for
+  *future* fixture / probe alignment.
+- **Dixie did not freeze a production schema and did not implement a live
+  route.** It explicitly kept storage writes, production admission /
+  auth / consent, a public command, `/remember-this`, Discord history
+  ingestion, chat-becomes-memory, package exports, LLM / voice, Finn
+  production wiring, and a forget / revoke / correction UI blocked.
+- **Phase 45C records the Freeside-side reconciliation** and selects
+  **Phase 45D — a docs / decision reconciliation matrix / fixture-probe
+  alignment gate** as the conservative next lane (compare the local 43C /
+  44A / 44C proof stack against the Dixie 33A response; enumerate
+  vocabulary / field mismatches; decide later whether to update local
+  fixtures / reducer / runner labels — implementation still blocked).
+- **Live Dixie-backed admission, a live Dixie admission route, a frozen
+  final production schema, production storage / admission / auth / consent,
+  public remember-this, Discord message-history ingestion, user chat
+  becoming memory, public rollout, Telegram / private chat, LLM / voice, a
+  forget / revoke / correction UI, package exports, and Finn production
+  wiring all remain blocked** behind separate later gates. The current
+  local fixture / reducer / runner vocabulary remains valid local proof
+  labels until a future Phase 45D explicitly reconciles them. Phase 45C
+  expands the Phase 43A / 43B / 44B / 44D / 45A authorization in no way, and
+  §7 (live memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45C reconciliation doc; it only
+records that the Dixie response is now reconciled on the Freeside side and
+that the next lane is a docs / decision reconciliation matrix gate, not a
+live admission implementation.
+
 ---
 
 ## 6. Decision gates before live Dixie client (Option C)
@@ -1245,7 +1297,23 @@ corresponding gates above are satisfied.
 > acceptance), **Phase 45C** (a Freeside Characters reconciliation against an
 > accepted contract), or — only after a contract exists — later separately
 > gated live Dixie admission route / dev-operator candidate command work;
-> **none of those future phases are authorized by Phase 45A.** The
+> **none of those future phases are authorized by Phase 45A.**
+>
+> **Update (Phase 45C, 2026-06-03 · authoritative in §5t).** Dixie has since
+> answered the Phase 45A request with **Phase 33A / PR #118** (a docs-only
+> contract response that accepts the *need* for a contract, the core
+> invariant, the no-leak posture, and a provisional **draft v0** vocabulary,
+> but freezes no production schema and implements no live route), and Phase
+> 45C (`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`, docs /
+> reconciliation only) reconciles that response on the Freeside side. The
+> "Phase 45C reconciliation against an accepted contract" framing above is
+> refined accordingly: the accepted artifact is a contract *response* (the
+> need + a draft vocabulary), not a frozen contract. Phase 45C selects
+> **Phase 45D — a docs / decision reconciliation matrix / fixture-probe
+> alignment gate** as the conservative next lane; live admission, a live
+> Dixie route, storage, a command, package exports, and Finn production
+> wiring all remain blocked.
+> The
 > intervening recommendation (**Phase 44C — a fixture-bound dev/operator
 > reducer runner**) is **completed**: the runner landed via PR #158 and is
 > accepted by Phase 44D (§5r). The Phase 43A-era recommendation that

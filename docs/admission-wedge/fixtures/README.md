@@ -283,3 +283,16 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   evidence of the local proof, implements nothing in any repo, changes no
   Dixie code, accepts no contract, and does **not** claim a Dixie admission
   contract already exists.
+- `docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md` — **Phase 45C**
+  Dixie response reconciliation (docs / reconciliation only). It reconciles
+  the Dixie **Phase 33A / PR #118** contract response against the Phase 45A
+  request and the local proof stack, including a vocabulary table mapping
+  these fixtures' labels (`candidate_pending`, `admitted`, `rejected`,
+  `superseded`, …) onto the canonical Straylight lifecycle direction
+  (`proposed` / `active` / `transition_denied` / `superseded`), pending the
+  final contract. It mutates nothing here: the fixture field values remain
+  valid **local proof labels** until a future, separately-authorized Phase
+  45D reconciliation matrix / fixture-probe alignment explicitly changes
+  them. Dixie froze no production schema and implemented no live route; this
+  reconciliation authorizes no live admission, storage, command, Dixie
+  route, package export, or Finn production wiring.

@@ -476,3 +476,29 @@ Straylight owners to define or accept a live admission contract *later*. It
 implements nothing in any repo, changes no Dixie code, accepts no contract,
 and does **not** claim a Dixie admission contract already exists. The §8.2
 boundaries and the decision-map §7 / §8 gates stay in force.
+
+---
+
+## 15. Phase 45C status note — Dixie responded; reconciliation authored
+
+> Added by Phase 45C
+> (`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`), 2026-06-03.
+> Status note only; the decision in §5–§9 is unchanged and the §8.2
+> boundaries stay in force.
+
+The Phase 45A request that handed off this gate's accepted proof stack has
+since been answered by Dixie **Phase 33A / PR #118** and reconciled on the
+Freeside Characters side by **Phase 45C**
+(`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`, docs /
+reconciliation only). Dixie accepted the *need* for a Dixie-side or
+cross-repo-owned admission contract, the core invariant, the no-leak /
+fail-closed posture, a provisional **draft v0** vocabulary, and the need to
+reconcile candidate / admitted / rejected / superseded semantics against the
+canonical Straylight lifecycle — but froze no production schema, implemented
+no live route, and kept storage / production admission / auth / consent, a
+public command, `/remember-this`, package exports, LLM / voice, and Finn
+production wiring blocked. Phase 45C records that reconciliation and selects
+**Phase 45D — a docs / decision reconciliation matrix / fixture-probe
+alignment gate** as the conservative next lane, with implementation still
+blocked. Phase 45C implements nothing in any repo; the §8.2 boundaries and
+the decision-map §7 / §8 gates stay in force.
