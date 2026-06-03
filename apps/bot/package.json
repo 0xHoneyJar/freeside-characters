@@ -11,14 +11,20 @@
     "rlhf:preview": "bun run src/cli/rlhf-preview.ts",
     "build": "bun build src/index.ts --outdir dist --target node",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "conformance:check": "bun run scripts/check-substrate-conformance.ts",
+    "lint:shadow-import-boundary": "bash ../../scripts/lint-shadow-import-boundary.sh"
   },
   "dependencies": {
+    "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#68f5a89cb02c6b3ddf5ab14a1d65753bc02bd9fe",
     "@0xhoneyjar/quests-discord-renderer": "^0.1.2",
     "@0xhoneyjar/quests-engine": "^0.1.2",
     "@0xhoneyjar/quests-protocol": "^0.1.2",
     "@freeside-characters/persona-engine": "workspace:*",
-    "effect": "^3.10.0"
+    "@freeside-worlds/shadow-substrate": "github:0xHoneyJar/freeside-worlds#26d11b78e6f0c2ce81cbd1fc24088157cea74e53",
+    "discord.js": "^14.16.3",
+    "effect": "^3.10.0",
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "@noble/curves": "^1.7.0",
