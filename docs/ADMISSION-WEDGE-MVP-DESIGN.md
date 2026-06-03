@@ -840,6 +840,17 @@ commit to one, under its own gate.
   production admission, live route, storage, command, package export, or
   Finn production wiring. The §M blocked work and the §N(a) Lane A gate stay
   in force.
+- `docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md` — **Phase 45D**
+  contract reconciliation matrix / fixture-probe alignment gate (docs /
+  decision · docs-planning only). It converts the Phase 45C reconciliation
+  into explicit vocabulary / field-shape / A–J tables against the Dixie
+  Phase 33A response, pinning a status and future action per row, and
+  confirms the §F packet shapes and §D invariant remain valid **local proof
+  shapes, not a frozen schema**. It renames no fixture label, mutates no
+  reducer reason code, freezes no schema, and authorizes no implementation;
+  it selects **Phase 45E — a fixture-probe alignment decision / Dixie-first
+  handoff** as the next lane. The §M blocked work and the §N(a) Lane A gate
+  stay in force.
 - `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
   Phase 43A decision gate (PR #151); the authority that selected the
   Admission Wedge and recommended this design (its §M). This design

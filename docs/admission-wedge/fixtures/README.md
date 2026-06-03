@@ -296,3 +296,17 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   them. Dixie froze no production schema and implemented no live route; this
   reconciliation authorizes no live admission, storage, command, Dixie
   route, package export, or Finn production wiring.
+- `docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md` — **Phase 45D**
+  contract reconciliation matrix / fixture-probe alignment gate (docs /
+  decision · docs-planning only). It converts the Phase 45C reconciliation
+  into explicit per-label, per-field, and A–J contract-area tables — mapping
+  these fixtures' field names (`candidate_id`, `proposed_assertion_class`,
+  `admission_state`, `admission_authority`, `assertion_status`, …) and
+  values against the Dixie Phase 33A direction, and flagging the missing
+  idempotency key and the `admission_authority` → canonical `SignerType`
+  mismatch. It **mutates no fixture JSON** here: these field values remain
+  valid **local proof labels** until a separately-authorized fixture / probe
+  alignment implementation changes them. It freezes no schema and selects
+  **Phase 45E — a fixture-probe alignment decision / Dixie-first handoff** as
+  the next lane; live admission, storage, command, Dixie route, package
+  export, and Finn production wiring stay blocked.

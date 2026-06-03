@@ -533,3 +533,22 @@ alignment gate** as the conservative next lane, with implementation still
 blocked. Phase 45C implements nothing and authorizes no implementation in
 any repo; the §8.2 boundaries and the decision-map §7 / §8 gates stay in
 force.
+
+---
+
+## 14. Phase 45D status note — reconciliation matrix authored
+
+> Added by Phase 45D
+> (`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`), 2026-06-03.
+> Status note only; the decision in §5–§9 is unchanged and the §8.2
+> boundaries stay in force.
+
+The Phase 45D reconciliation matrix selected by Phase 45C is now authored
+(`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`, docs / decision ·
+docs-planning only). It converts the Phase 45C narrative reconciliation into
+explicit vocabulary / field-shape / A–J tables, confirms the Phase 44C
+runner summaries (this gate's subject) remain valid **local proof
+artifacts** unchanged, and authorizes no implementation. It selects
+**Phase 45E — a fixture-probe alignment decision / Dixie-first handoff** as
+the conservative next lane, with live work still blocked. The §8.2
+boundaries and the decision-map §7 / §8 gates stay in force.

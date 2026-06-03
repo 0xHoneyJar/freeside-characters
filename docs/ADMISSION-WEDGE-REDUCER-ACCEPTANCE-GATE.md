@@ -502,3 +502,26 @@ production wiring blocked. Phase 45C records that reconciliation and selects
 alignment gate** as the conservative next lane, with implementation still
 blocked. Phase 45C implements nothing in any repo; the §8.2 boundaries and
 the decision-map §7 / §8 gates stay in force.
+
+---
+
+## 16. Phase 45D status note — reconciliation matrix authored
+
+> Added by Phase 45D
+> (`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`), 2026-06-03.
+> Status note only; the decision in §5–§9 is unchanged and the §8.2
+> boundaries stay in force.
+
+The Phase 45D reconciliation matrix is now authored
+(`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`, docs / decision ·
+docs-planning only). It maps the Phase 44A reducer's 17 stable reason codes
+(this gate's subject) onto the canonical Straylight direction per Dixie
+Phase 33A §6 / §6.1 — flagging the 3-way `rejected` /
+`candidate_not_admitted` / `candidate_rejected` synonym collision and that
+the emitted `unsupported_fixture_shape` (not the proposal-only
+`unsupported_admission_shape`) is the real shape-failure code — while
+**mutating no reason code** and confirming the reducer behavior remains a
+valid local proof artifact. It authorizes no implementation and selects
+**Phase 45E — a fixture-probe alignment decision / Dixie-first handoff** as
+the conservative next lane. The §8.2 boundaries and the decision-map
+§7 / §8 gates stay in force.
