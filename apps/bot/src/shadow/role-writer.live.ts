@@ -62,7 +62,7 @@
  *    change — FLAGGED as a follow-up, NOT hacked here.
  */
 import { Effect, Layer } from "effect";
-import type { Client, Guild, Role } from "discord.js";
+import type { Client, Guild } from "discord.js";
 import { RoleWriter, WriteError } from "./substrate.ts";
 import type {
   WriteCapability,
@@ -167,16 +167,68 @@ export function makeRoleWriterLive(
   cfg: LiveWriterConfig,
   sleep: (ms: number) => Promise<void> = defaultSleep,
 ): Layer.Layer<RoleWriter> {
-  const guildFor = async (): Promise<Guild> => {
-    const wiring = cfg.resolve(cfg.world);
-    if (!wiring) throw new Error(`no guild wiring for world '${cfg.world}'`);
-    const client = await getBotClient();
-    if (!client) {
-      throw new Error(
-        "discord bot client unavailable (DISCORD_BOT_TOKEN unset) — cannot perform LIVE role writes",
-      );
+  // ── PER-BATCH READ SNAPSHOT (F1/F2 read-amplification remediation) ──────────
+  // This Layer instance lives for ONE batch's `applyBatch` (the composition root
+  // rebuilds it per batch — same lifetime as `createdInBatch` below). The gate
+  // serializes the whole batch behind the WorldLock, so the batch IS a
+  // consistency boundary: we may fetch the guild + its roleset ONCE and reuse the
+  // snapshot across every op in the batch instead of re-fetching the full guild +
+  // full roleset per create/assign. Without this, an N-op batch issued O(N) full
+  // `guild.roles.fetch()` reads — a 429 generator at guild scale. Discord
+  // confirms a `roles.create` by returning the created role, so we MUTATE the
+  // cached roleset in place (push the new role) to keep a same-batch assign's
+  // name-resolve correct without a re-fetch.
+  let guildPromise: Promise<Guild> | undefined;
+  const guildFor = (): Promise<Guild> => {
+    if (guildPromise === undefined) {
+      guildPromise = (async () => {
+        const wiring = cfg.resolve(cfg.world);
+        if (!wiring) throw new Error(`no guild wiring for world '${cfg.world}'`);
+        const client = await getBotClient();
+        if (!client) {
+          throw new Error(
+            "discord bot client unavailable (DISCORD_BOT_TOKEN unset) — cannot perform LIVE role writes",
+          );
+        }
+        return client.guilds.fetch(wiring.guild_id);
+      })().catch((e) => {
+        // do not memoize a failed fetch — let the next op retry (e.g. a transient
+        // gateway hiccup). Re-throw so this op still surfaces the error.
+        guildPromise = undefined;
+        throw e;
+      });
     }
-    return client.guilds.fetch(wiring.guild_id);
+    return guildPromise;
+  };
+
+  // The full roleset, fetched ONCE per batch then reused. `find` resolves a role
+  // by name against the snapshot; a newly-created role is pushed into the snapshot
+  // (Discord returned it) so a same-batch assign sees it without re-fetching.
+  type RoleLike = { readonly id: string; readonly name: string };
+  let rolesetPromise: Promise<RoleLike[]> | undefined;
+  const loadRoleset = (guild: Guild): Promise<RoleLike[]> => {
+    if (rolesetPromise === undefined) {
+      rolesetPromise = (async () => {
+        const fetched = await guild.roles.fetch();
+        // discord.js returns a Collection; snapshot its values into a plain array
+        // so we can mutate (push created roles) without touching the live cache.
+        const arr: RoleLike[] = [];
+        fetched.forEach((r: { id: string; name: string }) => arr.push({ id: r.id, name: r.name }));
+        return arr;
+      })().catch((e) => {
+        rolesetPromise = undefined;
+        throw e;
+      });
+    }
+    return rolesetPromise;
+  };
+  const rememberCreated = async (id: string, name: string): Promise<void> => {
+    // keep the per-batch roleset snapshot consistent after a create (so a
+    // same-batch assign name-resolves it without a fresh full fetch).
+    if (rolesetPromise !== undefined) {
+      const arr = await rolesetPromise;
+      if (!arr.some((r) => r.id === id)) arr.push({ id, name });
+    }
   };
 
   // FR-9 namespace guard (ENFORCED): refuse any role_key not under the world's
@@ -212,10 +264,12 @@ export function makeRoleWriterLive(
               return priorInBatch as never;
             }
             const guild = await guildFor();
-            const roles = await guild.roles.fetch();
-            const existing: Role | undefined = roles.find(
-              (r) => r.name === intent.role_key,
-            );
+            // CHECK against the per-batch roleset snapshot (read once, reused) —
+            // NOT a fresh full `guild.roles.fetch()` per op. The gate's WorldLock
+            // already serialized this batch's GET-then-create span (B10), so the
+            // snapshot is the consistency boundary the lock paid for.
+            const roles = await loadRoleset(guild);
+            const existing = roles.find((r) => r.name === intent.role_key);
             if (existing) {
               // Idempotent: a role with this namespaced key already exists —
               // reuse its id, no second create (the cross-batch dedup, B10).
@@ -229,8 +283,10 @@ export function makeRoleWriterLive(
             );
             // Bind the id WE created so a same-batch assign uses it, not a name
             // re-resolve (confused-deputy: never adopt an attacker's same-named
-            // role for an in-batch assign).
+            // role for an in-batch assign). Also reflect it into the per-batch
+            // roleset snapshot so a same-batch name-resolve sees it.
             createdInBatch.set(intent.role_key, created.id);
+            await rememberCreated(created.id, intent.role_key);
             return created.id as never;
           },
           catch: (e) => classifyWriteError(e, `createRole(${intent.role_key})`),
@@ -245,18 +301,19 @@ export function makeRoleWriterLive(
             const guild = await guildFor();
             // Prefer the id WE created in THIS batch (confused-deputy: do not
             // re-resolve a same-named pre-existing role an attacker may have
-            // planted). Fall back to a name re-resolve only when this batch did
-            // not create the role (e.g. it pre-existed and was adopted by
-            // createRole, which also records the adopted id).
+            // planted). Fall back to a name re-resolve against the per-batch
+            // roleset SNAPSHOT (read once, reused) only when this batch did not
+            // create the role (e.g. it pre-existed and was adopted by createRole,
+            // which also records the adopted id).
             const boundId = createdInBatch.get(intent.role_key);
-            let role: Role | null;
+            let roleId: string | undefined;
             if (boundId !== undefined) {
-              role = await guild.roles.fetch(boundId);
+              roleId = boundId;
             } else {
-              const roles = await guild.roles.fetch();
-              role = roles.find((r) => r.name === intent.role_key) ?? null;
+              const roles = await loadRoleset(guild);
+              roleId = roles.find((r) => r.name === intent.role_key)?.id;
             }
-            if (!role) {
+            if (roleId === undefined) {
               throw new Error(
                 `assignRole: role '${intent.role_key}' not found — create it first`,
               );
@@ -264,12 +321,13 @@ export function makeRoleWriterLive(
             const member = await guild.members.fetch(
               intent.member_id as unknown as string,
             );
-            if (member.roles.cache.has(role.id)) {
+            if (member.roles.cache.has(roleId)) {
               return; // already held — idempotent no-op
             }
             // ── THE role mutation (assign). The ONLY allowlisted add in the repo. ──
+            const id = roleId;
             await withRateLimitBackoff(
-              () => member.roles.add(role!, "freeside shadow-onboarding"),
+              () => member.roles.add(id, "freeside shadow-onboarding"),
               sleep,
             );
           },
@@ -294,6 +352,21 @@ export function makeRoleWriterLive(
  * (per `computeRollbackPlan`). This function does NOT re-derive eligibility — it
  * trusts the pure plan — but it DOES guard by namespace prefix as defense in
  * depth so a non-namespaced (Collab.Land) role can never be deleted here.
+ *
+ * ── HYDRATE-ONCE-PER-BATCH (F1) + EXPLICIT-COMPLETENESS (F7) ─────────────────
+ * The returned `gc(...)` is called ONCE PER ROLE in `executeRollbackGc`'s plan
+ * loop. The "never strip users" guard reads `role.members.size`, which discord.js
+ * derives from the guild MEMBER cache — empty until hydrated. So hydration is
+ * load-bearing for the guard. Two properties this factory now enforces:
+ *   • F1 — the full-member hydration is memoized at the FACTORY (one batch)
+ *     closure level, so M GC roles trigger ONE `guild.members.fetch()`, not M
+ *     full-guild member fetches (the redundant fetch was a 429 generator).
+ *   • F7 — the guard's correctness HARD-DEPENDS on the hydration returning the
+ *     COMPLETE membership (a partial set could under-report `members.size` and
+ *     delete a still-assigned role). We now ASSERT completeness: compare the
+ *     hydrated member-cache size to `guild.memberCount` and FAIL CLOSED (refuse
+ *     the delete) if it under-reports. On a destructive path, "known empty" and
+ *     "couldn't hydrate fully" are different states — the latter must not delete.
  */
 export function makeGatedRoleGc(
   getBotClient: () => Promise<Client | null>,
@@ -301,6 +374,68 @@ export function makeGatedRoleGc(
   namespacePrefix: string,
   sleep: (ms: number) => Promise<void> = defaultSleep,
 ) {
+  // PER-BATCH guild + member-hydration memo (F1). This factory closure lives for
+  // one rollback's GC sweep; `executeRollbackGc` calls the returned `gc()` once
+  // per planned role. Fetching the guild + hydrating ALL members ONCE here and
+  // reusing it across every GC role replaces the prior O(M) full member fetches.
+  let guildPromise: Promise<Guild> | undefined;
+  const guildFor = (): Promise<Guild> => {
+    if (guildPromise === undefined) {
+      guildPromise = (async () => {
+        const wiring = cfg.resolve(cfg.world);
+        if (!wiring) throw new Error(`no guild wiring for world '${cfg.world}'`);
+        const client = await getBotClient();
+        if (!client) throw new Error("discord bot client unavailable — cannot GC role");
+        return client.guilds.fetch(wiring.guild_id);
+      })().catch((e) => {
+        guildPromise = undefined;
+        throw e;
+      });
+    }
+    return guildPromise;
+  };
+
+  // Hydrate the FULL guild member cache exactly ONCE per batch and ASSERT it is
+  // complete (F1 + F7). Returns nothing; throws a fail-closed error if the
+  // hydration under-reports vs `guild.memberCount` (so the zero-member guard can
+  // never act on a partially-hydrated cache).
+  let hydratePromise: Promise<void> | undefined;
+  const hydrateMembersComplete = (guild: Guild): Promise<void> => {
+    if (hydratePromise === undefined) {
+      hydratePromise = (async () => {
+        // discord.js `members.fetch()` (no arg) hydrates the cache and resolves a
+        // Collection of the fetched members; `guild.members.cache.size` is the
+        // canonical hydrated count `role.members` is derived from.
+        const fetched = (await guild.members.fetch()) as { size?: number } | undefined;
+        // Prefer the live member cache size (what role.members reads from); fall
+        // back to the resolved Collection's size if a cache view isn't exposed.
+        const cacheSize =
+          (guild as { members?: { cache?: { size?: number } } }).members?.cache?.size;
+        const hydratedCount = cacheSize ?? fetched?.size;
+        const total = (guild as { memberCount?: number }).memberCount;
+        // F7: completeness assertion. If we can read BOTH the hydrated count and
+        // the authoritative total and they disagree, the cache is partial — FAIL
+        // CLOSED. (When the runtime does not expose these counters — e.g. a test
+        // double — we cannot assert completeness; the explicit fetch above is the
+        // existing R-6 guard and we do not invent a count.)
+        if (
+          typeof hydratedCount === "number" &&
+          typeof total === "number" &&
+          hydratedCount < total
+        ) {
+          throw new WriteError({
+            kind: "op_failed",
+            message: `refused GC — guild member cache hydrated only ${hydratedCount}/${total} members (incomplete; GUILD_MEMBERS intent missing or partial fetch). On a destructive path partial membership FAILS CLOSED — cannot trust members.size===0 (R-6, never strip users)`,
+          });
+        }
+      })().catch((e) => {
+        hydratePromise = undefined;
+        throw e;
+      });
+    }
+    return hydratePromise;
+  };
+
   return (
     _cap: WriteCapability,
     roleId: string,
@@ -315,21 +450,16 @@ export function makeGatedRoleGc(
           unconfigured: `refused GC — no namespace_prefix configured for this world (fail-closed: a misconfigured world refuses ALL role deletes) — coexistence guard`,
           nonNamespaced: `refused GC of non-namespaced role '${roleKey}' (not Freeside-managed) — coexistence guard`,
         });
-        const wiring = cfg.resolve(cfg.world);
-        if (!wiring) throw new Error(`no guild wiring for world '${cfg.world}'`);
-        const client = await getBotClient();
-        if (!client) {
-          throw new Error("discord bot client unavailable — cannot GC role");
-        }
-        const guild = await client.guilds.fetch(wiring.guild_id);
+        const guild = await guildFor();
         const role = await guild.roles.fetch(roleId);
         if (!role) return; // already gone — idempotent
-        // HYDRATE the member cache before reading membership: discord.js derives
+        // HYDRATE the member cache before reading membership (ONCE per batch, F1)
+        // AND assert the hydration is COMPLETE (F7). discord.js derives
         // `role.members` from the guild MEMBER cache, which is empty until fetched.
         // Without this, an assigned role reads `members.size === 0` and the guard
-        // below would wrongly delete it — stripping users (violates R-6). Fetching
-        // all members makes `role.members.size` reflect LIVE membership.
-        await guild.members.fetch();
+        // below would wrongly delete it — stripping users (violates R-6). The
+        // completeness assertion fails closed on a partial hydrate.
+        await hydrateMembersComplete(guild);
         if (role.members.size > 0) {
           // defense-in-depth: never strip users even if the plan was stale.
           throw new Error(

@@ -71,6 +71,55 @@ export function escapeRoleName(raw: string): string {
 const ACCENT_OK = 0x6f4ea1;
 const ACCENT_WARN = 0xe0a83d;
 
+/**
+ * Discord CV2 / message render bounds (F6). A guild can approach the 250-role
+ * ceiling; concatenating every role name into a text component can blow Discord's
+ * per-text-component (~4000 char) limit and silently fail the preview send — and
+ * it fails worst on exactly the large, many-role guilds that most need the
+ * preview. We render against the SINK's constraints, not the source's cardinality.
+ *
+ * MAX_TEXT_COMPONENT_CHARS is held conservatively below the ~4000 hard limit to
+ * leave headroom for the surrounding markdown (headings, bullets, member counts).
+ */
+const MAX_TEXT_COMPONENT_CHARS = 3500;
+/** Max rendered role-name length before truncation (defense vs a pathological name). */
+const MAX_ROLE_NAME_CHARS = 64;
+
+/**
+ * Join a list of already-rendered line/item strings with `joiner`, but stop once
+ * the running length would exceed `maxChars`, appending a `+N more` affordance for
+ * the omitted remainder (F6). Returns the bounded string. `empty` is returned for
+ * an empty list.
+ */
+function boundedJoin(
+  items: readonly string[],
+  joiner: string,
+  maxChars: number,
+  empty: string,
+): string {
+  if (items.length === 0) return empty;
+  const kept: string[] = [];
+  let len = 0;
+  for (let i = 0; i < items.length; i++) {
+    const piece = items[i]!;
+    // reserve room for a possible "+N more" suffix so we never overshoot.
+    const remaining = items.length - i;
+    const moreSuffix = `${joiner}…and ${remaining} more`;
+    const projected = len + (kept.length ? joiner.length : 0) + piece.length;
+    if (projected > maxChars && kept.length > 0) {
+      return kept.join(joiner) + moreSuffix;
+    }
+    kept.push(piece);
+    len = projected;
+  }
+  return kept.join(joiner);
+}
+
+/** Truncate an (already-escaped) role name to a sane max with an ellipsis. */
+function clampRoleName(name: string): string {
+  return name.length > MAX_ROLE_NAME_CHARS ? `${name.slice(0, MAX_ROLE_NAME_CHARS - 1)}…` : name;
+}
+
 type TextComponent = { type: 10; content: string };
 type SeparatorComponent = { type: 14 };
 type ContainerComponent = {
@@ -93,36 +142,49 @@ export function renderDiscrepancyCV2(d: Discrepancy): ContainerComponent {
   const rc = d.role_count;
   const accent = rc.exceeds ? ACCENT_WARN : ACCENT_OK;
 
+  // Render a single escaped+clamped role name → an inline code span.
+  const codeName = (raw: string): string => `\`${clampRoleName(escapeRoleName(raw))}\``;
+
   // BEFORE — current managed roles (pre-existing rendered separately as context).
   // role_key is an attacker-controllable Discord role NAME → escapeRoleName.
+  // F6: bound the rendered length with a `+N more` affordance so a many-role guild
+  // cannot produce an oversized text component that Discord silently rejects.
   const beforeManaged = d.before.roles.filter((r) => r.managed);
-  const beforeLines = beforeManaged.length
-    ? beforeManaged.map((r) => `• \`${escapeRoleName(r.role_key)}\` — ${r.members} member${r.members === 1 ? "" : "s"}`).join("\n")
-    : "_(no Freeside roles yet)_";
+  const beforeLines = boundedJoin(
+    beforeManaged.map((r) => `• ${codeName(r.role_key)} — ${r.members} member${r.members === 1 ? "" : "s"}`),
+    "\n",
+    MAX_TEXT_COMPONENT_CHARS,
+    "_(no Freeside roles yet)_",
+  );
 
   // AFTER — proposed managed roles; `created` marks not-yet-created ones.
   const afterManaged = d.after.roles.filter((r) => r.managed);
-  const afterLines = afterManaged.length
-    ? afterManaged
-        .map((r) => {
-          const tag = r.created ? "🆕 " : "";
-          return `• ${tag}\`${escapeRoleName(r.role_key)}\` — ${r.members} member${r.members === 1 ? "" : "s"}`;
-        })
-        .join("\n")
-    : "_(none proposed)_";
+  const afterLines = boundedJoin(
+    afterManaged.map((r) => `• ${r.created ? "🆕 " : ""}${codeName(r.role_key)} — ${r.members} member${r.members === 1 ? "" : "s"}`),
+    "\n",
+    MAX_TEXT_COMPONENT_CHARS,
+    "_(none proposed)_",
+  );
 
   // Latent qualified (MOCKED — honest provenance flag, FR-6/§8.5).
-  const latentLines = d.latent_qualified.length
-    ? d.latent_qualified
-        .map((l) => `• \`${escapeRoleName(l.role_key)}\`: ${l.count} qualify off-server  _(${l.source})_`)
-        .join("\n")
-    : "_(none)_";
+  const latentLines = boundedJoin(
+    d.latent_qualified.map((l) => `• ${codeName(l.role_key)}: ${l.count} qualify off-server  _(${l.source})_`),
+    "\n",
+    MAX_TEXT_COMPONENT_CHARS,
+    "_(none)_",
+  );
 
   // Pre-existing / Collab.Land roles — LOCKED CONTEXT (D2), NEVER "would change".
-  // These are the clearest attacker surface: arbitrary guild role names.
+  // These are the clearest attacker surface: arbitrary guild role names AND the
+  // largest list (can approach the 250-role ceiling) → the most likely to overflow.
   const preexisting = d.preexisting.roles;
   const preexistingLine = preexisting.length
-    ? `🔒 Untouched (Collab.Land / pre-existing): ${preexisting.map((r) => `\`${escapeRoleName(r.role_key)}\``).join(", ")}`
+    ? `🔒 Untouched (Collab.Land / pre-existing): ${boundedJoin(
+        preexisting.map((r) => codeName(r.role_key)),
+        ", ",
+        MAX_TEXT_COMPONENT_CHARS - 64, // headroom for the leading label
+        "",
+      )}`
     : "🔒 No pre-existing roles to preserve.";
 
   // D3 — predictive 250-role projection.

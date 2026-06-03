@@ -28,6 +28,29 @@ export interface ConfigServiceClientDeps {
   readonly getToken: () => Promise<string | null> | string | null;
   /** injectable fetch (tests). */
   readonly fetchImpl?: typeof fetch;
+  /**
+   * Per-request timeout in ms (F5: every RPC needs a deadline). A hung/slow
+   * config-service must NOT block the onboarding lifecycle indefinitely — that
+   * path drives the go_live progress the lens polls. Defaults to 10s.
+   */
+  readonly timeoutMs?: number;
+}
+
+/** Default per-request deadline for config-service calls (F5). */
+const DEFAULT_TIMEOUT_MS = 10_000;
+
+/**
+ * Typed timeout error so callers can distinguish a deadline-exceeded from a
+ * transport/5xx (F5). The polling lens can surface "config-service slow" rather
+ * than hanging on a stuck go_live progress bar with no error to act on.
+ */
+export class ConfigServiceTimeoutError extends Error {
+  readonly timeoutMs: number;
+  constructor(op: string, timeoutMs: number) {
+    super(`config-service ${op} timed out after ${timeoutMs}ms (no response within deadline)`);
+    this.name = "ConfigServiceTimeoutError";
+    this.timeoutMs = timeoutMs;
+  }
 }
 
 export interface SurfaceEnvelope<T = unknown> {
@@ -39,11 +62,13 @@ export class ConfigServiceClient {
   private readonly baseUrl: string | undefined;
   private readonly getToken: ConfigServiceClientDeps["getToken"];
   private readonly doFetch: typeof fetch;
+  private readonly timeoutMs: number;
 
   constructor(deps: ConfigServiceClientDeps) {
     this.baseUrl = deps.baseUrl?.replace(/\/$/, "");
     this.getToken = deps.getToken;
     this.doFetch = deps.fetchImpl ?? fetch;
+    this.timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   /** true when a live config-service URL is configured (cutover active). */
@@ -57,6 +82,29 @@ export class ConfigServiceClient {
   }
 
   /**
+   * fetch with a bounded deadline (F5). Aborts the request when `timeoutMs`
+   * elapses and surfaces a typed {@link ConfigServiceTimeoutError} so a hung
+   * config-service cannot silently consume the caller's liveness. The
+   * AbortController is always cleared (clearTimeout) on settle so we never leak a
+   * pending timer.
+   */
+  private async fetchWithDeadline(op: string, url: string, init: RequestInit = {}): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      return await this.doFetch(url, { ...init, signal: controller.signal });
+    } catch (e) {
+      // Map an abort (deadline) to the typed timeout error; re-throw others.
+      if (controller.signal.aborted || (e as { name?: string })?.name === "AbortError") {
+        throw new ConfigServiceTimeoutError(op, this.timeoutMs);
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * GET the per-CM onboarding-lifecycle record. Returns null on 404 (default →
    * the lens treats apply_mode as SHADOW). Throws on transport / 5xx.
    */
@@ -66,7 +114,9 @@ export class ConfigServiceClient {
   ): Promise<SurfaceEnvelope<T> | null> {
     if (!this.baseUrl) return null; // preview-only mode
     const url = `${this.baseUrl}/v1/config/${encodeURIComponent(world)}/onboarding-lifecycle?cm=${encodeURIComponent(cmIdentityId)}`;
-    const res = await this.doFetch(url, { headers: { ...(await this.authHeader()) } });
+    const res = await this.fetchWithDeadline("GET onboarding-lifecycle", url, {
+      headers: { ...(await this.authHeader()) },
+    });
     if (res.status === 404) return null;
     if (!res.ok) {
       throw new Error(`config-service GET onboarding-lifecycle ${res.status}: ${await res.text().catch(() => "")}`);
@@ -91,7 +141,7 @@ export class ConfigServiceClient {
       );
     }
     const url = `${this.baseUrl}/v1/config/${encodeURIComponent(world)}/onboarding-lifecycle?cm=${encodeURIComponent(cmIdentityId)}`;
-    const res = await this.doFetch(url, {
+    const res = await this.fetchWithDeadline("PUT onboarding-lifecycle", url, {
       method: "PUT",
       headers: { "content-type": "application/json", ...(await this.authHeader()) },
       body: JSON.stringify({ envelope, version: expectedVersion }),
@@ -108,11 +158,17 @@ export class ConfigServiceClient {
     return (await res.json()) as SurfaceEnvelope<T>;
   }
 
-  /** Health probe (D4 smoke): GET /health → 200. */
+  /** Health probe (D4 smoke): GET /health → 200. Bounded by the deadline (F5) so
+   *  a hung service surfaces as a failed probe, not a hang. */
   async health(): Promise<boolean> {
     if (!this.baseUrl) return false;
-    const res = await this.doFetch(`${this.baseUrl}/health`);
-    return res.ok;
+    try {
+      const res = await this.fetchWithDeadline("GET /health", `${this.baseUrl}/health`);
+      return res.ok;
+    } catch {
+      // a timeout / transport error on the health probe is simply "not healthy".
+      return false;
+    }
   }
 }
 

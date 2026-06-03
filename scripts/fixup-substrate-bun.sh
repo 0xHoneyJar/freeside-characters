@@ -39,6 +39,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TAG="[fixup-substrate-bun]"
 
+# The cycle-canonical @0xhoneyjar/events pin (must match
+# apps/bot/src/shadow/substrate-conformance.ts::CANONICAL_EVENTS_PIN and the
+# bot + persona-engine + substrate package.json events deps). The substrate's
+# transitive events copy is linked DETERMINISTICALLY to the build matching this
+# pin (F3 remediation) — never to whichever copy `find` happens to surface first,
+# because ACVP canonicalization identity (JCS+sha256 + hash-chain) is load-bearing
+# and a non-deterministic link is a latent canonicalization fork.
+CANONICAL_EVENTS_PIN="68f5a89cb02c6b3ddf5ab14a1d65753bc02bd9fe"
+CANONICAL_EVENTS_PIN_SHORT="${CANONICAL_EVENTS_PIN:0:7}"
+
 pkg_name() {
   # echo the `name` field of <dir>/package.json (empty on failure)
   local dir="$1"
@@ -55,18 +65,41 @@ if [[ ${#SUB_LINKS[@]} -eq 0 ]]; then
   exit 0
 fi
 
-# Resolve a hoisted @0xhoneyjar/events copy to share with the substrate. Prefer
-# the persona-engine workspace copy (already fixed up by fixup-events-bun.sh).
+# Resolve the hoisted @0xhoneyjar/events copy to share with the substrate.
+#
+# DETERMINISTIC SELECTION (F3 remediation): the prior loop `break`ed on the FIRST
+# events copy `find` surfaced, which is filesystem-order-dependent and
+# non-deterministic when more than one events build is present in the tree. ACVP
+# canonicalization identity (JCS+sha256 + the hash-chained audit) lives or dies by
+# binding the SAME events build everywhere in-process, so a coin-flip link is a
+# latent canonicalization fork. We instead select ONLY the copy whose resolved
+# bun-store path matches CANONICAL_EVENTS_PIN, and FAIL LOUD if no matching copy
+# exists (a wrong/missing pin is a hard build failure, not a silent first-pick).
+#
+# (With the workspace unified on CANONICAL_EVENTS_PIN there is one events build;
+# this match-the-invariant guard remains as defense-in-depth so any future skew
+# fails loudly here rather than silently linking the wrong copy.)
 EVENTS_SRC=""
+EVENTS_CANDIDATES_SEEN=0
 while IFS= read -r cand; do
   [[ -z "$cand" ]] && continue
   target="$(cd "$(dirname "$cand")" && readlink "$(basename "$cand")" 2>/dev/null || true)"
   abs="$(cd "$(dirname "$cand")" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd -P)/$(basename "$target")" || true
-  if [[ -n "${abs:-}" && "$(pkg_name "$abs")" == "@0xhoneyjar/events" ]]; then
+  [[ -n "${abs:-}" && "$(pkg_name "$abs")" == "@0xhoneyjar/events" ]] || continue
+  EVENTS_CANDIDATES_SEEN=$((EVENTS_CANDIDATES_SEEN+1))
+  # The bun store path encodes the resolved git SHA, e.g.
+  #   …/node_modules/.bun/loa-freeside@github+0xHoneyJar+loa-freeside+68f5a89/…
+  # Match the invariant (the canonical pin's abbreviated SHA) — NOT find order.
+  if [[ "$abs" == *"loa-freeside+${CANONICAL_EVENTS_PIN_SHORT}"* ]]; then
     EVENTS_SRC="$abs"
     break
   fi
 done < <(find "$ROOT_DIR" -type l -path "*/node_modules/@0xhoneyjar/events" 2>/dev/null || true)
+
+if [[ -z "$EVENTS_SRC" && "$EVENTS_CANDIDATES_SEEN" -gt 0 ]]; then
+  echo "$TAG ERROR: found ${EVENTS_CANDIDATES_SEEN} @0xhoneyjar/events copy/copies but NONE resolves to the canonical pin ${CANONICAL_EVENTS_PIN_SHORT} (loa-freeside+${CANONICAL_EVENTS_PIN_SHORT}). The substrate's transitive events copy MUST bind the canonical build — refusing to link a non-canonical events copy (ACVP canonicalization identity is load-bearing). Re-pin @0xhoneyjar/events to ${CANONICAL_EVENTS_PIN} across the workspace and re-run bun install." >&2
+  exit 1
+fi
 
 fixed=0
 for link in "${SUB_LINKS[@]}"; do
@@ -99,16 +132,22 @@ for link in "${SUB_LINKS[@]}"; do
 
   # Materialize the substrate's transitive @0xhoneyjar/events so its
   # roleMapVersionHash import resolves (bun did not install the subpackage's deps).
+  # We bind it to EXACTLY the canonical-pin copy resolved above (F3/F4): the
+  # idempotency check compares the substrate's current events target against the
+  # canonical EVENTS_SRC — NOT merely "is it some @0xhoneyjar/events". A pre-cycle
+  # link at a NON-canonical events build (e.g. a stale 56585fd) is re-pointed to
+  # the canonical build, so the substrate's hash-chain/JCS path can never diverge
+  # from the bot's.
   if [[ -n "$EVENTS_SRC" ]]; then
     sub_nm="$subdir/node_modules/@0xhoneyjar"
     sub_events="$sub_nm/events"
     sub_events_real="$(cd "$sub_nm" 2>/dev/null && cd "$(readlink events 2>/dev/null)" 2>/dev/null && pwd -P)" || true
-    if [[ "$(pkg_name "${sub_events_real:-/nonexistent}")" != "@0xhoneyjar/events" ]]; then
+    if [[ "${sub_events_real:-/nonexistent}" != "$EVENTS_SRC" ]]; then
       mkdir -p "$sub_nm"
       rm -rf "$sub_events"
       rel_ev="$(python3 -c 'import os,sys;print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$EVENTS_SRC" "$sub_nm")"
       ln -s "$rel_ev" "$sub_events"
-      echo "$TAG linked substrate @0xhoneyjar/events -> $rel_ev"
+      echo "$TAG linked substrate @0xhoneyjar/events -> $rel_ev (canonical ${CANONICAL_EVENTS_PIN_SHORT})"
       fixed=$((fixed+1))
     fi
   else

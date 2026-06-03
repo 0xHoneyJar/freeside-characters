@@ -135,6 +135,59 @@ describe("405.5 — Discord CV2 render of the same Discrepancy (G-5)", () => {
     expect(escapeRoleName("line1\nline2")).toBe("line1 line2");
   });
 
+  test("F6 — a many-role guild renders BOUNDED text components (no Discord size-limit overflow)", () => {
+    // Approach the 250-role ceiling: a guild with 240 pre-existing roles + many
+    // managed roles. The old renderer joined ALL of them with no cap → a text
+    // component that can exceed Discord's ~4000-char limit and silently fail the
+    // send. The bound caps each list with a `+N more` affordance.
+    const manyPre = Array.from({ length: 240 }, (_, i) => ({
+      role_key: `Collab.Land Role With A Fairly Long Descriptive Name #${i}`,
+      members: 1,
+      managed: false as const,
+    }));
+    const manyManaged = Array.from({ length: 120 }, (_, i) => ({
+      role_key: `purupuru:tier-with-a-long-name-${i}`,
+      members: i,
+      managed: true,
+    }));
+    const big: Discrepancy = {
+      ...DISCREPANCY,
+      before: { roles: manyManaged },
+      after: { roles: manyManaged.map((r) => ({ ...r, created: true })) },
+      preexisting: { roles: manyPre },
+    };
+    const c = renderDiscrepancyCV2(big);
+    // EVERY text component must stay under Discord's per-component hard limit.
+    for (const child of c.components) {
+      if (child.type === 10) {
+        expect(child.content.length).toBeLessThanOrEqual(4000);
+      }
+    }
+    const text = c.components
+      .filter((x): x is { type: 10; content: string } => x.type === 10)
+      .map((x) => x.content)
+      .join("\n");
+    // the truncation affordance is present (some lists were too long to render whole).
+    expect(text).toMatch(/more/);
+    // render is still non-throwing + non-mutating.
+    expect(c.type).toBe(17);
+  });
+
+  test("F6 — a pathologically long single role name is clamped (no unbounded line)", () => {
+    const longName = "purupuru:" + "x".repeat(500);
+    const big: Discrepancy = {
+      ...DISCREPANCY,
+      before: { roles: [{ role_key: longName, members: 1, managed: true }] },
+    };
+    const text = renderDiscrepancyCV2(big)
+      .components.filter((x): x is { type: 10; content: string } => x.type === 10)
+      .map((x) => x.content)
+      .join("\n");
+    // the rendered name is truncated with an ellipsis (not the full 500 chars).
+    expect(text).toContain("…");
+    expect(text).not.toContain("x".repeat(200));
+  });
+
   test("G-5 parity: the renderer consumes the Discrepancy contract verbatim (no extra fields needed)", () => {
     // The render input is EXACTLY the substrate's `Discrepancy` type — the SAME
     // object the web lens (S3) consumes. The render needs NO medium-specific

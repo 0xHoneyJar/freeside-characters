@@ -43,7 +43,7 @@
       "name": "@freeside-characters/persona-engine",
       "version": "0.12.0",
       "dependencies": {
-        "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#56585fd132941f9387b53d4916c905619dd0e8ea",
+        "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#68f5a89cb02c6b3ddf5ab14a1d65753bc02bd9fe",
         "@0xhoneyjar/medium-registry": "^0.2.0",
         "@anthropic-ai/claude-agent-sdk": "^0.2.122",
         "@aws-sdk/client-bedrock-runtime": "^3.1048.0",
@@ -664,7 +664,7 @@
 
     "@discordjs/ws/discord-api-types": ["discord-api-types@0.38.47", "", {}, "sha512-XgXQodHQBAE6kfD7kMvVo30863iHX1LHSqNq6MGUTDwIFCCvHva13+rwxyxVXDqudyApMNAd32PGjgVETi5rjA=="],
 
-    "@freeside-characters/persona-engine/@0xhoneyjar/events": ["loa-freeside@github:0xHoneyJar/loa-freeside#56585fd", { "dependencies": { "aws-embedded-metrics": "^4.2.1" } }, "0xHoneyJar-loa-freeside-56585fd", "sha512-MdLmDkkyFApUsmcLtNEk1XtemcayyAviU7fDwV9ATb3U1oDu3WaBzVcc4TRq/V8iRrSXGIslfGFEj9IVDeNZ8Q=="],
+    "@freeside-characters/persona-engine/@0xhoneyjar/events": ["loa-freeside@github:0xHoneyJar/loa-freeside#68f5a89", { "dependencies": { "aws-embedded-metrics": "^4.2.1" } }, "0xHoneyJar-loa-freeside-68f5a89", "sha512-QJKFDe+8iuEru//GJL7ux97TldH+6fLPHprwnnY4Rc24SXxbHCBrIeW1DE0y++FlIUWXzqdam8nPiuEliycPtg=="],
 
     "discord.js/discord-api-types": ["discord-api-types@0.38.47", "", {}, "sha512-XgXQodHQBAE6kfD7kMvVo30863iHX1LHSqNq6MGUTDwIFCCvHva13+rwxyxVXDqudyApMNAd32PGjgVETi5rjA=="],
   }

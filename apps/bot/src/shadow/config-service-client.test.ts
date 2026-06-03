@@ -8,7 +8,7 @@
  * test runs against the real service in CI/deploy, hitting GET/PUT + /health).
  */
 import { describe, expect, test } from "bun:test";
-import { ConfigServiceClient } from "./config-service-client.ts";
+import { ConfigServiceClient, ConfigServiceTimeoutError } from "./config-service-client.ts";
 
 function fakeFetch(handler: (url: string, init?: RequestInit) => Response): typeof fetch {
   return (async (url: string, init?: RequestInit) => handler(String(url), init)) as unknown as typeof fetch;
@@ -80,5 +80,70 @@ describe("405.7 — config-service cutover client", () => {
       fetchImpl: fakeFetch((url) => new Response("ok", { status: url.endsWith("/health") ? 200 : 500 })),
     });
     expect(await c.health()).toBe(true);
+  });
+});
+
+describe("F5 — every config-service RPC has a bounded deadline", () => {
+  // A fetch impl that honors the AbortSignal and never resolves until aborted —
+  // models a hung/slow config-service. The client's deadline must abort it.
+  function hangingFetch(): typeof fetch {
+    return ((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal) {
+          if (signal.aborted) {
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+            return;
+          }
+          signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+          );
+        }
+        // otherwise: never resolves (the hang).
+      })) as unknown as typeof fetch;
+  }
+
+  test("GET onboarding-lifecycle times out (typed ConfigServiceTimeoutError) instead of hanging", async () => {
+    const c = new ConfigServiceClient({
+      baseUrl: "https://config.example",
+      getToken: () => "t",
+      fetchImpl: hangingFetch(),
+      timeoutMs: 20,
+    });
+    await expect(c.getOnboardingLifecycle("purupuru", "cm-1")).rejects.toBeInstanceOf(
+      ConfigServiceTimeoutError,
+    );
+  });
+
+  test("PUT onboarding-lifecycle times out (typed error) instead of hanging", async () => {
+    const c = new ConfigServiceClient({
+      baseUrl: "https://config.example",
+      getToken: () => "t",
+      fetchImpl: hangingFetch(),
+      timeoutMs: 20,
+    });
+    await expect(c.putOnboardingLifecycle("purupuru", "cm-1", {}, 0)).rejects.toBeInstanceOf(
+      ConfigServiceTimeoutError,
+    );
+  });
+
+  test("health() returns false on a hung service (bounded probe, no hang)", async () => {
+    const c = new ConfigServiceClient({
+      baseUrl: "https://config.example",
+      getToken: () => null,
+      fetchImpl: hangingFetch(),
+      timeoutMs: 20,
+    });
+    expect(await c.health()).toBe(false);
+  });
+
+  test("a non-abort transport error is re-thrown as-is (not masked as a timeout)", async () => {
+    const c = new ConfigServiceClient({
+      baseUrl: "https://config.example",
+      getToken: () => "t",
+      fetchImpl: (() => Promise.reject(new Error("ECONNREFUSED"))) as unknown as typeof fetch,
+      timeoutMs: 1000,
+    });
+    await expect(c.getOnboardingLifecycle("purupuru", "cm-1")).rejects.toThrow(/ECONNREFUSED/);
   });
 });
