@@ -27,6 +27,7 @@ import { Effect, Layer } from "effect";
 import type { Client, Guild } from "discord.js";
 import { RosterSource, RosterError } from "./substrate.ts";
 import type { CurrentRoster } from "@freeside-worlds/shadow-substrate";
+import { fetchGuildMembersCached } from "./guild-members-cache.ts";
 
 /**
  * Per-world wiring the LIVE roster reader needs: the Discord guild snowflake +
@@ -68,7 +69,10 @@ export function makeRosterSourceLive(
             // READ roles + members. roles.fetch() returns the full role cache;
             // each role's `.members` is the set of members holding it.
             const roles = await guild.roles.fetch();
-            await guild.members.fetch(); // hydrate member→role caches for counts
+            // hydrate member→role caches for counts. Cached + rate-limit-fallback:
+            // opcode 8 ("Request Guild Members") is gateway-rate-limited and this
+            // LIVE-gate freshness read runs alongside the dashboard's member read.
+            await fetchGuildMembersCached(guild);
 
             const out = roles
               // @everyone is the guild-id role; never a Freeside role, skip it.

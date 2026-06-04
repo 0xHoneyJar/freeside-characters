@@ -26,6 +26,7 @@
  */
 import type { Client, Guild } from "discord.js";
 import type { GuildMemberRef, MemberSource } from "./member-roster.ts";
+import { fetchGuildMembersCached } from "./guild-members-cache.ts";
 
 /** Per-world wiring the live member reader needs: the guild snowflake + prefix. */
 export interface LiveMemberSourceConfig {
@@ -58,8 +59,10 @@ export function makeMemberSourceLive(
     }
     const guild: Guild = await client.guilds.fetch(wiring.guild_id);
     // READ the full member list (requires the GuildMembers gateway intent, now
-    // requested). Each member's `.roles.cache` carries the role objects.
-    const members = await guild.members.fetch();
+    // requested). Each member's `.roles.cache` carries the role objects. Cached +
+    // rate-limit-fallback: opcode 8 ("Request Guild Members") is gateway-rate-
+    // limited, and one Apply→Confirm flow reads the roster several times.
+    const members = await fetchGuildMembersCached(guild);
 
     return [...members.values()].map((m): GuildMemberRef => {
       // current managed roles = role NAMES starting with the namespace prefix.

@@ -84,6 +84,7 @@ import type { RoleMapConfig } from "./substrate.ts";
 import { CommunityScoreClient } from "@freeside-characters/persona-engine/score/community-client";
 import { MemberIdentityClient } from "./member-identity-client.ts";
 import { makeMemberSourceLive } from "./member-source.live.ts";
+import { fetchGuildMembersCached } from "./guild-members-cache.ts";
 import type {
   MemberCentricShadowDeps,
 } from "./role-sync-trigger.ts";
@@ -212,7 +213,10 @@ function makeShadowRosterIdentityReader(
       return { member_ids: [], role_ids: [] };
     }
     const guild = await client.guilds.fetch(wiring.guild_id);
-    const members = await guild.members.fetch();
+    // cached + rate-limit-fallback: opcode 8 is gateway-rate-limited and this
+    // rosterIdentity read (promoted for LIVE, bd-han) runs alongside the other
+    // roster reads in a single Apply→Confirm flow.
+    const members = await fetchGuildMembersCached(guild);
     const roles = await guild.roles.fetch();
     return {
       member_ids: [...members.values()].map((m) => m.id),
