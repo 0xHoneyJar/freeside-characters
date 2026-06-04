@@ -92,6 +92,11 @@ import {
   computeRoleSyncOutcome,
   type RoleSyncInteractionDeps,
 } from '../shadow/role-sync-interaction.ts';
+import {
+  handleRoleSyncComponentInteraction,
+  isForeignRoleSyncSquat,
+  isRoleSyncComponentInteraction,
+} from '../shadow/role-sync-dispatch.ts';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const DISCORD_CHAR_LIMIT = 2000;
@@ -245,8 +250,16 @@ export async function dispatchSlashCommand(
   // cycle-009 · sprint-2 — early-detect the onboarding verify button / slash (C2).
   // Intercepted AFTER anti-spam + circuit + auth-bridge so it inherits all three.
   const isOnboarding = isOnboardingInteraction(interaction);
+  // bd-20x — early-detect a `rolesync:` apply/confirm/cancel button click (type 3).
+  // Intercepted in the SAME band as onboarding (after anti-spam + circuit + auth-bridge).
+  const isRoleSyncComponent = isRoleSyncComponentInteraction(interaction);
 
-  if (!isQuest && !isOnboarding && interaction.type !== InteractionType.APPLICATION_COMMAND) {
+  if (
+    !isQuest &&
+    !isOnboarding &&
+    !isRoleSyncComponent &&
+    interaction.type !== InteractionType.APPLICATION_COMMAND
+  ) {
     return ephemeralReply(`unsupported interaction type ${interaction.type}`);
   }
 
@@ -398,6 +411,27 @@ export async function dispatchSlashCommand(
       type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
       data: { flags: MessageFlags.EPHEMERAL },
     };
+  }
+
+  // ─── bd-20x — two-step Apply→Confirm→LIVE component interception ────
+  // A `rolesync:` apply/confirm/cancel BUTTON click (MESSAGE_COMPONENT type 3).
+  // Routed in the SAME band as the /role-sync slash + onboarding — after the
+  // auth-bridge attach (so the verified AuthContext is available) and before
+  // per-character resolution. The CLICKER's actor is re-resolved by the handler
+  // (isolated identity-api resolution, INDEPENDENT of AUTH_BACKEND) so authz binds
+  // to whoever confirmed. apply/cancel → UPDATE_MESSAGE (no write); confirm → a
+  // STALE GUARD then DEFERRED_UPDATE_MESSAGE + a background LIVE apply through the
+  // gate. The whole path is VOICELESS + performs ZERO direct role mutations (the
+  // LIVE write happens inside runRoleSyncTrigger → the substrate gate).
+  if (isRoleSyncComponent) {
+    const deps = getRoleSyncDeps();
+    if (!deps) {
+      return ephemeralReply('the role-sync trigger is not configured on this deployment.');
+    }
+    if (isForeignRoleSyncSquat(interaction)) {
+      return ephemeralReply('that control is not available.');
+    }
+    return handleRoleSyncComponentInteraction(interaction, interactionCtx.auth, deps);
   }
 
   // ─── cycle-009 · sprint-2 — onboarding verify interception (C2) ─────

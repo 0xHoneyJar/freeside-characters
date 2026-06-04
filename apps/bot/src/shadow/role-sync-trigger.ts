@@ -179,6 +179,12 @@ export type RoleSyncOutcome =
       readonly applyMode: "SHADOW";
       /** the role-map provenance (CM-authored vs default seed). */
       readonly mapSource: RoleMapSource;
+      /**
+       * the first 12 hex of the FR-7 map hash the dashboard's Apply button is
+       * content-addressed by (bd-20x). The two-step apply dispatch recomputes this
+       * + compares as the STALE GUARD before any LIVE write.
+       */
+      readonly mapHash12: string;
     }
   | {
       readonly kind: "refused";
@@ -215,6 +221,83 @@ export function computeMapHash(
     },
   };
   return roleMapVersionHash(input);
+}
+
+/**
+ * The shared, GATE-FREE resolution the SHADOW preview, the two-step Apply confirm
+ * card, and the LIVE confirm STALE GUARD all reuse (bd-20x): resolve the CM's
+ * actor (refuse a non-verified invocation before any read), read the role-map
+ * (CM-authored → config-service, else the seed), build the MEMBER roster, and
+ * compute the FR-7 map hash. NO write, NO gate, NO orchestration. Returns the
+ * roster + map provenance + the hash so the dispatch can (a) re-render the
+ * dashboard / confirm card and (b) content-address + stale-guard the apply.
+ *
+ * REQUIRES `deps.memberCentric` (the member-centric SHADOW wiring). Returns a
+ * `refused` shape (mirrors `runRoleSyncTrigger`) when the actor is not verified.
+ */
+export type RoleSyncRosterResolution =
+  | {
+      readonly kind: "resolved";
+      readonly roster: Awaited<ReturnType<typeof buildMemberRoster>>;
+      readonly mapSource: RoleMapSource;
+      readonly mapHash: Hex64;
+      readonly mapHash12: string;
+    }
+  | {
+      readonly kind: "refused";
+      readonly reason: "not_verified" | "not_member_centric";
+      readonly message: string;
+    }
+  | { readonly kind: "error"; readonly message: string };
+
+export async function resolveRoleSyncRoster(
+  deps: RoleSyncTriggerDeps,
+): Promise<RoleSyncRosterResolution> {
+  // (1) Actor — REFUSE a non-verified invocation before any read (same gate as
+  //     the SHADOW preview: the verified-actor refusal protects the read).
+  const resolved = await deps.resolveActor();
+  if (!resolved) {
+    return {
+      kind: "refused",
+      reason: "not_verified",
+      message:
+        "Refused: this command requires a verified identity. Run /verify to link your identity, then try again. (No data was read.)",
+    };
+  }
+
+  if (!deps.memberCentric) {
+    // The two-step apply path is the member-centric build only; without it there
+    // is no roster to confirm against.
+    return {
+      kind: "refused",
+      reason: "not_member_centric",
+      message: "Refused: the member-centric role-sync apply is not configured.",
+    };
+  }
+
+  // (2) Role-map (CM-authored or seed).
+  const authored = await deps.readRoleMap(deps.world);
+  const roleMap: RoleMapConfig = authored ?? buildPurupuruSeedRoleMap();
+  const mapSource: RoleMapSource = authored ? "config-service" : "default-seed";
+
+  // (3) Roster (member-centric, READ-only, fail-soft per member).
+  try {
+    const roster = await buildMemberRoster({
+      world: deps.world,
+      roleMap,
+      members: deps.memberCentric.members,
+      resolveIdentity: deps.memberCentric.resolveIdentity,
+      readTier: deps.memberCentric.readTier,
+    });
+    const mapHash = computeMapHash(roleMap, deps.world, deps.worldConfig);
+    const mapHash12 = (mapHash as unknown as string).slice(0, 12);
+    return { kind: "resolved", roster, mapSource, mapHash, mapHash12 };
+  } catch (e) {
+    return {
+      kind: "error",
+      message: `Member roster (SHADOW) failed: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
 }
 
 /**
@@ -266,12 +349,23 @@ export async function runRoleSyncTrigger(
         resolveIdentity: deps.memberCentric.resolveIdentity,
         readTier: deps.memberCentric.readTier,
       });
-      const ctx: MemberDashboardContext = { world: deps.world, mapSource };
+      // (bd-20x) content-address the Apply affordance by the SAME FR-7 map hash the
+      // LIVE path's stale-guard recomputes + compares. The dashboard appends the
+      // decision fence + Apply button; a click carries this hash so a stale preview
+      // can never apply against a changed map.
+      const mapHash = computeMapHash(roleMap, deps.world, deps.worldConfig);
+      const mapHash12 = (mapHash as unknown as string).slice(0, 12);
+      const ctx: MemberDashboardContext = {
+        world: deps.world,
+        mapSource,
+        apply: { mapHash12 },
+      };
       return {
         kind: "rendered-members",
         payload: memberDashboardCV2Payload(roster, ctx),
         applyMode: "SHADOW",
         mapSource,
+        mapHash12,
       };
     } catch (e) {
       // The member roster read (guild members) failed entirely — a voiceless

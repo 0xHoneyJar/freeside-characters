@@ -30,7 +30,7 @@ import { makeWalletDiscordLinkMock } from "./wallet-discord-link.live.ts";
 import type { DiscordInteraction } from "../discord-interactions/types.ts";
 import { InteractionResponseType, MessageFlags } from "../discord-interactions/types.ts";
 import { IS_COMPONENTS_V2 } from "./discrepancy-cv2.ts";
-import type { Client } from "discord.js";
+import { Collection, type Client } from "discord.js";
 
 const ADMIN_UUID = "ae0558c7-aeb2-48f0-906d-ad0a50108b19";
 const PURUPURU_GUILD = "1495534680617910396";
@@ -171,11 +171,14 @@ describe("bd-l08 — end-to-end: SHADOW runs the MEMBER-CENTRIC dashboard, ZERO 
     expect(flags & IS_COMPONENTS_V2).toBe(IS_COMPONENTS_V2);
     expect(flags & MessageFlags.EPHEMERAL).toBe(MessageFlags.EPHEMERAL);
     expect((res.data as { content?: string }).content).toBeUndefined();
-    // the member-centric dashboard header + summary surface the operator's member.
+    // the member-centric dashboard renders (redesigned bd-xaa). With NO score key
+    // the operator's member resolves to tier=null → NO-CHANGE → the redesign
+    // COLLAPSES non-actionable members into ONE dim line (no per-member row), so
+    // we assert the title + the strong center + the collapse line, not a per-row nick.
     const text = JSON.stringify((res.data as { components?: unknown }).components);
     expect(text).toContain("Member roles");
-    expect(text).toContain("soju");
-    expect(text).toContain("1** members");
+    expect(text).toContain("## 0 would gain a role");
+    expect(text).toContain("Not actionable");
   });
 
   test("with a score key, the operator-style member resolves tier 'member' → ADD", async () => {
@@ -199,10 +202,14 @@ describe("bd-l08 — end-to-end: SHADOW runs the MEMBER-CENTRIC dashboard, ZERO 
     )!;
     const res = await handleRoleSyncInteraction(interaction(), undefined, deps);
     const text = JSON.stringify((res.data as { components?: unknown }).components);
-    // operator-style: linked, tier member → purupuru:member, in the "Would add" group.
-    expect(text).toContain("Would add");
-    expect(text).toContain("purupuru:member");
-    expect(text).toContain("tier");
+    // operator-style: linked, tier member → purupuru:member, in the ADD group.
+    // Redesign (bd-xaa): ADD rows lead with the proposed role + tier note, and the
+    // `purupuru:` namespace prefix is STRIPPED from the rendered span (data keeps it).
+    expect(text).toContain("## 1 would gain a role");
+    expect(text).toContain("Would gain a role (1)");
+    expect(text).toContain("**soju**");
+    expect(text).toContain("(tier `member`)");
+    expect(text).not.toContain("purupuru:member"); // prefix stripped in the render
   });
 });
 
@@ -247,8 +254,13 @@ describe("bd-atm — isolated actor resolution refuses an unlinked CM (fail-clos
   });
 });
 
-describe("bd-atm — LIVE apply fails CLOSED (audit deps not wired)", () => {
-  test("a LIVE invocation surfaces a clear structural error (no write)", async () => {
+describe("bd-han (PART C) — LIVE apply for Purupuru is UNGATED (reaches the gate)", () => {
+  test("a LIVE invocation NO LONGER fails-closed at requireLiveAudit — it reaches the gate", async () => {
+    // PART C ungated Purupuru: LIVE now runs through the substrate gate + the LIVE
+    // writer + the DURABLE-RECORDING interim audit emitter. With the null-client
+    // seam (getBotClient → null) the LIVE roster READ fails — but that proves the
+    // path reached the gate's live read, NOT the old "not yet wired"/"SHADOW only"
+    // pre-write refusal. The audit gate is satisfied (recording-live), not closed.
     const deps = buildRoleSyncBootDeps(
       { ROLE_SYNC_ENABLED: "1", SCORE_PURUPURU_API_KEY: "k" } as RoleSyncBootEnv,
       seams({
@@ -257,9 +269,130 @@ describe("bd-atm — LIVE apply fails CLOSED (audit deps not wired)", () => {
     )!;
     const res = await handleRoleSyncInteraction(interaction("live"), undefined, deps);
     const data = res.data as { content?: string };
-    // The boot composition throws requireLiveAudit() for LIVE → the trigger maps
-    // it to a voiceless error outcome.
-    expect(data.content).toContain("failed");
+    expect(data.content).toContain("failed"); // (no live bot client in this seam)
     expect(data.content).toContain("LIVE");
+    // the OLD fail-closed message is gone — LIVE is no longer pre-write-refused.
+    expect(data.content).not.toContain("not yet wired");
+    expect(data.content).not.toContain("run /role-sync with mode SHADOW");
+    // the failure is the LIVE roster READ (gate reached), not an audit-deps refusal.
+    expect(data.content).toContain("roster");
+  });
+});
+
+/**
+ * A discord.js-faithful guild fixture (real `Collection` for roles) that supports
+ * BOTH the LIVE roster READ (roles.fetch() Collection chain + members.fetch())
+ * AND the LIVE writer (roles.create / members.fetch(id).roles.add). Used to prove
+ * a CM Confirm on Purupuru ACTUALLY grants roles through the gate (LIVE).
+ */
+function liveGuildFixture() {
+  const created: Array<{ id: string; name: string }> = [];
+  const assigned: Array<{ role_id: string; member_id: string }> = [];
+  const heldByMember = new Set<string>(); // `${memberId}:${roleId}`
+  let seq = 0;
+
+  // the live role Collection — starts with @everyone only (no managed roles yet).
+  const roleColl = new Collection<string, { id: string; name: string; members: { size: number } }>();
+  roleColl.set(PURUPURU_GUILD, { id: PURUPURU_GUILD, name: "@everyone", members: { size: 1 } });
+
+  const member = {
+    id: INVOKER_DISCORD_ID,
+    nickname: "soju",
+    user: { globalName: "soju", username: "soju" },
+    roles: { cache: new Map() },
+  };
+  const memberColl = new Collection<string, typeof member>();
+  memberColl.set(member.id, member);
+
+  const guild = {
+    id: PURUPURU_GUILD,
+    roles: {
+      // no-arg → the full Collection (roster READ uses .filter/.map/.values);
+      // the writer's no-arg fetch uses .find/.forEach (Collection has both).
+      fetch: async (id?: string) => {
+        if (id !== undefined) {
+          return roleColl.get(id) ?? null;
+        }
+        return roleColl;
+      },
+      create: async ({ name }: { name: string; reason?: string }) => {
+        const id = `live-${++seq}`;
+        roleColl.set(id, { id, name, members: { size: 0 } });
+        created.push({ id, name });
+        return { id };
+      },
+    },
+    members: {
+      cache: memberColl,
+      fetch: async (memberId?: string) => {
+        if (memberId === undefined) return memberColl;
+        return {
+          roles: {
+            cache: { has: (rid: string) => heldByMember.has(`${memberId}:${rid}`) },
+            add: async (role: string | { id: string }) => {
+              const rid = typeof role === "string" ? role : role.id;
+              assigned.push({ role_id: rid, member_id: memberId });
+              heldByMember.add(`${memberId}:${rid}`);
+            },
+          },
+        };
+      },
+    },
+  };
+
+  const client = { guilds: { fetch: async () => guild } } as unknown as Client;
+  return { client, created, assigned };
+}
+
+/** Route-aware fetch: identity reads + the score wallet-profile + the leaderboard. */
+function liveFetchImpl(): typeof fetch {
+  return (async (input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.toString();
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.includes("/v1/resolve/account/discord/")) return json({ user_id: ADMIN_UUID });
+    if (url.includes("/v1/profile")) return json({ identity: { primary_wallet: ADMIN_WALLET, wallets: [] } });
+    if (url.includes("/v1/wallets/")) return json({ wallet: ADMIN_WALLET, tier: "member" });
+    if (url.includes("leaderboard")) {
+      return json({
+        community: "purupuru",
+        wallets: [
+          { wallet: ADMIN_WALLET, rank: 1, combined_score: 100, tier: "member" },
+        ],
+      });
+    }
+    return new Response("not found", { status: 404 });
+  }) as unknown as typeof fetch;
+}
+
+describe("bd-han (PART C) — a LIVE apply ACTUALLY grants roles through the gate", () => {
+  test("LIVE on Purupuru: the create+assign batch writes through role-writer.live (with recording audit)", async () => {
+    const fx = liveGuildFixture();
+    const deps = buildRoleSyncBootDeps(
+      { ROLE_SYNC_ENABLED: "1", SCORE_PURUPURU_API_KEY: "k" } as RoleSyncBootEnv,
+      seams({
+        getBotClient: async () => fx.client,
+        // the wallet↔discord link the assign pass joins on (operator's wallet → discord id).
+        walletDiscordLink: makeWalletDiscordLinkMock({ [ADMIN_WALLET.toLowerCase()]: INVOKER_DISCORD_ID }),
+        fetchImpl: liveFetchImpl(),
+        readRoleMap: () => null, // ⇒ default seed
+      }),
+    )!;
+
+    const res = await handleRoleSyncInteraction(interaction("live"), undefined, deps);
+
+    // LIVE → the structural LIVE receipt (CV2), EPHEMERAL, NOT a refusal/error.
+    const data = res.data as { content?: string; components?: unknown; flags?: number };
+    expect(data.content).toBeUndefined(); // a CV2 render, not a plain error string
+    expect((data.flags ?? 0) & IS_COMPONENTS_V2).toBe(IS_COMPONENTS_V2);
+    const text = JSON.stringify(data.components);
+    expect(text).toContain("LIVE apply"); // the LIVE receipt verb
+    expect(text).toContain("Gate job"); // the gate's terminal job state surfaced
+
+    // THE PROOF: roles were ACTUALLY written through the single gated adapter.
+    expect(fx.created.length).toBeGreaterThan(0); // at least the member tier role was created
+    expect(fx.created.some((r) => r.name === "purupuru:member")).toBe(true);
+    expect(fx.assigned.length).toBeGreaterThan(0); // the operator got assigned
+    expect(fx.assigned.some((a) => a.member_id === INVOKER_DISCORD_ID)).toBe(true);
   });
 });

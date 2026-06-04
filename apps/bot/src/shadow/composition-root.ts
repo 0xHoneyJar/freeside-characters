@@ -264,12 +264,35 @@ export function liveApplyLayer(
   mode: ModeControl,
   currentMapHash: () => string,
 ): Layer.Layer<GateCheckedRoleWriter | RosterSource | ScoreSource> {
-  const innerWriter = makeRoleWriterLive(deps.getBotClient, liveWriterCfg(deps));
   const emitter = makeAcvpEmitterLive({
     nats: audit.nats,
     signer: audit.signer,
     prevHashStore: audit.prevHashStore,
   });
+  return liveApplyLayerWithEmitter(deps, emitter, mode, currentMapHash);
+}
+
+/**
+ * The LIVE-APPLY Layer stack, parameterized by an INJECTED `AcvpEmitter` Layer
+ * (bd-han / PART C). Identical to {@link liveApplyLayer} except the audit emitter
+ * is supplied directly rather than constructed from `LiveAuditDeps` (NATS +
+ * signer). This is the seam the role-sync LIVE boot uses to run a LIVE apply with
+ * a DURABLE-RECORDING interim audit backend (`acvp-emitter.recording-live.ts`)
+ * BEFORE the signed-NATS deps are wired (bd-3v2). The gate's write-after-audit,
+ * authz re-check at the write boundary, and the LIVE writer (the single gated
+ * adapter) are UNCHANGED — only the audit envelope backend differs.
+ *
+ * The LIVE writer is handed to `GateCheckedRoleWriter` as its `inner` Layer and is
+ * reachable ONLY through it (R-13). ScoreSource still FAILS CLOSED in LIVE mode
+ * when no community-scoped key is wired (no mock-zeros in the gated write path).
+ */
+export function liveApplyLayerWithEmitter(
+  deps: ShadowDeps,
+  emitter: Layer.Layer<AcvpEmitter>,
+  mode: ModeControl,
+  currentMapHash: () => string,
+): Layer.Layer<GateCheckedRoleWriter | RosterSource | ScoreSource> {
+  const innerWriter = makeRoleWriterLive(deps.getBotClient, liveWriterCfg(deps));
   const allowlist = makeAdminAllowlistLive(liveAllowlistCfg(deps));
   const worldLock = makeInMemoryWorldLock();
 
@@ -288,6 +311,66 @@ export function liveApplyLayer(
     allowlist,
     score,
   ) as Layer.Layer<GateCheckedRoleWriter | RosterSource | ScoreSource>;
+}
+
+/**
+ * Build the FULL LIVE orchestration-level Layer stack for the role-sync invoker
+ * (bd-han / PART C). The substrate gate's `applyBatch` RE-RESOLVES the bare
+ * `RoleWriter | AcvpEmitter | WorldLock | AdminAllowlistSource` at the write
+ * boundary (server-side authz re-check + write-after-audit), so those SAME
+ * instances must ALSO be present at the orchestration's top level — not only
+ * provided INTO the gate. This helper builds ONE shared set of bare LIVE services
+ * (the LIVE writer, the injected emitter, an in-memory world lock, the FR-10 live
+ * allowlist), wires them into the gate, AND merges them at the top so the
+ * re-resolution sees the SAME instances (mirrors the SHADOW branch + the
+ * orchestrator test's full stack). The result satisfies the orchestration's
+ * required context exactly. Authz / binding guards are untouched — this only
+ * assembles the LIVE stack with the provided audit backend.
+ */
+export function liveApplyOrchestrationLayer(
+  deps: ShadowDeps,
+  emitter: Layer.Layer<AcvpEmitter>,
+  mode: ModeControl,
+  currentMapHash: () => string,
+): Layer.Layer<
+  | GateCheckedRoleWriter
+  | RosterSource
+  | ScoreSource
+  | RoleWriter
+  | AcvpEmitter
+  | WorldLock
+  | AdminAllowlistSource
+> {
+  // ONE shared set of bare LIVE services (gate AND top-level re-resolution agree).
+  const innerWriter = makeRoleWriterLive(deps.getBotClient, liveWriterCfg(deps));
+  const allowlist = makeAdminAllowlistLive(liveAllowlistCfg(deps));
+  const worldLock = makeInMemoryWorldLock();
+
+  const gate = makeGateCheckedRoleWriter(mode, currentMapHash).pipe(
+    Layer.provide(Layer.mergeAll(innerWriter, emitter, worldLock)),
+  );
+
+  // ScoreSource FAILS CLOSED in LIVE mode when no community-scoped key is wired.
+  const score = resolveScoreLayer(deps, "LIVE");
+
+  return Layer.mergeAll(
+    gate,
+    makeRosterSourceLive(deps.getBotClient, liveRosterCfg(deps)),
+    score,
+    // the bare write-boundary services the gate's applyBatch re-resolves:
+    innerWriter,
+    emitter,
+    worldLock,
+    allowlist,
+  ) as Layer.Layer<
+    | GateCheckedRoleWriter
+    | RosterSource
+    | ScoreSource
+    | RoleWriter
+    | AcvpEmitter
+    | WorldLock
+    | AdminAllowlistSource
+  >;
 }
 
 /**

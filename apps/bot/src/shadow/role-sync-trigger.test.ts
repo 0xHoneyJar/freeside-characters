@@ -341,15 +341,16 @@ describe("bd-l08 — role-sync trigger: member-centric SHADOW dashboard", () => 
       expect(outcome.applyMode).toBe("SHADOW");
       expect(outcome.payload.allowed_mentions).toEqual({ parse: [] });
       const text = JSON.stringify(outcome.payload.components);
-      // member-centric dashboard headings + the operator-style ADD row.
+      // member-centric dashboard (redesigned bd-xaa): title + strong center + the
+      // operator-style ADD row (proposed leads, namespace prefix stripped).
       expect(text).toContain("Member roles");
-      expect(text).toContain("Would add");
-      expect(text).toContain("soju");
-      expect(text).toContain("purupuru:member");
-      // summary counts surfaced.
-      expect(text).toContain("2** members");
-      expect(text).toContain("1** would-add");
-      expect(text).toContain("1** unlinked");
+      expect(text).toContain("## 1 would gain a role");
+      expect(text).toContain("Would gain a role (1)");
+      expect(text).toContain("**soju**");
+      expect(text).not.toContain("purupuru:member"); // prefix stripped in the render
+      // non-actionable (unlinked) collapses + adoption line surfaces the linked count.
+      expect(text).toContain("Not actionable — 0 untiered · 1 unlinked");
+      expect(text).toContain("1 of 2 members have linked a wallet");
     }
   });
 
