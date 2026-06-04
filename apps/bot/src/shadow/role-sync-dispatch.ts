@@ -18,25 +18,35 @@
  *        ^                              |
  *        +----------click Cancel--------+
  *
- *   • rolesync:apply:…   → NON-MUTATING. UPDATE_MESSAGE (type 7) re-renders the
- *       SAME ephemeral container as a CONFIRM card (ADD-only count + role(s), the
- *       map hash + provenance, "does not touch Keep / Unlinked / Untiered"). It
- *       recomputes the roster (no write, no gate) so the count is fresh.
- *   • rolesync:cancel:… → NON-MUTATING. UPDATE_MESSAGE back to the dashboard.
- *   • rolesync:confirm:… → the ONLY mutating path. STALE GUARD first (recompute
- *       the FR-7 map hash, compare its first 12 hex to the custom_id; a mismatch
- *       re-previews — NEVER applies a stale map). Then DEFERRED_UPDATE_MESSAGE
- *       (type 6) + a background `runRoleSyncTrigger(deps, 'LIVE')` through the
- *       EXISTING gate (apply_mode + admin_principals re-check + write-after-audit +
- *       role-writer.live.ts) + PATCH @original with the LIVE receipt.
+ * ── DEFER FIRST, ALWAYS (Discord's 3s ACK window) ────────────────────────────
+ * EVERY `rolesync:` click ACKs immediately with DEFERRED_UPDATE_MESSAGE (type 6)
+ * and does its work in the background, PATCHing the result onto @original. This is
+ * load-bearing: every outcome needs `computeRoleSyncComponentOutcome` →
+ * `resolveRoleSyncRoster`, an identity-api + score-api roster recompute that
+ * routinely exceeds Discord's ~3s interaction-ACK window. Awaiting it before
+ * responding is exactly what surfaced "This interaction failed" on a live click
+ * (tests never caught it — injected deps are instant; the 3s window is prod-only).
+ *
+ *   • rolesync:apply:…   → NON-MUTATING. Background recompute (no write, no gate)
+ *       so the count is fresh, then PATCH @original with a CONFIRM card (ADD-only
+ *       count + role(s), the map hash + provenance, "does not touch Keep /
+ *       Unlinked / Untiered").
+ *   • rolesync:cancel:… → NON-MUTATING. Background recompute, PATCH @original back
+ *       to the dashboard.
+ *   • rolesync:confirm:… → the ONLY mutating path. Background STALE GUARD first
+ *       (recompute the FR-7 map hash, compare its first 12 hex to the custom_id; a
+ *       mismatch re-previews — NEVER applies a stale map). Then
+ *       `runRoleSyncTrigger(deps, 'LIVE')` through the EXISTING gate (apply_mode +
+ *       admin_principals re-check + write-after-audit + role-writer.live.ts) +
+ *       PATCH @original with the LIVE receipt.
  *
  * The ACTOR is the CLICKER (interactionInvoker(interaction).id) so authz binds to
  * whoever confirmed — the same isolated-actor resolution the slash command uses.
  *
  * ── EPHEMERAL persists ───────────────────────────────────────────────────────
- * The preview is EPHEMERAL. UPDATE_MESSAGE / DEFERRED_UPDATE_MESSAGE operate on
- * the SAME ephemeral message, so every step stays invoker-only — Discord carries
- * the ephemeral flag through the message lifecycle (set at the original deferral).
+ * The preview is EPHEMERAL. The type-6 ACK + every @original PATCH operate on the
+ * SAME ephemeral message, so every step stays invoker-only — Discord carries the
+ * ephemeral flag through the message lifecycle (set at the original deferral).
  *
  * ── VOICELESS · ZERO DIRECT MUTATIONS ────────────────────────────────────────
  * NO persona-engine import. This module builds CV2 response payloads + maps
@@ -242,41 +252,64 @@ export async function handleRoleSyncComponentInteraction(
   deps: RoleSyncInteractionDeps,
   fetchFn: typeof fetch = fetch,
 ): Promise<DiscordInteractionResponse> {
-  const outcome = await computeRoleSyncComponentOutcome(interaction, auth, deps);
-
-  if (outcome.kind === "update") {
-    // UPDATE_MESSAGE (type 7) re-renders the SAME ephemeral container. The CV2
-    // payload carries IS_COMPONENTS_V2; merge EPHEMERAL so the container stays
-    // invoker-only across the transition.
-    const data = {
-      ...outcome.payload,
-      flags: outcome.payload.flags | MessageFlags.EPHEMERAL,
-    } as unknown as DiscordInteractionResponse["data"];
-    return { type: InteractionResponseType.UPDATE_MESSAGE, data };
-  }
-
-  if (outcome.kind === "status") {
-    // A plain status (refusal / error / stale-not-applicable) — re-render the same
-    // ephemeral message as a content update (still type 7, keeps it invoker-only).
-    return {
-      type: InteractionResponseType.UPDATE_MESSAGE,
-      data: {
-        content: outcome.message,
-        flags: MessageFlags.EPHEMERAL,
-        allowed_mentions: { parse: [] },
-        // CV2 cannot mix with content; this transition drops components for a status.
-        components: [],
-      } as unknown as DiscordInteractionResponse["data"],
-    };
-  }
-
-  // outcome.kind === "confirm-live": DEFERRED_UPDATE_MESSAGE (type 6), then run the
-  // LIVE apply in the background + PATCH @original with the structural receipt.
-  void runConfirmLive(interaction, outcome.coreDeps, fetchFn);
+  // ACK FIRST — DEFERRED_UPDATE_MESSAGE (type 6), for EVERY outcome. The work
+  // (computeRoleSyncComponentOutcome → resolveRoleSyncRoster: an identity-api +
+  // score-api roster recompute) routinely exceeds Discord's ~3s ACK window, so
+  // awaiting it before responding surfaced "This interaction failed" on a live
+  // click. Defer before any read, then PATCH the re-render / receipt onto the SAME
+  // ephemeral message via @original. EPHEMERAL is carried from the original message.
+  void completeRoleSyncComponent(interaction, auth, deps, fetchFn);
   return {
     type: InteractionResponseType.DEFERRED_UPDATE_MESSAGE,
     data: { flags: MessageFlags.EPHEMERAL },
   };
+}
+
+/**
+ * Background completion for a deferred `rolesync:` click. Runs the slow outcome
+ * computation AFTER the type-6 ACK, then PATCHes @original:
+ *   • update       → the re-rendered CV2 card (confirm card / dashboard).
+ *   • status       → a plain ephemeral status string (drops components).
+ *   • confirm-live → the LIVE apply through the gate + the structural receipt.
+ * NEVER throws into the caller (it is void-ed). Exported for direct testing.
+ */
+export async function completeRoleSyncComponent(
+  interaction: DiscordInteraction,
+  auth: AuthContext | undefined,
+  deps: RoleSyncInteractionDeps,
+  fetchFn: typeof fetch = fetch,
+): Promise<void> {
+  try {
+    const outcome = await computeRoleSyncComponentOutcome(interaction, auth, deps);
+
+    if (outcome.kind === "update") {
+      // The CV2 payload carries IS_COMPONENTS_V2; merge EPHEMERAL so the container
+      // stays invoker-only across the transition.
+      await patchOriginalData(interaction, fetchFn, {
+        ...(outcome.payload as unknown as Record<string, unknown>),
+        flags: (outcome.payload.flags as number) | MessageFlags.EPHEMERAL,
+      });
+      return;
+    }
+
+    if (outcome.kind === "status") {
+      // A plain status (refusal / error / stale-not-applicable) — patchOriginalContent
+      // drops components (CV2 cannot mix with content) and keeps it ephemeral.
+      await patchOriginalContent(interaction, fetchFn, outcome.message);
+      return;
+    }
+
+    // outcome.kind === "confirm-live": run the LIVE apply through the EXISTING gate +
+    // PATCH @original with the structural receipt.
+    await runConfirmLive(interaction, outcome.coreDeps, fetchFn);
+  } catch (err) {
+    console.error("role-sync: component completion failed:", err);
+    await patchOriginalContent(
+      interaction,
+      fetchFn,
+      "role-sync failed — see logs.",
+    ).catch(() => {});
+  }
 }
 
 /**

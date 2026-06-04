@@ -4,15 +4,17 @@
  * reads, and the orchestration invoker are all INJECTED; the confirm PATCH
  * @original uses an injected fetch.
  *
- * Proves the state machine:
+ * Proves the state machine. EVERY click ACKs with DEFERRED_UPDATE_MESSAGE (type 6)
+ * first — the roster recompute exceeds Discord's 3s ACK window — then PATCHes the
+ * result onto @original (asserted via the injected fetch):
  *   • prefix ownership: `rolesync:` clicks are detected; a foreign squat is rejected.
- *   • apply click = NON-MUTATING → UPDATE_MESSAGE (type 7) with the CONFIRM card
+ *   • apply click = NON-MUTATING → type 6, then a CONFIRM card PATCHed to @original
  *     (the orchestration / gate is NEVER called).
- *   • cancel click → UPDATE_MESSAGE back to the dashboard (no write).
- *   • confirm click (fresh hash) → DEFERRED_UPDATE_MESSAGE (type 6) + a background
- *     LIVE run through the orchestration (the gate) + PATCH @original receipt.
- *   • confirm click (STALE hash) → re-preview, the orchestration NEVER called.
- *   • not-verified clicker → refused, no read.
+ *   • cancel click → type 6, then the dashboard PATCHed back (no write).
+ *   • confirm click (fresh hash) → type 6 + a background LIVE run through the
+ *     orchestration (the gate) + PATCH @original receipt.
+ *   • confirm click (STALE hash) → type 6, re-preview PATCHed, the orchestration NEVER called.
+ *   • not-verified clicker → type 6, refused status PATCHed, no read.
  *   • the CONFIRM custom_id is the only mutating one (apply/cancel never invoke).
  */
 import { describe, expect, test } from "bun:test";
@@ -159,18 +161,29 @@ describe("bd-20x — prefix ownership", () => {
 });
 
 describe("bd-20x — apply click is NON-MUTATING → CONFIRM card", () => {
-  test("apply → UPDATE_MESSAGE (type 7) confirm card; orchestration NEVER called", async () => {
+  test("apply → DEFERRED ack (type 6); CONFIRM card PATCHed to @original; orchestration NEVER called", async () => {
     const { deps, calls } = makeDeps();
+    let patched: Record<string, unknown> | null = null;
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      patched = JSON.parse(String(init.body));
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
     const res = await handleRoleSyncComponentInteraction(
       click(`rolesync:apply:${WORLD}:${freshMapHash12()}`),
       undefined,
       deps,
+      fakeFetch,
     );
-    expect(res.type).toBe(InteractionResponseType.UPDATE_MESSAGE);
+    // ACK FIRST: the slow roster recompute runs in the background (no 3s timeout).
+    expect(res.type).toBe(InteractionResponseType.DEFERRED_UPDATE_MESSAGE);
+
+    await new Promise((r) => setTimeout(r, 20));
     expect(calls.invoked).toBe(false); // NO write on apply
-    const data = res.data as { flags?: number; components?: unknown };
-    expect((data.flags ?? 0) & MessageFlags.EPHEMERAL).toBe(MessageFlags.EPHEMERAL);
-    const text = JSON.stringify(data.components);
+    expect(patched).not.toBeNull();
+    const p = patched as unknown as { flags: number; components: unknown };
+    expect(p.flags & MessageFlags.EPHEMERAL).toBe(MessageFlags.EPHEMERAL);
+    const text = JSON.stringify(p.components);
     // the confirm card: ADD-only count + the confirm custom_id + the scope invariant.
     expect(text).toContain("Confirm — grant 1 role");
     expect(text).toContain("does not touch Keep / Unlinked / Untiered");
@@ -179,16 +192,26 @@ describe("bd-20x — apply click is NON-MUTATING → CONFIRM card", () => {
 });
 
 describe("bd-20x — cancel click → dashboard (no write)", () => {
-  test("cancel → UPDATE_MESSAGE back to the dashboard; orchestration NEVER called", async () => {
+  test("cancel → DEFERRED ack (type 6); dashboard PATCHed back; orchestration NEVER called", async () => {
     const { deps, calls } = makeDeps();
+    let patched: Record<string, unknown> | null = null;
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      patched = JSON.parse(String(init.body));
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
     const res = await handleRoleSyncComponentInteraction(
       click(`rolesync:cancel:${WORLD}:${freshMapHash12()}`),
       undefined,
       deps,
+      fakeFetch,
     );
-    expect(res.type).toBe(InteractionResponseType.UPDATE_MESSAGE);
+    expect(res.type).toBe(InteractionResponseType.DEFERRED_UPDATE_MESSAGE);
+
+    await new Promise((r) => setTimeout(r, 20));
     expect(calls.invoked).toBe(false);
-    const text = JSON.stringify((res.data as { components?: unknown }).components);
+    expect(patched).not.toBeNull();
+    const text = JSON.stringify((patched as unknown as { components?: unknown }).components);
     expect(text).toContain("# Member roles");
     expect(text).toContain("rolesync:apply:"); // the dashboard's Apply button is back
   });
@@ -223,27 +246,40 @@ describe("bd-20x — confirm click is the ONLY mutating path (through the gate)"
     expect(JSON.stringify(p.components)).toContain("LIVE apply");
   });
 
-  test("confirm (STALE hash) → re-preview; the orchestration is NEVER called", async () => {
+  test("confirm (STALE hash) → DEFERRED ack (type 6); re-preview PATCHed; the orchestration is NEVER called", async () => {
     const { deps, calls } = makeDeps();
+    let patched: Record<string, unknown> | null = null;
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      patched = JSON.parse(String(init.body));
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
     const res = await handleRoleSyncComponentInteraction(
       click(`rolesync:confirm:${WORLD}:deadbeefstale`), // a hash that won't match the fresh one
       undefined,
       deps,
+      fakeFetch,
     );
-    // a stale confirm re-renders the dashboard (UPDATE_MESSAGE), never applies.
-    expect(res.type).toBe(InteractionResponseType.UPDATE_MESSAGE);
+    expect(res.type).toBe(InteractionResponseType.DEFERRED_UPDATE_MESSAGE);
     await new Promise((r) => setTimeout(r, 20));
     expect(calls.invoked).toBe(false); // NEVER applied a stale map
-    const text = JSON.stringify((res.data as { components?: unknown }).components);
+    expect(patched).not.toBeNull();
+    // a stale confirm re-renders the dashboard, never applies.
+    const text = JSON.stringify((patched as unknown as { components?: unknown }).components);
     expect(text).toContain("# Member roles"); // back to the dashboard
   });
 });
 
 describe("bd-20x — not-verified clicker is refused before any read", () => {
-  test("a null-actor clicker → refused status; orchestration NEVER called", async () => {
+  test("a null-actor clicker → DEFERRED ack (type 6); refused status PATCHed; no roster read", async () => {
     let membersRead = false;
     const { deps, calls } = makeDeps({ actor: null });
     const mc = deps.memberCentric!;
+    let patched: Record<string, unknown> | null = null;
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      patched = JSON.parse(String(init.body));
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
     const guarded: RoleSyncInteractionDeps = {
       ...deps,
       memberCentric: { ...mc, members: async (w) => ((membersRead = true), mc.members(w)) },
@@ -252,10 +288,13 @@ describe("bd-20x — not-verified clicker is refused before any read", () => {
       click(`rolesync:confirm:${WORLD}:${freshMapHash12()}`),
       undefined,
       guarded,
+      fakeFetch,
     );
-    expect(res.type).toBe(InteractionResponseType.UPDATE_MESSAGE);
+    expect(res.type).toBe(InteractionResponseType.DEFERRED_UPDATE_MESSAGE);
+    await new Promise((r) => setTimeout(r, 20));
     expect(membersRead).toBe(false); // refused before any roster read
     expect(calls.invoked).toBe(false);
-    expect((res.data as { content?: string }).content).toContain("verified identity");
+    expect(patched).not.toBeNull();
+    expect((patched as unknown as { content?: string }).content).toContain("verified identity");
   });
 });
