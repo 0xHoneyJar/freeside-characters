@@ -14,6 +14,7 @@
     "./score/index": "./src/score/index.ts",
     "./score/types": "./src/score/types.ts",
     "./score/client": "./src/score/client.ts",
+    "./score/community-client": "./src/score/community-client.ts",
     "./compose/digest": "./src/compose/digest.ts",
     "./compose/voice-brief": "./src/compose/voice-brief.ts",
     "./compose/voice-memory": "./src/compose/voice-memory.ts",

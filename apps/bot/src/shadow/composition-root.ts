@@ -29,6 +29,7 @@ import {
   makeModeControl,
   RosterSource,
   RoleWriter,
+  ScoreSource,
   AcvpEmitter,
   WorldLock,
   AdminAllowlistSource,
@@ -40,16 +41,34 @@ import { makeRosterSourceLive, type LiveRosterConfig } from "./roster-source.liv
 import { RosterSourceMock } from "./roster-source.mock.ts";
 import { makeRoleWriterLive, makeGatedRoleGc, type LiveWriterConfig } from "./role-writer.live.ts";
 import { RoleWriterMock } from "./role-writer.mock.ts";
+import { makeScoreSourceLive, type LiveScoreConfig } from "./score-source.live.ts";
+import { ScoreSourceMock } from "./score-source.mock.ts";
 import { makeAcvpEmitterLive } from "./acvp-emitter.live.ts";
 import { makeAdminAllowlistLive, type LiveAllowlistConfig } from "./admin-allowlist.live.ts";
 import { makeInMemoryWorldLock } from "./world-lock.ts";
 import { computeRollbackPlan, type RolesCreatedEntry, type RoleAssignmentCount } from "./coexistence.ts";
+import { CommunityScoreClient } from "@freeside-characters/persona-engine/score/community-client";
 
 // ── Per-world wiring resolved from the world manifest (purupuru.yaml) ────────
 
 export interface WorldWiring {
   readonly guild_id: string;
   readonly namespace_prefix: string;
+}
+
+/**
+ * Per-world LIVE score wiring (bd-tfl). Resolves a world slug → the score-api
+ * base URL + the community slug + the community-scoped API key. The presence of
+ * the API KEY is the LIVE/MOCK flag (see `resolveScoreClient`): present ⇒ LIVE
+ * ScoreSource (real Purupuru tiers); absent/undefined ⇒ MOCK ScoreSource.
+ */
+export interface WorldScoreWiring {
+  /** score-api base URL, e.g. https://score-api-production.up.railway.app. */
+  readonly scoreApiUrl: string;
+  /** the community slug, e.g. "purupuru". */
+  readonly community: string;
+  /** the community-scoped score-api key (x-api-key). undefined ⇒ MOCK. */
+  readonly apiKey: string | undefined;
 }
 
 export interface ShadowDeps {
@@ -63,6 +82,14 @@ export interface ShadowDeps {
   readonly world: string;
   /** initial apply_mode (seeded from the apply-mode config surface). */
   readonly initialMode: ApplyMode;
+  /**
+   * map a world slug → its LIVE score wiring (bd-tfl). OPTIONAL: when omitted (or
+   * when the resolved wiring has no `apiKey`), the composition uses the MOCK
+   * ScoreSource — so the substrate's `loadLatentCounts` still resolves and the
+   * shadow preview works with NO score-api provisioning. Supply it (with a real
+   * `apiKey`) to read live Purupuru tiers.
+   */
+  readonly resolveScoreWiring?: (world: string) => WorldScoreWiring | undefined;
 }
 
 /** Deploy-provided NATS + signer for the LIVE AcvpEmitter (operator boundary). */
@@ -113,6 +140,40 @@ function liveAllowlistCfg(deps: ShadowDeps): LiveAllowlistConfig {
 }
 
 /**
+ * Resolve the ScoreSource Layer for this composition (bd-tfl). The API-KEY's
+ * presence IS the LIVE/MOCK flag (mirrors the env gate the brief specifies:
+ * `SCORE_PURUPURU_API_KEY` present ⇒ LIVE, absent ⇒ MOCK):
+ *   • a world with score wiring AND a non-empty `apiKey` → LIVE ScoreSource
+ *     (reads the real Purupuru leaderboard via CommunityScoreClient).
+ *   • otherwise → MOCK ScoreSource (the default; the shadow preview works with
+ *     NO score-api provisioning).
+ * The MOCK is also the safe fallback for any world that lacks LIVE wiring, so a
+ * misconfigured world degrades to mock-zeros rather than failing the whole
+ * discrepancy build.
+ */
+function resolveScoreLayer(deps: ShadowDeps): Layer.Layer<ScoreSource> {
+  const resolve = deps.resolveScoreWiring;
+  if (!resolve) return ScoreSourceMock;
+  // Eagerly build a per-world client factory; LIVE only when an apiKey is present.
+  const cfg: LiveScoreConfig = {
+    clientFor: (world: string): CommunityScoreClient | undefined => {
+      const w = resolve(world);
+      if (!w || !w.apiKey || w.apiKey.length === 0) return undefined;
+      return new CommunityScoreClient({
+        baseUrl: w.scoreApiUrl,
+        apiKey: w.apiKey,
+        community: w.community,
+      });
+    },
+  };
+  // If the TARGET world has no live key, prefer the MOCK Layer so we don't
+  // surface fail-closed ScoreErrors for an unprovisioned shadow preview.
+  const target = resolve(deps.world);
+  const targetIsLive = !!target && !!target.apiKey && target.apiKey.length > 0;
+  return targetIsLive ? makeScoreSourceLive(cfg) : ScoreSourceMock;
+}
+
+/**
  * Build the MODE-CONTROL (the apply_mode `Ref` + the shared batch-duration lock,
  * B5/R-10). The gate reads this `Ref` AT INVOCATION; a `rollback` flips it under
  * the same lock so it serializes to a batch boundary.
@@ -137,7 +198,7 @@ export function shadowPreviewLayer(
   mode: ModeControl,
   currentMapHash: () => string,
   emitterLayer: Layer.Layer<AcvpEmitter>,
-): Layer.Layer<GateCheckedRoleWriter | RosterSource> {
+): Layer.Layer<GateCheckedRoleWriter | RosterSource | ScoreSource> {
   const innerWriter = RoleWriterMock;
   const allowlist = makeAdminAllowlistLive(liveAllowlistCfg(deps));
   const worldLock = makeInMemoryWorldLock();
@@ -149,8 +210,14 @@ export function shadowPreviewLayer(
     Layer.provide(Layer.mergeAll(innerWriter, emitterLayer, worldLock)),
   );
 
-  return Layer.mergeAll(gate, RosterSourceMock, allowlist) as Layer.Layer<
-    GateCheckedRoleWriter | RosterSource
+  // ScoreSource (bd-tfl): MOCK by default; LIVE only when the target world has a
+  // community-scoped key wired (resolveScoreWiring). The score READ is read-only
+  // (no Discord writes), so a production shadow preview MAY read real Purupuru
+  // tiers while the writer stays mocked — that IS the point of the preview.
+  const score = resolveScoreLayer(deps);
+
+  return Layer.mergeAll(gate, RosterSourceMock, allowlist, score) as Layer.Layer<
+    GateCheckedRoleWriter | RosterSource | ScoreSource
   >;
 }
 
@@ -168,7 +235,7 @@ export function liveApplyLayer(
   audit: LiveAuditDeps,
   mode: ModeControl,
   currentMapHash: () => string,
-): Layer.Layer<GateCheckedRoleWriter | RosterSource> {
+): Layer.Layer<GateCheckedRoleWriter | RosterSource | ScoreSource> {
   const innerWriter = makeRoleWriterLive(deps.getBotClient, liveWriterCfg(deps));
   const emitter = makeAcvpEmitterLive({
     nats: audit.nats,
@@ -182,11 +249,16 @@ export function liveApplyLayer(
     Layer.provide(Layer.mergeAll(innerWriter, emitter, worldLock)),
   );
 
+  // ScoreSource (bd-tfl): LIVE when the target world has a community-scoped key,
+  // else MOCK. resolveScoreLayer is the env-gated picker.
+  const score = resolveScoreLayer(deps);
+
   return Layer.mergeAll(
     gate,
     makeRosterSourceLive(deps.getBotClient, liveRosterCfg(deps)),
     allowlist,
-  ) as Layer.Layer<GateCheckedRoleWriter | RosterSource>;
+    score,
+  ) as Layer.Layer<GateCheckedRoleWriter | RosterSource | ScoreSource>;
 }
 
 /**
@@ -255,6 +327,8 @@ export {
   makeRoleWriterLive,
   makeGatedRoleGc,
   RoleWriterMock,
+  makeScoreSourceLive,
+  ScoreSourceMock,
   makeAcvpEmitterLive,
   makeAdminAllowlistLive,
   makeInMemoryWorldLock,
