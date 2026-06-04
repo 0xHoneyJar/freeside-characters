@@ -300,3 +300,106 @@ describe("bd-71y — command name constant", () => {
     expect(ROLE_SYNC_COMMAND_NAME).toBe("role-sync");
   });
 });
+
+// ─── bd-l08 — member-centric SHADOW routing ──────────────────────────────────
+import type { MemberCentricShadowDeps } from "./role-sync-trigger.ts";
+
+const MEMBER_A = "700000000000000001"; // operator-style: linked, tier member, ADD
+const WALLET_A = "0xaaa0000000000000000000000000000000000001";
+
+function memberCentricDeps(): MemberCentricShadowDeps {
+  return {
+    members: async () => [
+      { discord_id: MEMBER_A, display_name: "soju", current_managed_roles: [] },
+      { discord_id: "700000000000000002", display_name: "nolink", current_managed_roles: [] },
+    ],
+    resolveIdentity: async (id) =>
+      id === MEMBER_A
+        ? { kind: "linked", user_id: "u-a", wallet: WALLET_A }
+        : { kind: "unlinked" },
+    readTier: async (wallet) => (wallet.toLowerCase() === WALLET_A ? "member" : null),
+  };
+}
+
+describe("bd-l08 — role-sync trigger: member-centric SHADOW dashboard", () => {
+  test("when memberCentric is wired + mode SHADOW ⇒ rendered-members, NO orchestration call", async () => {
+    let invoked = false;
+    const { deps } = makeDeps({
+      invoke: async () => {
+        invoked = true;
+        return fakeResult("SHADOW");
+      },
+    });
+    const outcome = await runRoleSyncTrigger(
+      { ...deps, memberCentric: memberCentricDeps() },
+      "SHADOW",
+    );
+    // the leaderboard-centric orchestration is NEVER called on the member path.
+    expect(invoked).toBe(false);
+    expect(outcome.kind).toBe("rendered-members");
+    if (outcome.kind === "rendered-members") {
+      expect(outcome.applyMode).toBe("SHADOW");
+      expect(outcome.payload.allowed_mentions).toEqual({ parse: [] });
+      const text = JSON.stringify(outcome.payload.components);
+      // member-centric dashboard headings + the operator-style ADD row.
+      expect(text).toContain("Member roles");
+      expect(text).toContain("Would add");
+      expect(text).toContain("soju");
+      expect(text).toContain("purupuru:member");
+      // summary counts surfaced.
+      expect(text).toContain("2** members");
+      expect(text).toContain("1** would-add");
+      expect(text).toContain("1** unlinked");
+    }
+  });
+
+  test("not-verified CM is STILL refused before the member roster read", async () => {
+    let membersRead = false;
+    const mc = memberCentricDeps();
+    const { deps } = makeDeps({ actor: null, invoke: async () => fakeResult("SHADOW") });
+    const outcome = await runRoleSyncTrigger(
+      {
+        ...deps,
+        memberCentric: { ...mc, members: async (w) => ((membersRead = true), mc.members(w)) },
+      },
+      "SHADOW",
+    );
+    expect(outcome.kind).toBe("refused");
+    expect(membersRead).toBe(false);
+  });
+
+  test("LIVE still flows through the orchestration (member path is SHADOW-only)", async () => {
+    let invoked = false;
+    const { deps } = makeDeps({
+      invoke: async (input) => {
+        invoked = true;
+        return fakeResult(input.applyMode);
+      },
+    });
+    const outcome = await runRoleSyncTrigger(
+      { ...deps, memberCentric: memberCentricDeps() },
+      "LIVE",
+    );
+    expect(invoked).toBe(true);
+    expect(outcome.kind).toBe("rendered"); // leaderboard-centric render, not member.
+  });
+
+  test("a total guild-members read failure ⇒ voiceless error (zero writes)", async () => {
+    const mc = memberCentricDeps();
+    const { deps } = makeDeps({ invoke: async () => fakeResult("SHADOW") });
+    const outcome = await runRoleSyncTrigger(
+      {
+        ...deps,
+        memberCentric: {
+          ...mc,
+          members: async () => {
+            throw new Error("guild fetch 503");
+          },
+        },
+      },
+      "SHADOW",
+    );
+    expect(outcome.kind).toBe("error");
+    if (outcome.kind === "error") expect(outcome.message).toContain("Member roster");
+  });
+});

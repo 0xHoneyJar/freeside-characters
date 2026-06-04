@@ -54,6 +54,16 @@ import {
   roleSyncResultCV2Payload,
   type RoleSyncRenderContext,
 } from "./role-sync-result-cv2.ts";
+import {
+  buildMemberRoster,
+  type MemberSource,
+  type MemberIdentityResolver,
+  type MemberTierReader,
+} from "./member-roster.ts";
+import {
+  memberDashboardCV2Payload,
+  type MemberDashboardContext,
+} from "./member-dashboard-cv2.ts";
 
 /** The CM's resolved actor — the invoking CM's identity-api user_id. */
 export interface ResolvedActor {
@@ -119,6 +129,31 @@ export interface RoleSyncTriggerDeps {
   readonly tokenMetadata: GoLiveOrchestrationInput["tokenMetadata"];
   /** the FR-7 go_live transition version (deploy-/lifecycle-provided). */
   readonly transitionVersion: number;
+  /**
+   * OPTIONAL member-centric SHADOW wiring (bd-l08). When present AND the run is
+   * SHADOW, the trigger produces the MEMBER-CENTRIC CM dashboard (each guild
+   * member → their tier → their role + a before→after change indicator) instead
+   * of the leaderboard-centric orchestration result. When absent OR the run is
+   * LIVE, the trigger uses the existing orchestration path (preserved for the
+   * LIVE-apply follow-up). Authz is unchanged — the actor is still resolved +
+   * refused BEFORE any read.
+   */
+  readonly memberCentric?: MemberCentricShadowDeps;
+}
+
+/**
+ * The member-centric SHADOW deps (bd-l08). All I/O is injected so the build is
+ * network-free in tests; the boot composition backs `members` with the bot's
+ * guild member READ, `resolveIdentity` with the two identity-api reads, and
+ * `readTier` with the score community-client `walletProfile`.
+ */
+export interface MemberCentricShadowDeps {
+  /** read the configured guild's members (+ display name + current managed roles). */
+  readonly members: MemberSource;
+  /** discord id → identity outcome (unlinked / no_wallet / linked + wallet). */
+  readonly resolveIdentity: MemberIdentityResolver;
+  /** wallet → community tier (or null when untiered). fail-soft per member. */
+  readonly readTier: MemberTierReader;
 }
 
 /** The CM's chosen action — SHADOW preview (default) or LIVE apply. */
@@ -135,6 +170,15 @@ export type RoleSyncOutcome =
       /** the role-map provenance (CM-authored vs default seed). */
       readonly mapSource: RoleMapSource;
       readonly result: GoLiveOrchestrationResult;
+    }
+  | {
+      readonly kind: "rendered-members";
+      /** the member-centric dashboard CV2 payload (flags + components + inert mentions). */
+      readonly payload: ReturnType<typeof memberDashboardCV2Payload>;
+      /** SHADOW (the member-centric view is SHADOW-only in this build). */
+      readonly applyMode: "SHADOW";
+      /** the role-map provenance (CM-authored vs default seed). */
+      readonly mapSource: RoleMapSource;
     }
   | {
       readonly kind: "refused";
@@ -204,6 +248,41 @@ export async function runRoleSyncTrigger(
   const authored = await deps.readRoleMap(deps.world);
   const roleMap: RoleMapConfig = authored ?? buildPurupuruSeedRoleMap();
   const mapSource: RoleMapSource = authored ? "config-service" : "default-seed";
+
+  // (2b) MEMBER-CENTRIC SHADOW (bd-l08): when the deploy wired the member-centric
+  //      deps AND the run is SHADOW, produce the CM dashboard (each guild member →
+  //      their tier → their role + a before→after indicator) instead of the
+  //      leaderboard-centric orchestration. SHADOW-only + ZERO writes (this path
+  //      never calls the orchestration / gate). The actor is already resolved +
+  //      authz'd against admin_principals is the LIVE concern; for the SHADOW
+  //      READ-ONLY preview the verified-actor refusal above is the gate. LIVE
+  //      still flows through the existing orchestration path below.
+  if (deps.memberCentric && mode === "SHADOW") {
+    try {
+      const roster = await buildMemberRoster({
+        world: deps.world,
+        roleMap,
+        members: deps.memberCentric.members,
+        resolveIdentity: deps.memberCentric.resolveIdentity,
+        readTier: deps.memberCentric.readTier,
+      });
+      const ctx: MemberDashboardContext = { world: deps.world, mapSource };
+      return {
+        kind: "rendered-members",
+        payload: memberDashboardCV2Payload(roster, ctx),
+        applyMode: "SHADOW",
+        mapSource,
+      };
+    } catch (e) {
+      // The member roster read (guild members) failed entirely — a voiceless
+      // structural error (fail-soft is per-member; a total guild-read failure
+      // surfaces here). NO write occurred (SHADOW read-only).
+      return {
+        kind: "error",
+        message: `Member roster (SHADOW) failed: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+  }
 
   // (3) The FR-7 hash binds the run to the map it was computed against.
   const mapHash = computeMapHash(roleMap, deps.world, deps.worldConfig);

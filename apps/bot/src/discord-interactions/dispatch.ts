@@ -1338,7 +1338,9 @@ async function runRoleSyncDeferred(
 ): Promise<void> {
   try {
     const outcome = await computeRoleSyncOutcome(interaction, auth, deps);
-    if (outcome.kind === 'rendered') {
+    // BOTH CV2 render paths (leaderboard-centric `rendered` + member-centric
+    // `rendered-members`, bd-l08) PATCH @original with the structural payload.
+    if (outcome.kind === 'rendered' || outcome.kind === 'rendered-members') {
       await patchOriginalData(interaction, {
         ...(outcome.payload as unknown as Record<string, unknown>),
         flags: (outcome.payload.flags as number) | MessageFlags.EPHEMERAL,
