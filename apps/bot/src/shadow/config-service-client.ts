@@ -105,6 +105,30 @@ export class ConfigServiceClient {
   }
 
   /**
+   * GET the world's `role-map` surface (the CM-authored tier→role map). Returns
+   * null when config-service is unwired (no baseUrl) OR on 404 (no map authored
+   * yet) — the CALLER falls back to the default seed map (bd-71y). Throws on
+   * transport / 5xx so a real service error is never silently treated as "no map"
+   * (which would mask an outage as a seed-map run).
+   *
+   * The `role-map` surface follows the same `/v1/config/:world/<surface>` shape
+   * as `onboarding-lifecycle`. It is a WORLD-scoped surface (NOT per-CM): the map
+   * belongs to the world, not the individual CM, so there is no `cm` query param.
+   */
+  async getRoleMap<T = unknown>(world: string): Promise<SurfaceEnvelope<T> | null> {
+    if (!this.baseUrl) return null; // unwired ⇒ caller uses the default seed
+    const url = `${this.baseUrl}/v1/config/${encodeURIComponent(world)}/role-map`;
+    const res = await this.fetchWithDeadline("GET role-map", url, {
+      headers: { ...(await this.authHeader()) },
+    });
+    if (res.status === 404) return null; // no map authored ⇒ caller uses the seed
+    if (!res.ok) {
+      throw new Error(`config-service GET role-map ${res.status}: ${await res.text().catch(() => "")}`);
+    }
+    return (await res.json()) as SurfaceEnvelope<T>;
+  }
+
+  /**
    * GET the per-CM onboarding-lifecycle record. Returns null on 404 (default →
    * the lens treats apply_mode as SHADOW). Throws on transport / 5xx.
    */
