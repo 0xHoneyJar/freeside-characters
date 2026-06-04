@@ -147,3 +147,48 @@ describe("F5 — every config-service RPC has a bounded deadline", () => {
     await expect(c.getOnboardingLifecycle("purupuru", "cm-1")).rejects.toThrow(/ECONNREFUSED/);
   });
 });
+
+describe("bd-71y — getRoleMap (the role-sync trigger's CM-authored-map read)", () => {
+  test("unwired (no CONFIG_SERVICE_URL) ⇒ null (caller uses the default seed)", async () => {
+    const c = new ConfigServiceClient({ baseUrl: undefined, getToken: () => null });
+    expect(await c.getRoleMap("purupuru")).toBeNull();
+  });
+
+  test("LIVE: GET routes to /v1/config/:world/role-map (world-scoped, no cm param) with bearer", async () => {
+    let seenUrl = "";
+    let seenAuth = "";
+    const c = new ConfigServiceClient({
+      baseUrl: "https://config.example",
+      getToken: () => "tok-abc",
+      fetchImpl: fakeFetch((url, init) => {
+        seenUrl = url;
+        seenAuth = String((init?.headers as Record<string, string>)?.authorization ?? "");
+        return new Response(JSON.stringify({ envelope: { enabled: true, namespace_prefix: "purupuru:", rules: [] }, version: 3 }), { status: 200 });
+      }),
+    });
+    const got = await c.getRoleMap<{ namespace_prefix: string }>("purupuru");
+    expect(seenUrl).toContain("/v1/config/purupuru/role-map");
+    expect(seenUrl).not.toContain("cm="); // world-scoped, not per-CM
+    expect(seenAuth).toBe("Bearer tok-abc");
+    expect(got?.version).toBe(3);
+    expect(got?.envelope.namespace_prefix).toBe("purupuru:");
+  });
+
+  test("404 (no map authored) ⇒ null (caller uses the seed)", async () => {
+    const c = new ConfigServiceClient({
+      baseUrl: "https://config.example",
+      getToken: () => "t",
+      fetchImpl: fakeFetch(() => new Response("", { status: 404 })),
+    });
+    expect(await c.getRoleMap("purupuru")).toBeNull();
+  });
+
+  test("a 5xx THROWS (a real outage is never silently treated as 'no map')", async () => {
+    const c = new ConfigServiceClient({
+      baseUrl: "https://config.example",
+      getToken: () => "t",
+      fetchImpl: fakeFetch(() => new Response("boom", { status: 503 })),
+    });
+    await expect(c.getRoleMap("purupuru")).rejects.toThrow(/role-map 503/);
+  });
+});
