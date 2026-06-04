@@ -33,6 +33,7 @@ export {
   rollback,
   resolveAuthz,
   resolveReader,
+  rosterFingerprint,
   // ── Pure compute core ──
   roleMapVersionHash,
   computeProposed,
