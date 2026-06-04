@@ -69,6 +69,29 @@ function failingClient() {
   });
 }
 
+/** A client whose fetch is COUNTED, to prove the per-batch leaderboard memo (#9). */
+function countingClient(
+  wallets: Array<{ wallet: string; tier: string | null }>,
+  counter: { fetches: number },
+) {
+  const body = {
+    community: "purupuru",
+    total: wallets.length,
+    truncated: false,
+    wallets: wallets.map((w, i) => ({ wallet: w.wallet, rank: i + 1, combined_score: 50, tier: w.tier })),
+  };
+  const fakeFetch = (async () => {
+    counter.fetches += 1;
+    return Response.json(body);
+  }) as unknown as typeof fetch;
+  return new CommunityScoreClient({
+    baseUrl: "https://score-api.test",
+    apiKey: "sk-test",
+    community: "purupuru",
+    retry: { fetchImpl: fakeFetch, maxAttempts: 1, sleep: async () => {} },
+  });
+}
+
 describe("purupuru-tiers — tierQualifies", () => {
   test("STRENGTH ladder: newcomer < member < devoted < core < elder < sovereign", () => {
     // crowd ascending
@@ -195,6 +218,82 @@ describe("makeScoreSourceLive.latentQualified (no network)", () => {
     );
     expect(res._tag).toBe("Left");
     if (res._tag === "Left") expect(res.left._tag).toBe("ScoreError");
+  });
+
+  // #9 — leaderboard fetched ONCE across N rules (memoized per batch)
+  test("#9: N tier rules → ONE leaderboard fetch (memoized per batch)", async () => {
+    const counter = { fetches: 0 };
+    const client = countingClient(
+      [
+        { wallet: "0x1", tier: "core" },
+        { wallet: "0x2", tier: "member" },
+        { wallet: "0x3", tier: "sovereign" },
+      ],
+      counter,
+    );
+    const layer = makeScoreSourceLive(cfgFor(client));
+    // mirror loadLatentCounts: call latentQualified once per rule, sequentially.
+    const counts = await Effect.runPromise(
+      ScoreSource.pipe(
+        Effect.flatMap((s) =>
+          Effect.gen(function* () {
+            const member = yield* s.latentQualified("purupuru" as never, rule("purupuru:member", "member"));
+            const core = yield* s.latentQualified("purupuru" as never, rule("purupuru:core", "core"));
+            const sov = yield* s.latentQualified("purupuru" as never, rule("purupuru:sov", "sovereign"));
+            return { member, core, sov };
+          }),
+        ),
+        Effect.provide(layer),
+      ),
+    );
+    // counts are right…
+    expect(counts.member).toBe(3); // core+member+sovereign all >= member
+    expect(counts.core).toBe(2); // core + sovereign
+    expect(counts.sov).toBe(1); // sovereign only
+    // …and the leaderboard was fetched exactly ONCE (not 3×).
+    expect(counter.fetches).toBe(1);
+  });
+
+  test("#9: memo expires after TTL (a later batch re-fetches)", async () => {
+    const counter = { fetches: 0 };
+    const client = countingClient([{ wallet: "0x1", tier: "core" }], counter);
+    let t = 1_000;
+    const layer = makeScoreSourceLive({ clientFor: () => client, leaderboardMemoTtlMs: 100, now: () => t });
+    const ask = () =>
+      Effect.runPromise(
+        ScoreSource.pipe(
+          Effect.flatMap((s) => s.latentQualified("purupuru" as never, rule("purupuru:core", "core"))),
+          Effect.provide(layer),
+        ),
+      );
+    await ask();
+    expect(counter.fetches).toBe(1);
+    t += 50; // within TTL → memo hit
+    await ask();
+    expect(counter.fetches).toBe(1);
+    t += 200; // past TTL → re-fetch
+    await ask();
+    expect(counter.fetches).toBe(2);
+  });
+
+  // #13 — a non-tier rule is explicitly skipped (count 0), no fetch needed
+  test("#13: a non-tier rule returns 0 (explicit skip, no leaderboard read)", async () => {
+    const counter = { fetches: 0 };
+    const client = countingClient([{ wallet: "0x1", tier: "sovereign" }], counter);
+    const nonTier = {
+      role_key: "purupuru:nft",
+      display_name: "NFT",
+      qualifies: { source: "nft", min_tier: "core" },
+      create_if_absent: true,
+    } as unknown as RoleRule;
+    const count = await Effect.runPromise(
+      ScoreSource.pipe(
+        Effect.flatMap((s) => s.latentQualified("purupuru" as never, nonTier)),
+        Effect.provide(makeScoreSourceLive(cfgFor(client))),
+      ),
+    );
+    expect(count).toBe(0);
+    expect(counter.fetches).toBe(0); // never read the leaderboard for a non-tier rule
   });
 });
 

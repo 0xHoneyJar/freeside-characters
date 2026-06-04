@@ -61,7 +61,22 @@ export interface LiveScoreConfig {
   readonly clientFor: (world: string) => CommunityScoreClient | undefined;
   /** tier ordering (defaults to the grounded Purupuru ladder). */
   readonly tierRank?: TierRankResolver;
+  /**
+   * leaderboard memo TTL in ms (Bridgebuilder #9). The substrate's
+   * `loadLatentCounts` calls `latentQualified(world, rule)` ONCE PER RULE — a
+   * naive adapter fetches the full leaderboard N times for N rules. We memoize
+   * the per-world leaderboard for this short window so N rules = 1 fetch (mirrors
+   * the prior cycle's read-roster-once-per-batch fix). Default 5s — long enough
+   * to span the per-rule loop, short enough that a fresh discrepancy build re-reads.
+   * Set 0/negative to disable the memo (always fetch fresh).
+   */
+  readonly leaderboardMemoTtlMs?: number;
+  /** injectable clock (tests). */
+  readonly now?: () => number;
 }
+
+/** Default leaderboard memo window (ms) — spans the per-rule `loadLatentCounts` loop. */
+const DEFAULT_LEADERBOARD_MEMO_TTL_MS = 5_000;
 
 /** Map a CommunityScoreError (or any throw) to the substrate's typed ScoreError. */
 function toScoreError(e: unknown, ctx: string): ScoreError {
@@ -79,6 +94,37 @@ function toScoreError(e: unknown, ctx: string): ScoreError {
  */
 export function makeScoreSourceLive(cfg: LiveScoreConfig): Layer.Layer<ScoreSource> {
   const rank = cfg.tierRank ?? purupuruTierRank;
+  const memoTtl = cfg.leaderboardMemoTtlMs ?? DEFAULT_LEADERBOARD_MEMO_TTL_MS;
+  const now = cfg.now ?? (() => Date.now());
+
+  // Per-world leaderboard memo (Bridgebuilder #9): MEMOIZE the in-flight fetch +
+  // its result for a short TTL so N tier rules = 1 fetch, not N. We memo the
+  // PROMISE (not just the resolved value) so concurrent per-rule calls within one
+  // tick coalesce onto a single round-trip. An error rejects the shared promise
+  // and is NOT memoized (the entry is cleared so a later call retries).
+  interface MemoEntry {
+    readonly promise: Promise<Awaited<ReturnType<CommunityScoreClient["leaderboard"]>>>;
+    readonly expires_at: number;
+  }
+  const memo = new Map<string, MemoEntry>();
+
+  const leaderboardFor = (
+    world: string,
+    client: CommunityScoreClient,
+  ): Promise<Awaited<ReturnType<CommunityScoreClient["leaderboard"]>>> => {
+    if (memoTtl > 0) {
+      const hit = memo.get(world);
+      if (hit && hit.expires_at > now()) return hit.promise;
+    }
+    const promise = client.leaderboard().catch((e) => {
+      // do not memoize a failure — clear so the next call retries.
+      memo.delete(world);
+      throw e;
+    });
+    if (memoTtl > 0) memo.set(world, { promise, expires_at: now() + memoTtl });
+    return promise;
+  };
+
   return Layer.succeed(
     ScoreSource,
     ScoreSource.of({
@@ -94,7 +140,10 @@ export function makeScoreSourceLive(cfg: LiveScoreConfig): Layer.Layer<ScoreSour
                 `no community score client wired for world '${w}' (SCORE_PURUPURU_API_KEY unset or world unmapped)`,
               );
             }
-            const page = await client.leaderboard();
+            // #13: a NON-tier rule never participates in the tier→count — skip it
+            // explicitly (observably 0), don't rely on min_tier coincidence.
+            if (rule.qualifies.source !== "tier") return 0;
+            const page = await leaderboardFor(w, client); // MEMOIZED (#9)
             const minTier = rule.qualifies.min_tier;
             let count = 0;
             for (const entry of page.wallets) {
