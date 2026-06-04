@@ -525,3 +525,28 @@ valid local proof artifact. It authorizes no implementation and selects
 **Phase 45E — a fixture-probe alignment decision / Dixie-first handoff** as
 the conservative next lane. The §8.2 boundaries and the decision-map
 §7 / §8 gates stay in force.
+
+---
+
+## 17. Phase 45E status note — Dixie Phase 33C probes reconciled; no-op adapter / validator is the next lane
+
+> Added by Phase 45E
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md`), 2026-06-04.
+> Status note only; the decision in §5–§9 is unchanged and the §8.2
+> boundaries stay in force.
+
+The Dixie-first lane Phase 45D selected has landed as Dixie **Phase 33C /
+PR #120** (the draft v0 contract probe set), and **Phase 45E**
+(`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md`, docs / decision
+only) reconciles the local proof stack against it. Phase 45E confirms the
+Phase 44A reducer's 17 stable reason codes (this gate's subject) map cleanly
+onto the Dixie probe directions — `candidate_not_admitted` /
+`candidate_rejected` onto the `transition_denied` family (preserving the
+pending-vs-denied distinction), `unsupported_fixture_shape` and the `unsafe_*`
+no-leak codes onto the `ingress.invalid_request` / `seam.class_validation_failed`
+refusal family — **while mutating no reason code**. It selects **Phase 45F —
+a narrow, future-gated, test-only or docs / fixture-bound no-op Dixie probe
+adapter / validator** as the next lane, with live admission, a live Dixie
+admission route, a Discord command, `/remember-this`, storage, production
+auth / consent, package exports, and Finn production wiring all blocked. The
+§8.2 boundaries and the decision-map §7 / §8 gates stay in force.

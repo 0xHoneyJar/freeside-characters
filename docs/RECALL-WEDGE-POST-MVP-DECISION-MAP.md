@@ -1216,6 +1216,61 @@ decision / Dixie-first handoff, not a live admission implementation.
 
 ---
 
+### 5v. Phase 45E addendum — Dixie Phase 33C draft probes reconciled against the local proof stack; no-op adapter / validator (Phase 45F) is the next lane, not an implementation
+
+> Added by Phase 45E
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md`), 2026-06-04.
+> Targeted addendum, not a rewrite of this section; §5u stays in force.
+
+Status as of Phase 45E:
+
+- **Phase 45E is docs / decision only.** It authors the Dixie probe
+  reconciliation / local alignment decision the §5u / Phase 45D lane selected
+  and adds small cross-reference back-notes; it adds no source, test, fixture
+  JSON, package, lockfile, config, CI, or generated change, renames no local
+  fixture label, mutates no reducer reason code, and freezes no schema. It
+  edits no `../loa-dixie` file.
+- **The Dixie-first lane landed.** Dixie **Phase 33C / PR #120** authored the
+  canonical **draft v0** Admission Wedge contract probe set
+  (`../loa-dixie/docs/admission-wedge/fixtures/`): five synthetic, public-safe
+  probes (`probe_version: dixie_admission_wedge_probe_v0`, `schema_final: false`,
+  `runtime_enabled: false`, `production_admission: false`, `public_safe: true`)
+  plus a dependency-free validator. Phase 45E maps each probe
+  (`candidate_pending_not_recallable`,
+  `accept_candidate_to_admitted_assertion`, `reject_candidate_no_assertion`,
+  `supersede_with_corrected_assertion`,
+  `malformed_or_unsafe_payload_fail_closed`) onto the local fixture / reducer /
+  runner equivalents — clean at the semantic level, with only naming / shape
+  deltas — and carries forward the pending-vs-denied nuance
+  (`candidate_not_admitted` is *pending*, not denied) and that `corrected_active`
+  is a direction, not a canonical status.
+- **Phase 45E selects Phase 45F — a narrow, future-gated, test-only or
+  docs / fixture-bound no-op Dixie probe adapter / validator** as the next
+  lane: it would consume **mirrored** Dixie probe shapes and prove they map to
+  the current local semantics, with **no** runtime wiring and **no** live Dixie
+  calls. A local fixture-label rename is deferred until an adapter proves the
+  mapping; waiting for a future Dixie Phase 33D hardening is an acceptable
+  alternative.
+- **Live Dixie-backed admission, a live Dixie admission route, a frozen final
+  production schema, production storage / admission / auth / consent, public
+  remember-this, Discord message-history ingestion, user chat becoming memory,
+  public rollout, Telegram / private chat, LLM / voice, a forget / revoke /
+  correction UI, package exports, and Finn production wiring all remain
+  blocked** behind separate later gates. The current local fixture / reducer /
+  runner vocabulary remains valid local proof labels until a separately-
+  authorized fixture / probe alignment implementation changes them; Dixie Phase
+  33C is a **draft v0**, not production schema, and Freeside Characters does not
+  own the Dixie / Straylight vocabulary. Phase 45E expands the prior
+  authorization in no way, and §7 (live memory admission gates) and §8
+  (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45E decision; it only records that
+the Dixie Phase 33C probes are reconciled against the local proof stack and
+that the next lane is a narrow no-op adapter / validator (Phase 45F), not a
+live admission implementation.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:

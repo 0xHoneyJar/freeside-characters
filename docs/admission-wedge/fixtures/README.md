@@ -310,3 +310,20 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   **Phase 45E — a fixture-probe alignment decision / Dixie-first handoff** as
   the next lane; live admission, storage, command, Dixie route, package
   export, and Finn production wiring stay blocked.
+- `docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md` — **Phase 45E**
+  Dixie probe reconciliation / local alignment decision (docs / decision
+  only). It reconciles these fixtures (the local proof stack) against Dixie
+  **Phase 33C / PR #120**'s canonical **draft v0** contract probes
+  (`../loa-dixie/docs/admission-wedge/fixtures/`), mapping each of the five
+  Dixie probes (`candidate_pending_not_recallable`,
+  `accept_candidate_to_admitted_assertion`, `reject_candidate_no_assertion`,
+  `supersede_with_corrected_assertion`,
+  `malformed_or_unsafe_payload_fail_closed`) onto these fixtures' local proof
+  equivalents — clean at the semantic level, with only naming / shape deltas.
+  It **mutates no fixture JSON** here: these field values remain valid **local
+  proof labels** until a separately-authorized fixture / probe alignment
+  changes them. It freezes no schema (Dixie Phase 33C is `schema_final: false`)
+  and selects **Phase 45F — a narrow, future-gated, test-only or
+  docs / fixture-bound no-op Dixie probe adapter / validator** as the next
+  lane; live admission, storage, command, Dixie route, package export, and
+  Finn production wiring stay blocked.
