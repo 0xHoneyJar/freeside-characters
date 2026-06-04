@@ -22,6 +22,7 @@
     "@0xhoneyjar/quests-protocol": "^0.1.2",
     "@freeside-characters/persona-engine": "workspace:*",
     "@freeside-worlds/shadow-substrate": "github:0xHoneyJar/freeside-worlds#26d11b78e6f0c2ce81cbd1fc24088157cea74e53",
+    "@noble/hashes": "^1.6.0",
     "discord.js": "^14.16.3",
     "effect": "^3.10.0",
     "yaml": "^2.6.0"

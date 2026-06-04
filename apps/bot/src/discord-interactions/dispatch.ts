@@ -87,6 +87,11 @@ import {
   RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME,
   handleRecallWedgeLiveDemoInteraction,
 } from './recall-wedge-live-demo.ts';
+import { ROLE_SYNC_COMMAND_NAME } from '../shadow/role-sync-trigger.ts';
+import {
+  handleRoleSyncInteraction,
+  type RoleSyncInteractionDeps,
+} from '../shadow/role-sync-interaction.ts';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const DISCORD_CHAR_LIMIT = 2000;
@@ -167,6 +172,28 @@ export function setOnboardingRuntime(runtime: OnboardingRuntime): void {
 
 export function getActiveOnboardingRuntime(): OnboardingRuntime {
   return activeOnboardingRuntime;
+}
+
+/**
+ * Module-level role-sync deps (bd-71y) — the deploy wires this at boot via
+ * `setRoleSyncDeps()` (world, role-map reader, orchestration invoker, world
+ * config, token metadata, transition version, clock). UNSET ⇒ the `/role-sync`
+ * command is not available (the trigger is opt-in: a deployment that does not
+ * run the onboarding/role-dispenser building simply never wires it). Mirrors the
+ * quest-runtime composition seam: dispatch owns routing, the deps own behavior.
+ *
+ * The trigger code itself is VOICELESS (no persona-engine import); only this
+ * router file — which already imports persona-engine for the chat path — knows
+ * the command name.
+ */
+let roleSyncDeps: RoleSyncInteractionDeps | undefined;
+
+export function setRoleSyncDeps(deps: RoleSyncInteractionDeps): void {
+  roleSyncDeps = deps;
+}
+
+export function getRoleSyncDeps(): RoleSyncInteractionDeps | undefined {
+  return roleSyncDeps;
 }
 
 /**
@@ -344,6 +371,24 @@ export async function dispatchSlashCommand(
   // not character-bound).
   if (isQuest) {
     return handleQuestInteraction(interaction, activeQuestRuntime);
+  }
+
+  // ─── bd-71y — voiceless CM tier→role sync trigger (`/role-sync`) ────
+  // A system (NOT character-bound) admin command. Routed here — after the
+  // auth-bridge attach (so the verified AuthContext / claims.sub is the
+  // resolved CM actor) and before per-character resolution. Authz against
+  // admin_principals happens INSIDE runTierRoleGoLive (deny ⇒ refuse, no
+  // reads); a non-verified invoker is refused by the trigger core. The whole
+  // path is VOICELESS — the response is the structural CV2 render. The command
+  // is available only when the deployment wired `setRoleSyncDeps()`.
+  if (interaction.data?.name === ROLE_SYNC_COMMAND_NAME) {
+    const deps = getRoleSyncDeps();
+    if (!deps) {
+      return ephemeralReply(
+        'the role-sync trigger is not configured on this deployment.',
+      );
+    }
+    return handleRoleSyncInteraction(interaction, interactionCtx.auth, deps);
   }
 
   // ─── cycle-009 · sprint-2 — onboarding verify interception (C2) ─────

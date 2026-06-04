@@ -19,6 +19,7 @@
         "@0xhoneyjar/quests-protocol": "^0.1.2",
         "@freeside-characters/persona-engine": "workspace:*",
         "@freeside-worlds/shadow-substrate": "github:0xHoneyJar/freeside-worlds#26d11b78e6f0c2ce81cbd1fc24088157cea74e53",
+        "@noble/hashes": "^1.6.0",
         "discord.js": "^14.16.3",
         "effect": "^3.10.0",
         "yaml": "^2.6.0",
@@ -665,8 +666,6 @@
     "@discordjs/ws/@discordjs/collection": ["@discordjs/collection@2.1.1", "", {}, "sha512-LiSusze9Tc7qF03sLCujF5iZp7K+vRNEDBZ86FT9aQAv3vxMLihUvKvpsCWiQ2DJq1tVckopKm1rxomgNUc9hg=="],
 
     "@discordjs/ws/discord-api-types": ["discord-api-types@0.38.47", "", {}, "sha512-XgXQodHQBAE6kfD7kMvVo30863iHX1LHSqNq6MGUTDwIFCCvHva13+rwxyxVXDqudyApMNAd32PGjgVETi5rjA=="],
-
-    "@freeside-characters/persona-engine/@0xhoneyjar/events": ["loa-freeside@github:0xHoneyJar/loa-freeside#68f5a89", { "dependencies": { "aws-embedded-metrics": "^4.2.1" } }, "0xHoneyJar-loa-freeside-68f5a89", "sha512-QJKFDe+8iuEru//GJL7ux97TldH+6fLPHprwnnY4Rc24SXxbHCBrIeW1DE0y++FlIUWXzqdam8nPiuEliycPtg=="],
 
     "discord.js/discord-api-types": ["discord-api-types@0.38.47", "", {}, "sha512-XgXQodHQBAE6kfD7kMvVo30863iHX1LHSqNq6MGUTDwIFCCvHva13+rwxyxVXDqudyApMNAd32PGjgVETi5rjA=="],
   }
