@@ -50,7 +50,7 @@ import type { Client } from "discord.js";
 import type { ApplyMode } from "@freeside-worlds/shadow-substrate";
 import {
   shadowPreviewLayer,
-  liveApplyLayer,
+  liveApplyOrchestrationLayer,
   buildModeControl,
   RoleWriterMock,
   makeInMemoryWorldLock,
@@ -58,9 +58,12 @@ import {
   type ShadowDeps,
   type WorldWiring,
   type WorldScoreWiring,
-  type LiveAuditDeps,
 } from "./composition-root.ts";
 import { makeRecordingEmitter } from "./acvp-emitter.mock.ts";
+import {
+  makeRecordingLiveEmitter,
+  RECORDING_LIVE_AUDIT_BACKEND,
+} from "./acvp-emitter.recording-live.ts";
 import {
   runTierRoleGoLive,
   type GoLiveOrchestrationInput,
@@ -239,13 +242,21 @@ function makeResolveScoreWiring(
  * then sees no reader and (for SHADOW) treats the leaderboard as empty (zero
  * assignments) — a SHADOW preview with no score key shows the CREATE pass only.
  * For LIVE the orchestrator FAILS CLOSED if no reader (Bridgebuilder #8).
+ *
+ * (bd-han) Threads the injected `fetchImpl` through the retry transport so the LIVE
+ * path is NETWORK-FREE in tests (mirrors `makeMemberTierReader`). Production omits
+ * it and uses global fetch.
  */
-function makeLeaderboardReader(wiring: WorldScoreWiring | undefined): LeaderboardReader | undefined {
+function makeLeaderboardReader(
+  wiring: WorldScoreWiring | undefined,
+  fetchImpl?: typeof fetch,
+): LeaderboardReader | undefined {
   if (!wiring || !wiring.apiKey || wiring.apiKey.length === 0) return undefined;
   const client = new CommunityScoreClient({
     baseUrl: wiring.scoreApiUrl,
     apiKey: wiring.apiKey,
     community: wiring.community,
+    retry: fetchImpl ? { fetchImpl } : undefined,
   });
   return async () => (await client.leaderboard()).wallets;
 }
@@ -387,7 +398,7 @@ export function buildRoleSyncBootDeps(
     const mode = await Effect.runPromise(buildModeControl(shadowDeps.initialMode));
     const currentMapHash = () => input.currentMapHash as unknown as string;
     const scoreWiring = resolveScoreWiring(world);
-    const leaderboardReader = makeLeaderboardReader(scoreWiring);
+    const leaderboardReader = makeLeaderboardReader(scoreWiring, seams.fetchImpl);
 
     // The orchestration's `applyBatch` RE-RESOLVES RoleWriter | WorldLock |
     // AdminAllowlistSource | AcvpEmitter at the write boundary (server-side authz
@@ -398,9 +409,20 @@ export function buildRoleSyncBootDeps(
     // test's full stack). One shared emitter/lock so the gate + the re-check agree.
     let layer;
     if (input.applyMode === "LIVE") {
-      // LIVE needs the real NATS audit deps + the bd-glb full rosterIdentity —
-      // operator-boundary follow-ups. requireLiveAudit() fails CLOSED here.
-      layer = liveApplyLayer(shadowDeps, requireLiveAudit(), mode, currentMapHash);
+      // bd-han (PART C): LIVE apply is UNGATED for the LIVE-ENABLED worlds (Purupuru
+      // first). The full SIGNED-NATS AcvpEmitter (Ed25519 hash-chain) is the
+      // production target and an operator boundary (bd-3v2 follow-up); until those
+      // deps are wired we satisfy the gate's write-after-audit with a CLEARLY-MARKED
+      // DURABLE-RECORDING interim audit emitter (records each shadow.* event to a
+      // durable structured log). The gate's authz / binding / write-boundary
+      // re-check guards are UNCHANGED — only the audit envelope backend differs.
+      // A world NOT in the LIVE allowlist still FAILS CLOSED (requireLiveAuditError()).
+      if (!LIVE_APPLY_WORLDS.has(world)) {
+        // not a LIVE-enabled world — keep the historical fail-closed behavior.
+        throw requireLiveAuditError();
+      }
+      const recording = makeRecordingLiveEmitter({ world });
+      layer = liveApplyOrchestrationLayer(shadowDeps, recording.layer, mode, currentMapHash);
     } else {
       const emitterLayer = makeRecordingEmitter().layer;
       const worldLock = makeInMemoryWorldLock();
@@ -410,7 +432,13 @@ export function buildRoleSyncBootDeps(
       layer = Layer.mergeAll(gateStack, RoleWriterMock, emitterLayer, worldLock, allowlist);
     }
 
-    // SHADOW uses the best-effort derived snapshot (bd-glb is the LIVE full one).
+    // bd-han (PART C): the derived rosterIdentity reader is PROMOTED for the LIVE
+    // path. Now that the GuildMembers gateway intent is requested (commit 39496ea),
+    // makeShadowRosterIdentityReader reads the live guild member/role ids fine; for
+    // a first go_live with no prior preview the fresh snapshot is its own base
+    // (zero drift, the conservative non-blocking default the orchestrator uses). The
+    // full bd-glb RosterSource-port snapshot is a substrate change (still tracked),
+    // but it is not required for the no-base LIVE apply this path performs.
     const rosterIdentity = shadowRosterIdentity;
 
     const program: Effect.Effect<GoLiveOrchestrationResult, OrchestrationError, OrchestrationContext> =
@@ -460,17 +488,27 @@ export function buildRoleSyncBootDeps(
 }
 
 /**
- * LIVE apply requires real NATS audit deps (signer + publish) for the gate's
- * write-after-audit. Those are an OPERATOR boundary (bd-glb / LIVE rollout) and
- * are NOT wired in this SHADOW-first composition. A LIVE invocation therefore
- * fails CLOSED with a clear structural message rather than writing without an
- * audit trail. SHADOW never reaches this.
+ * The worlds for which LIVE apply is UNGATED (bd-han / PART C). Purupuru is the
+ * first LIVE-enabled world (the operator's target). Other worlds still fail CLOSED
+ * (`requireLiveAuditError`) until they are added here AND have their LIVE wiring
+ * (a community-scoped score key) provisioned. Adding a world here is an explicit,
+ * reviewer-visible one-line change — never an implicit default.
  */
-function requireLiveAudit(): LiveAuditDeps {
-  throw new Error(
-    "role-sync LIVE apply is not yet wired — the LIVE NATS AcvpEmitter audit deps " +
-      "(signer + publish) and the full bd-glb rosterIdentity reader are operator-boundary " +
-      "follow-ups. SHADOW preview is fully wired; run /role-sync with mode SHADOW.",
+const LIVE_APPLY_WORLDS = new Set<string>(["purupuru"]);
+
+/**
+ * The fail-closed error for a LIVE apply requested on a world NOT in
+ * `LIVE_APPLY_WORLDS`. The signed-NATS AcvpEmitter audit deps (signer + publish)
+ * are the production target (bd-3v2 follow-up); a non-LIVE-enabled world therefore
+ * refuses rather than writing. LIVE-enabled worlds use the DURABLE-RECORDING
+ * interim audit emitter (clearly marked) until bd-3v2 lands.
+ */
+function requireLiveAuditError(): Error {
+  return new Error(
+    `role-sync LIVE apply is not enabled for this world — the signed-NATS AcvpEmitter ` +
+      `audit deps (${RECORDING_LIVE_AUDIT_BACKEND} is the interim backend for LIVE-enabled ` +
+      `worlds; full signed NATS is bd-3v2) are an operator boundary. SHADOW preview is ` +
+      `fully wired; run /role-sync with mode SHADOW.`,
   );
 }
 
