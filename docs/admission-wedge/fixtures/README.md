@@ -327,3 +327,17 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   docs / fixture-bound no-op Dixie probe adapter / validator** as the next
   lane; live admission, storage, command, Dixie route, package export, and
   Finn production wiring stay blocked.
+- `docs/admission-wedge/dixie-probes/` + `packages/persona-engine/src/recall-wedge/admission-wedge-dixie-probe-adapter.ts`
+  (+ `.test.ts`) — **Phase 45F** test-only / docs-fixture-bound no-op Dixie
+  probe adapter / validator. It adds local **mirrored** copies of the Dixie
+  Phase 33C draft v0 probes (clearly marked local mirrors, not canonical
+  upstream truth) and a pure local adapter that maps the five Dixie probe
+  scenarios onto the current local proof scenarios (`before_admission_excluded`,
+  `accepted_admitted_included`, `rejected_excluded`,
+  `supersession_corrected_only`, `malformed_fail_closed`), proving semantic
+  equivalence against the existing Phase 44A reducer / Phase 44C runner output.
+  It **mutates no fixture JSON here** and **renames none of these fixtures'
+  labels** — it proves semantic mapping only. It mutates no reducer reason code,
+  calls no live Dixie, wires no runtime path, and is not exported from the
+  package surface; live admission, storage, command, Dixie route, package
+  export, and Finn production wiring stay blocked.

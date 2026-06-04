@@ -536,6 +536,26 @@ Phase 45F, when opened, is a narrow alignment-proof lane — not a build of any
 live path. If it needs any item above, it must open the gate that owns it
 (decision-map §7 / §8) — Phase 45E authorizes none of them.
 
+> **Phase 45F status note (added later).** Phase 45F acted on this lane as a
+> **test-only / docs-fixture-bound no-op adapter / validator**. It adds local
+> **mirrored** copies of the Dixie Phase 33C draft v0 probes under
+> `docs/admission-wedge/dixie-probes/` (clearly marked local mirrors, not
+> canonical upstream truth) plus a pure local adapter
+> (`packages/persona-engine/src/recall-wedge/admission-wedge-dixie-probe-adapter.ts`
+> + test) that maps the five Dixie probe scenarios
+> (`candidate_pending_not_recallable` → `before_admission_excluded`,
+> `accept_candidate_to_admitted_assertion` → `accepted_admitted_included`,
+> `reject_candidate_no_assertion` → `rejected_excluded`,
+> `supersede_with_corrected_assertion` → `supersession_corrected_only`,
+> `malformed_or_unsafe_payload_fail_closed` → `malformed_fail_closed`) onto the
+> current local proof scenarios and proves semantic equivalence against the
+> existing Phase 44A reducer / Phase 44C runner output. It **proves semantic
+> mapping only**: it renames no local fixture label, mutates no reducer reason
+> code, mutates no fixture JSON, calls no live Dixie, wires no runtime path, and
+> is not exported from the package surface. Live admission, a live Dixie
+> admission route, storage, a command, package exports, and Finn production
+> wiring all stay blocked.
+
 ---
 
 ## 12. What remains blocked now
