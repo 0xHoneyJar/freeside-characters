@@ -70,16 +70,40 @@ function failingClient() {
 }
 
 describe("purupuru-tiers — tierQualifies", () => {
-  test("ladder order: newcomer < member < devoted < core < sovereign < elder", () => {
+  test("STRENGTH ladder: newcomer < member < devoted < core < elder < sovereign", () => {
+    // crowd ascending
     expect(purupuruTierRank("newcomer")).toBeLessThan(purupuruTierRank("member")!);
-    expect(purupuruTierRank("core")).toBeLessThan(purupuruTierRank("sovereign")!);
-    expect(purupuruTierRank("sovereign")).toBeLessThan(purupuruTierRank("elder")!);
+    expect(purupuruTierRank("member")).toBeLessThan(purupuruTierRank("devoted")!);
+    expect(purupuruTierRank("devoted")).toBeLessThan(purupuruTierRank("core")!);
+    // elite OVERRIDES crowd: every elite tier > every crowd tier
+    expect(purupuruTierRank("core")).toBeLessThan(purupuruTierRank("elder")!);
+    // within elite: sovereign (rank 1-7) is STRONGER than elder (rank 8-50).
+    // NOTE: this is the OPPOSITE of score-api sort_order (which lists sovereign
+    // before elder) — sort_order is presentation, not strength.
+    expect(purupuruTierRank("elder")).toBeLessThan(purupuruTierRank("sovereign")!);
   });
 
   test(">= semantics: a wallet at-or-above min_tier qualifies", () => {
-    expect(tierQualifies("sovereign", "core")).toBe(true); // 5 >= 4
+    expect(tierQualifies("sovereign", "core")).toBe(true); // 6 >= 4
     expect(tierQualifies("core", "core")).toBe(true); // 4 >= 4 (boundary)
     expect(tierQualifies("member", "core")).toBe(false); // 2 < 4
+  });
+
+  test("elite > all crowd: a core wallet does NOT qualify an elite min_tier", () => {
+    expect(tierQualifies("core", "elder")).toBe(false); // 4 < 5
+    expect(tierQualifies("core", "sovereign")).toBe(false); // 4 < 6
+  });
+
+  test("min_tier='sovereign' qualifies ONLY sovereign (NOT elder)", () => {
+    expect(tierQualifies("sovereign", "sovereign")).toBe(true); // 6 >= 6
+    expect(tierQualifies("elder", "sovereign")).toBe(false); // 5 < 6 — elder is NOT sovereign-strong
+    expect(tierQualifies("core", "sovereign")).toBe(false);
+  });
+
+  test("min_tier='elder' qualifies elder AND sovereign (the two elite tiers)", () => {
+    expect(tierQualifies("elder", "elder")).toBe(true); // 5 >= 5
+    expect(tierQualifies("sovereign", "elder")).toBe(true); // 6 >= 5 — sovereign outranks elder
+    expect(tierQualifies("core", "elder")).toBe(false); // 4 < 5
   });
 
   test("fail-closed: null/unknown wallet tier never qualifies", () => {
@@ -104,9 +128,9 @@ describe("makeScoreSourceLive.latentQualified (no network)", () => {
 
   test("counts wallets at/above the rule min_tier", async () => {
     const client = clientReturning([
-      { wallet: "0x1", tier: "elder" },     // 6 >= 4 ✓
-      { wallet: "0x2", tier: "sovereign" }, // 5 >= 4 ✓
-      { wallet: "0x3", tier: "core" },      // 4 >= 4 ✓
+      { wallet: "0x1", tier: "elder" },     // 5 >= 4 ✓ (elite > core)
+      { wallet: "0x2", tier: "sovereign" }, // 6 >= 4 ✓ (top tier)
+      { wallet: "0x3", tier: "core" },      // 4 >= 4 ✓ (boundary)
       { wallet: "0x4", tier: "member" },    // 2 < 4 ✗
       { wallet: "0x5", tier: null },        // untiered ✗
       { wallet: "0x6", tier: "newcomer" },  // 1 < 4 ✗
