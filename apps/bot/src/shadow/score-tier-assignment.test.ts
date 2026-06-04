@@ -43,9 +43,13 @@ import {
   assignOpId,
   assignIdempotencyKey,
   assembleAssignBatch,
+  buildCreateOps,
+  createOpId,
+  assembleGoLiveBatch,
   type WalletDiscordLink,
   type AuthorizedTransition,
 } from "./score-tier-assignment.ts";
+import type { CurrentRoster } from "@freeside-worlds/shadow-substrate";
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -146,6 +150,77 @@ describe("assignmentsToOps — op_id / idempotency_key", () => {
     expect(k3).not.toBe(k1);
     // 64-hex (sha256)
     expect(k1).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+// ── 2b. CREATE pass (FR-4) — buildCreateOps + assembleGoLiveBatch ─────────────
+
+describe("buildCreateOps — the FR-4 create pass (via computeProposed)", () => {
+  const ROSTER_NO_MANAGED: CurrentRoster = {
+    world: "purupuru",
+    roles: [{ role_key: "Holder", members: 5, managed: false }], // pre-existing, non-managed
+  } as CurrentRoster;
+
+  test("proposes create_role ops ONLY for not-yet-created managed roles", () => {
+    const ops = buildCreateOps("purupuru", "h".repeat(64), ROLE_MAP, ROSTER_NO_MANAGED);
+    expect(ops.length).toBe(2); // both tier roles absent → both created
+    expect(ops.every((o) => o.kind === "create_role")).toBe(true);
+    expect(ops.map((o) => o.intent.role_key).sort()).toEqual(["purupuru:core", "purupuru:member"]);
+    // create_role carries display_name (CreateRoleIntent).
+    const member = ops.find((o) => o.intent.role_key === "purupuru:member")!;
+    expect((member.intent as { display_name: string }).display_name).toBe("Member");
+  });
+
+  test("SKIPS create for an already-existing managed role", () => {
+    const rosterWithCore: CurrentRoster = {
+      world: "purupuru",
+      roles: [{ role_key: "purupuru:core", members: 2, managed: true }],
+    } as CurrentRoster;
+    const ops = buildCreateOps("purupuru", "h".repeat(64), ROLE_MAP, rosterWithCore);
+    expect(ops.map((o) => o.intent.role_key)).toEqual(["purupuru:member"]); // core exists, skip
+  });
+
+  test("a disabled role-map produces zero create ops", () => {
+    const ops = buildCreateOps("purupuru", "h".repeat(64), { ...ROLE_MAP, enabled: false }, ROSTER_NO_MANAGED);
+    expect(ops.length).toBe(0);
+  });
+
+  test("create op_id + idempotency_key are deterministic + distinct from an assign for the same role", () => {
+    const cId = createOpId("purupuru", "purupuru:core");
+    expect(cId).toBe(createOpId("purupuru", "purupuru:core"));
+    expect(cId).not.toBe(assignOpId("purupuru", "purupuru:core", "100"));
+    const cKey = assignIdempotencyKey("purupuru", cId, "h".repeat(64));
+    const aKey = assignIdempotencyKey("purupuru", assignOpId("purupuru", "purupuru:core", "100"), "h".repeat(64));
+    expect(cKey).not.toBe(aKey); // create-key ≠ assign-key for same role
+    expect(cKey).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("assembleGoLiveBatch — create pass FIRST, then assign pass", () => {
+  test("orders create_role ops before assign_role ops, sharing one AuthzContext", () => {
+    const transition: AuthorizedTransition = {
+      actor: ADMIN,
+      reportHash: MAP_HASH,
+      authzDecisionId: "decision-1",
+      transitionVersion: 3,
+      tokenMetadata: { kid: "kid-1", verified_at: "2026-06-02T00:00:00Z", exp: "2026-06-02T01:00:00Z" },
+    };
+    const batch = assembleGoLiveBatch({
+      world: "purupuru",
+      transition,
+      rosterVersion: ROSTER_VERSION,
+      assignments: [{ wallet: "0xc", member_id: "100", tier: "core", role_key: "purupuru:core" }],
+      roleMap: ROLE_MAP,
+      currentRoster: { world: "purupuru", roles: [] } as CurrentRoster, // nothing exists → both created
+    });
+    const kinds = batch.ops.map((o) => o.kind);
+    // 2 creates then 1 assign; the last create index < the first assign index.
+    expect(kinds.filter((k) => k === "create_role").length).toBe(2);
+    expect(kinds.filter((k) => k === "assign_role").length).toBe(1);
+    expect(kinds.lastIndexOf("create_role")).toBeLessThan(kinds.indexOf("assign_role"));
+    // one shared AuthzContext bound to the transition.
+    expect(batch.authz.authz_decision_id).toBe("decision-1");
+    expect(batch.authz.actor).toBe(ADMIN);
   });
 });
 

@@ -50,6 +50,7 @@
  */
 import { sha256 } from "@noble/hashes/sha256";
 import { utf8ToBytes, bytesToHex } from "@noble/hashes/utils";
+import { computeProposed } from "./substrate.ts";
 import type {
   RoleRule,
   RoleMapConfig,
@@ -59,6 +60,7 @@ import type {
   RosterVersion,
   Hex64,
   WorldSlug,
+  CurrentRoster,
 } from "@freeside-worlds/shadow-substrate";
 import type { CommunityLeaderboardEntry } from "@freeside-characters/persona-engine/score/community-client";
 import { tierQualifies, type TierRankResolver, purupuruTierRank } from "./purupuru-tiers.ts";
@@ -212,6 +214,99 @@ export function assignmentsToOps(
       intent: { role_key: a.role_key, member_id: a.member_id as never },
     };
   });
+}
+
+// ─── the CREATE pass (FR-4) — integrates with the substrate's computeProposed ─
+
+/** Deterministic op_id for a create op (stable across retries). */
+export function createOpId(world: string, roleKey: string): string {
+  return `create:${world}:${roleKey}`;
+}
+
+/**
+ * Derive the CREATE pass (FR-4): the `create_role` ops for managed tier roles
+ * that do not yet exist on the guild. This does NOT reimplement the create
+ * decision — it delegates to the substrate's PURE `computeProposed(roleMap,
+ * currentRoster)`, whose `to_create` list is the FR-4 "not-yet-created managed
+ * roles" set (a rule whose `role_key` is absent from the current roster AND
+ * `create_if_absent`). We then map each `to_create` entry → a `create_role`
+ * WriteOp with the same deterministic op_id/idempotency_key scheme the assign
+ * ops use, so the gate's check-then-create + retry reconciliation are safe.
+ *
+ * A `create_role` op MUST precede the `assign_role` op(s) for the same role_key
+ * in the SAME batch — the live writer's per-batch id-map then binds the assign to
+ * the id IT created (confused-deputy precision). `assembleGoLiveBatch` orders
+ * them creates-first.
+ */
+export function buildCreateOps(
+  world: string,
+  reportHash: string,
+  roleMap: RoleMapConfig,
+  currentRoster: CurrentRoster,
+): WriteOp[] {
+  if (!roleMap.enabled) return [];
+  const proposed = computeProposed(roleMap, currentRoster);
+  return proposed.to_create.map((c) => {
+    const op_id = createOpId(world, c.role_key);
+    return {
+      op_id,
+      // reuse the assign idempotency-key derivation (it is keyed on {world,
+      // op_id, report_hash} — op_id already encodes create-vs-assign + role_key,
+      // so the key is distinct from an assign op for the same role_key).
+      idempotency_key: assignIdempotencyKey(world, op_id, reportHash),
+      kind: "create_role" as const,
+      intent: { role_key: c.role_key, display_name: c.display_name },
+    };
+  });
+}
+
+// ─── full go_live batch assembly (CREATE pass + ASSIGN pass) ──────────────────
+
+export interface AssembleGoLiveBatchInput extends AssembleBatchInput {
+  /**
+   * the current guild roster (from the LIVE RosterSource). Drives the FR-4
+   * create pass via `computeProposed`. The role-map whose `to_create` rules are
+   * resolved against it.
+   */
+  readonly roleMap: RoleMapConfig;
+  readonly currentRoster: CurrentRoster;
+}
+
+/**
+ * Assemble the FULL gate-ready `WriteIntentBatch` for a tier→role go_live:
+ * the FR-4 CREATE pass (not-yet-created managed roles, ordered FIRST) followed by
+ * the per-member ASSIGN pass. Both passes share ONE `AuthzContext` bound to the
+ * authorized transition + roster version. The gate processes create-ops (under
+ * the WorldLock, check-then-create) then assign-ops in order; the live writer's
+ * per-batch id binding ties a same-batch assign to the role it just created.
+ *
+ * This is the COMBINED counterpart to `assembleAssignBatch` (assign-only). Use
+ * this from the go_live orchestration entrypoint when roles may not yet exist;
+ * use `assembleAssignBatch` when the caller has already run a separate create
+ * pass (e.g. the substrate go_live job) and only needs the assign batch.
+ */
+export function assembleGoLiveBatch(input: AssembleGoLiveBatchInput): WriteIntentBatch {
+  const { world, transition: t } = input;
+  const authz: AuthzContext = {
+    actor: t.actor,
+    world: world as unknown as WorldSlug,
+    report_hash: t.reportHash as unknown as Hex64,
+    token_metadata: t.tokenMetadata,
+    transition_version: t.transitionVersion,
+    authz_decision_id: t.authzDecisionId,
+    roster_version: input.rosterVersion,
+  };
+  const createOps = buildCreateOps(world, t.reportHash, input.roleMap, input.currentRoster);
+  const assignOps = assignmentsToOps(world, t.reportHash, input.assignments);
+  return {
+    world: world as unknown as WorldSlug,
+    report_hash: t.reportHash as unknown as Hex64,
+    authz,
+    // CREATE ops FIRST (FR-4), then ASSIGN ops — the gate's per-batch id binding
+    // requires the create to precede the assign for a same-role same-batch op.
+    ops: [...createOps, ...assignOps],
+    max_concurrent: input.maxConcurrent ?? 4,
+  };
 }
 
 // ─── full batch assembly (threads the goLive outputs) ────────────────────────

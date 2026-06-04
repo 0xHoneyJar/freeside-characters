@@ -10,6 +10,7 @@
     "./config": "./src/config.ts",
     "./orchestrator": "./src/orchestrator/index.ts",
     "./orchestrator/imagegen": "./src/orchestrator/imagegen/index.ts",
+    "./orchestrator/freeside_auth/server": "./src/orchestrator/freeside_auth/server.ts",
     "./score": "./src/score/index.ts",
     "./score/index": "./src/score/index.ts",
     "./score/types": "./src/score/types.ts",
