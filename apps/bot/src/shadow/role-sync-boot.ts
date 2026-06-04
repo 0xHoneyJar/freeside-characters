@@ -79,6 +79,12 @@ import { makeIdentityActorResolverFor } from "./identity-actor-resolver.ts";
 import { configServiceClientFromEnv } from "./config-service-client.ts";
 import type { RoleMapConfig } from "./substrate.ts";
 import { CommunityScoreClient } from "@freeside-characters/persona-engine/score/community-client";
+import { MemberIdentityClient } from "./member-identity-client.ts";
+import { makeMemberSourceLive } from "./member-source.live.ts";
+import type {
+  MemberCentricShadowDeps,
+} from "./role-sync-trigger.ts";
+import type { MemberTierReader, MemberIdentityResolver } from "./member-roster.ts";
 
 /**
  * The directory the vendored world manifests live in (apps/bot/worlds/). The
@@ -245,6 +251,70 @@ function makeLeaderboardReader(wiring: WorldScoreWiring | undefined): Leaderboar
 }
 
 /**
+ * Build the per-member tier reader (bd-l08) from the score wiring: a single
+ * wallet → its community tier via `walletProfile(wallet).tier`. When there is no
+ * LIVE score key, returns a reader that yields `null` (untiered) for every member
+ * — the member-centric SHADOW dashboard still renders (linked/unlinked + "no
+ * role"), and the operator sets `SCORE_PURUPURU_API_KEY` to surface tiers. The
+ * builder wraps each call fail-soft (a throw ⇒ untiered for that member), so this
+ * reader may throw freely (e.g. a 404 for an absent wallet) — it surfaces as
+ * untiered, never aborting the batch.
+ */
+function makeMemberTierReader(
+  wiring: WorldScoreWiring | undefined,
+  fetchImpl?: typeof fetch,
+): MemberTierReader {
+  if (!wiring || !wiring.apiKey || wiring.apiKey.length === 0) {
+    return async () => null;
+  }
+  const client = new CommunityScoreClient({
+    baseUrl: wiring.scoreApiUrl,
+    apiKey: wiring.apiKey,
+    community: wiring.community,
+    // thread the injected fetch (tests) through the retry transport.
+    retry: fetchImpl ? { fetchImpl } : undefined,
+  });
+  return async (wallet: string): Promise<string | null> => {
+    const profile = await client.walletProfile(wallet);
+    return profile.tier ?? null;
+  };
+}
+
+/**
+ * Build the member-centric SHADOW deps (bd-l08): the live guild member READ, the
+ * two identity-api reads (resolve account + profile), and the per-member score
+ * tier read. All fail-soft per member (the builder catches throws). This is the
+ * SHADOW-only CM dashboard wiring; LIVE apply still flows through the leaderboard
+ * orchestration.
+ */
+function buildMemberCentricDeps(
+  env: RoleSyncBootEnv,
+  seams: RoleSyncBootSeams,
+  world: string,
+  resolveWorld: (w: string) => WorldWiring | undefined,
+  identityBaseUrl: string,
+  resolveScoreWiring: (w: string) => WorldScoreWiring | undefined,
+): MemberCentricShadowDeps {
+  // live guild member READ (members + display name + current managed roles).
+  const memberSource = makeMemberSourceLive(seams.getBotClient, { resolve: resolveWorld });
+
+  // the two identity-api reads (discord id → user_id → primary_wallet).
+  const identityClient = new MemberIdentityClient({
+    baseUrl: identityBaseUrl,
+    world,
+    serviceToken: env.IDENTITY_API_SERVICE_TOKEN?.trim() || undefined,
+    fetchImpl: seams.fetchImpl,
+  });
+  const resolveIdentity: MemberIdentityResolver = (discordId) =>
+    identityClient.resolveMember(discordId);
+
+  // per-member score tier read.
+  const readTier = makeMemberTierReader(resolveScoreWiring(world), seams.fetchImpl);
+
+  return { members: memberSource, resolveIdentity, readTier };
+}
+
+/**
  * Build the LIVE `/role-sync` boot deps, or null when the master gate is off /
  * the required env is missing (fail-closed — `/role-sync` is then "not
  * configured" rather than silently degraded). When non-null, the caller passes
@@ -373,6 +443,19 @@ export function buildRoleSyncBootDeps(
     },
     transitionVersion: 1,
     actorResolverFor: actorResolverFactory,
+    // ── MEMBER-CENTRIC SHADOW (bd-l08) ──────────────────────────────────────
+    // When the run is SHADOW, the trigger produces the member-centric CM
+    // dashboard (each guild member → their tier → their role) from these deps
+    // instead of the leaderboard-centric orchestration. LIVE apply still flows
+    // through the orchestration (member path is SHADOW-only in this build).
+    memberCentric: buildMemberCentricDeps(
+      env,
+      seams,
+      world,
+      resolveWorld,
+      identityBaseUrl,
+      resolveScoreWiring,
+    ),
   };
 }
 

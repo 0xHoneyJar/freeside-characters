@@ -142,7 +142,11 @@ export async function handleRoleSyncInteraction(
  * `refused`/`error` send a plain voiceless status string.
  */
 export function roleSyncOutcomeToResponse(outcome: RoleSyncOutcome): DiscordInteractionResponse {
-  if (outcome.kind === "rendered") {
+  // BOTH CV2 render paths (leaderboard-centric `rendered` + member-centric
+  // `rendered-members`, bd-l08) carry the same structural payload shape (flags +
+  // components + inert mentions). Send the payload verbatim with the EPHEMERAL
+  // flag merged in (a CM admin preview is invoker-only).
+  if (outcome.kind === "rendered" || outcome.kind === "rendered-members") {
     // CV2 payloads MUST NOT carry content/embeds. Merge the EPHEMERAL flag into
     // the CV2 flags (IS_COMPONENTS_V2 | EPHEMERAL) so the admin preview is
     // invoker-only AND renders as components.

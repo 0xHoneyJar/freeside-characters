@@ -30,10 +30,12 @@ import { makeWalletDiscordLinkMock } from "./wallet-discord-link.live.ts";
 import type { DiscordInteraction } from "../discord-interactions/types.ts";
 import { InteractionResponseType, MessageFlags } from "../discord-interactions/types.ts";
 import { IS_COMPONENTS_V2 } from "./discrepancy-cv2.ts";
+import type { Client } from "discord.js";
 
 const ADMIN_UUID = "ae0558c7-aeb2-48f0-906d-ad0a50108b19";
 const PURUPURU_GUILD = "1495534680617910396";
 const INVOKER_DISCORD_ID = "700000000000000001"; // a valid 18-digit snowflake
+const ADMIN_WALLET = "0x79092a805f1cf9b0f5be3c5a296de6e51c1ded34";
 
 /** A fake fetch returning a fixed identity-api Response (network-free). */
 function identityFetch(status: number, body: unknown): typeof fetch {
@@ -42,6 +44,44 @@ function identityFetch(status: number, body: unknown): typeof fetch {
       status,
       headers: { "content-type": "application/json" },
     })) as unknown as typeof fetch;
+}
+
+/**
+ * A route-aware fetch double for the member-centric SHADOW path: the resolve
+ * call (`/v1/resolve/account/discord/`) → { user_id }, the profile call
+ * (`/v1/profile`) → { identity: { primary_wallet } }. Network-free.
+ */
+function memberIdentityFetch(): typeof fetch {
+  return (async (input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.toString();
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    if (url.includes("/v1/resolve/account/discord/")) return json({ user_id: ADMIN_UUID });
+    if (url.includes("/v1/profile")) {
+      return json({ identity: { user_id: ADMIN_UUID, primary_wallet: ADMIN_WALLET, wallets: [] } });
+    }
+    return new Response("not found", { status: 404 });
+  }) as unknown as typeof fetch;
+}
+
+/**
+ * A minimal fake discord.js Client exposing only `guilds.fetch().members.fetch()`
+ * with the shape `makeMemberSourceLive` reads (id, roles.cache, nickname, user).
+ * One member: the operator-style invoker, holding NO managed roles yet.
+ */
+function fakeBotClient(): Client {
+  const member = {
+    id: INVOKER_DISCORD_ID,
+    nickname: "soju",
+    user: { globalName: "soju", username: "soju" },
+    roles: { cache: new Map() },
+  };
+  const guild = {
+    members: { fetch: async () => new Map([[member.id, member]]) },
+  };
+  return {
+    guilds: { fetch: async () => guild },
+  } as unknown as Client;
 }
 
 /** Seams with NO live discord client (SHADOW uses mock roster, zero writes). */
@@ -113,24 +153,56 @@ describe("bd-atm — buildRoleSyncBootDeps: env gate (fail-closed)", () => {
   });
 });
 
-describe("bd-atm — end-to-end: SHADOW runs through the gate with ZERO writes", () => {
-  test("a resolved CM (200) runs SHADOW preview → EPHEMERAL CV2, zero writes", async () => {
+describe("bd-l08 — end-to-end: SHADOW runs the MEMBER-CENTRIC dashboard, ZERO writes", () => {
+  test("a resolved CM (200) runs the member-centric SHADOW dashboard → EPHEMERAL CV2", async () => {
+    // The boot composition wires memberCentric: a SHADOW run reads guild members
+    // (fake client) → identity (resolve+profile) → tier → the CM dashboard.
     const deps = buildRoleSyncBootDeps(
       { ROLE_SYNC_ENABLED: "1" } as RoleSyncBootEnv,
-      seams({ fetchImpl: identityFetch(200, { user_id: ADMIN_UUID }) }),
+      seams({ getBotClient: async () => fakeBotClient(), fetchImpl: memberIdentityFetch() }),
     )!;
 
     const res = await handleRoleSyncInteraction(interaction(), undefined, deps);
 
-    // SHADOW preview through the REAL substrate gate (mock writer) → a CV2
-    // EPHEMERAL render. The gate rejected every op (zero inner writes) — the
-    // orchestrator recovers that into the preview result, so the outcome is a
-    // `rendered` CV2 payload (not an error).
+    // SHADOW preview → the member-centric CV2 dashboard, EPHEMERAL, zero writes
+    // (the member path never calls the orchestration / gate).
     expect(res.type).toBe(InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE);
     const flags = (res.data as { flags?: number }).flags ?? 0;
     expect(flags & IS_COMPONENTS_V2).toBe(IS_COMPONENTS_V2);
     expect(flags & MessageFlags.EPHEMERAL).toBe(MessageFlags.EPHEMERAL);
     expect((res.data as { content?: string }).content).toBeUndefined();
+    // the member-centric dashboard header + summary surface the operator's member.
+    const text = JSON.stringify((res.data as { components?: unknown }).components);
+    expect(text).toContain("Member roles");
+    expect(text).toContain("soju");
+    expect(text).toContain("1** members");
+  });
+
+  test("with a score key, the operator-style member resolves tier 'member' → ADD", async () => {
+    // route-aware fetch: identity reads + the score wallet-profile read (tier).
+    const fetchImpl = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/v1/resolve/account/discord/")) return json({ user_id: ADMIN_UUID });
+      if (url.includes("/v1/profile")) {
+        return json({ identity: { primary_wallet: ADMIN_WALLET, wallets: [] } });
+      }
+      // score-api GET /v1/wallets/{wallet}?community=purupuru → { wallet, tier }
+      if (url.includes("/v1/wallets/")) return json({ wallet: ADMIN_WALLET, tier: "member" });
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const deps = buildRoleSyncBootDeps(
+      { ROLE_SYNC_ENABLED: "1", SCORE_PURUPURU_API_KEY: "k" } as RoleSyncBootEnv,
+      seams({ getBotClient: async () => fakeBotClient(), fetchImpl }),
+    )!;
+    const res = await handleRoleSyncInteraction(interaction(), undefined, deps);
+    const text = JSON.stringify((res.data as { components?: unknown }).components);
+    // operator-style: linked, tier member → purupuru:member, in the "Would add" group.
+    expect(text).toContain("Would add");
+    expect(text).toContain("purupuru:member");
+    expect(text).toContain("tier");
   });
 });
 
