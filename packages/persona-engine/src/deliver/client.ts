@@ -55,7 +55,11 @@ export async function getBotClient(config: Config): Promise<Client | null> {
 
 async function startClient(config: Config): Promise<Client> {
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
+    // GuildMembers (privileged, enabled in the dev portal) is required for
+    // guild.members.fetch() — the role-sync roster read (who has which role).
+    // Without it the gateway never sends member chunks and fetch times out
+    // ("Members didn't arrive in time"). Guilds alone is insufficient.
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
   });
 
   // Lifecycle handlers — invalidate cache on disconnect/error so the
