@@ -18,9 +18,17 @@ import { describe, expect, test } from "bun:test";
 import {
   makeWalletDiscordLinkLive,
   makeWalletDiscordLinkMock,
+  LinkResolutionError,
   type BatchWalletResolver,
   type ResolvedWalletLike,
 } from "./wallet-discord-link.live.ts";
+
+/** A valid 17-20-digit Discord snowflake from a short tag (post-#12 the live
+ *  adapter rejects non-snowflake ids, so fixtures must be well-formed). */
+function sf(tag: string | number): string {
+  const digits = String(tag).replace(/\D/g, "") || "0";
+  return ("9" + digits.padStart(17, "0")).slice(0, 18);
+}
 
 /** Build an injectable batch resolver from a wallet→(discord_id|null) map. */
 function resolverFrom(
@@ -51,7 +59,7 @@ describe("makeWalletDiscordLinkLive — resolution", () => {
 
   test("FAIL-CLOSED → null when the wallet is not found (skipped, never assigned)", async () => {
     const link = makeWalletDiscordLinkLive({
-      resolveWalletsImpl: resolverFrom({ "0xabc": "111" }),
+      resolveWalletsImpl: resolverFrom({ "0xabc": sf("111") }),
     });
     expect(await link.resolve("0xnotlinked")).toBeNull();
   });
@@ -81,7 +89,7 @@ describe("makeWalletDiscordLinkLive — batching + caching", () => {
     const counter = { calls: 0, batches: [] as string[][] };
     const link = makeWalletDiscordLinkLive({
       resolveWalletsImpl: resolverFrom(
-        { "0xa": "1", "0xb": "2", "0xc": "3" },
+        { "0xa": sf(1), "0xb": sf(2), "0xc": sf(3) },
         counter,
       ),
     });
@@ -91,7 +99,7 @@ describe("makeWalletDiscordLinkLive — batching + caching", () => {
       link.resolve("0xb"),
       link.resolve("0xc"),
     ]);
-    expect([a, b, c]).toEqual(["1", "2", "3"]);
+    expect([a, b, c]).toEqual([sf(1), sf(2), sf(3)]);
     expect(counter.calls).toBe(1); // ONE batched lookup, not three
     expect(counter.batches[0]!.sort()).toEqual(["0xa", "0xb", "0xc"]);
   });
@@ -102,7 +110,7 @@ describe("makeWalletDiscordLinkLive — batching + caching", () => {
     const wallets: string[] = [];
     for (let i = 0; i < 5; i++) {
       const w = `0x${i}`;
-      map[w] = `snow-${i}`;
+      map[w] = sf(`10${i}`); // distinct valid snowflakes
       wallets.push(w);
     }
     const link = makeWalletDiscordLinkLive({
@@ -110,7 +118,7 @@ describe("makeWalletDiscordLinkLive — batching + caching", () => {
       batchSize: 2,
     });
     const out = await Promise.all(wallets.map((w) => link.resolve(w)));
-    expect(out).toEqual(["snow-0", "snow-1", "snow-2", "snow-3", "snow-4"]);
+    expect(out).toEqual([sf("100"), sf("101"), sf("102"), sf("103"), sf("104")]);
     // 5 distinct wallets / batchSize 2 → 3 underlying slices.
     expect(counter.calls).toBe(3);
   });
@@ -118,24 +126,24 @@ describe("makeWalletDiscordLinkLive — batching + caching", () => {
   test("caches a resolved link — a repeat resolve does NOT re-hit the resolver", async () => {
     const counter = { calls: 0, batches: [] as string[][] };
     const link = makeWalletDiscordLinkLive({
-      resolveWalletsImpl: resolverFrom({ "0xa": "1" }, counter),
+      resolveWalletsImpl: resolverFrom({ "0xa": sf(1) }, counter),
     });
-    expect(await link.resolve("0xa")).toBe("1");
-    expect(await link.resolve("0xa")).toBe("1"); // served from cache
+    expect(await link.resolve("0xa")).toBe(sf(1));
+    expect(await link.resolve("0xa")).toBe(sf(1)); // served from cache
     expect(counter.calls).toBe(1);
   });
 
   test("caches resolved-null too (a known-unlinked wallet is not re-queried)", async () => {
     const counter = { calls: 0, batches: [] as string[][] };
     const link = makeWalletDiscordLinkLive({
-      resolveWalletsImpl: resolverFrom({ "0xa": "1" }, counter),
+      resolveWalletsImpl: resolverFrom({ "0xa": sf(1) }, counter),
     });
     expect(await link.resolve("0xmissing")).toBeNull();
     expect(await link.resolve("0xmissing")).toBeNull();
     expect(counter.calls).toBe(1); // resolved-null cached
   });
 
-  test("a resolver THROW is fail-closed (null this run) and NOT cached (retries)", async () => {
+  test("a resolver THROW is fail-closed by REJECTING (#7) and NOT cached (retries)", async () => {
     let throwOnce = true;
     const counter = { calls: 0 };
     const resolver: BatchWalletResolver = async (wallets) => {
@@ -144,29 +152,85 @@ describe("makeWalletDiscordLinkLive — batching + caching", () => {
         throwOnce = false;
         throw new Error("midi_profiles unavailable");
       }
-      return wallets.map((w) => ({ wallet: w.toLowerCase(), found: true, discord_id: "9" }));
+      return wallets.map((w) => ({
+        wallet: w.toLowerCase(),
+        found: true,
+        discord_id: "123456789012345678",
+      }));
     };
     const link = makeWalletDiscordLinkLive({ resolveWalletsImpl: resolver });
-    expect(await link.resolve("0xa")).toBeNull(); // first flush throws → fail-closed null
-    expect(await link.resolve("0xa")).toBe("9"); // NOT cached as null → retried, now resolves
+    // first flush throws → REJECT (NOT a silent null — that was the #7 fail-open bug).
+    await expect(link.resolve("0xa")).rejects.toBeInstanceOf(LinkResolutionError);
+    // NOT cached → a later resolve retries, now resolves.
+    expect(await link.resolve("0xa")).toBe("123456789012345678");
     expect(counter.calls).toBe(2);
+  });
+
+  // #7 — db_unavailable must FAIL the run, not be treated as confirmed-unlinked
+  test("FAIL-CLOSED #7: a `db_unavailable` resolution REJECTS (not a silent skip)", async () => {
+    const resolver: BatchWalletResolver = async (wallets) =>
+      wallets.map((w) => ({
+        wallet: w.toLowerCase(),
+        found: false,
+        discord_id: null,
+        resolved_via: "db_unavailable", // the identity DB was down — NOT confirmed-unlinked
+      }));
+    const link = makeWalletDiscordLinkLive({ resolveWalletsImpl: resolver });
+    await expect(link.resolve("0xa")).rejects.toBeInstanceOf(LinkResolutionError);
+  });
+
+  test("a confirmed `unknown` (not db_unavailable) is null, NOT a reject (#7 boundary)", async () => {
+    const resolver: BatchWalletResolver = async (wallets) =>
+      wallets.map((w) => ({
+        wallet: w.toLowerCase(),
+        found: false,
+        discord_id: null,
+        resolved_via: "unknown", // genuinely not in midi_profiles
+      }));
+    const link = makeWalletDiscordLinkLive({ resolveWalletsImpl: resolver });
+    expect(await link.resolve("0xa")).toBeNull(); // confirmed-unlinked → skipped, never throws
+  });
+
+  // #12 — snowflake-shape validation
+  test("FAIL-CLOSED #12: a NON-SNOWFLAKE discord_id is invalid → null (never assigned)", async () => {
+    const resolver: BatchWalletResolver = async (wallets) =>
+      wallets.map((w) => ({
+        wallet: w.toLowerCase(),
+        found: true,
+        discord_id: "not-a-snowflake", // a handle leaked into the column
+        resolved_via: "direct",
+      }));
+    const link = makeWalletDiscordLinkLive({ resolveWalletsImpl: resolver });
+    expect(await link.resolve("0xbad")).toBeNull();
+
+    // a too-short numeric value is also rejected.
+    const shortResolver: BatchWalletResolver = async (wallets) =>
+      wallets.map((w) => ({ wallet: w.toLowerCase(), found: true, discord_id: "12345" }));
+    const link2 = makeWalletDiscordLinkLive({ resolveWalletsImpl: shortResolver });
+    expect(await link2.resolve("0xshort")).toBeNull();
+
+    // a well-formed 18-digit snowflake passes.
+    const okResolver: BatchWalletResolver = async (wallets) =>
+      wallets.map((w) => ({ wallet: w.toLowerCase(), found: true, discord_id: "123456789012345678" }));
+    const link3 = makeWalletDiscordLinkLive({ resolveWalletsImpl: okResolver });
+    expect(await link3.resolve("0xok")).toBe("123456789012345678");
   });
 
   test("expires cache after TTL (re-queries with an injected clock)", async () => {
     const counter = { calls: 0, batches: [] as string[][] };
     let t = 1_000;
     const link = makeWalletDiscordLinkLive({
-      resolveWalletsImpl: resolverFrom({ "0xa": "1" }, counter),
+      resolveWalletsImpl: resolverFrom({ "0xa": sf(1) }, counter),
       cacheTtlMs: 100,
       now: () => t,
     });
-    expect(await link.resolve("0xa")).toBe("1");
+    expect(await link.resolve("0xa")).toBe(sf(1));
     expect(counter.calls).toBe(1);
     t += 50; // within TTL
-    expect(await link.resolve("0xa")).toBe("1");
+    expect(await link.resolve("0xa")).toBe(sf(1));
     expect(counter.calls).toBe(1);
     t += 200; // past TTL → re-query
-    expect(await link.resolve("0xa")).toBe("1");
+    expect(await link.resolve("0xa")).toBe(sf(1));
     expect(counter.calls).toBe(2);
   });
 });
