@@ -1,0 +1,22 @@
+{
+  "fixture_kind": "admission_transition",
+  "transition_kind": "admission_transition",
+  "transition_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.2)",
+  "synthetic": true,
+  "transition_id": "trans-001",
+  "candidate_id": "cand-001",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "admission_authority": "operator_dev_synthetic",
+  "admission_authority_note": "synthetic operator/dev authority only; never an arbitrary user; audit material, never rendered to any public surface",
+  "admission_decision": "accepted",
+  "admitted_assertion_id": "assn-001",
+  "supersedes_assertion_id": null,
+  "reason_code": "operator_reviewed_accept",
+  "decided_at": "fixture-logical-stamp-0002",
+  "receipt_ref": "rcpt-001",
+  "audit_ref": "rcpt-001",
+  "idempotency_note": "admitting cand-001 twice must not mint a second assertion; a retry resolves to the same admitted_assertion_id assn-001"
+}

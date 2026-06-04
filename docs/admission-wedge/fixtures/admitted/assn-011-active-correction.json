@@ -1,0 +1,29 @@
+{
+  "fixture_kind": "admitted_memory_packet",
+  "fixture_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.3, J)",
+  "synthetic": true,
+  "assertion_id": "assn-011",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "assertion_class": "preference",
+  "assertion_status": "active",
+  "admission_state": "admitted",
+  "source_candidate_id": "cand-011",
+  "admission_transition_id": "trans-011",
+  "admission_receipt_ref": "rcpt-011",
+  "supersedes_assertion_id": "assn-010",
+  "recall_eligibility": "eligible",
+  "visibility_class": "public_safe_summary",
+  "summary_public": "operator prefers the evening festival slot",
+  "body_private": "corrected admitted body retained for governed continuity — ADMITTED_PRIVATE_SENTINEL_011 — never rendered on a public surface",
+  "provenance": {
+    "source_kind": "reviewed_deterministic_operator_fixture",
+    "admission_authority": "operator_dev_synthetic",
+    "note": "admitted from cand-011 via trans-011 under synthetic operator/dev authority; corrects (supersedes) assn-010; audit only"
+  },
+  "created_at": "fixture-logical-stamp-0007",
+  "admitted_at": "fixture-logical-stamp-0008",
+  "authorization_note": "synthetic, reviewed, fixture/operator-only; read-compatible with the accepted Recall Wedge path; this is the corrected active state; no production storage, no production admission"
+}

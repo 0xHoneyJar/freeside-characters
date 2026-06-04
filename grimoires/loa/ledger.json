@@ -1,27 +1,27 @@
 {
   "version": "1.0.0",
   "next_sprint_number": 21,
-  "active_cycle": "cycle-008-persona-substrate",
+  "active_cycle": "cycle-009-onboarding-character",
   "cycles": [
     {
       "id": "cycle-008-persona-substrate",
-      "label": "persona-as-substrate · cron path migration to canonical buildPrompt + Effect-TS + per-layer observability (absorbs cycle-007 pair-points)",
-      "status": "active",
+      "label": "persona-as-substrate \u00b7 cron path migration to canonical buildPrompt + Effect-TS + per-layer observability (absorbs cycle-007 pair-points)",
+      "status": "archived",
       "created_at": "2026-05-18T04:30:00Z",
       "prd": "grimoires/loa/cycles/cycle-008-persona-substrate/prd.md",
       "sdd": "grimoires/loa/cycles/cycle-008-persona-substrate/sdd.md",
       "sprint_plan": "grimoires/loa/cycles/cycle-008-persona-substrate/sprint.md",
       "target_branch": "feat/cycle-008-persona-substrate",
       "depends_on": [
-        "cycle-007-agent-debuggability candidate 2026-05-17 (structural mechanical close · pair-points absorbed)",
+        "cycle-007-agent-debuggability candidate 2026-05-17 (structural mechanical close \u00b7 pair-points absorbed)",
         "Effect-TS ^3.21.2 (packages/persona-engine deps)"
       ],
       "absorbed_from_cycle_007_pair_points": {
-        "PP-4_kitchen_playground": "operator iterates /playground >=10 min · attests faster-than-paste loop",
+        "PP-4_kitchen_playground": "operator iterates /playground >=10 min \u00b7 attests faster-than-paste loop",
         "PP-5_mobile_canary": "operator screenshots Discord Android post-digest-cron firing",
         "PP-2_PP-3_mobile_render": "roll into PP-5 screenshot session",
         "github_branch_protection": "CODEOWNERS rule on .claude/overrides/voice-prompt-paths.json + voice-prompt-paths.schema.json + trace-explain-output.schema.json",
-        "cycle_007_ledger_flip_to_archived": "deferred to cycle-008 close · single ledger sweep at S8"
+        "cycle_007_ledger_flip_to_archived": "deferred to cycle-008 close \u00b7 single ledger sweep at S8"
       },
       "session_artifacts_pre_simstim": {
         "s0_spike": "grimoires/loa/cycles/cycle-008-persona-substrate/spike-builder-diff.md (authored 2026-05-17)",
@@ -40,7 +40,7 @@
         "status": "active",
         "promoted_at": "2026-05-22",
         "source": "grimoires/loa/cycles/cycle-008-persona-substrate/amendment-voice-fidelity-gaps.md",
-        "summary": "FR-38 cadence-honest data surface (S3 T3.8) + FR-39 two-beat billboard renderer (S3 T3.9 · locked spec) + FR-43 score-api-types adoption (S3 T3.0) + FR-40/41/42 RLHF preference loop (new S9). G-10 added. Two-beat won the manual preference loop (preference-log.jsonl · schema rlhf-preference-v0).",
+        "summary": "FR-38 cadence-honest data surface (S3 T3.8) + FR-39 two-beat billboard renderer (S3 T3.9 \u00b7 locked spec) + FR-43 score-api-types adoption (S3 T3.0) + FR-40/41/42 RLHF preference loop (new S9). G-10 added. Two-beat won the manual preference loop (preference-log.jsonl \u00b7 schema rlhf-preference-v0).",
         "registration_gap_reconciled": "cycle-008 S0-S9 were never registered in ledger sprints[] and no beads epics existed; this amendment populated sprints[] (below) + created beads epics."
       },
       "sprints": [
@@ -136,7 +136,7 @@
         {
           "local_id": "sprint-9",
           "global_number": 30,
-          "title": "RLHF preference loop · billboard-preview-first lead slice (FR-40/41/42)",
+          "title": "RLHF preference loop \u00b7 billboard-preview-first lead slice (FR-40/41/42)",
           "status": "planned",
           "scope": "RLHF",
           "task_count": 6,
@@ -145,11 +145,13 @@
           "epic_bead": "bd-13y"
         }
       ],
-      "next_sprint_number_after_cycle_008": 31
+      "next_sprint_number_after_cycle_008": 31,
+      "archived": "2026-05-29T20:53:57Z",
+      "archive_path": "grimoires/loa/archive/2026-05-29-cycle-008-persona-substrate"
     },
     {
       "id": "cycle-007-agent-debuggability",
-      "label": "agent debuggability through medium-aware substrate-presentation layering (dashboard as force function · D1-D6 + FR-1/FR-2 closure of cycle-006 canary bugs)",
+      "label": "agent debuggability through medium-aware substrate-presentation layering (dashboard as force function \u00b7 D1-D6 + FR-1/FR-2 closure of cycle-006 canary bugs)",
       "status": "candidate",
       "candidate_at": "2026-05-18T04:30:00Z",
       "candidate_note": "structurally complete (T8.1 COMPLETED.md + T8.2 E2E + T8.3 BB-3 + S8 kitchen MVP). Pair-points PP-2/PP-3/PP-4/PP-5 + GitHub branch protection + ledger archive flip absorbed by cycle-008-persona-substrate at its close.",
@@ -159,8 +161,8 @@
       "sprint_plan": "grimoires/loa/cycles/cycle-007-agent-debuggability/sprint.md",
       "target_branch": "feat/cycle-007-agent-debuggability",
       "depends_on": [
-        "cycle-006-substrate-presentation MERGED 2026-05-16 (3324a8d on main · ledger candidate)",
-        "@0xhoneyjar/medium-registry@^0.2.0 (consumed unchanged · local extension at deliver/medium-extensions.ts)",
+        "cycle-006-substrate-presentation MERGED 2026-05-16 (3324a8d on main \u00b7 ledger candidate)",
+        "@0xhoneyjar/medium-registry@^0.2.0 (consumed unchanged \u00b7 local extension at deliver/medium-extensions.ts)",
         "trace dashboard substrate at localhost:3001 (cycle-006 deliverable)"
       ],
       "decisions_frozen": [
@@ -175,7 +177,7 @@
         "OP-Q1_branch": "cut feat/cycle-007-agent-debuggability from origin/main NOW",
         "OP-Q2_envelope": "forward-only (no migration of pre-cycle-007 traces)",
         "OP-Q3_cli_surface": "5 subcommands: trace:latest, trace:layer, trace:get, trace:voice, trace:explain",
-        "OP-Q4_dashboard_sse": "SSE behind LOA_DASH_SSE=1 flag (default 2s poll) · loa-decided per operator deferral"
+        "OP-Q4_dashboard_sse": "SSE behind LOA_DASH_SSE=1 flag (default 2s poll) \u00b7 loa-decided per operator deferral"
       },
       "sprint_estimate": {
         "sprints": 9,
@@ -248,7 +250,7 @@
     },
     {
       "id": "cycle-006-substrate-presentation",
-      "label": "substrate-presentation refactor (complete the seam · per-post-type orchestrators · voice-memory production-wired · daily-pulse · 4 Red Team ACs)",
+      "label": "substrate-presentation refactor (complete the seam \u00b7 per-post-type orchestrators \u00b7 voice-memory production-wired \u00b7 daily-pulse \u00b7 4 Red Team ACs)",
       "status": "candidate",
       "created_at": "2026-05-16T08:18:36Z",
       "prd": "grimoires/loa/cycles/cycle-006-substrate-presentation/prd.md",
@@ -256,13 +258,13 @@
       "sprint_plan": "grimoires/loa/cycles/cycle-006-substrate-presentation/sprint.md",
       "target_branch": "feat/cycle-006-substrate-presentation",
       "depends_on": [
-        "PR #81 (codex's ports/live/mock initial split · either merged or rebased into 006)",
-        "cycle-005 closure (PR #80 merged · PR #81 BB REQUEST_CHANGES under remediation)",
+        "PR #81 (codex's ports/live/mock initial split \u00b7 either merged or rebased into 006)",
+        "cycle-005 closure (PR #80 merged \u00b7 PR #81 BB REQUEST_CHANGES under remediation)",
         "score-mibera 1.1.0 in prod (MERGED 2026-05-15)"
       ],
       "red_team_phase_45": {
         "executed_at": "2026-05-16",
-        "verdict": "operator-attested 'Loa you decide for all' — 4 ACs integrated",
+        "verdict": "operator-attested 'Loa you decide for all' \u2014 4 ACs integrated",
         "ac_integration": {
           "AC-RT-001": {
             "sprint": "S6",
@@ -309,7 +311,7 @@
         {
           "local_id": "S0",
           "global_number": 12,
-          "title": "Calibration spike — deriveShape ↔ selectLayoutShape baseline (auto-delete)",
+          "title": "Calibration spike \u2014 deriveShape \u2194 selectLayoutShape baseline (auto-delete)",
           "scope": "SMALL",
           "task_count": 3,
           "status": "planned",
@@ -444,7 +446,7 @@
         {
           "local_id": "S0",
           "global_number": 6,
-          "title": "Calibration spike — factor_stats live verify + OTEL wire-cost + regex-vs-archive (auto-delete)",
+          "title": "Calibration spike \u2014 factor_stats live verify + OTEL wire-cost + regex-vs-archive (auto-delete)",
           "scope": "SMALL",
           "task_count": 4,
           "status": "planned",
@@ -455,7 +457,7 @@
         {
           "local_id": "S1",
           "global_number": 7,
-          "title": "V1 prose-gate (telemetry-only) — sibling to grail-ref-guard",
+          "title": "V1 prose-gate (telemetry-only) \u2014 sibling to grail-ref-guard",
           "scope": "SMALL",
           "task_count": 5,
           "status": "planned",
@@ -466,7 +468,7 @@
         {
           "local_id": "S2",
           "global_number": 8,
-          "title": "Leaderboard body — reactivate buildPulseDimensionPayload + per-row mood emoji slot",
+          "title": "Leaderboard body \u2014 reactivate buildPulseDimensionPayload + per-row mood emoji slot",
           "scope": "MEDIUM",
           "task_count": 6,
           "status": "planned",
@@ -477,7 +479,7 @@
         {
           "local_id": "S3",
           "global_number": 9,
-          "title": "Layout shape selector (A/B/C) — substrate-driven typography",
+          "title": "Layout shape selector (A/B/C) \u2014 substrate-driven typography",
           "scope": "SMALL",
           "task_count": 4,
           "status": "planned",
@@ -488,7 +490,7 @@
         {
           "local_id": "S4",
           "global_number": 10,
-          "title": "Mood-emoji rules — factor_stats → unicode emoji per-row",
+          "title": "Mood-emoji rules \u2014 factor_stats \u2192 unicode emoji per-row",
           "scope": "SMALL",
           "task_count": 3,
           "status": "planned",
@@ -581,7 +583,7 @@
     },
     {
       "id": "cycle-bug-20260511-b6eb97",
-      "label": "Bug Fix — raw API Error string leaked to Discord during transient Bedrock outage",
+      "label": "Bug Fix \u2014 raw API Error string leaked to Discord during transient Bedrock outage",
       "type": "bugfix",
       "status": "active",
       "source_issue": null,
@@ -591,6 +593,59 @@
       ],
       "triage": "grimoires/loa/a2a/bug-20260511-b6eb97/triage.md",
       "sprint_plan": "grimoires/loa/a2a/bug-20260511-b6eb97/sprint.md"
+    },
+    {
+      "id": "cycle-009-onboarding-character",
+      "label": "onboarding character \u2014 freeside verify bot (CollabLand-style, interaction-context)",
+      "status": "active",
+      "sprints": [
+        {
+          "local_id": "sprint-1",
+          "global_number": 31,
+          "title": "CORE substrate \u2014 state-token + freeside-auth client",
+          "status": "planned",
+          "scope": "CORE",
+          "risk_tier": "MEDIUM",
+          "epic_bead": "bd-c9-s1-core-1un"
+        },
+        {
+          "local_id": "sprint-2",
+          "global_number": 32,
+          "title": "INTERACTION \u2014 verify card + onboarding dispatch",
+          "status": "planned",
+          "scope": "INTERACTION",
+          "risk_tier": "MEDIUM",
+          "epic_bead": "bd-c9-s2-interaction-eqw"
+        },
+        {
+          "local_id": "sprint-3",
+          "global_number": 33,
+          "title": "WEB VERIFY \u2014 Bun surface + Discord OAuth + SIWE",
+          "status": "planned",
+          "scope": "WEB",
+          "risk_tier": "HIGH",
+          "epic_bead": "bd-c9-s3-webverify-b41"
+        },
+        {
+          "local_id": "sprint-4",
+          "global_number": 34,
+          "title": "LINK + ROLE \u2014 account + grant + conflict policy",
+          "status": "planned",
+          "scope": "INTEGRATION",
+          "risk_tier": "HIGH",
+          "epic_bead": "bd-c9-s4-linkrole-qvb"
+        },
+        {
+          "local_id": "sprint-5",
+          "global_number": 35,
+          "title": "CUTOVER + persona",
+          "status": "planned",
+          "scope": "CEREMONY",
+          "risk_tier": "MEDIUM",
+          "epic_bead": "bd-c9-s5-cutover-uk3",
+          "is_final": true
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,37 @@
+{
+  "fixture_kind": "admission_recall_proof",
+  "fixture_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.5, J)",
+  "synthetic": true,
+  "proof_id": "proof-004",
+  "proof_phase": "supersession",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "recall_route": "/api/recall/intake",
+  "recall_classification": "served",
+  "recall_result": "included",
+  "inclusion_reason": "admitted_active_assertion",
+  "included_assertion_ids": ["assn-011"],
+  "excluded_assertion_ids": ["assn-010"],
+  "corrected_active_assertion_id": "assn-011",
+  "superseded_assertion_id": "assn-010",
+  "superseded_excluded_reason": "assertion_superseded",
+  "public_recall_output": {
+    "public_summary": "operator prefers the evening festival slot",
+    "denied_or_refused": false,
+    "rendered_candidate_payload": false,
+    "rendered_prior_state": false
+  },
+  "audit_links": {
+    "source_candidate_id": "cand-011",
+    "admission_transition_id": "trans-011",
+    "admission_receipt_ref": "rcpt-011",
+    "supersedes_assertion_id": "assn-010",
+    "supersede_transition_id": "trans-011",
+    "audit_link_note": "the supersedes link assn-011 -> assn-010 and the supersede transition are preserved for audit reconstruction only; the prior state is NOT rendered as active governed continuity"
+  },
+  "no_leak_note": "ordinary recall returns only the corrected active assertion assn-011; the wrong prior state assn-010 does not surface as active governed continuity; no candidate payload, body_private, or prior-state body is rendered",
+  "reuse_note": "reuses the accepted Recall Wedge served behavior unchanged; supersession is a doctrine partition, not a forget/revoke/correction UI",
+  "authorization_note": "synthetic, reviewed, fixture/operator-only; demonstrates correction preserves auditability without leaking the wrong prior state into ordinary recall"
+}

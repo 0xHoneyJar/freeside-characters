@@ -1,0 +1,30 @@
+{
+  "fixture_kind": "admission_recall_proof",
+  "fixture_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.5, I)",
+  "synthetic": true,
+  "proof_id": "proof-003",
+  "proof_phase": "rejected",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "recall_route": "/api/recall/intake",
+  "recall_classification": "not_found",
+  "considered_candidate_id": "cand-002",
+  "considered_admission_state": "rejected",
+  "admission_decision": "rejected",
+  "admission_transition_id": "trans-002",
+  "admitted_assertion_id": null,
+  "recall_result": "excluded",
+  "exclusion_reason": "candidate_rejected",
+  "included_assertion_ids": [],
+  "excluded_candidate_ids": ["cand-002"],
+  "public_recall_output": {
+    "public_summary": "nothing to recall here",
+    "denied_or_refused": true,
+    "rendered_candidate_payload": false
+  },
+  "no_leak_note": "a rejected candidate never mints an admitted assertion and never becomes recallable; its body, payload, source material, and the rejection receipt body are not rendered; rejection is terminal for recallability",
+  "reuse_note": "reuses the accepted Recall Wedge fail-closed behavior unchanged; never the served family, before during or after rejection",
+  "authorization_note": "synthetic, reviewed, fixture/operator-only; demonstrates a rejected candidate never becomes recallable"
+}

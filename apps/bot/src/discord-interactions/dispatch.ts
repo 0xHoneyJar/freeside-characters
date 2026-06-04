@@ -53,6 +53,14 @@ import {
   noQuestRuntime,
   type QuestRuntime,
 } from './quest-dispatch.ts';
+import {
+  handleOnboardingInteraction,
+  isForeignOnboardSquat,
+  isOnboardingInteraction,
+  noOnboardingRuntime,
+  runOnboardingPrecheck,
+  type OnboardingRuntime,
+} from './onboarding-dispatch.ts';
 import { getZoneForChannel } from '../lib/channel-zone-map.ts';
 import {
   attachAuthContext,
@@ -152,6 +160,20 @@ export function getActiveQuestRuntime(): QuestRuntime {
   return activeQuestRuntime;
 }
 
+// cycle-009 · sprint-2 · onboarding runtime (C2). Same module-level-binding pattern
+// as the quest runtime: index.ts wires it at boot via setOnboardingRuntime(); the
+// no-op default degrades every verify click to the `new` branch (safe — the web
+// flow's link is idempotent), so dev guilds never crash on a verify button.
+let activeOnboardingRuntime: OnboardingRuntime = noOnboardingRuntime;
+
+export function setOnboardingRuntime(runtime: OnboardingRuntime): void {
+  activeOnboardingRuntime = runtime;
+}
+
+export function getActiveOnboardingRuntime(): OnboardingRuntime {
+  return activeOnboardingRuntime;
+}
+
 /**
  * Module-level role-sync deps (bd-71y) — the deploy wires this at boot via
  * `setRoleSyncDeps()` (world, role-map reader, orchestration invoker, world
@@ -220,8 +242,11 @@ export async function dispatchSlashCommand(
   // (slash + button + modal_submit). The actual interception lands AFTER
   // the anti-spam guard below so quest commands inherit the same protection.
   const isQuest = isQuestInteraction(interaction);
+  // cycle-009 · sprint-2 — early-detect the onboarding verify button / slash (C2).
+  // Intercepted AFTER anti-spam + circuit + auth-bridge so it inherits all three.
+  const isOnboarding = isOnboardingInteraction(interaction);
 
-  if (!isQuest && interaction.type !== InteractionType.APPLICATION_COMMAND) {
+  if (!isQuest && !isOnboarding && interaction.type !== InteractionType.APPLICATION_COMMAND) {
     return ephemeralReply(`unsupported interaction type ${interaction.type}`);
   }
 
@@ -364,6 +389,26 @@ export async function dispatchSlashCommand(
       );
     }
     return handleRoleSyncInteraction(interaction, interactionCtx.auth, deps);
+  }
+
+  // ─── cycle-009 · sprint-2 — onboarding verify interception (C2) ─────
+  // The verify button (custom_id onboard:verify) / /onboard slash. Returns a
+  // deferred ephemeral ACK synchronously (H-3 · never exceeds the 3s window),
+  // then fires the background pre-check which mints a single-use handoff token
+  // (C3) + PATCHes the ephemeral reply with the opaque verify URL. Like quests,
+  // per-character resolution below is bypassed (onboarding is a system flow).
+  if (isOnboarding) {
+    const ack = handleOnboardingInteraction(interaction);
+    // Only the deferred branch has background work; the guild-only instant reply doesn't.
+    if (ack.type === InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE) {
+      void runOnboardingPrecheck(interaction, activeOnboardingRuntime);
+    }
+    return ack;
+  }
+  // RT-6 — a foreign component squatting the reserved `onboard:` prefix is rejected,
+  // not silently handled (defense-in-depth; server.ts only forwards onboard:verify today).
+  if (isForeignOnboardSquat(interaction)) {
+    return ephemeralReply('that control is not available.');
   }
 
 // —— Resolve target command + handler ————————————————————————

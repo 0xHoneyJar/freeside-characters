@@ -63,10 +63,12 @@
 // runtime is pulled in lazily via defaultLoadLiveClient ONLY after every
 // Discord gate passes (see the handler below).
 import type {
+  BuildDevSeededSignatureInput,
   LiveDixieClientConfig,
   LiveDixieRecallClassification,
   LiveDixieRecallResult,
   LiveRecallInput,
+  LiveRecallSignatureEnvelopeInput,
 } from '@freeside-characters/persona-engine/recall-wedge/live-dixie-client';
 import {
   InteractionResponseType,
@@ -172,40 +174,216 @@ export function isRecallWedgeLiveDiscordDemoOperator(
   return operatorIds.includes(invokerId);
 }
 
-// -- fixed deterministic operator/dev request shape (Phase 41A §H) ---------
+// -- pre-Dixie gate diagnostics (Phase 42B · §K safe operator diagnostics) -
+//
+// Phase 41A §K explicitly permits "safe operator diagnostics ... if they
+// contain no IDs / secrets / private fields — stable reason codes are fine."
+// Phase 42B adds exactly that for the pre-Dixie refusal path: a single safe
+// log line of BOOLEANS and a stable refusal CODE so an operator can see WHICH
+// gate tripped without the public/ephemeral refusal ever revealing it.
+//
+// Hard no-leak contract (mirrors §K + the runbook §M "do not record" list):
+// the diagnostics carry NO guild IDs, NO user IDs, NO operator allowlist
+// contents, NO tokens, NO Dixie URL / token, NO raw interaction or Dixie
+// payload, NO channel / message IDs, NO env names or values, and NO stack
+// traces — only booleans and a fixed reason-code enum. The booleans answer
+// "is the value present / does the gate pass" without ever surfacing the
+// value itself.
 
 /**
- * The ONLY input that reaches the live Dixie request from Discord — a FIXED
- * synthetic operator/dev probe (Phase 41A §H option 1). It is a code-reviewed
- * constant, NOT derived from the interaction: no option is read, no message
- * history is read, no channel content is read, and there is no fallback to
- * interaction text. Its shape mirrors the Phase 37C runner's
- * `DEFAULT_OPERATOR_INPUT` (operator-supplied tenant / caller / request-key
- * inputs the live client already constructs). It carries no real secret value
- * — secrets live only in the Phase 37C client's own `RECALL_WEDGE_DIXIE_*`
- * env (§G), which this module does not read. No fixed idempotencyKey is set,
- * so the live client mints a fresh key per call (no reuse).
+ * Stable, no-leak reason codes for a pre-Dixie gate refusal. These name
+ * WHICH gate tripped for the operator log ONLY — they never reach Discord
+ * (the public refusal stays the single generic string). `unknown_gate_refusal`
+ * is a defensive fallback that should never be emitted in practice (it would
+ * mean the refusal path ran with all gate booleans passing).
  */
-const RECALL_WEDGE_LIVE_DEMO_FIXED_INPUT: LiveRecallInput = {
+export type RecallWedgeLiveDemoRefusalCode =
+  | 'disabled'
+  | 'missing_or_wrong_guild'
+  | 'empty_allowlist'
+  | 'non_operator'
+  | 'missing_invoker'
+  | 'unknown_gate_refusal';
+
+/**
+ * The safe, booleans-only snapshot of the pre-Dixie gate state. Every field is
+ * a boolean or the fixed reason-code enum — there is intentionally no slot for
+ * an ID, env value, token, or payload. `refusal_code` is null when ALL pre-Dixie
+ * gates pass (the handler then proceeds to the gated live path).
+ */
+export interface RecallWedgeLiveDemoGateDiagnostics {
+  readonly command: typeof RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME;
+  readonly stage: 'pre_dixie_gate';
+  readonly enabled_gate: boolean;
+  readonly guild_gate: boolean;
+  readonly operator_gate: boolean;
+  readonly has_configured_guild: boolean;
+  readonly has_interaction_guild: boolean;
+  readonly has_operator_allowlist: boolean;
+  readonly has_invoker_id: boolean;
+  readonly refusal_code: RecallWedgeLiveDemoRefusalCode | null;
+}
+
+/**
+ * Compute the safe pre-Dixie gate diagnostics. Pure: reads only env + the
+ * presence/equality of interaction fields, evaluates the same three gate
+ * helpers the handler uses, and derives a stable `refusal_code` following the
+ * handler's precedence (enabled → guild → operator). Calls no client, makes no
+ * network request, and copies NO id / value / token / payload into its result.
+ *
+ * `refusal_code` is null exactly when `enabled_gate && guild_gate &&
+ * operator_gate` — i.e. when the handler would NOT refuse before Dixie. The
+ * operator-gate failure is split into `empty_allowlist` (no allowlist
+ * configured), `missing_invoker` (allowlist present but no invoker id), and
+ * `non_operator` (invoker present but not allowlisted) so the operator log
+ * distinguishes a misconfiguration from a genuinely-unauthorized caller —
+ * still without ever logging the allowlist or the id.
+ */
+export function computeRecallWedgeLiveDemoGateDiagnostics(
+  interaction: DiscordInteraction,
+  env: Env,
+): RecallWedgeLiveDemoGateDiagnostics {
+  const enabled_gate = shouldEnableRecallWedgeLiveDiscordDemo(env);
+  const guild_gate = isRecallWedgeLiveDiscordDemoAllowedGuild(interaction, env);
+  const operator_gate = isRecallWedgeLiveDiscordDemoOperator(interaction, env);
+
+  const has_configured_guild =
+    resolveRecallWedgeLiveDiscordDemoGuildId(env) !== null;
+  const has_interaction_guild = Boolean(interaction.guild_id);
+  const has_operator_allowlist =
+    parseRecallWedgeLiveDiscordDemoOperatorIds(env).length > 0;
+  const has_invoker_id = Boolean(
+    interaction.member?.user?.id ?? interaction.user?.id,
+  );
+
+  let refusal_code: RecallWedgeLiveDemoRefusalCode | null;
+  if (!enabled_gate) {
+    refusal_code = 'disabled';
+  } else if (!guild_gate) {
+    refusal_code = 'missing_or_wrong_guild';
+  } else if (!operator_gate) {
+    refusal_code = !has_operator_allowlist
+      ? 'empty_allowlist'
+      : !has_invoker_id
+        ? 'missing_invoker'
+        : 'non_operator';
+  } else {
+    refusal_code = null;
+  }
+
+  return {
+    command: RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME,
+    stage: 'pre_dixie_gate',
+    enabled_gate,
+    guild_gate,
+    operator_gate,
+    has_configured_guild,
+    has_interaction_guild,
+    has_operator_allowlist,
+    has_invoker_id,
+    refusal_code,
+  };
+}
+
+/**
+ * Emit the safe pre-Dixie gate diagnostics as ONE operator log line. Called
+ * only on the refusal path (so the line always carries a refusal code; a null
+ * code is coerced to the defensive `unknown_gate_refusal`). The line is
+ * booleans + the reason code only — it matches the repo's `interactions: …`
+ * single-line key=value log convention and the lowercase-log voice rule, and
+ * it contains no id / env value / token / payload by construction (the
+ * `RecallWedgeLiveDemoGateDiagnostics` shape has nowhere to put one).
+ */
+function logRecallWedgeLiveDemoGateRefusal(
+  diagnostics: RecallWedgeLiveDemoGateDiagnostics,
+): void {
+  const refusal_code = diagnostics.refusal_code ?? 'unknown_gate_refusal';
+  console.warn(
+    `interactions: ${diagnostics.command} pre-dixie gate refusal · ` +
+      `command=${diagnostics.command} ` +
+      `stage=${diagnostics.stage} ` +
+      `enabled_gate=${diagnostics.enabled_gate} ` +
+      `guild_gate=${diagnostics.guild_gate} ` +
+      `operator_gate=${diagnostics.operator_gate} ` +
+      `has_configured_guild=${diagnostics.has_configured_guild} ` +
+      `has_interaction_guild=${diagnostics.has_interaction_guild} ` +
+      `has_operator_allowlist=${diagnostics.has_operator_allowlist} ` +
+      `has_invoker_id=${diagnostics.has_invoker_id} ` +
+      `refusal_code=${refusal_code}`,
+  );
+}
+
+// -- fixed deterministic operator/dev request shape (Phase 41A §H · Phase 42C) --
+
+/**
+ * The fixed synthetic operator/dev probe SHAPE (Phase 41A §H option 1) — every
+ * field except the signature, which is computed per call (Phase 42C). It is a
+ * code-reviewed constant, NOT derived from the interaction: no option is read,
+ * no message history is read, no channel content is read, and there is no
+ * fallback to interaction text.
+ *
+ * Phase 42C aligns this probe with Dixie's Phase 32K dev/operator seeded-estate
+ * smoke (the only shape that passes against live seeded Dixie):
+ *   - `environmentFrame: 'private_chat'` (was `private_operator`);
+ *   - `detailLevel: 'standard'` / `receiptDetail: 'standard'` (were `minimal`).
+ * The signature itself is NOT a constant here — it binds to
+ * `actor_id === estate_id === wallet`, and the wallet only exists once the
+ * Phase 37C client's `RECALL_WEDGE_DIXIE_*` config is loaded. So the handler
+ * computes a fresh Phase 32K `dev_signature` (via the client's
+ * `buildDevSeededRecallSignature`) AFTER config load, using the configured
+ * tenant wallet — never any Discord input, never a hard-coded placeholder.
+ * This carries no secret value: the signer / key_ref are PUBLIC dev-seed
+ * labels fixed by Dixie's seed contract, and the live Dixie secrets live only
+ * in the Phase 37C client's own env (§G), which this module does not read.
+ * No fixed idempotencyKey is set, so the live client mints a fresh key per
+ * call (no reuse).
+ */
+const RECALL_WEDGE_LIVE_DEMO_PROBE = {
   recallRequestId: 'recall-wedge-live-demo-1',
   task: 'recall-wedge-live-demo operator/dev probe',
-  environmentFrame: 'private_operator',
+  environmentFrame: 'private_chat',
   riskProfile: 'low',
-  detailLevel: 'minimal',
-  receiptDetail: 'minimal',
-  signature: {
-    signature_id: 'recall-wedge-live-demo-sig',
-    signer_id: 'recall-wedge-live-demo-signer',
-    signer_type: 'operator',
-    signature_type: 'dev_signature',
-    signed_payload_hash:
-      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
-    signature: 'devsig',
-    signed_at: '2026-05-18T00:00:00Z',
-    key_ref: 'recall-wedge-live-demo-kref',
-  },
+  detailLevel: 'standard',
+  receiptDetail: 'standard',
+  signatureId: 'recall-wedge-live-demo-sig',
+  signedAt: '2026-05-18T00:00:00Z',
   createdAt: '2026-05-18T00:00:00Z',
-};
+} as const;
+
+/**
+ * Build the full live recall input for the fixed probe by computing a Phase
+ * 32K-compatible `dev_signature` from the configured tenant wallet
+ * (`config.tenantId`, which the live client already binds to
+ * `actor_id === estate_id === requested_by`). The crypto lives in the Phase
+ * 37C client (`buildDevSeededRecallSignature`); this module only assembles the
+ * already-fixed probe fields around it. The wallet is read from config (env),
+ * never from the interaction, and is used ONLY to sign — it is never logged or
+ * rendered.
+ */
+function buildRecallWedgeLiveDemoInput(
+  client: RecallWedgeLiveDixieClientModule,
+  config: LiveDixieClientConfig,
+): LiveRecallInput {
+  const probe = RECALL_WEDGE_LIVE_DEMO_PROBE;
+  const signature = client.buildDevSeededRecallSignature({
+    wallet: config.tenantId,
+    task: probe.task,
+    environmentFrame: probe.environmentFrame,
+    riskProfile: probe.riskProfile,
+    signatureId: probe.signatureId,
+    signedAt: probe.signedAt,
+  });
+  return {
+    recallRequestId: probe.recallRequestId,
+    task: probe.task,
+    environmentFrame: probe.environmentFrame,
+    riskProfile: probe.riskProfile,
+    detailLevel: probe.detailLevel,
+    receiptDetail: probe.receiptDetail,
+    signature,
+    createdAt: probe.createdAt,
+  };
+}
 
 // -- live Dixie client seam (Phase 41A §J · lazy after gates) --------------
 
@@ -224,6 +402,12 @@ export interface RecallWedgeLiveDixieClientModule {
     input: LiveRecallInput,
     config: LiveDixieClientConfig,
   ) => Promise<LiveDixieRecallResult>;
+  // Phase 42C · computes a self-consistent Phase 32K dev/operator seeded-estate
+  // `dev_signature` envelope from the configured tenant wallet (the crypto and
+  // the public dev-seed labels live in the client, never here).
+  readonly buildDevSeededRecallSignature: (
+    input: BuildDevSeededSignatureInput,
+  ) => LiveRecallSignatureEnvelopeInput;
   readonly findBannedPublicSubstring: (value: unknown) => string | null;
 }
 
@@ -414,13 +598,20 @@ export async function handleRecallWedgeLiveDemoInteraction(
   // Gate order is irrelevant to the user: all gates fail to the SAME refusal.
   // No client load — and therefore no network egress — happens before these
   // checks, so a refused interaction never reaches the live path.
-  if (!shouldEnableRecallWedgeLiveDiscordDemo(env)) {
-    return recallWedgeLiveDemoRefusal();
-  }
-  if (!isRecallWedgeLiveDiscordDemoAllowedGuild(interaction, env)) {
-    return recallWedgeLiveDemoRefusal();
-  }
-  if (!isRecallWedgeLiveDiscordDemoOperator(interaction, env)) {
+  //
+  // Phase 42B (§K safe operator diagnostics): compute the booleans-only gate
+  // snapshot up front. The PUBLIC refusal is unchanged — still the single
+  // generic ephemeral string with no hint of which gate tripped — but on a
+  // pre-Dixie refusal we emit ONE safe operator log line (booleans + stable
+  // reason code, no IDs / tokens / env values / payloads) so operators can
+  // diagnose which gate is failing. `refusal_code` is null only when all three
+  // gates pass, so the log fires exactly on the refusal branch below.
+  const gateDiagnostics = computeRecallWedgeLiveDemoGateDiagnostics(
+    interaction,
+    env,
+  );
+  if (gateDiagnostics.refusal_code !== null) {
+    logRecallWedgeLiveDemoGateRefusal(gateDiagnostics);
     return recallWedgeLiveDemoRefusal();
   }
 
@@ -440,12 +631,14 @@ export async function handleRecallWedgeLiveDemoInteraction(
   let summary: RenderableLiveSummary;
   try {
     const config = client.loadLiveDixieClientConfigFromEnv(env);
+    // Phase 42C: assemble the fixed probe with a per-call Phase 32K-compatible
+    // dev signature bound to the configured tenant wallet (from env via
+    // config, never from the interaction). The request shape is otherwise the
+    // code-reviewed constant above — no option is read.
+    const input = buildRecallWedgeLiveDemoInput(client, config);
     let result: LiveDixieRecallResult;
     try {
-      result = await client.liveRecallViaDixie(
-        RECALL_WEDGE_LIVE_DEMO_FIXED_INPUT,
-        config,
-      );
+      result = await client.liveRecallViaDixie(input, config);
     } catch {
       // A thrown live client fails closed (Phase 41A §I / §J).
       return recallWedgeLiveDemoRefusal();

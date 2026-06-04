@@ -1,0 +1,27 @@
+{
+  "fixture_kind": "admission_recall_proof",
+  "fixture_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.5, H)",
+  "synthetic": true,
+  "proof_id": "proof-001",
+  "proof_phase": "before_admission",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "recall_route": "/api/recall/intake",
+  "recall_classification": "not_found",
+  "considered_candidate_id": "cand-001",
+  "considered_admission_state": "candidate_pending",
+  "recall_result": "excluded",
+  "exclusion_reason": "candidate_not_admitted",
+  "included_assertion_ids": [],
+  "excluded_candidate_ids": ["cand-001"],
+  "public_recall_output": {
+    "public_summary": "nothing to recall here",
+    "denied_or_refused": true,
+    "rendered_candidate_payload": false
+  },
+  "no_leak_note": "candidate body, source material, candidate_payload, and provenance are not rendered; a not-yet-admitted candidate is absent from governed recall — existence is not recallability",
+  "reuse_note": "reuses the accepted Recall Wedge fail-closed behavior unchanged; this is the safe not-found family, never the served family",
+  "authorization_note": "synthetic, reviewed, fixture/operator-only; demonstrates candidate memory is not recallable before admission"
+}
