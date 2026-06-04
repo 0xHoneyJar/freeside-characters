@@ -233,7 +233,11 @@ async function handleDiscordPost(
     const customId =
       (interaction as unknown as { data?: { custom_id?: string } }).data
         ?.custom_id ?? '';
-    if (customId.startsWith('quest_') || customId.startsWith('onboard:')) {
+    if (
+      customId.startsWith('quest_') ||
+      customId.startsWith('onboard:') ||
+      customId.startsWith('rolesync:')
+    ) {
       const response = await dispatchSlashCommand(
         interaction,
         args.config,

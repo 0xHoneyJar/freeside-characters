@@ -97,11 +97,14 @@ describe("public-role-board — CV2 render (structural, voiceless, read-only)", 
     for (const name of ["Sovereign", "Elder", "Core", "Member", "Devoted", "Newcomer"]) {
       expect(txt).toContain(name);
     }
-    // per-tier counts: 1 sovereign, 2 elder, 1 core, 3 member, 0 devoted/newcomer.
-    expect(txt).toContain("`1` member");
-    expect(txt).toContain("`2` members");
-    expect(txt).toContain("`3` members");
-    expect(txt).toContain("`0` members");
+    // per-tier counts in the aligned code-block table (`<name>  <bar>  <count>`):
+    // 1 sovereign, 2 elder, 1 core, 3 member, 0 devoted/newcomer.
+    expect(txt).toMatch(/Sovereign\s+[█░]+\s+1/);
+    expect(txt).toMatch(/Elder\s+[█░]+\s+2/);
+    expect(txt).toMatch(/Core\s+[█░]+\s+1/);
+    expect(txt).toMatch(/Member\s+[█░]+\s+3/);
+    expect(txt).toMatch(/Devoted\s+[█░]+\s+0/);
+    expect(txt).toMatch(/Newcomer\s+[█░]+\s+0/);
   });
 
   test("ladder is a top-down progression: apex (Sovereign) precedes the crowd (Newcomer)", () => {
@@ -168,7 +171,7 @@ describe("public-role-board — CV2 render (structural, voiceless, read-only)", 
       rules: [
         {
           role_key: "purupuru:evil",
-          display_name: "@everyone **pwn**",
+          display_name: "```@everyone **pwn**",
           qualifies: { source: "tier", min_tier: "member" },
           create_if_absent: true,
         },
@@ -179,10 +182,18 @@ describe("public-role-board — CV2 render (structural, voiceless, read-only)", 
       { world: "@everyone", roleMap: evilMap, generatedAt: "2026-06-04T00:00:00Z" },
     );
     const txt = textContents(c).join("\n");
-    // @everyone broken (zero-width inserted after @) in both header + ladder.
-    expect(txt).not.toContain("@everyone");
-    // markdown control chars escaped in the lore name.
-    expect(txt).toContain("\\*\\*pwn\\*\\*");
+    // HEADER: the world slug is escaped + title-cased — no live `@everyone` in the title line.
+    expect(txt).not.toMatch(/^# .*@everyone/m);
+    // FENCE INTEGRITY: backticks in the lore name are stripped by codeSafeName, so the
+    // ladder stays ONE code block (exactly two ``` fences) — a crafted name can't break out.
+    expect((txt.match(/```/g) ?? []).length).toBe(2);
+    // PING SAFETY: the payload pins allowed_mentions:{parse:[]}, so a literal `@everyone`
+    // sitting inert inside the code block can never fire a ping (belt + suspenders to the fence).
+    const payload = publicRoleBoardCV2Payload(
+      rosterOf([tieredMember("700000000000000010", "x", "member")]),
+      { world: "@everyone", roleMap: evilMap, generatedAt: "2026-06-04T00:00:00Z" },
+    );
+    expect(payload.allowed_mentions).toEqual({ parse: [] });
   });
 
   test("empty roster renders the ladder + a no-members adoption line, no throw", () => {
@@ -190,8 +201,9 @@ describe("public-role-board — CV2 render (structural, voiceless, read-only)", 
     const txt = textContents(c).join("\n");
     expect(txt).toContain("Purupuru");
     expect(txt).toContain("No members yet");
-    // ladder still renders all tiers at 0.
-    expect(txt).toContain("`0` members");
+    // ladder still renders all tiers at 0 (aligned code block, all-empty bars).
+    expect(txt).toMatch(/Sovereign\s+░+\s+0/);
+    expect(txt).toMatch(/Newcomer\s+░+\s+0/);
   });
 
   test("world-customizable: a different world reskins via its own map + accent", () => {

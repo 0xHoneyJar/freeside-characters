@@ -65,11 +65,16 @@ const MAX_TEXT_COMPONENT_CHARS = 3500;
  * tier's POSITION on the ladder (0 = lowest shown), clamped to the last glyph for
  * deeper ladders. Honey/element aesthetic without per-world hardcoding.
  */
-const RUNG_GLYPHS = ["🐝", "🍯", "✨", "👑"] as const;
-
-/** A filled / empty bar cell pair for the per-tier count bar (visual weight). */
-const BAR_FILLED = "▰";
-const BAR_EMPTY = "▱";
+/**
+ * Filled / empty bar cells — block elements that hold a FIXED width in Discord's
+ * monospace code-block font. The ladder renders inside a ``` block so the columns
+ * align; proportional body text (the old render) cannot align a table, which is
+ * why the bars + counts looked ragged. Per-rung emoji are intentionally NOT in the
+ * table (emoji break monospace width); the world feel lives in the 🍯 header +
+ * honey accent + the lore tier names.
+ */
+const BAR_FILLED = "█";
+const BAR_EMPTY = "░";
 /** Max bar cells (the bar is a RELATIVE visual, scaled to the busiest tier). */
 const BAR_CELLS = 12;
 
@@ -181,27 +186,37 @@ function renderBar(count: number, max: number): string {
   return BAR_FILLED.repeat(cells) + BAR_EMPTY.repeat(BAR_CELLS - cells);
 }
 
+/** A code-block-safe label: strip backticks + CR/LF so a crafted lore/role name
+ *  cannot break out of the ``` fence, then clamp. The fence itself neutralizes
+ *  markdown + mentions, so this is the only escaping the monospace ladder needs. */
+function codeSafeName(raw: string): string {
+  const s = (raw ?? "").replace(/[`\r\n]/g, "").trim();
+  const base = s.length > 0 ? s : "—";
+  return base.length > 18 ? `${base.slice(0, 17)}…` : base;
+}
+
 /**
- * Render the ladder as a visual PROGRESSION (highest rung at the TOP — the apex
- * the climb leads to — down to the crowd). Each line:
- *   <rung-glyph> **<lore name>**  <bar>  <count>
+ * Render the ladder as a visual PROGRESSION (apex at the TOP, down to the crowd)
+ * inside ONE monospace ``` code block so the columns ALIGN. Discord renders body
+ * text in a proportional font (variable-width labels + shape glyphs never line
+ * up — the ragged bars the operator flagged); a code block is the only way to get
+ * a real table. Each row, fixed-width:
+ *   <lore name, left-padded>  <bar>  <count, right-padded>
  */
 function renderLadderLines(rungs: readonly LadderRung[]): string {
   if (rungs.length === 0) return "_(no tiers configured)_";
   const max = rungs.reduce((m, r) => Math.max(m, r.count), 0);
   // present highest-first (apex at top): reverse the ascending-rank order.
   const topFirst = [...rungs].reverse();
-  const lines = topFirst.map((rung, i) => {
-    // glyph by ladder POSITION (apex gets the crown); index from the top.
-    const fromTop = i;
-    const glyphIdx = Math.max(0, RUNG_GLYPHS.length - 1 - fromTop);
-    const glyph = RUNG_GLYPHS[Math.min(glyphIdx, RUNG_GLYPHS.length - 1)]!;
-    const name = safeText(rung.displayName);
+  const names = topFirst.map((r) => codeSafeName(r.displayName));
+  const nameW = Math.max(1, ...names.map((n) => n.length));
+  const countW = Math.max(...topFirst.map((r) => String(r.count).length));
+  const rows = topFirst.map((rung, i) => {
     const bar = renderBar(rung.count, max);
-    const noun = rung.count === 1 ? "member" : "members";
-    return `${glyph} **${name}**  ${bar}  \`${rung.count}\` ${noun}`;
+    const count = String(rung.count).padStart(countW);
+    return `${names[i]!.padEnd(nameW)}  ${bar}  ${count}`;
   });
-  return lines.join("\n");
+  return `\`\`\`\n${rows.join("\n")}\n\`\`\``;
 }
 
 /** The adoption line: "X of Y members have linked a wallet" + a share of total. */
