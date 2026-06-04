@@ -67,6 +67,13 @@ const ROLE_MAP: RoleMapConfig = {
   ],
 } as RoleMapConfig;
 
+/** A valid 17-20-digit Discord snowflake from a short tag (post-#12 the builder
+ *  counts non-snowflake member_ids as invalid, never assigned). */
+function sf(tag: string | number): string {
+  const digits = String(tag).replace(/\D/g, "") || "0";
+  return ("8" + digits.padStart(17, "0")).slice(0, 18);
+}
+
 /** Injected link map (wallet → discord snowflake | null). */
 function linkFrom(map: Record<string, string | null>): WalletDiscordLink {
   return {
@@ -85,23 +92,23 @@ describe("buildTierAssignments — the join", () => {
         lbEntry("0xelder", "elder"),     // qualifies both → core (strongest configured)
       ],
       roleMap: ROLE_MAP,
-      link: linkFrom({ "0xcore": "100", "0xmember": "200", "0xelder": "300" }),
+      link: linkFrom({ "0xcore": sf(100), "0xmember": sf(200), "0xelder": sf(300) }),
     });
     expect(res.assignments.length).toBe(3);
     const byMember = Object.fromEntries(res.assignments.map((a) => [a.member_id, a.role_key]));
-    expect(byMember["100"]).toBe("purupuru:core");
-    expect(byMember["200"]).toBe("purupuru:member");
-    expect(byMember["300"]).toBe("purupuru:core"); // elder > core, top configured rule
+    expect(byMember[sf(100)]).toBe("purupuru:core");
+    expect(byMember[sf(200)]).toBe("purupuru:member");
+    expect(byMember[sf(300)]).toBe("purupuru:core"); // elder > core, top configured rule
   });
 
   test("a qualified-but-unlinked wallet is skipped (counted), never assigned", async () => {
     const res = await buildTierAssignments({
       leaderboard: [lbEntry("0xa", "core"), lbEntry("0xb", "core")],
       roleMap: ROLE_MAP,
-      link: linkFrom({ "0xa": "100" /* 0xb has no link */ }),
+      link: linkFrom({ "0xa": sf(100) /* 0xb has no link */ }),
     });
     expect(res.assignments.length).toBe(1);
-    expect(res.assignments[0]!.member_id).toBe("100");
+    expect(res.assignments[0]!.member_id).toBe(sf(100));
     expect(res.skipped_unlinked).toBe(1);
   });
 
@@ -109,7 +116,7 @@ describe("buildTierAssignments — the join", () => {
     const res = await buildTierAssignments({
       leaderboard: [lbEntry("0xlow", "newcomer"), lbEntry("0xnull", null)],
       roleMap: ROLE_MAP,
-      link: linkFrom({ "0xlow": "100", "0xnull": "200" }),
+      link: linkFrom({ "0xlow": sf(100), "0xnull": sf(200) }),
     });
     expect(res.assignments.length).toBe(0);
     expect(res.skipped_unqualified).toBe(2);
@@ -119,9 +126,75 @@ describe("buildTierAssignments — the join", () => {
     const res = await buildTierAssignments({
       leaderboard: [lbEntry("0xa", "core")],
       roleMap: { ...ROLE_MAP, enabled: false },
-      link: linkFrom({ "0xa": "100" }),
+      link: linkFrom({ "0xa": sf(100) }),
     });
     expect(res.assignments.length).toBe(0);
+  });
+
+  // #6 — per-MEMBER (not per-wallet) dedup
+  test("#6: two wallets linked to ONE member emit ONE op (the strongest tier)", async () => {
+    const SHARED = sf(777);
+    const res = await buildTierAssignments({
+      leaderboard: [
+        lbEntry("0xw1", "member"), // member's weaker wallet
+        lbEntry("0xw2", "core"),   // member's stronger wallet (→ should win)
+      ],
+      roleMap: ROLE_MAP,
+      link: linkFrom({ "0xw1": SHARED, "0xw2": SHARED }), // SAME discord member
+    });
+    expect(res.assignments.length).toBe(1); // ONE op, not two
+    expect(res.assignments[0]!.member_id).toBe(SHARED);
+    expect(res.assignments[0]!.role_key).toBe("purupuru:core"); // strongest tier wins
+    expect(res.collapsed_duplicate_members).toBe(1);
+  });
+
+  test("#6: dedup keeps the stronger tier regardless of leaderboard order", async () => {
+    const SHARED = sf(888);
+    const res = await buildTierAssignments({
+      leaderboard: [
+        lbEntry("0xstrong", "core"),  // stronger FIRST
+        lbEntry("0xweak", "member"),  // weaker SECOND
+      ],
+      roleMap: ROLE_MAP,
+      link: linkFrom({ "0xstrong": SHARED, "0xweak": SHARED }),
+    });
+    expect(res.assignments.length).toBe(1);
+    expect(res.assignments[0]!.role_key).toBe("purupuru:core");
+    expect(res.collapsed_duplicate_members).toBe(1);
+  });
+
+  // #12 — non-snowflake member_id counted invalid (separate from unlinked)
+  test("#12: a non-snowflake member_id is counted INVALID, never assigned", async () => {
+    const res = await buildTierAssignments({
+      leaderboard: [lbEntry("0xgood", "core"), lbEntry("0xbad", "core")],
+      roleMap: ROLE_MAP,
+      link: linkFrom({ "0xgood": sf(1), "0xbad": "not-a-snowflake" }),
+    });
+    expect(res.assignments.length).toBe(1);
+    expect(res.assignments[0]!.member_id).toBe(sf(1));
+    expect(res.skipped_invalid).toBe(1);
+    expect(res.skipped_unlinked).toBe(0); // invalid is NOT counted as unlinked
+  });
+
+  // #13 — non-tier rule is explicitly skipped (observable)
+  test("#13: a non-tier rule is explicitly skipped (not relied on accidental fail-close)", async () => {
+    // a role-map carrying a NON-tier rule alongside a tier rule. (The substrate
+    // types `source` as 'tier'; this fixture casts to exercise the runtime guard.)
+    const mixedMap = {
+      ...ROLE_MAP,
+      rules: [
+        { role_key: "purupuru:nft", display_name: "NFT", qualifies: { source: "nft", min_tier: "core" }, create_if_absent: true },
+        { role_key: "purupuru:core", display_name: "Core", qualifies: { source: "tier", min_tier: "core" }, create_if_absent: true },
+      ],
+    } as unknown as RoleMapConfig;
+    const res = await buildTierAssignments({
+      leaderboard: [lbEntry("0xcore", "core")],
+      roleMap: mixedMap,
+      link: linkFrom({ "0xcore": sf(5) }),
+    });
+    // the tier rule still assigns; the non-tier rule never participates.
+    expect(res.assignments.length).toBe(1);
+    expect(res.assignments[0]!.role_key).toBe("purupuru:core");
   });
 });
 
@@ -277,7 +350,7 @@ describe("score-tier-assignment — END-TO-END through the real gate", () => {
     const assignmentsRes = await buildTierAssignments({
       leaderboard: [lbEntry("0xcore", "core"), lbEntry("0xelder", "elder")],
       roleMap: ROLE_MAP,
-      link: linkFrom({ "0xcore": "member-1", "0xelder": "member-2" }),
+      link: linkFrom({ "0xcore": sf("11"), "0xelder": sf("22") }),
     });
     expect(assignmentsRes.assignments.length).toBe(2);
 
@@ -318,7 +391,7 @@ describe("score-tier-assignment — END-TO-END through the real gate", () => {
     // exactly the two assign ops, captured by the MOCK writer (zero REAL writes).
     const assigns = capturedWrites().filter((w) => w.kind === "assign_role");
     expect(assigns.length).toBe(2);
-    expect(assigns.map((w) => w.member_id).sort()).toEqual(["member-1", "member-2"]);
+    expect(assigns.map((w) => w.member_id).sort()).toEqual([sf("11"), sf("22")].sort());
     expect(capturedWrites().filter((w) => w.kind === "create_role").length).toBe(0); // assign-only
     expect(recorder.countOf("shadow.role.applied.v1")).toBe(2);
     expect(recorder.countOf("shadow.role.rejected.v1")).toBe(0);

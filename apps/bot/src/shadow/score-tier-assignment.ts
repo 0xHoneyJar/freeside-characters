@@ -102,21 +102,54 @@ export interface BuildAssignmentsResult {
   readonly skipped_unlinked: number;
   /** wallets that qualified no rule (below every rule's min_tier / untiered). */
   readonly skipped_unqualified: number;
+  /**
+   * qualified+linked wallets whose member_id was NOT a valid Discord snowflake
+   * (Bridgebuilder #12 — counted SEPARATELY from unlinked, never assigned).
+   */
+  readonly skipped_invalid: number;
+  /**
+   * extra (wallet → same member) assignments collapsed by the per-member dedup
+   * (Bridgebuilder #6). N wallets linked to ONE member emit ONE op; the N-1
+   * collapsed are counted here. 0 in the common one-wallet-per-member case.
+   */
+  readonly collapsed_duplicate_members: number;
 }
+
+/**
+ * Discord snowflakes are 17-20 digit decimal ids. A member_id that is not
+ * snowflake-shaped can never `guild.members.fetch` — it is INVALID, not an
+ * assignment (Bridgebuilder #12). The live link adapter already rejects malformed
+ * ids at the source; this is the builder's defense-in-depth (a test double or a
+ * future source could still hand one through).
+ */
+const SNOWFLAKE_RE = /^\d{17,20}$/;
 
 /**
  * Pick the STRONGEST rule a wallet's tier qualifies (highest min_tier rank). A
  * wallet gets at most ONE managed tier role — the top one it earns. Returns the
  * winning rule or undefined when the wallet qualifies none.
+ *
+ * Bridgebuilder #13: a NON-tier rule (`qualifies.source !== 'tier'`) is skipped
+ * EXPLICITLY — we do not rely on `min_tier===undefined` accidentally fail-closing
+ * through `tierQualifies`. The substrate's `RoleRule` currently types `source` as
+ * the literal `'tier'`, but this guard is defense-in-depth against a future
+ * widening or unvalidated config; `skippedNonTier` makes the skip observable.
  */
 function strongestQualifyingRule(
   tier: string | null,
   rules: ReadonlyArray<RoleRule>,
   rank: TierRankResolver,
-): RoleRule | undefined {
+): { rule: RoleRule | undefined; skippedNonTier: number } {
   let best: RoleRule | undefined;
   let bestRank = -Infinity;
+  let skippedNonTier = 0;
   for (const rule of rules) {
+    // EXPLICIT non-tier skip (#13): only tier-sourced rules participate in the
+    // tier→role join. Anything else is observably skipped, not silently dropped.
+    if (rule.qualifies.source !== "tier") {
+      skippedNonTier += 1;
+      continue;
+    }
     if (!tierQualifies(tier, rule.qualifies.min_tier, rank)) continue;
     const r = rank(rule.qualifies.min_tier) ?? -Infinity;
     if (r > bestRank) {
@@ -124,7 +157,7 @@ function strongestQualifyingRule(
       bestRank = r;
     }
   }
-  return best;
+  return { rule: best, skippedNonTier };
 }
 
 /**
@@ -138,15 +171,29 @@ export async function buildTierAssignments(
 ): Promise<BuildAssignmentsResult> {
   const rank = input.tierRank ?? purupuruTierRank;
   if (!input.roleMap.enabled) {
-    return { assignments: [], skipped_unlinked: 0, skipped_unqualified: 0 };
+    return {
+      assignments: [],
+      skipped_unlinked: 0,
+      skipped_unqualified: 0,
+      skipped_invalid: 0,
+      collapsed_duplicate_members: 0,
+    };
   }
   const rules = input.roleMap.rules;
-  const assignments: TierAssignment[] = [];
   let skipped_unlinked = 0;
   let skipped_unqualified = 0;
+  let skipped_invalid = 0;
+
+  // PER-MEMBER (not per-wallet) dedup (Bridgebuilder #6): a Discord member may
+  // own MULTIPLE wallets (the freeside_auth `additional_wallets` fan-in resolves
+  // them all to ONE snowflake). Two qualifying wallets for one member must emit
+  // ONE assign op for that member's STRONGEST tier — not two competing ops. We
+  // resolve the link FIRST, then key the winner by member_id.
+  const byMember = new Map<string, TierAssignment>();
+  let collapsed_duplicate_members = 0;
 
   for (const entry of input.leaderboard) {
-    const rule = strongestQualifyingRule(entry.tier, rules, rank);
+    const { rule } = strongestQualifyingRule(entry.tier, rules, rank);
     if (!rule) {
       skipped_unqualified += 1;
       continue;
@@ -156,16 +203,39 @@ export async function buildTierAssignments(
       skipped_unlinked += 1;
       continue;
     }
-    assignments.push({
+    // #12 (count side): a non-snowflake member_id is INVALID — counted apart from
+    // unlinked, never assigned.
+    if (!SNOWFLAKE_RE.test(memberId)) {
+      skipped_invalid += 1;
+      continue;
+    }
+
+    const candidate: TierAssignment = {
       wallet: entry.wallet,
       member_id: memberId,
       // entry.tier is non-null here (strongestQualifyingRule returned a rule).
       tier: entry.tier as string,
       role_key: rule.role_key,
-    });
+    };
+    const existing = byMember.get(memberId);
+    if (!existing) {
+      byMember.set(memberId, candidate);
+      continue;
+    }
+    // SAME member, two wallets → keep the STRONGER tier; the other is collapsed.
+    collapsed_duplicate_members += 1;
+    const existingRank = rank(existing.tier) ?? -Infinity;
+    const candidateRank = rank(candidate.tier) ?? -Infinity;
+    if (candidateRank > existingRank) byMember.set(memberId, candidate);
   }
 
-  return { assignments, skipped_unlinked, skipped_unqualified };
+  return {
+    assignments: [...byMember.values()],
+    skipped_unlinked,
+    skipped_unqualified,
+    skipped_invalid,
+    collapsed_duplicate_members,
+  };
 }
 
 // ─── op_id / idempotency_key (deterministic, retry-safe) ─────────────────────
