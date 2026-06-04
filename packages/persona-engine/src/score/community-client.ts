@@ -76,12 +76,19 @@ export type CommunityLeaderboardEntry = S.Schema.Type<typeof CommunityLeaderboar
 /**
  * The `GET /v1/leaderboard?community=` response envelope. Mirrors score-api
  * `communityLeaderboardResponseSchema`. We validate the load-bearing fields
- * (`community`, `wallets`) and tolerate the rest (`total`, `meta`,
- * `cohort_total`, `truncated`).
+ * (`community`, `wallets`) AND the SAFETY fields (`truncated`, `total`) — a
+ * truncated page silently under-assigns roles, so it must be visible to the
+ * client (Bridgebuilder #5). `truncated`/`total` are OPTIONAL with safe defaults
+ * (older score-api builds may omit them; absence ⇒ NOT truncated). `meta` /
+ * `cohort_total` remain tolerated-but-unread.
  */
 export const CommunityLeaderboardResponse = S.Struct({
   community: S.String,
   wallets: S.Array(CommunityLeaderboardEntry),
+  /** total wallets in the cohort (before truncation). undefined on older builds. */
+  total: S.optional(S.NullOr(S.Number)),
+  /** TRUE ⇒ `wallets` is a partial page (score-api capped the result set). */
+  truncated: S.optional(S.NullOr(S.Boolean)),
 });
 export type CommunityLeaderboardResponse = S.Schema.Type<typeof CommunityLeaderboardResponse>;
 
@@ -130,7 +137,18 @@ export interface CommunityScoreClientConfig {
   readonly community: string;
   /** retry tuning (tests inject fetchImpl/sleep/random). */
   readonly retry?: FetchRetryOptions;
+  /**
+   * per-request deadline in ms (an `AbortController` aborts the fetch). A hung
+   * upstream would otherwise stall the whole go_live (Bridgebuilder #10). An
+   * abort is classified `transport` (the retry layer treats it as a network
+   * throw and may back off, then the client surfaces a typed transport error).
+   * Default 10s. Set 0/negative to disable.
+   */
+  readonly requestTimeoutMs?: number;
 }
+
+/** Default per-request deadline (ms). */
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * The community-scoped REST client. Two reads:
@@ -153,6 +171,30 @@ export class CommunityScoreClient {
 
   private base(): string {
     return this.cfg.baseUrl.replace(/\/+$/, '');
+  }
+
+  /**
+   * fetch with retry UNDER a per-request deadline. An `AbortController` fires
+   * after `requestTimeoutMs` so a hung upstream cannot stall the caller forever
+   * (Bridgebuilder #10). The injected `retry.signal` (if any) is preserved by
+   * merging — but the common case is no caller signal, only the deadline. The
+   * abort surfaces as a thrown `AbortError` from `fetchWithRetry`, which the
+   * caller classifies as `transport`.
+   */
+  private async fetchWithDeadline(url: string): Promise<Response> {
+    const timeoutMs = this.cfg.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const init: RequestInit = { method: 'GET', headers: this.headers() };
+    if (!(timeoutMs > 0)) {
+      // deadline disabled — plain retry fetch.
+      return fetchWithRetry(url, init, this.cfg.retry);
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetchWithRetry(url, { ...init, signal: controller.signal }, this.cfg.retry);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** classify a non-OK Response into a typed error (after the body is consumed). */
@@ -193,7 +235,7 @@ export class CommunityScoreClient {
     const url = `${this.base()}/v1/leaderboard?community=${encodeURIComponent(this.cfg.community)}`;
     let res: Response;
     try {
-      res = await fetchWithRetry(url, { method: 'GET', headers: this.headers() }, this.cfg.retry);
+      res = await this.fetchWithDeadline(url);
     } catch (e) {
       throw new CommunityScoreError(
         'transport',
@@ -211,7 +253,31 @@ export class CommunityScoreClient {
         `score-api leaderboard response did not match the community contract: ${String(decoded.left)}`,
       );
     }
-    return decoded.right;
+    const page = decoded.right;
+    // FAIL-CLOSED COMMUNITY MATCH (Bridgebuilder #4): the response MUST be for the
+    // community we asked about. A gateway/default-community bug (e.g. a key that
+    // silently falls back to Mibera) would otherwise feed NON-Purupuru tiers into
+    // Purupuru role assignment. score-api echoes `community` in the envelope; we
+    // refuse a mismatch rather than trust the request param.
+    if (page.community !== this.cfg.community) {
+      throw new CommunityScoreError(
+        'decode',
+        `score-api leaderboard community mismatch: requested '${this.cfg.community}' but response is for '${page.community}' (refusing — would feed foreign tiers into '${this.cfg.community}' assignment)`,
+      );
+    }
+    // FAIL-CLOSED TRUNCATION GUARD (Bridgebuilder #5): a truncated page is a
+    // PARTIAL roster — assigning from it silently under-assigns roles (qualified
+    // members beyond the page get no role). The client does NOT paginate (the
+    // score-api community surface exposes no cursor/offset at this SHA), so we
+    // REFUSE rather than under-assign. If/when a paginated surface lands, this is
+    // the seam to loop.
+    if (page.truncated === true) {
+      throw new CommunityScoreError(
+        'decode',
+        `score-api leaderboard is TRUNCATED (${page.wallets.length} of ${page.total ?? 'unknown'} total) — refusing a partial roster (would under-assign roles); pagination is not yet supported on this surface`,
+      );
+    }
+    return page;
   }
 
   /** GET /v1/wallets/<address>?community=<slug> — a single wallet's tier. */
@@ -219,7 +285,7 @@ export class CommunityScoreClient {
     const url = `${this.base()}/v1/wallets/${encodeURIComponent(address)}?community=${encodeURIComponent(this.cfg.community)}`;
     let res: Response;
     try {
-      res = await fetchWithRetry(url, { method: 'GET', headers: this.headers() }, this.cfg.retry);
+      res = await this.fetchWithDeadline(url);
     } catch (e) {
       throw new CommunityScoreError(
         'transport',

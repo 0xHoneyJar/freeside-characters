@@ -128,6 +128,77 @@ describe("CommunityScoreClient.leaderboard", () => {
   });
 });
 
+describe("CommunityScoreClient.leaderboard — fail-closed safety guards", () => {
+  // #4 — community match
+  test("REFUSES a community mismatch (foreign tiers would poison assignment)", async () => {
+    const foreign = {
+      community: "mibera", // ← gateway/default-community fallback bug
+      total: 1,
+      wallets: [{ wallet: "0xaaa", rank: 1, combined_score: 98, tier: "sovereign" }],
+    };
+    const c = client(once(Response.json(foreign))); // client asks for "purupuru"
+    const res = await c.leaderboard().catch((e) => e);
+    expect(res).toBeInstanceOf(CommunityScoreError);
+    expect((res as CommunityScoreError).kind).toBe("decode");
+    expect((res as CommunityScoreError).message).toContain("community mismatch");
+  });
+
+  test("accepts a matching community (no false positive)", async () => {
+    const c = client(once(Response.json(COMMUNITY_BODY)));
+    const page = await c.leaderboard();
+    expect(page.community).toBe("purupuru");
+  });
+
+  // #5 — truncation
+  test("REFUSES a TRUNCATED page (partial roster would under-assign roles)", async () => {
+    const truncated = {
+      community: "purupuru",
+      total: 500,
+      truncated: true, // ← only a partial page returned
+      wallets: [{ wallet: "0xaaa", rank: 1, combined_score: 98, tier: "sovereign" }],
+    };
+    const c = client(once(Response.json(truncated)));
+    const res = await c.leaderboard().catch((e) => e);
+    expect(res).toBeInstanceOf(CommunityScoreError);
+    expect((res as CommunityScoreError).kind).toBe("decode");
+    expect((res as CommunityScoreError).message).toContain("TRUNCATED");
+  });
+
+  test("truncated:false (or absent) is accepted (the normal full-page case)", async () => {
+    const c1 = client(once(Response.json({ ...COMMUNITY_BODY, truncated: false })));
+    expect((await c1.leaderboard()).wallets.length).toBe(3);
+    // absent field (older score-api build) ⇒ treated NOT truncated.
+    const noField = { community: "purupuru", total: 1, wallets: [{ wallet: "0xddd", rank: 2, combined_score: 80, tier: "core" }] };
+    const c2 = client(once(Response.json(noField)));
+    expect((await c2.leaderboard()).wallets.length).toBe(1);
+  });
+
+  // #10 — request timeout
+  test("aborts a hung request after the deadline → transport error", async () => {
+    // a fetch that never resolves UNTIL its signal aborts (mirrors a hung upstream).
+    const hung = ((url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init.signal as AbortSignal | undefined;
+        if (signal) {
+          if (signal.aborted) return reject(new DOMException("aborted", "AbortError"));
+          signal.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }
+      })) as unknown as typeof fetch;
+    const c = new CommunityScoreClient({
+      baseUrl: "https://score-api.test",
+      apiKey: "sk-test-key",
+      community: "purupuru",
+      requestTimeoutMs: 5, // tiny deadline
+      retry: { ...noWait, fetchImpl: hung, maxAttempts: 1 },
+    });
+    const res = await c.leaderboard().catch((e) => e);
+    expect(res).toBeInstanceOf(CommunityScoreError);
+    expect((res as CommunityScoreError).kind).toBe("transport");
+  });
+});
+
 describe("CommunityScoreClient.walletProfile", () => {
   test("parses a single wallet profile + correct URL", async () => {
     const sink: { url?: string; init?: RequestInit } = {};
