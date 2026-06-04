@@ -702,3 +702,29 @@ no schema, and authorizes no implementation; it selects **Phase 45E — a
 fixture-probe alignment decision / Dixie-first handoff** as the conservative
 next lane. No Dixie admission contract is frozen and no live admission route
 exists; the §8 boundaries and the decision-map §7 / §8 gates stay in force.
+
+---
+
+## 15. Phase 45E status note — Dixie answered the handoff with Phase 33C draft probes; reconciled
+
+> Added by Phase 45E
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md`), 2026-06-04.
+> Status note only; this request's §1–§12 are unchanged.
+
+The Dixie-first lane this request opened has now produced a Dixie-authored
+**draft v0** contract probe set: Dixie **Phase 33B / PR #119** decided
+Dixie-first probe ownership, and Dixie **Phase 33C / PR #120**
+(`../loa-dixie/docs/admission-wedge/fixtures/`) authored five synthetic,
+public-safe contract probes (`probe_version: dixie_admission_wedge_probe_v0`,
+`schema_final: false`) plus a dependency-free validator. **Phase 45E**
+(`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md`, docs / decision
+only) reconciles those probes against the proof stack this request handed off
+(43B design · 43C fixtures · 44A reducer · 44C runner): each of the five
+probes maps cleanly onto a local proof equivalent at the semantic level, with
+only naming / shape deltas. Phase 45E renames no local fixture label, mutates
+no reducer reason code, freezes no schema, and does **not** claim Dixie Phase
+33C is production schema or that Freeside Characters owns the Dixie / Straylight
+vocabulary; it selects **Phase 45F — a narrow, future-gated, test-only or
+docs / fixture-bound no-op Dixie probe adapter / validator** as the next lane.
+No Dixie admission contract is frozen and no live admission route exists; the
+§8 boundaries and the decision-map §7 / §8 gates stay in force.

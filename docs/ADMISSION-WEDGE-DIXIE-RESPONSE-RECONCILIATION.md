@@ -778,3 +778,33 @@ alignment decision / Dixie-first handoff (docs / decision)** as the
 conservative next lane, with a Dixie-first posture (Dixie Phase 33B as the
 likely first canonical fixture / probe owner) and live work still blocked.
 The §11 blocked list and the decision-map §7 / §8 gates stay in force.
+
+---
+
+## 16. Phase 45E status note — Dixie Phase 33C probes reconciled; no-op adapter / validator is the next lane
+
+> Added by Phase 45E
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md`), 2026-06-04.
+> Status note only; this reconciliation's §1–§14 are unchanged.
+
+The Dixie-first lane this reconciliation pointed toward (and that Phase 45D
+selected) has now landed on the Dixie side as **Phase 33C / PR #120** — the
+canonical **draft v0** Admission Wedge contract probe set
+(`../loa-dixie/docs/admission-wedge/fixtures/`). **Phase 45E**
+(`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md`, docs / decision
+only) reconciles the local proof stack against those probes: it maps each of
+the five Dixie probes (`candidate_pending_not_recallable`,
+`accept_candidate_to_admitted_assertion`, `reject_candidate_no_assertion`,
+`supersede_with_corrected_assertion`,
+`malformed_or_unsafe_payload_fail_closed`) to the local fixture / reducer /
+runner equivalents — clean at the semantic level, with only naming / shape
+deltas — and records the pending-vs-denied nuance (`candidate_not_admitted` is
+*pending*, not denied) and that `corrected_active` is a direction, not a
+canonical status. Phase 45E renames no local fixture label, mutates no reducer
+reason code, and freezes no schema (Dixie Phase 33C is `schema_final: false`);
+it selects **Phase 45F — a narrow, future-gated, test-only or
+docs / fixture-bound no-op Dixie probe adapter / validator** as the next lane.
+Live admission, a live Dixie admission route, a Discord command,
+`/remember-this`, storage, production auth / consent, package exports, and
+Finn production wiring all remain blocked; the §11 blocked list and the
+decision-map §7 / §8 gates stay in force.

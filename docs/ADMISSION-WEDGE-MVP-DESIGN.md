@@ -851,6 +851,18 @@ commit to one, under its own gate.
   it selects **Phase 45E — a fixture-probe alignment decision / Dixie-first
   handoff** as the next lane. The §M blocked work and the §N(a) Lane A gate
   stay in force.
+- `docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md` — **Phase 45E**
+  Dixie probe reconciliation / local alignment decision (docs / decision
+  only). It reconciles the local proof stack against Dixie **Phase 33C /
+  PR #120**'s canonical **draft v0** contract probes
+  (`../loa-dixie/docs/admission-wedge/fixtures/`), mapping each of the five
+  probes onto the local fixture / reducer / runner equivalents and confirming
+  the §D invariant and §F packet shapes remain valid **local proof shapes,
+  not a frozen schema** (Dixie Phase 33C is `schema_final: false`). It renames
+  no fixture label, mutates no reducer reason code, freezes no schema, and
+  selects **Phase 45F — a narrow, future-gated, test-only or
+  docs / fixture-bound no-op Dixie probe adapter / validator** as the next
+  lane. The §M blocked work and the §N(a) Lane A gate stay in force.
 - `docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md` —
   Phase 43A decision gate (PR #151); the authority that selected the
   Admission Wedge and recommended this design (its §M). This design

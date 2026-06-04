@@ -679,3 +679,27 @@ Other related artifacts (read only; **unchanged by Phase 45D**):
   Wedge Dixie contract-reconciliation doc (Phase 37A); the docs-level
   cross-repo-reconciliation shape this admission matrix mirrors (read only;
   unchanged here).
+
+---
+
+## 17. Phase 45E status note — Dixie Phase 33C probes reconciled against this matrix
+
+> Added by Phase 45E
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md`), 2026-06-04.
+> Status note only; this matrix's §1–§16 are unchanged.
+
+The **Phase 45E** lane this matrix selected (§11) is now authored as
+`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md` (docs / decision
+only). The Dixie-first posture it recommended has landed: Dixie **Phase 33C /
+PR #120** authored the canonical **draft v0** contract probe set
+(`../loa-dixie/docs/admission-wedge/fixtures/`), and Phase 45E reconciles this
+matrix against it — mapping each of the five Dixie probes onto the local proof
+stack and carrying forward this matrix's flagged nuances (the pending-vs-denied
+distinction on `candidate_not_admitted`, the proposal-only-vs-emitted
+`unsupported_admission_shape` / `unsupported_fixture_shape` split, and that
+`corrected_active` is a direction, not a status). Phase 45E renames no local
+fixture label, mutates no reducer reason code, freezes no schema, and does not
+claim Dixie Phase 33C is production schema; it selects **Phase 45F — a narrow,
+future-gated, test-only or docs / fixture-bound no-op Dixie probe adapter /
+validator** as the next lane. The §13 blocked list and the decision-map
+§7 / §8 gates stay in force.
