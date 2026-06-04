@@ -99,11 +99,11 @@ export type RoleSyncInteractionDeps = Omit<RoleSyncTriggerDeps, "resolveActor"> 
  * maps the outcome → a Discord response (ephemeral — a CM admin action is
  * invoker-only). PURE w.r.t. discord.js: builds a response payload, never writes.
  */
-export async function handleRoleSyncInteraction(
+export async function computeRoleSyncOutcome(
   interaction: DiscordInteraction,
   auth: AuthContext | undefined,
   deps: RoleSyncInteractionDeps,
-): Promise<DiscordInteractionResponse> {
+): Promise<RoleSyncOutcome> {
   const mode = parseRoleSyncMode(readModeOption(interaction));
 
   // ── ISOLATED actor resolution (bd-atm) takes precedence when the deploy wired
@@ -115,12 +115,24 @@ export async function handleRoleSyncInteraction(
     ? actorResolverFor(interactionInvoker(interaction).id)
     : actorResolverFromAuth(auth);
 
-  const outcome: RoleSyncOutcome = await runRoleSyncTrigger(
-    { ...triggerDeps, resolveActor },
-    mode,
-  );
+  return runRoleSyncTrigger({ ...triggerDeps, resolveActor }, mode);
+}
 
-  return roleSyncOutcomeToResponse(outcome);
+/**
+ * Compute the outcome AND map it to an immediate Discord response. Retained for
+ * tests + back-compat. The DISPATCHER does NOT use this — the trigger does
+ * network work (identity-api + score-api leaderboard) that exceeds Discord's 3s
+ * ACK window, so the dispatcher DEFERS (ack type 5) then runs
+ * `computeRoleSyncOutcome` in the background and PATCHes `@original` with the
+ * result (see dispatch.ts `runRoleSyncDeferred`). Returning the full response
+ * synchronously here would time the interaction out ("application did not respond").
+ */
+export async function handleRoleSyncInteraction(
+  interaction: DiscordInteraction,
+  auth: AuthContext | undefined,
+  deps: RoleSyncInteractionDeps,
+): Promise<DiscordInteractionResponse> {
+  return roleSyncOutcomeToResponse(await computeRoleSyncOutcome(interaction, auth, deps));
 }
 
 /**

@@ -89,7 +89,7 @@ import {
 } from './recall-wedge-live-demo.ts';
 import { ROLE_SYNC_COMMAND_NAME } from '../shadow/role-sync-trigger.ts';
 import {
-  handleRoleSyncInteraction,
+  computeRoleSyncOutcome,
   type RoleSyncInteractionDeps,
 } from '../shadow/role-sync-interaction.ts';
 
@@ -388,7 +388,16 @@ export async function dispatchSlashCommand(
         'the role-sync trigger is not configured on this deployment.',
       );
     }
-    return handleRoleSyncInteraction(interaction, interactionCtx.auth, deps);
+    // The trigger does network work (identity-api + score-api leaderboard) that
+    // exceeds Discord's 3s ACK window, so DEFER (ephemeral) immediately + run the
+    // sync in the background, PATCHing @original with the structural result.
+    // Mirrors the onboarding deferral. Returning the full response synchronously
+    // timed the interaction out ("application did not respond").
+    void runRoleSyncDeferred(interaction, interactionCtx.auth, deps);
+    return {
+      type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+      data: { flags: MessageFlags.EPHEMERAL },
+    };
   }
 
   // ─── cycle-009 · sprint-2 — onboarding verify interception (C2) ─────
@@ -1285,6 +1294,61 @@ async function patchOriginal(
     throw new Error(
       `interactions: PATCH @original failed status=${response.status} body=${txt.slice(0, 200)}`,
     );
+  }
+}
+
+/**
+ * PATCH the deferred response with an arbitrary data payload (CV2 components OR
+ * content). `patchOriginal` only carries plain content; the role-sync `rendered`
+ * outcome is a Components-V2 payload (flags IS_COMPONENTS_V2 + components), so
+ * this sends the data object verbatim. Same endpoint + no-Authorization contract.
+ */
+async function patchOriginalData(
+  interaction: DiscordInteraction,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const url = `${DISCORD_API_BASE}/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`;
+  const channelId =
+    interaction.channel_id ?? `dm:${interactionInvoker(interaction)?.id ?? 'unknown'}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  recordPatchOutcome(channelId, response.status);
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '<unreadable body>');
+    throw new Error(
+      `interactions: PATCH @original (data) failed status=${response.status} body=${txt.slice(0, 200)}`,
+    );
+  }
+}
+
+/**
+ * DEFERRED background runner for `/role-sync`. After the dispatcher ACKs with a
+ * deferred ephemeral response, this computes the outcome (identity-api +
+ * score-api leaderboard network work — the reason we deferred past the 3s ACK
+ * window) and PATCHes @original: `rendered` → the structural CV2 payload;
+ * `refused`/`error` → a plain ephemeral status string. Never throws (it is void-ed).
+ */
+async function runRoleSyncDeferred(
+  interaction: DiscordInteraction,
+  auth: AuthContext | undefined,
+  deps: RoleSyncInteractionDeps,
+): Promise<void> {
+  try {
+    const outcome = await computeRoleSyncOutcome(interaction, auth, deps);
+    if (outcome.kind === 'rendered') {
+      await patchOriginalData(interaction, {
+        ...(outcome.payload as unknown as Record<string, unknown>),
+        flags: (outcome.payload.flags as number) | MessageFlags.EPHEMERAL,
+      });
+    } else {
+      await patchOriginal(interaction, true, outcome.message);
+    }
+  } catch (err) {
+    console.error('role-sync: deferred run failed:', err);
+    await patchOriginal(interaction, true, 'role-sync failed — see logs.').catch(() => {});
   }
 }
 
