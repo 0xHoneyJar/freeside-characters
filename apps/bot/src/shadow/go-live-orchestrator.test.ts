@@ -24,6 +24,7 @@ import {
   makeModeControl,
   RosterSource,
   roleMapVersionHash,
+  rosterFingerprint as rosterFingerprintLocal,
 } from "./substrate.ts";
 import type {
   RoleMapConfig,
@@ -37,7 +38,7 @@ import { makeRecordingEmitter } from "./acvp-emitter.mock.ts";
 import { makeInMemoryWorldLock } from "./world-lock.ts";
 import { makeAdminAllowlistInMemory } from "./admin-allowlist.live.ts";
 import { ScoreSourceMock } from "./score-source.mock.ts";
-import { makeWalletDiscordLinkMock } from "./wallet-discord-link.live.ts";
+import { makeWalletDiscordLinkMock, LinkResolutionError } from "./wallet-discord-link.live.ts";
 import {
   runTierRoleGoLive,
   type GoLiveOrchestrationInput,
@@ -49,6 +50,15 @@ import {
 const WORLD = "purupuru";
 const ADMIN = "identity:admin-1";
 const h64 = (s: string) => s as unknown as Hex64;
+
+/** A valid 17-20-digit Discord snowflake from a short tag (#12 — non-snowflake
+ *  member_ids are counted invalid, never assigned). */
+function sf(tag: string | number): string {
+  const digits = String(tag).replace(/\D/g, "") || "0";
+  return ("7" + digits.padStart(17, "0")).slice(0, 18);
+}
+const M1 = sf(1);
+const M2 = sf(2);
 
 function lbEntry(wallet: string, tier: string | null, rank = 1): CommunityLeaderboardEntry {
   return { wallet, rank, combined_score: 50, tier } as CommunityLeaderboardEntry;
@@ -154,7 +164,7 @@ describe("runTierRoleGoLive — LIVE path (create pass + assign pass through the
       runTierRoleGoLive(
         {
           mode,
-          link: makeWalletDiscordLinkMock({ "0xcore": "member-1", "0xmember": "member-2" }),
+          link: makeWalletDiscordLinkMock({ "0xcore": M1, "0xmember": M2 }),
           rosterIdentity: SNAPSHOT_READER,
         },
         baseInput(),
@@ -185,7 +195,7 @@ describe("runTierRoleGoLive — LIVE path (create pass + assign pass through the
     const creates = capturedWrites().filter((w) => w.kind === "create_role");
     const assigns = capturedWrites().filter((w) => w.kind === "assign_role");
     expect(creates.map((c) => c.role_key).sort()).toEqual(["purupuru:core", "purupuru:member"]);
-    expect(assigns.map((a) => a.member_id).sort()).toEqual(["member-1", "member-2"]);
+    expect(assigns.map((a) => a.member_id).sort()).toEqual([M1, M2].sort());
 
     // audit trail: applied per op, zero rejections.
     expect(recorder.countOf("shadow.role.applied.v1")).toBe(4); // 2 create + 2 assign
@@ -208,7 +218,7 @@ describe("runTierRoleGoLive — LIVE path (create pass + assign pass through the
       runTierRoleGoLive(
         {
           mode,
-          link: makeWalletDiscordLinkMock({ "0xcore": "member-1" }),
+          link: makeWalletDiscordLinkMock({ "0xcore": M1 }),
           rosterIdentity: SNAPSHOT_READER,
         },
         baseInput({ leaderboardReader: async () => [lbEntry("0xcore", "core")] }),
@@ -231,7 +241,7 @@ describe("runTierRoleGoLive — LIVE path (create pass + assign pass through the
       runTierRoleGoLive(
         {
           mode,
-          link: makeWalletDiscordLinkMock({ "0xcore": "member-1" }),
+          link: makeWalletDiscordLinkMock({ "0xcore": M1 }),
           rosterIdentity: SNAPSHOT_READER,
         },
         baseInput({ actor: "identity:not-admin" }),
@@ -256,7 +266,7 @@ describe("runTierRoleGoLive — LIVE path (create pass + assign pass through the
         {
           mode,
           // 0xcore linked, 0xunlinked NOT linked.
-          link: makeWalletDiscordLinkMock({ "0xcore": "member-1" }),
+          link: makeWalletDiscordLinkMock({ "0xcore": M1 }),
           rosterIdentity: SNAPSHOT_READER,
         },
         baseInput({
@@ -273,7 +283,7 @@ describe("runTierRoleGoLive — LIVE path (create pass + assign pass through the
     expect(res.skippedUnlinked).toBe(1);
     expect(res.skippedUnqualified).toBe(1);
     expect(capturedWrites().filter((w) => w.kind === "assign_role").map((w) => w.member_id)).toEqual([
-      "member-1",
+      M1,
     ]);
   });
 });
@@ -289,7 +299,7 @@ describe("runTierRoleGoLive — SHADOW path (preview, zero writes)", () => {
       runTierRoleGoLive(
         {
           mode,
-          link: makeWalletDiscordLinkMock({ "0xcore": "member-1", "0xmember": "member-2" }),
+          link: makeWalletDiscordLinkMock({ "0xcore": M1, "0xmember": M2 }),
           rosterIdentity: SNAPSHOT_READER,
         },
         baseInput({ applyMode: "SHADOW" }),
@@ -307,5 +317,202 @@ describe("runTierRoleGoLive — SHADOW path (preview, zero writes)", () => {
     expect(recorder.countOf("shadow.role.rejected.v1")).toBe(4); // 2 create + 2 assign rejected
     expect(recorder.countOf("shadow.role.applied.v1")).toBe(0);
     expect(recorder.countOf("shadow.mode.transitioned.v1")).toBe(0);
+  });
+});
+
+// ── fail-closed orchestration guards (Bridgebuilder #1, #2, #8) ───────────────
+
+describe("runTierRoleGoLive — fail-closed guards", () => {
+  // a RosterSource that records whether currentRoster was read.
+  function recordingRoster(roster: CurrentRoster, sink: { read: boolean }): Layer.Layer<RosterSource> {
+    return Layer.succeed(
+      RosterSource,
+      RosterSource.of({
+        currentRoster: () =>
+          Effect.sync(() => {
+            sink.read = true;
+            return roster;
+          }),
+      }),
+    );
+  }
+
+  function recordingStack(
+    mode: Awaited<ReturnType<typeof runMode>>,
+    emitterLayer: ReturnType<typeof makeRecordingEmitter>["layer"],
+    allow: readonly string[],
+    rosterLayer: Layer.Layer<RosterSource>,
+  ) {
+    const allowlist = makeAdminAllowlistInMemory(new Map([[WORLD, allow]]));
+    const lock = makeInMemoryWorldLock();
+    const gate = makeGateCheckedRoleWriter(mode, () => MAP_HASH).pipe(
+      Layer.provide(Layer.mergeAll(RoleWriterMock, emitterLayer, lock)),
+    );
+    return Layer.mergeAll(gate, RoleWriterMock, emitterLayer, lock, allowlist, rosterLayer, ScoreSourceMock);
+  }
+
+  // #1 — SHADOW preview must AUTHORIZE before any read / batch assembly.
+  test("#1: a DENIED actor in SHADOW fails BEFORE reading roster / leaderboard / links (no batch)", async () => {
+    const { layer: emitterLayer } = makeRecordingEmitter();
+    const mode = await runMode("SHADOW");
+    const rosterSink = { read: false };
+    const lbSink = { read: false };
+    const linkSink = { read: false };
+
+    const exit = await Effect.runPromiseExit(
+      runTierRoleGoLive(
+        {
+          mode,
+          link: {
+            resolve: async (w: string) => {
+              linkSink.read = true;
+              return makeWalletDiscordLinkMock({ "0xcore": M1 }).resolve(w);
+            },
+          },
+          rosterIdentity: SNAPSHOT_READER,
+        },
+        baseInput({
+          applyMode: "SHADOW",
+          actor: "identity:not-admin", // NOT allowlisted
+          leaderboardReader: async () => {
+            lbSink.read = true;
+            return [lbEntry("0xcore", "core")];
+          },
+        }),
+      ).pipe(
+        Effect.provide(recordingStack(mode, emitterLayer, [ADMIN], recordingRoster(EMPTY_MANAGED_ROSTER, rosterSink))),
+      ),
+    );
+
+    expect(exit._tag).toBe("Failure"); // authz denied
+    // the load-bearing invariant: NO reads happened (authz gates BEFORE reads).
+    expect(rosterSink.read).toBe(false);
+    expect(lbSink.read).toBe(false);
+    expect(linkSink.read).toBe(false);
+    expect(capturedWrites().length).toBe(0);
+  });
+
+  // #7 — a link-DB outage must FAIL the LIVE run, not silently skip.
+  test("#7: a LinkResolutionError (identity DB down) FAILS the LIVE run (no flip, no writes)", async () => {
+    const { layer: emitterLayer, recorder } = makeRecordingEmitter();
+    const mode = await runMode("SHADOW");
+
+    const exit = await Effect.runPromiseExit(
+      runTierRoleGoLive(
+        {
+          mode,
+          link: {
+            resolve: async () => {
+              throw new LinkResolutionError("identity DB unavailable", ["0xcore"]);
+            },
+          },
+          rosterIdentity: SNAPSHOT_READER,
+        },
+        baseInput({ applyMode: "LIVE", leaderboardReader: async () => [lbEntry("0xcore", "core")] }),
+      ).pipe(Effect.provide(fullStack(mode, emitterLayer, [ADMIN], EMPTY_MANAGED_ROSTER))),
+    );
+
+    expect(exit._tag).toBe("Failure"); // refused, NOT a "success with everyone skipped"
+    expect(capturedWrites().length).toBe(0);
+    expect(recorder.countOf("shadow.mode.transitioned.v1")).toBe(0); // never flipped
+  });
+
+  // #8 — leaderboard read is MANDATORY for LIVE.
+  test("#8: LIVE with NO leaderboardReader fails closed (no flip, no roles)", async () => {
+    const { layer: emitterLayer, recorder } = makeRecordingEmitter();
+    const mode = await runMode("SHADOW");
+
+    const exit = await Effect.runPromiseExit(
+      runTierRoleGoLive(
+        { mode, link: makeWalletDiscordLinkMock({ "0xcore": M1 }), rosterIdentity: SNAPSHOT_READER },
+        baseInput({ applyMode: "LIVE", leaderboardReader: undefined }),
+      ).pipe(Effect.provide(fullStack(mode, emitterLayer, [ADMIN], EMPTY_MANAGED_ROSTER))),
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(capturedWrites().length).toBe(0);
+    expect(recorder.countOf("shadow.mode.transitioned.v1")).toBe(0); // never flipped
+  });
+
+  test("#8: SHADOW with NO leaderboardReader is allowed ([] leaderboard)", async () => {
+    const { layer: emitterLayer } = makeRecordingEmitter();
+    const mode = await runMode("SHADOW");
+
+    const res = await Effect.runPromise(
+      runTierRoleGoLive(
+        { mode, link: makeWalletDiscordLinkMock({}), rosterIdentity: SNAPSHOT_READER },
+        baseInput({ applyMode: "SHADOW", leaderboardReader: undefined }),
+      ).pipe(Effect.provide(fullStack(mode, emitterLayer, [ADMIN], EMPTY_MANAGED_ROSTER))),
+    );
+    expect(res.applyMode).toBe("SHADOW");
+    expect(res.assignCount).toBe(0); // empty leaderboard → no assigns
+  });
+
+  // #2 — roster-freshness pairing/bypass.
+  test("#2: a baseRosterFingerprint WITHOUT baseRosterSnapshot is REFUSED (drift-bypass closed)", async () => {
+    const { layer: emitterLayer } = makeRecordingEmitter();
+    const mode = await runMode("SHADOW");
+
+    const exit = await Effect.runPromiseExit(
+      runTierRoleGoLive(
+        { mode, link: makeWalletDiscordLinkMock({ "0xcore": M1 }), rosterIdentity: SNAPSHOT_READER },
+        baseInput({
+          applyMode: "LIVE",
+          baseRosterFingerprint: h64("a".repeat(64)), // fp WITHOUT snapshot
+          rosterDriftThreshold: 1,
+        }),
+      ).pipe(Effect.provide(fullStack(mode, emitterLayer, [ADMIN], EMPTY_MANAGED_ROSTER))),
+    );
+    expect(exit._tag).toBe("Failure");
+    expect(capturedWrites().length).toBe(0);
+  });
+
+  test("#2: a positive drift threshold with NO base pair is REFUSED (fresh-vs-fresh = bypass)", async () => {
+    const { layer: emitterLayer } = makeRecordingEmitter();
+    const mode = await runMode("SHADOW");
+    const exit = await Effect.runPromiseExit(
+      runTierRoleGoLive(
+        { mode, link: makeWalletDiscordLinkMock({ "0xcore": M1 }), rosterIdentity: SNAPSHOT_READER },
+        baseInput({ applyMode: "LIVE", rosterDriftThreshold: 3 }),
+      ).pipe(Effect.provide(fullStack(mode, emitterLayer, [ADMIN], EMPTY_MANAGED_ROSTER))),
+    );
+    expect(exit._tag).toBe("Failure");
+  });
+
+  test("#2: a mismatched base pair (fp ≠ fingerprint(snapshot)) is REFUSED", async () => {
+    const { layer: emitterLayer } = makeRecordingEmitter();
+    const mode = await runMode("SHADOW");
+    const exit = await Effect.runPromiseExit(
+      runTierRoleGoLive(
+        { mode, link: makeWalletDiscordLinkMock({ "0xcore": M1 }), rosterIdentity: SNAPSHOT_READER },
+        baseInput({
+          applyMode: "LIVE",
+          baseRosterSnapshot: { member_ids: ["m-1"], role_ids: ["r-1"] },
+          baseRosterFingerprint: h64("f".repeat(64)), // WRONG fp for that snapshot
+          rosterDriftThreshold: 1,
+        }),
+      ).pipe(Effect.provide(fullStack(mode, emitterLayer, [ADMIN], EMPTY_MANAGED_ROSTER))),
+    );
+    expect(exit._tag).toBe("Failure");
+  });
+
+  test("#2: a CONSISTENT base pair is accepted (LIVE proceeds)", async () => {
+    const { layer: emitterLayer, recorder } = makeRecordingEmitter();
+    const mode = await runMode("SHADOW");
+    const baseSnapshot = { member_ids: ["member-1", "member-2"], role_ids: ["role-a"] };
+    const res = await Effect.runPromise(
+      runTierRoleGoLive(
+        { mode, link: makeWalletDiscordLinkMock({ "0xcore": M1 }), rosterIdentity: SNAPSHOT_READER },
+        baseInput({
+          applyMode: "LIVE",
+          baseRosterSnapshot: baseSnapshot,
+          baseRosterFingerprint: rosterFingerprintLocal(baseSnapshot),
+          rosterDriftThreshold: 5, // generous — fresh snapshot == base (zero drift)
+          leaderboardReader: async () => [lbEntry("0xcore", "core")],
+        }),
+      ).pipe(Effect.provide(fullStack(mode, emitterLayer, [ADMIN], EMPTY_MANAGED_ROSTER))),
+    );
+    expect(res.applyMode).toBe("LIVE");
+    expect(recorder.countOf("shadow.mode.transitioned.v1")).toBe(1);
   });
 });

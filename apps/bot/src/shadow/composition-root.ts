@@ -140,20 +140,51 @@ function liveAllowlistCfg(deps: ShadowDeps): LiveAllowlistConfig {
 }
 
 /**
- * Resolve the ScoreSource Layer for this composition (bd-tfl). The API-KEY's
- * presence IS the LIVE/MOCK flag (mirrors the env gate the brief specifies:
- * `SCORE_PURUPURU_API_KEY` present ⇒ LIVE, absent ⇒ MOCK):
- *   • a world with score wiring AND a non-empty `apiKey` → LIVE ScoreSource
- *     (reads the real Purupuru leaderboard via CommunityScoreClient).
- *   • otherwise → MOCK ScoreSource (the default; the shadow preview works with
- *     NO score-api provisioning).
- * The MOCK is also the safe fallback for any world that lacks LIVE wiring, so a
- * misconfigured world degrades to mock-zeros rather than failing the whole
- * discrepancy build.
+ * Raised when a LIVE-apply composition is requested for a world that has no LIVE
+ * score wiring (Bridgebuilder #3). The pre-fix `resolveScoreLayer` returned the
+ * MOCK (zeros) for an unwired world REGARDLESS of mode — a fail-OPEN in the gated
+ * LIVE path (a LIVE go_live would read mock-zeros and create roles assigning
+ * nobody). The composition root refuses to build a LIVE stack on mock score.
  */
-function resolveScoreLayer(deps: ShadowDeps): Layer.Layer<ScoreSource> {
+export class LiveScoreWiringMissingError extends Error {
+  constructor(public readonly world: string) {
+    super(
+      `LIVE apply requested for world '${world}' but no LIVE score wiring is configured ` +
+        `(resolveScoreWiring absent, or the world has no non-empty apiKey). Refusing to fall back ` +
+        `to the MOCK ScoreSource in a LIVE path (it would read mock-zeros and assign nobody). ` +
+        `MOCK score is allowed ONLY for SHADOW preview.`,
+    );
+    this.name = "LiveScoreWiringMissingError";
+  }
+}
+
+/**
+ * Resolve the ScoreSource Layer for this composition (bd-tfl). MODE-AWARE
+ * (Bridgebuilder #3) — the SHADOW-vs-LIVE distinction is load-bearing:
+ *   • LIVE  → REQUIRE live score wiring; FAIL CLOSED (throw
+ *     `LiveScoreWiringMissingError`) when the target world lacks a non-empty
+ *     `apiKey`. NEVER silently fall back to mock-zeros in the gated write path.
+ *   • SHADOW→ MOCK is an allowed fallback (a shadow preview must work with NO
+ *     score-api provisioning); LIVE wiring is still used when present (the read
+ *     is read-only, so a production preview MAY read real Purupuru tiers).
+ *
+ * The API-KEY's presence is the LIVE/MOCK selector (mirrors the brief's env gate:
+ * `SCORE_PURUPURU_API_KEY` present ⇒ LIVE, absent ⇒ MOCK).
+ */
+function resolveScoreLayer(deps: ShadowDeps, mode: "SHADOW" | "LIVE"): Layer.Layer<ScoreSource> {
   const resolve = deps.resolveScoreWiring;
-  if (!resolve) return ScoreSourceMock;
+  const target = resolve?.(deps.world);
+  const targetIsLive = !!target && !!target.apiKey && target.apiKey.length > 0;
+
+  if (mode === "LIVE" && !targetIsLive) {
+    // FAIL CLOSED: a LIVE composition on mock score is the fail-open the review
+    // flagged. Refuse at build time.
+    throw new LiveScoreWiringMissingError(deps.world);
+  }
+  if (!resolve || !targetIsLive) {
+    // SHADOW (or LIVE with — unreachable here — wiring): MOCK is the safe default.
+    return ScoreSourceMock;
+  }
   // Eagerly build a per-world client factory; LIVE only when an apiKey is present.
   const cfg: LiveScoreConfig = {
     clientFor: (world: string): CommunityScoreClient | undefined => {
@@ -166,11 +197,7 @@ function resolveScoreLayer(deps: ShadowDeps): Layer.Layer<ScoreSource> {
       });
     },
   };
-  // If the TARGET world has no live key, prefer the MOCK Layer so we don't
-  // surface fail-closed ScoreErrors for an unprovisioned shadow preview.
-  const target = resolve(deps.world);
-  const targetIsLive = !!target && !!target.apiKey && target.apiKey.length > 0;
-  return targetIsLive ? makeScoreSourceLive(cfg) : ScoreSourceMock;
+  return makeScoreSourceLive(cfg);
 }
 
 /**
@@ -213,8 +240,9 @@ export function shadowPreviewLayer(
   // ScoreSource (bd-tfl): MOCK by default; LIVE only when the target world has a
   // community-scoped key wired (resolveScoreWiring). The score READ is read-only
   // (no Discord writes), so a production shadow preview MAY read real Purupuru
-  // tiers while the writer stays mocked — that IS the point of the preview.
-  const score = resolveScoreLayer(deps);
+  // tiers while the writer stays mocked — that IS the point of the preview. MOCK
+  // fallback is allowed here because this is the SHADOW stack (#3).
+  const score = resolveScoreLayer(deps, "SHADOW");
 
   return Layer.mergeAll(gate, RosterSourceMock, allowlist, score) as Layer.Layer<
     GateCheckedRoleWriter | RosterSource | ScoreSource
@@ -249,9 +277,10 @@ export function liveApplyLayer(
     Layer.provide(Layer.mergeAll(innerWriter, emitter, worldLock)),
   );
 
-  // ScoreSource (bd-tfl): LIVE when the target world has a community-scoped key,
-  // else MOCK. resolveScoreLayer is the env-gated picker.
-  const score = resolveScoreLayer(deps);
+  // ScoreSource (bd-tfl): LIVE requires a community-scoped key — resolveScoreLayer
+  // FAILS CLOSED (throws LiveScoreWiringMissingError) in LIVE mode if absent (#3).
+  // No mock-zeros fallback in the gated write path.
+  const score = resolveScoreLayer(deps, "LIVE");
 
   return Layer.mergeAll(
     gate,

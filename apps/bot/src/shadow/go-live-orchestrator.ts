@@ -98,6 +98,7 @@ import {
   type AuthorizedTransition,
   type TierAssignment,
 } from "./score-tier-assignment.ts";
+import { LinkResolutionError } from "./wallet-discord-link.live.ts";
 import { type TierRankResolver, purupuruTierRank } from "./purupuru-tiers.ts";
 
 /**
@@ -198,6 +199,10 @@ export interface GoLiveOrchestrationResult {
   readonly skippedUnlinked: number;
   /** wallets below every rule (untiered / too low). */
   readonly skippedUnqualified: number;
+  /** qualified+linked wallets whose member_id was not a valid snowflake (#12). */
+  readonly skippedInvalid: number;
+  /** extra wallet→member assignments collapsed by per-member dedup (#6). */
+  readonly collapsedDuplicateMembers: number;
 }
 
 /**
@@ -239,6 +244,8 @@ interface BuiltAssignments {
   readonly assignments: ReadonlyArray<TierAssignment>;
   readonly skipped_unlinked: number;
   readonly skipped_unqualified: number;
+  readonly skipped_invalid: number;
+  readonly collapsed_duplicate_members: number;
 }
 
 /**
@@ -266,11 +273,69 @@ export function runTierRoleGoLive(
     // gate reads at apply, SHADOW leaves it untouched (gate rejects → preview).
     const applyMode = input.applyMode;
 
+    // ── (0) AUTHORIZE FIRST — for BOTH shadow and live, BEFORE any read or batch
+    //        assembly (Bridgebuilder #1). The SHADOW preview reads roster /
+    //        leaderboard / wallet-links and assembles a batch carrying Discord
+    //        snowflakes — that is sensitive even though it never WRITES, so a
+    //        denied actor must fail BEFORE we read anything. `bypassCache:true`
+    //        matches the freshness goLive uses. (LIVE re-resolves again inside
+    //        goLive + the gate re-resolves at the write boundary — defense in
+    //        depth; this is the FRONT gate that protects the reads.)
+    const decision = yield* resolveAuthz({
+      actor: input.actor,
+      world: worldSlug,
+      evaluatedAt: input.evaluatedAt,
+      bypassCache: true,
+    });
+    if (decision.decision !== "grant") {
+      return yield* Effect.fail(
+        new AuthzError({
+          message: `actor '${input.actor}' is not allowlisted for world '${input.world}' (${decision.reason}) — ${applyMode === "LIVE" ? "go_live" : "preview"} refused before any read`,
+        }),
+      );
+    }
+
+    // ── (b-pre) ROSTER-FRESHNESS INPUT VALIDATION (Bridgebuilder #2) ──────────
+    // A `baseRosterFingerprint` WITHOUT a `baseRosterSnapshot` (or vice-versa)
+    // when a drift threshold is active would make goLive compare freshSnapshot vs
+    // freshSnapshot (zero drift = a silent BYPASS of the freshness guard). Require
+    // them as a PAIR, and assert the supplied fingerprint actually matches the
+    // supplied snapshot (a mismatched pair is a corrupt/forged base).
+    const driftThreshold = input.rosterDriftThreshold ?? 0;
+    const hasFp = input.baseRosterFingerprint !== undefined;
+    const hasSnap = input.baseRosterSnapshot !== undefined;
+    if (hasFp !== hasSnap) {
+      return yield* Effect.fail(
+        new RosterError({
+          message: `roster-freshness base is half-specified: baseRosterFingerprint ${hasFp ? "set" : "unset"} but baseRosterSnapshot ${hasSnap ? "set" : "unset"} — they MUST be supplied as a pair (an fp without its snapshot silently bypasses the drift guard)`,
+        }),
+      );
+    }
+    if (hasFp && hasSnap) {
+      const computed = rosterFingerprint(input.baseRosterSnapshot!);
+      if ((computed as unknown as string) !== (input.baseRosterFingerprint as unknown as string)) {
+        return yield* Effect.fail(
+          new RosterError({
+            message: `roster-freshness base mismatch: rosterFingerprint(baseRosterSnapshot) ≠ baseRosterFingerprint — the supplied base pair is inconsistent (rejecting; a forged/corrupt base would bypass drift detection)`,
+          }),
+        );
+      }
+    }
+    // A positive drift threshold with NO base pair would compare fresh-vs-fresh
+    // (zero drift) — refuse rather than silently no-op the guard.
+    if (driftThreshold > 0 && !(hasFp && hasSnap)) {
+      return yield* Effect.fail(
+        new RosterError({
+          message: `rosterDriftThreshold=${driftThreshold} requires a base roster snapshot+fingerprint pair (from the approved preview) — without one, drift compares fresh-vs-fresh = 0 (a bypass). Supply the base pair or set threshold 0.`,
+        }),
+      );
+    }
+
     // ── (c) READ the world: roster (counts) + leaderboard + identity snapshot ─
     const rosterSource = yield* RosterSource;
     const currentRoster: CurrentRoster = yield* rosterSource.currentRoster(worldSlug);
 
-    const leaderboard = yield* readLeaderboard(input);
+    const leaderboard = yield* readLeaderboard(input, applyMode);
 
     const freshSnapshot = yield* Effect.tryPromise({
       try: () => deps.rosterIdentity(input.world),
@@ -281,6 +346,10 @@ export function runTierRoleGoLive(
     });
 
     // ── build the per-member ASSIGN set (SEAM 1 link join) ────────────────────
+    // A `LinkResolutionError` (identity DB unavailable, Bridgebuilder #7) is
+    // FAIL-CLOSED: it propagates as a RosterError so the run FAILS (LIVE must not
+    // proceed creating roles + assigning nobody when the link source was down).
+    // Other build errors map to ScoreError.
     const built: BuiltAssignments = yield* Effect.tryPromise({
       try: () =>
         buildTierAssignments({
@@ -290,9 +359,13 @@ export function runTierRoleGoLive(
           tierRank: rank,
         }),
       catch: (e) =>
-        new ScoreError({
-          message: `assignment build failed: ${e instanceof Error ? e.message : String(e)}`,
-        }),
+        e instanceof LinkResolutionError
+          ? new RosterError({
+              message: `identity link resolution failed (DB unavailable) — go_live refused, NOT skipped: ${e.message}`,
+            })
+          : new ScoreError({
+              message: `assignment build failed: ${e instanceof Error ? e.message : String(e)}`,
+            }),
     });
 
     // ── ROSTER VERSION for the batch authz (B1) ───────────────────────────────
@@ -322,27 +395,17 @@ function applyLive(
   return Effect.gen(function* () {
     const worldSlug = input.world as unknown as WorldSlug;
 
-    // (a) AUTHORIZE — resolveAuthz (the SAME decision flow goLive uses). A `deny`
-    //     fails the orchestration loud BEFORE goLive (no mint). goLive ALSO
-    //     re-resolves fresh (bypassCache) at the mint, and the gate re-resolves
-    //     AGAIN at the write boundary — three checks, one decision flow.
-    const decision = yield* resolveAuthz({
-      actor: input.actor,
-      world: worldSlug,
-      evaluatedAt: input.evaluatedAt,
-      bypassCache: true,
-    });
-    if (decision.decision !== "grant") {
-      return yield* Effect.fail(
-        new AuthzError({
-          message: `actor '${input.actor}' is not allowlisted for world '${input.world}' (${decision.reason}) — go_live refused`,
-        }),
-      );
-    }
+    // NOTE: the FRONT authz gate (resolveAuthz, bypassCache) already ran in
+    // `runTierRoleGoLive` BEFORE any read (Bridgebuilder #1). goLive re-resolves
+    // fresh at the mint, and the gate re-resolves AGAIN at the write boundary —
+    // defense in depth. We do not re-check here (it would be a 4th identical
+    // resolve); the reads upstream of this point were already authz-gated.
 
     // (b) GO_LIVE — mint the cap. B1 roster-freshness uses the fresh snapshot as
     //     its own base when no prior preview fingerprint was supplied (zero
-    //     drift, non-blocking default).
+    //     drift, non-blocking default). The fp/snapshot PAIRING + match was
+    //     validated up-front (#2), so a half-specified/forged base never reaches
+    //     here.
     const baseSnapshot = input.baseRosterSnapshot ?? freshSnapshot;
     const baseFingerprint = input.baseRosterFingerprint ?? rosterFingerprint(baseSnapshot);
     const out = yield* goLive(deps.mode, {
@@ -437,9 +500,23 @@ function applyShadowPreview(
 
 function readLeaderboard(
   input: GoLiveOrchestrationInput,
+  applyMode: "SHADOW" | "LIVE",
 ): Effect.Effect<ReadonlyArray<CommunityLeaderboardEntry>, ScoreError> {
   const reader = input.leaderboardReader;
-  if (!reader) return Effect.succeed([]);
+  if (!reader) {
+    // Bridgebuilder #8: the leaderboard read is MANDATORY for LIVE. A missing
+    // reader silently returning [] would flip SHADOW→LIVE + create roles with
+    // ZERO assignments (a destructive no-op that still mutates Discord). FAIL
+    // CLOSED. `[]`-on-missing is allowed ONLY for SHADOW preview.
+    if (applyMode === "LIVE") {
+      return Effect.fail(
+        new ScoreError({
+          message: `LIVE go_live requires a leaderboardReader — none supplied. Refusing (a LIVE run with no leaderboard would create roles and assign nobody).`,
+        }),
+      );
+    }
+    return Effect.succeed([]);
+  }
   return Effect.tryPromise({
     try: () => reader(),
     catch: (e) =>
@@ -465,6 +542,8 @@ function result(
     assignCount,
     skippedUnlinked: built.skipped_unlinked,
     skippedUnqualified: built.skipped_unqualified,
+    skippedInvalid: built.skipped_invalid,
+    collapsedDuplicateMembers: built.collapsed_duplicate_members,
   };
 }
 
