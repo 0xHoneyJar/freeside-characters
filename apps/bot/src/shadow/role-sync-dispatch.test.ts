@@ -295,6 +295,10 @@ describe("bd-20x — not-verified clicker is refused before any read", () => {
     expect(membersRead).toBe(false); // refused before any roster read
     expect(calls.invoked).toBe(false);
     expect(patched).not.toBeNull();
-    expect((patched as unknown as { content?: string }).content).toContain("verified identity");
+    // the @original message is CV2 — the refusal renders as a text component, NOT a
+    // top-level `content` field (which Discord 400s on a CV2 message edit).
+    const pp = patched as unknown as { content?: string; components?: unknown };
+    expect(pp.content).toBeUndefined();
+    expect(JSON.stringify(pp.components)).toContain("verified identity");
   });
 });

@@ -71,6 +71,7 @@ import {
   type ApplyConfirmContext,
 } from "./member-dashboard-cv2.ts";
 import { roleSyncResultCV2Payload } from "./role-sync-result-cv2.ts";
+import { IS_COMPONENTS_V2, escapeRoleName } from "./discrepancy-cv2.ts";
 import {
   resolveRoleSyncRoster,
   runRoleSyncTrigger,
@@ -293,14 +294,17 @@ export async function completeRoleSyncComponent(
     }
 
     if (outcome.kind === "status") {
-      // A plain status (refusal / error / stale-not-applicable) — patchOriginalContent
-      // drops components (CV2 cannot mix with content) and keeps it ephemeral.
+      // A plain status (refusal / error / stale-not-applicable). Logged so a live
+      // click reveals WHY a click did not apply (the reason rides in the PATCH
+      // body, which is otherwise never surfaced server-side).
+      console.warn(`role-sync: component → STATUS (not applied): ${outcome.message}`);
       await patchOriginalContent(interaction, fetchFn, outcome.message);
       return;
     }
 
     // outcome.kind === "confirm-live": run the LIVE apply through the EXISTING gate +
     // PATCH @original with the structural receipt.
+    console.warn("role-sync: confirm passed stale-guard → running LIVE apply through the gate");
     await runConfirmLive(interaction, outcome.coreDeps, fetchFn);
   } catch (err) {
     console.error("role-sync: component completion failed:", err);
@@ -344,7 +348,9 @@ export async function runConfirmLive(
       });
       return;
     }
-    // refused / error → a plain ephemeral status (drop components).
+    // refused / error → a plain ephemeral status. Logged so a live click reveals
+    // WHETHER the LIVE gate refused (e.g. authz / admin_principals) vs errored.
+    console.warn(`role-sync: LIVE outcome=${outcome.kind} (not applied) → ${outcome.message}`);
     await patchOriginalContent(interaction, fetchFn, outcome.message);
   } catch (err) {
     console.error("role-sync: confirm LIVE run failed:", err);
@@ -373,7 +379,17 @@ async function patchOriginalData(
   }
 }
 
-/** PATCH @original with a plain ephemeral status string (drops components). */
+/**
+ * PATCH @original with a plain ephemeral status message.
+ *
+ * The @original message of a `rolesync:` component interaction is a COMPONENTS-V2
+ * message (the dashboard / confirm card carry the IS_COMPONENTS_V2 flag). Discord
+ * REJECTS an edit that sets a top-level `content` field on a CV2 message with 400
+ * — a CV2 message may carry ONLY `components`. So the status is rendered as a
+ * single top-level text component (type 10) under the IS_COMPONENTS_V2 flag, NOT
+ * as `content`. (The earlier `content` form silently 400'd in prod — tests inject
+ * fetch and never hit Discord, so the 3s-window-sibling test-vs-prod gap hid it.)
+ */
 async function patchOriginalContent(
   interaction: DiscordInteraction,
   fetchFn: typeof fetch,
@@ -384,9 +400,8 @@ async function patchOriginalContent(
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      content,
-      flags: MessageFlags.EPHEMERAL,
-      components: [],
+      flags: IS_COMPONENTS_V2 | MessageFlags.EPHEMERAL,
+      components: [{ type: 10, content: escapeRoleName(content) }],
       allowed_mentions: { parse: [] },
     }),
   });
