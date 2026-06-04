@@ -124,7 +124,11 @@ for link in "${SUB_LINKS[@]}"; do
     fi
     rm -rf "$link"
     # Relative symlink: @freeside-worlds/shadow-substrate → …/packages/shadow-substrate
-    rel="$(python3 -c 'import os,sys;print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$subdir" "$link_dir")"
+    # Use bun (guaranteed present — it runs this postinstall) for the relpath; the
+    # Railway oven/bun build image has NO python3 (postinstall exited 127 → build
+    # failed, blocking every deploy since the substrate fixup landed). bun's
+    # path.relative is byte-identical to python os.path.relpath here.
+    rel="$(SUBDIR="$subdir" LINKDIR="$link_dir" bun -e 'console.log(require("path").relative(process.env.LINKDIR, process.env.SUBDIR))')"
     ln -s "$rel" "$link"
     echo "$TAG linked shadow-substrate -> $rel"
     fixed=$((fixed+1))
@@ -145,7 +149,7 @@ for link in "${SUB_LINKS[@]}"; do
     if [[ "${sub_events_real:-/nonexistent}" != "$EVENTS_SRC" ]]; then
       mkdir -p "$sub_nm"
       rm -rf "$sub_events"
-      rel_ev="$(python3 -c 'import os,sys;print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$EVENTS_SRC" "$sub_nm")"
+      rel_ev="$(SUBDIR="$EVENTS_SRC" LINKDIR="$sub_nm" bun -e 'console.log(require("path").relative(process.env.LINKDIR, process.env.SUBDIR))')"
       ln -s "$rel_ev" "$sub_events"
       echo "$TAG linked substrate @0xhoneyjar/events -> $rel_ev (canonical ${CANONICAL_EVENTS_PIN_SHORT})"
       fixed=$((fixed+1))
