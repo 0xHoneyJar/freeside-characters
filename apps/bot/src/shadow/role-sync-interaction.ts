@@ -27,7 +27,11 @@ import type {
   DiscordInteraction,
   DiscordInteractionResponse,
 } from "../discord-interactions/types.ts";
-import { InteractionResponseType, MessageFlags } from "../discord-interactions/types.ts";
+import {
+  InteractionResponseType,
+  MessageFlags,
+  interactionInvoker,
+} from "../discord-interactions/types.ts";
 import type { AuthContext } from "../auth-bridge.ts";
 import {
   runRoleSyncTrigger,
@@ -62,12 +66,32 @@ function readModeOption(interaction: DiscordInteraction): string | undefined {
 
 /**
  * The deps the interaction adapter needs beyond the per-interaction AuthContext:
- * the trigger-core deps WITHOUT `resolveActor` (the adapter supplies that from
- * the AuthContext) — everything else (world, role-map reader, orchestration
- * invoker, world-config, token metadata, transition version, clock) is
- * deploy-provided.
+ * the trigger-core deps WITHOUT `resolveActor` (the adapter supplies that) —
+ * everything else (world, role-map reader, orchestration invoker, world-config,
+ * token metadata, transition version, clock) is deploy-provided.
+ *
+ * ── ISOLATED ACTOR RESOLUTION (bd-atm, OPTIONAL) ─────────────────────────────
+ * `actorResolverFor` — when the deploy wires it — makes `/role-sync` resolve the
+ * invoking CM's actor ITSELF (invoking Discord user id → identity-api
+ * `GET /v1/resolve/account/discord/{id}` → user_id), INDEPENDENT of the global
+ * `AUTH_BACKEND`. The onboarding/role-dispenser is a separable, voiceless
+ * building (onboarding-as-voiceless-building brief) — it MUST NOT infer its
+ * identity system from the persona daemon's auth backend.
+ *
+ * When `actorResolverFor` is ABSENT, the adapter falls back to the legacy
+ * `actorResolverFromAuth(auth)` (the per-interaction verified AuthContext). The
+ * boot composition (role-sync-boot.ts) supplies the isolated factory; the legacy
+ * path remains for tests / deployments that already run the freeside-jwt backend.
  */
-export type RoleSyncInteractionDeps = Omit<RoleSyncTriggerDeps, "resolveActor">;
+export type RoleSyncInteractionDeps = Omit<RoleSyncTriggerDeps, "resolveActor"> & {
+  /**
+   * OPTIONAL isolated actor-resolver factory keyed on the invoking Discord user
+   * id. The adapter reads the id from the interaction and calls this; the
+   * returned thunk performs the identity-api lookup (fail-closed → null ⇒ refuse).
+   * Independent of AUTH_BACKEND. When omitted, the adapter uses the AuthContext.
+   */
+  readonly actorResolverFor?: (discordId: string | undefined) => ActorResolver;
+};
 
 /**
  * Handle a `/role-sync` APPLICATION_COMMAND interaction. Resolves the actor from
@@ -82,8 +106,17 @@ export async function handleRoleSyncInteraction(
 ): Promise<DiscordInteractionResponse> {
   const mode = parseRoleSyncMode(readModeOption(interaction));
 
+  // ── ISOLATED actor resolution (bd-atm) takes precedence when the deploy wired
+  //    `actorResolverFor`: resolve the invoking CM's actor from the invoking
+  //    Discord user id → identity-api, INDEPENDENT of AUTH_BACKEND. The legacy
+  //    AuthContext path is the fallback (deployments already on freeside-jwt).
+  const { actorResolverFor, ...triggerDeps } = deps;
+  const resolveActor: ActorResolver = actorResolverFor
+    ? actorResolverFor(interactionInvoker(interaction).id)
+    : actorResolverFromAuth(auth);
+
   const outcome: RoleSyncOutcome = await runRoleSyncTrigger(
-    { ...deps, resolveActor: actorResolverFromAuth(auth) },
+    { ...triggerDeps, resolveActor },
     mode,
   );
 
