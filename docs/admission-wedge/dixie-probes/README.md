@@ -79,3 +79,9 @@ here. This directory carries **no live Dixie calls, no storage, no auth, no
 - `packages/persona-engine/src/recall-wedge/admission-wedge-dixie-probe-adapter.ts`
   (+ `.test.ts`) — the Phase 45F pure, local, no-op adapter / validator and its
   test that consume these mirrors.
+- `docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md` — Phase 45G
+  acceptance / next-lane gate. Accepts the Phase 45F adapter that consumes
+  these mirrors as a **test-only / docs-fixture-bound semantic bridge** (these
+  mirrors stay local mirrors, not canonical upstream truth) and recommends
+  Dixie Phase 33D probe hardening as the next lane. Mutates none of these
+  mirrors; authorizes no runtime wiring or adapter export.

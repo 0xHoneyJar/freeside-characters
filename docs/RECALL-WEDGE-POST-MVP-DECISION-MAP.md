@@ -1318,6 +1318,59 @@ implementation.
 
 ---
 
+### 5x. Phase 45G addendum — Phase 45F adapter accepted as a test-only semantic bridge; Dixie Phase 33D probe hardening is the recommended next lane, not a Freeside implementation
+
+> Added by Phase 45G
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md`), 2026-06-05.
+> Targeted addendum, not a rewrite of this section; §5w stays in force.
+
+Status as of Phase 45G:
+
+- **Phase 45G is docs / decision only.** It accepts the Phase 45F adapter /
+  validator and adds small cross-reference back-notes; it adds no source, test,
+  fixture JSON, mirrored probe, package, lockfile, config, CI, or generated
+  change, renames no local fixture label, mutates no reducer reason code,
+  mutates no fixture JSON, and freezes no schema. It edits no `../loa-dixie`
+  file.
+- **Phase 45F is accepted as a bounded semantic bridge only.** Phase 45G
+  accepts that Phase 45F proved exactly: the five Dixie probe scenarios map to
+  the local proof scenarios (`candidate_pending_not_recallable` →
+  `before_admission_excluded`, `accept_candidate_to_admitted_assertion` →
+  `accepted_admitted_included`, `reject_candidate_no_assertion` →
+  `rejected_excluded`, `supersede_with_corrected_assertion` →
+  `supersession_corrected_only`, `malformed_or_unsafe_payload_fail_closed` →
+  `malformed_fail_closed`), semantic equivalence against the Phase 44A reducer,
+  no-leak over results / summaries, fail-closed on malformed input, and the
+  not-wired / not-exported static guards. It accepts that Phase 45F proves
+  **no** production schema, live route, storage, auth / consent, command,
+  `/remember-this`, package API stability, or final vocabulary.
+- **Phase 45G selects Dixie Phase 33D — Admission Wedge probe hardening /
+  contract vocabulary refinement** as the recommended next lane: a **cross-repo
+  handoff recommendation to Dixie** (not a Freeside Characters implementation
+  authorization), recommending docs / decision or docs + non-runtime probe
+  hardening that decides whether the draft v0 probes need stricter vocabulary /
+  field / signer-authority / receipt-audit / idempotency alignment and whether a
+  Straylight primitive review is required before any live route design.
+  Freeside-side adapter hardening is low-value without a found gap; a package
+  export and an adapter export are deferred; a live client / command is blocked.
+- **Live lanes remain blocked.** Live Dixie-backed admission, a live Dixie
+  admission route, a frozen final production schema, production storage /
+  admission / auth / consent, a Discord command, public remember-this, Discord
+  message-history ingestion, user chat becoming memory, public rollout,
+  Telegram / private chat, LLM / voice, a forget / revoke / correction UI,
+  package exports, adapter export, runtime wiring, and Finn production wiring
+  all remain blocked. Dixie Phase 33C stays a **draft v0**, not production
+  schema, and Freeside Characters does not own the Dixie / Straylight
+  vocabulary. Phase 45G expands the prior authorization in no way, and §7 (live
+  memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45G decision; it only records that
+the Phase 45F adapter is accepted as a bounded test-only semantic bridge and
+that the recommended next lane is a cross-repo Dixie Phase 33D probe hardening,
+not a Freeside Characters live admission implementation.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
@@ -1425,21 +1478,39 @@ corresponding gates above are satisfied.
 
 ## 9. Recommended next phase
 
-> **Latest status (updated Phase 45F, 2026-06-04 · authoritative in §5w).**
-> Phase 45F has landed: it added a test-only / docs-fixture-bound **no-op
-> Dixie probe adapter / validator over local mirrored Dixie probes** (§5w) —
-> local mirrors of the Dixie Phase 33C draft v0 probes plus a pure adapter
-> that maps the five Dixie probe scenarios onto the Phase 44A reducer's
-> scenarios and cross-checks them, proving semantic mapping and no-leak only.
-> It wires nothing at runtime, exports nothing from the package surface, and
-> calls no live Dixie route. All live / runtime lanes — live Dixie-backed
-> admission, a live Dixie admission route, a frozen production schema,
-> production storage / admission / auth / consent, a Discord command, public
-> remember-this, Discord history ingestion, user chat becoming memory,
-> package exports, and Finn production wiring — **remain blocked**, and no
-> next live lane is authorized; §7 and §8 stay in force. The Phase 45A / 45C
-> / 45D status text below is **historical / superseded** — the ladder trail
-> that led here, not the current next step.
+> **Latest status (Phase 45G, 2026-06-05 · authoritative in §5x).**
+> Phase 45G has landed as a Freeside Characters-side **docs / decision
+> acceptance gate**
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md`, §5x): it
+> accepts the Phase 45F no-op Dixie probe adapter / validator **only as a
+> test-only / docs-fixture-bound semantic bridge** — proving the five Dixie
+> probe scenarios map onto the Phase 44A reducer scenarios with no-leak and
+> fail-closed behaviour, and **nothing more** (no production schema, live
+> route, storage, auth / consent, command, package API stability, or final
+> vocabulary). Phase 45G adds no source, test, fixture JSON, mirrored probe,
+> adapter, reducer, runner, package, lockfile, config, CI, or generated change,
+> and edits no `../loa-dixie` file. Phase 45G **selects Dixie Phase 33D —
+> Admission Wedge probe hardening / contract vocabulary refinement** as the
+> next recommended lane: a **cross-repo handoff recommendation to Dixie**, not
+> a Freeside Characters implementation authorization. **No Freeside Characters
+> implementation lane is authorized**, and all live / runtime lanes — live
+> Dixie-backed admission, a live Dixie admission route, a frozen production
+> schema, production storage / admission / auth / consent, a Discord command,
+> public remember-this, Discord history ingestion, user chat becoming memory,
+> package exports, adapter export, runtime wiring, and Finn production wiring —
+> **remain blocked**; §7 and §8 stay in force.
+>
+> **Earlier status (Phase 45F, 2026-06-04 · §5w — historical / superseded).**
+> Phase 45F landed the test-only / docs-fixture-bound **no-op Dixie probe
+> adapter / validator over local mirrored Dixie probes** (§5w) — local mirrors
+> of the Dixie Phase 33C draft v0 probes plus a pure adapter that maps the five
+> Dixie probe scenarios onto the Phase 44A reducer's scenarios and cross-checks
+> them, proving semantic mapping and no-leak only. It wires nothing at runtime,
+> exports nothing from the package surface, and calls no live Dixie route.
+> Phase 45G (above) has since accepted it as a bounded test-only semantic
+> bridge; read this and the Phase 45A / 45C / 45D status text below as
+> **historical / superseded** — the ladder trail that led here, not the current
+> next step.
 >
 > **Earlier status (Phase 45A, 2026-06-02 · §5s — historical / superseded).**
 > Phase 44D selected **Phase 45A — a docs / cross-repo Dixie-side Admission
@@ -1472,9 +1543,12 @@ corresponding gates above are satisfied.
 > need + a draft vocabulary), not a frozen contract. Phase 45C *then*
 > selected **Phase 45D — a docs / decision reconciliation matrix /
 > fixture-probe alignment gate** as the conservative next lane (historical;
-> the ladder has since advanced docs-only through Phase 45D → 45E → **45F**,
-> whose landed no-op probe adapter / validator is the latest status — see the
-> §5w banner above and §5w); live admission, a live Dixie route, storage, a
+> the ladder has since advanced docs-only through Phase 45D → 45E → 45F →
+> **45G**, whose docs / decision acceptance gate (accepting the Phase 45F
+> no-op probe adapter / validator as a test-only semantic bridge and selecting
+> Dixie Phase 33D as the next cross-repo lane) is the latest status — see the
+> §5x banner above and §5x; the older §5w "latest status" is **historical /
+> superseded**); live admission, a live Dixie route, storage, a
 > command, package exports, and Finn production wiring all remain blocked.
 > The
 > intervening recommendation (**Phase 44C — a fixture-bound dev/operator
