@@ -556,6 +556,18 @@ live path. If it needs any item above, it must open the gate that owns it
 > admission route, storage, a command, package exports, and Finn production
 > wiring all stay blocked.
 
+> **Phase 45G acceptance note (added later).** Phase 45G
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md`) **accepts**
+> the Phase 45F adapter / validator selected by this gate's §10–§11 as a
+> **test-only / docs-fixture-bound semantic bridge** — and nothing more (it
+> does not accept production schema, a live route, storage, auth / consent, a
+> command, package exports, or final vocabulary). Phase 45G renames no local
+> fixture label, mutates no reducer reason code, mutates no fixture JSON, wires
+> no runtime, and exports no adapter; it selects **Dixie Phase 33D — probe
+> hardening / contract vocabulary refinement** as the cross-repo recommended
+> next lane (a recommendation to Dixie, not a Freeside Characters
+> authorization). All live / runtime lanes remain blocked.
+
 ---
 
 ## 12. What remains blocked now

@@ -341,3 +341,11 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   calls no live Dixie, wires no runtime path, and is not exported from the
   package surface; live admission, storage, command, Dixie route, package
   export, and Finn production wiring stay blocked.
+- `docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md` — **Phase 45G**
+  Dixie probe adapter acceptance / next-lane decision gate (docs / decision
+  only). It accepts the Phase 45F adapter as a **test-only / docs-fixture-bound
+  semantic bridge** (and nothing more), mutates no fixture JSON and renames no
+  label here, and selects **Dixie Phase 33D — probe hardening / contract
+  vocabulary refinement** as the cross-repo recommended next lane. Live
+  admission, storage, command, Dixie route, package export, adapter export,
+  runtime wiring, and Finn production wiring stay blocked.
