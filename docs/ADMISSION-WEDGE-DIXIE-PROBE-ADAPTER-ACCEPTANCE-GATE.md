@@ -67,6 +67,18 @@
 > file was edited. Dixie Phase 33E stays a **draft v1** (not production schema),
 > and Freeside Characters does not own the Dixie / Straylight vocabulary.
 
+> **Phase 45J status note (added later).** The Phase 45I v1 mirror-refresh /
+> adapter-compatibility slice has since been **accepted** by **Phase 45J**
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-ACCEPTANCE-GATE.md`, docs /
+> decision only) as a test-only / docs-fixture-bound v1 proof, and Phase 45J
+> selects **Dixie Phase 33F — Admission Wedge route-contract readiness gate** as
+> the recommended next lane (cross-repo handoff to Dixie, not route design and not
+> a Freeside Characters implementation authorization). The acceptance this gate
+> (45G) records still stands: the adapter remains a test-only / docs-fixture-bound
+> semantic bridge — no runtime wiring, no package export, no live Dixie call, no
+> live admission, and Freeside Characters does not own the Dixie / Straylight
+> vocabulary.
+
 ---
 
 ## 1. Phase title and status

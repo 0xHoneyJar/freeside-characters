@@ -121,6 +121,16 @@ here. This directory carries **no live Dixie calls, no storage, no auth, no
 > (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`, docs / decision only)
 > recorded the Dixie v1 / Freeside v0 state and **deferred** the refresh to a
 > gated Phase 45I — which has since performed it (see the Phase 45I note above).
+>
+> **Phase 45J status note.** Phase 45J
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-ACCEPTANCE-GATE.md`, docs /
+> decision only) **accepts** the Phase 45I refresh: these refreshed v1 mirrors are
+> accepted as test-only / docs-fixture-bound mirrors only — still **not** canonical
+> upstream truth (the Dixie Phase 33E copy wins on any disagreement), still no
+> runtime behavior, no live Dixie call, and no production behavior. Phase 45J
+> selects **Dixie Phase 33F — Admission Wedge route-contract readiness gate** as
+> the recommended next lane. Any future Dixie probe version change still requires a
+> future mirror-refresh gate.
 
 ## Provenance
 
