@@ -18,6 +18,8 @@ import { buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2, prettyFactorName, de
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import { resolveWallet, type ResolvedWallet } from './freeside_auth/server.ts';
 import { resolveNftPfp, type NftPfpResolver } from './inventory/resolve-nft-pfp.ts';
+import { fetchProfilePictureHttp } from './inventory/inventory-http-client.ts';
+import type { MintEventSubscriberLogger } from '../events/mint-event-subscriber.ts';
 
 export interface DigestPostResult {
   readonly zone: ZoneId;
@@ -48,6 +50,23 @@ export interface DigestOrchestratorDeps {
   readonly fetchRecentBadges?: typeof fetchRecentBadges;
   /** Test/ops override for the badge-fetch timeout in ms (default BADGE_FETCH_TIMEOUT_MS). */
   readonly badgeFetchTimeoutMs?: number;
+  /**
+   * #87 GAP-2 · spotlight pfp via inventory-api over HTTP. The PRIMARY spotlight pfp
+   * (the freeside_auth DB `pfp_url` carried in `identities` is the FALLBACK). Injectable
+   * for hermetic tests: a `(wallet) => Promise<string | null>` that NEVER throws. Default
+   * is fetchProfilePictureHttp bound to `inventoryApiBaseUrl` + global fetch. When unset AND
+   * no baseUrl is configured, the pre-resolve is skipped entirely (no fetch) — dormant.
+   */
+  readonly fetchInventoryPfp?: (wallet: string) => Promise<string | null>;
+  /**
+   * inventory-api base URL. Defaults to `config.INVENTORY_API_URL` (the SAME env the mint
+   * path reads). Unset → the spotlight pfp pre-resolve is skipped (DB-only, identical to today).
+   */
+  readonly inventoryApiBaseUrl?: string;
+  /** Injectable fetch for the default inventory-pfp resolver (hermetic tests). Defaults to global fetch. */
+  readonly inventoryDoFetch?: typeof fetch;
+  /** Test/ops override for the inventory-pfp fetch timeout in ms (default INVENTORY_PFP_TIMEOUT_MS). */
+  readonly inventoryPfpTimeoutMs?: number;
 }
 
 // Default pulse window · cycle-007 S8 r4 (operator pivot 2026-05-17):
@@ -186,6 +205,16 @@ async function composeEnrichedDigestPost(
     if (r.status === 'fulfilled') identities.set(r.value.wallet, r.value.identity);
   }
 
+  // #87 GAP-2 · spotlight pfp from inventory-api (getProfilePicture over HTTP). The PRIMARY
+  // spotlight pfp; the freeside_auth DB `pfp_url` (already in `identities`) is the FALLBACK.
+  // Pre-resolved here (in parallel, once) for the SAME spotlight wallets, so the synchronous
+  // resolvePfp can read a Map. DORMANT-UNTIL-DEPLOYED: when no baseUrl is configured AND no
+  // resolver is injected, the pre-resolve is skipped entirely (no fetch) → DB-only, identical
+  // to today. FAIL-SOFT is the load-bearing invariant: a down / undeployed / slow / malformed
+  // inventory-api becomes null per wallet (allSettled + the client's own self-catch), NEVER a
+  // thrown error that breaks the digest render.
+  const inventoryPfp = await resolveInventoryPfps(config, deps, entries.map((e) => e.spotlight.wallet));
+
   // option (b) badge-join — only when there are synthesized climbers to enrich, so the common
   // single-spotlight digest adds ZERO new MCP calls. Fail-soft (ADR-008 §D-4): no MCP_KEY / a
   // stalled feed → empty map → climbers fall back to rank-lines (option a).
@@ -196,7 +225,8 @@ async function composeEnrichedDigestPost(
   const components = buildEnrichedDigestComponentsV2(zd, {
     resolveFactorName: (id) => nameMap.get(id) ?? prettyFactorName(id),
     resolveHandle: (w) => identities.get(w)?.handle ?? ANON_MEMBER,
-    resolvePfp: (w) => identities.get(w)?.pfp_url ?? null,
+    // #87 GAP-2 · inventory-api pfp PRIMARY, freeside_auth DB pfp_url FALLBACK, null when neither.
+    resolvePfp: (w) => inventoryPfp.get(w) ?? identities.get(w)?.pfp_url ?? null,
     resolveBadge: (w) => badgeMap.get(w.toLowerCase()) ?? null,
   });
 
@@ -299,6 +329,19 @@ const SPOTLIGHT_RESOLVE_TIMEOUT_MS = 5_000;
 // the digest — badges are fail-soft enrichment, so a timeout just drops to rank-lines.
 const BADGE_FETCH_TIMEOUT_MS = 3_000;
 
+// Bound the per-wallet inventory-api pfp fetch (#87 GAP-2). Matches resolveNftPfp's 3s posture —
+// a slow building must not wedge a digest zone. The HTTP client's AbortController honors this; on
+// timeout the wallet's pfp fail-softs to null → the DB pfp fallback (or no image) applies.
+const INVENTORY_PFP_TIMEOUT_MS = 3_000;
+
+// Minimal logger for the inventory-api HTTP client in the (logger-less) digest path. Lowercase
+// per voice rules; warn is the only level the client emits. Stderr so it never pollutes a payload.
+const digestPfpLogger: MintEventSubscriberLogger = {
+  info: () => {},
+  warn: (obj, msg) => console.warn(msg ?? '[spotlight-pfp]', obj),
+  error: (obj, msg) => console.error(msg ?? '[spotlight-pfp]', obj),
+};
+
 async function resolveSpotlightIdentity(wallet: string): Promise<SpotlightIdentity> {
   const anon: SpotlightIdentity = { handle: ANON_MEMBER, pfp_url: null };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -373,6 +416,58 @@ async function fetchBadgeMap(
     // fail-soft — badges are an enrichment, never a digest blocker
   } finally {
     if (timer) clearTimeout(timer);
+  }
+  return map;
+}
+
+/**
+ * Pre-resolve each spotlight wallet's inventory-api pfp into a Map (#87 GAP-2). The synchronous
+ * `resolvePfp` reads this map, so the fetch (async) happens ONCE here, in parallel, before the
+ * components build.
+ *
+ * Resolver precedence: an injected `deps.fetchInventoryPfp` wins (test seam); otherwise the
+ * default binds fetchProfilePictureHttp to the baseUrl (`deps.inventoryApiBaseUrl` →
+ * `config.INVENTORY_API_URL`) + fetch.
+ *
+ * DORMANT-UNTIL-DEPLOYED: when NO resolver is injected AND no baseUrl is configured, this returns
+ * an EMPTY map WITHOUT issuing any fetch — behavior is identical to the DB-only path of today.
+ *
+ * FAIL-SOFT (the load-bearing invariant): allSettled means a rejected/timed-out fetch drops that
+ * one wallet (→ DB pfp fallback, or no image), never propagates. The default resolver (the HTTP
+ * client) already self-catches to null; allSettled additionally guards an injected resolver that
+ * might throw. A down / undeployed / slow / malformed inventory-api can NEVER break the digest.
+ */
+async function resolveInventoryPfps(
+  config: Config,
+  deps: DigestOrchestratorDeps,
+  wallets: readonly string[],
+): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>();
+  if (wallets.length === 0) return map;
+
+  const baseUrl = deps.inventoryApiBaseUrl ?? config.INVENTORY_API_URL;
+  const resolver =
+    deps.fetchInventoryPfp ??
+    (baseUrl
+      ? (wallet: string) =>
+          fetchProfilePictureHttp({
+            baseUrl,
+            wallet,
+            timeoutMs: deps.inventoryPfpTimeoutMs ?? INVENTORY_PFP_TIMEOUT_MS,
+            doFetch: deps.inventoryDoFetch ?? fetch,
+            logger: digestPfpLogger,
+          })
+      : undefined);
+
+  // Dormant: no injected resolver and no baseUrl → no fetch, DB-only (identical to today).
+  if (!resolver) return map;
+
+  const settled = await Promise.allSettled(
+    wallets.map(async (wallet) => ({ wallet, pfp: await resolver(wallet) })),
+  );
+  for (const r of settled) {
+    // A rejected resolve (injected resolver threw) drops that wallet → DB fallback applies.
+    if (r.status === 'fulfilled' && r.value.pfp) map.set(r.value.wallet, r.value.pfp);
   }
   return map;
 }

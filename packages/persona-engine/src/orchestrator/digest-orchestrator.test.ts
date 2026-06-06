@@ -455,6 +455,180 @@ describe('composeDigestPost · enriched-v2 multi-user spotlight (cycle-008)', ()
   });
 });
 
+// #87 GAP-2 · spotlight pfp via inventory-api getProfilePicture (over HTTP). inventory PRIMARY,
+// freeside_auth DB pfp_url FALLBACK. The load-bearing invariant: a down / undeployed / slow /
+// malformed inventory-api must NEVER break or block the digest render (fail-soft to DB / no image).
+describe('composeDigestPost · enriched-v2 inventory-api spotlight pfp (#87 GAP-2)', () => {
+  const SPOTLIGHT = '0xAB00000000000000000000000000000000000Cd';
+  const INV_PFP = 'https://assets.0xhoneyjar.xyz/mibera/inventory.png';
+  const DB_PFP = 'https://assets.0xhoneyjar.xyz/mibera/db.png';
+
+  // Base deps for the single-spotlight enriched path (wallet = SPOTLIGHT from zoneDigestStub).
+  const invDeps = (over: Partial<Parameters<typeof composeDigestPost>[3]> = {}) => ({
+    score: scoreStub([makeBreakdown({ id: 'nft', display_name: 'NFT' })]),
+    fetchZoneDigest: async () => zoneDigestStub(),
+    // identity resolves a handle but NO db pfp by default (so inventory can be the sole source).
+    resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: null }),
+    ...over,
+  });
+
+  test('(a) inventory pfp WINS when present (PRIMARY over DB)', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      invDeps({
+        // DB also has a pfp — inventory must still win.
+        resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: DB_PFP }),
+        fetchInventoryPfp: async (w: string) => (w === SPOTLIGHT ? INV_PFP : null),
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain(INV_PFP); // inventory-api pfp rendered
+    expect(json).not.toContain(DB_PFP); // DB pfp NOT used (inventory is primary)
+    expect(json).toContain('"type":11'); // thumbnail accessory present
+  });
+
+  test('(b) DB pfp_url used as FALLBACK when inventory returns null', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      invDeps({
+        resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: DB_PFP }),
+        fetchInventoryPfp: async () => null, // inventory has nothing on file
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain(DB_PFP); // DB fallback rendered
+    expect(json).toContain('"type":11');
+  });
+
+  test('(c1) inventory-api THROWS → digest STILL RENDERS, falls to DB pfp (fail-soft)', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      invDeps({
+        resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: DB_PFP }),
+        fetchInventoryPfp: async () => {
+          throw new Error('inventory-api is down');
+        },
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(result.postType).toBe('digest'); // the digest still ships
+    expect(json).toContain('degenharu'); // spotlight still renders
+    expect(json).toContain(DB_PFP); // fell back to DB pfp, never threw
+  });
+
+  test('(c2) inventory-api THROWS and NO DB pfp → digest renders imageless (never breaks)', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      invDeps({
+        resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: null }),
+        fetchInventoryPfp: async () => {
+          throw new Error('inventory-api exploded');
+        },
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(result.postType).toBe('digest');
+    expect(json).toContain('degenharu'); // spotlight present (handle resolved)
+    expect(json).not.toContain('"type":11'); // no thumbnail — imageless, not broken
+  });
+
+  test('(c3) inventory-api HUNG (times out) → bounded, digest still ships with DB pfp', async () => {
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      invDeps({
+        resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: DB_PFP }),
+        inventoryPfpTimeoutMs: 10,
+        // a hung fetch that honors the abort signal → the HTTP client's AbortController fires.
+        inventoryApiBaseUrl: 'https://inventory.0xhoneyjar.xyz',
+        inventoryDoFetch: ((_u: string, opts?: { signal?: AbortSignal }) =>
+          new Promise<Response>((_res, rej) => {
+            opts?.signal?.addEventListener('abort', () => {
+              const e = new Error('aborted');
+              (e as Error & { name: string }).name = 'AbortError';
+              rej(e);
+            });
+          })) as unknown as typeof fetch,
+        fetchInventoryPfp: undefined, // use the real (bounded) HTTP client path
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(result.postType).toBe('digest');
+    expect(json).toContain(DB_PFP); // timed-out inventory → DB fallback held
+  });
+
+  test('(d) baseUrl UNSET → NO fetch issued, DB-only (dormant-until-deployed)', async () => {
+    let fetchCalled = false;
+    const spyFetch = (async () => {
+      fetchCalled = true;
+      return { ok: true, status: 200, json: async () => ({ imageUrl: INV_PFP }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const result = await composeDigestPost(
+      // INVENTORY_API_URL unset on config; no inventoryApiBaseUrl dep, no fetchInventoryPfp dep.
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      invDeps({
+        resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: DB_PFP }),
+        inventoryDoFetch: spyFetch, // present, but must NOT be called when baseUrl is unset
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(fetchCalled).toBe(false); // dormant: no network attempt
+    expect(json).toContain(DB_PFP); // DB pfp still rendered (today's behavior preserved)
+    expect(result.postType).toBe('digest');
+  });
+
+  test('(e) configured baseUrl drives the real HTTP client end-to-end (inventory wins via fetch)', async () => {
+    const doFetch = (async (input: string) => {
+      // assert the route shape: {baseUrl}/profile/{wallet}
+      expect(String(input)).toContain('/profile/');
+      return { ok: true, status: 200, json: async () => ({ address: SPOTLIGHT, contract: '0x6666', imageUrl: INV_PFP }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2', INVENTORY_API_URL: 'https://inventory.0xhoneyjar.xyz' }),
+      character,
+      'el-dorado',
+      invDeps({
+        resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: DB_PFP }),
+        inventoryDoFetch: doFetch,
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain(INV_PFP); // fetched inventory pfp wins over DB
+    expect(json).not.toContain(DB_PFP);
+  });
+
+  test('(f) off-allowlist inventory imageUrl is rejected → DB pfp fallback (trust boundary)', async () => {
+    const doFetch = (async () =>
+      ({ ok: true, status: 200, json: async () => ({ imageUrl: 'https://evil.example.com/x.png' }) }) as unknown as Response) as unknown as typeof fetch;
+
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2', INVENTORY_API_URL: 'https://inventory.0xhoneyjar.xyz' }),
+      character,
+      'el-dorado',
+      invDeps({
+        resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: DB_PFP }),
+        inventoryDoFetch: doFetch,
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).not.toContain('evil.example.com'); // off-host url never reaches the card
+    expect(json).toContain(DB_PFP); // fell back to DB pfp
+  });
+});
+
 // cycle-008 capability-wiring slice 1 · the load-bearing NFR-29 logic, unit-tested without a DB.
 describe('pickSpotlightDisplay · NFR-29 spotlight fallback ladder', () => {
   const base: ResolvedWallet = {
