@@ -19,20 +19,20 @@
 # BB round-3 INV17-PATH-MISMATCH closure (2026-05-17): canonical location is
 # .claude/overrides/ · the .claude/data/ paths shipped in the original S1/T1.6
 # patch did NOT exist on disk · INV-17 was inoperative until this fix.
-.claude/overrides/voice-prompt-paths.json        @zksoju
-.claude/overrides/voice-prompt-paths.schema.json @zksoju
+.claude/overrides/voice-prompt-paths.json        @zkSoju
+.claude/overrides/voice-prompt-paths.schema.json @zkSoju
 
 # INV-13 trace:explain output schema (frozen at v1 per Flatline IMP-003)
-.claude/overrides/trace-explain-output.schema.json @zksoju
+.claude/overrides/trace-explain-output.schema.json @zkSoju
 
 # Forward-reference: schemas not yet authored (cycle-008 candidates).
 # Pre-protecting so when/if they land, branch protection takes effect immediately.
-.claude/overrides/trace-envelope.schema.json @zksoju
-.claude/overrides/cycle-007-t02-decision.schema.json @zksoju
+.claude/overrides/trace-envelope.schema.json @zkSoju
+.claude/overrides/cycle-007-t02-decision.schema.json @zkSoju
 
 # Loa zone-IDs source (DELETE-ZONE_FLAVOR migration · changes here ripple through INV-12 + INV-17)
-packages/persona-engine/src/score/types.ts @zksoju
-packages/persona-engine/src/domain/zone-registry.ts @zksoju
+packages/persona-engine/src/score/types.ts @zkSoju
+packages/persona-engine/src/domain/zone-registry.ts @zkSoju
 
 # INV-14 type-enforced JSONL append helper (BB HIGH-4 · S2 deliverable)
-packages/persona-engine/src/observability/trace-envelope.ts @zksoju
+packages/persona-engine/src/observability/trace-envelope.ts @zkSoju
