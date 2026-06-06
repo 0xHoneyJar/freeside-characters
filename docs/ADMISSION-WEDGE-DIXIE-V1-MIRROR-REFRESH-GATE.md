@@ -58,6 +58,16 @@
 > satisfied** — the decision it recorded has been carried out by Phase 45I. Any
 > future Dixie probe version change requires a future mirror-refresh gate.
 
+> **Phase 45J status note (added later).** Phase 45I has since been **accepted**
+> by **Phase 45J** (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-ACCEPTANCE-GATE.md`,
+> docs / decision only) as a test-only / docs-fixture-bound v1 mirror and adapter
+> compatibility proof — v1 compatibility in tests is **not** production readiness,
+> the adapter stays un-exported and un-wired, and no live admission is authorized.
+> Phase 45J selects **Dixie Phase 33F — Admission Wedge route-contract readiness
+> gate** as the recommended next lane (a cross-repo handoff recommendation to
+> Dixie, not a Freeside Characters implementation authorization, and not route
+> design). It mutates no mirror, adapter, test, or code.
+
 ---
 
 ## 1. Phase title and status
