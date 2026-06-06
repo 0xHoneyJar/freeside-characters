@@ -35,6 +35,29 @@
 > separate later phase that owns it (decision-map §7 / §8) — not to relax it
 > from this decision.
 
+> **Phase 45I status note (added later).** The future **Phase 45I** this gate
+> selected (§10, Option A) has since **landed** as a test-only /
+> docs-fixture-bound implementation slice. It **refreshed the five local
+> mirrored Dixie probes from draft v0 to draft v1**
+> (`dixie_admission_wedge_probe_v1`, mirroring Dixie Phase 33E / PR #122 — all
+> five scenarios preserved, no sixth mirror), updated the mirror README
+> provenance, **bumped the adapter's `SUPPORTED_DIXIE_PROBE_VERSION` to
+> `dixie_admission_wedge_probe_v1`** (v0 is now an unsupported / historical
+> version that fails closed with `unknown_probe_version`; the adapter
+> dual-supports nothing), and rewrote the adapter test to prove the v1 mappings,
+> the v1 hardening fields, semantic equivalence against the Phase 44A reducer
+> over the Phase 43C fixtures, the v0 / v999 unsupported-version fail-closed, the
+> no-leak over v1 outputs, and the not-wired / not-exported static guards. It
+> **added no runtime wiring, no live Dixie call, no package export, no live
+> admission**, mutated no existing local Admission Wedge proof fixture under
+> `docs/admission-wedge/fixtures/`, renamed no local proof label, mutated no
+> reducer reason code, froze no schema, and edited no `../loa-dixie` file. **v1
+> compatibility in tests is not production readiness**, Dixie Phase 33E stays a
+> **draft v1** (not production schema), and Freeside Characters does not own the
+> Dixie / Straylight vocabulary. Phase 45H (this gate) is now **historical /
+> satisfied** — the decision it recorded has been carried out by Phase 45I. Any
+> future Dixie probe version change requires a future mirror-refresh gate.
+
 ---
 
 ## 1. Phase title and status

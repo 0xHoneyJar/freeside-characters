@@ -1,14 +1,24 @@
-// Phase 45F · Admission Wedge — Dixie probe no-op adapter / validator.
+// Phase 45F → 45I · Admission Wedge — Dixie probe no-op adapter / validator.
 //
 // Authority: docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md (Phase 45E
-// §6 probe-to-local mapping, §10 selected lane, §11 boundaries), over the Dixie
-// Phase 33C draft v0 contract probes — MIRRORED locally for tests at
-// docs/admission-wedge/dixie-probes/ — and the Freeside-local Admission Wedge
-// proof stack (Phase 43C fixtures · Phase 44A reducer · Phase 44C runner).
+// §6 probe-to-local mapping, §10 selected lane, §11 boundaries) and
+// docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md (Phase 45H decision /
+// Phase 45I refresh), over the Dixie contract probes — MIRRORED locally for
+// tests at docs/admission-wedge/dixie-probes/ — and the Freeside-local
+// Admission Wedge proof stack (Phase 43C fixtures · Phase 44A reducer · Phase
+// 44C runner).
+//
+// Phase 45I bumps the supported probe version from
+// `dixie_admission_wedge_probe_v0` (Dixie Phase 33C, Phase 45F) to
+// `dixie_admission_wedge_probe_v1` (Dixie Phase 33E / PR #122, refreshed local
+// mirrors). The five Phase 33C semantic scenarios are preserved unchanged; the
+// v1 probes only harden / add draft placeholders. v0 — and any other version —
+// is now an UNSUPPORTED / historical version that fails closed with
+// `unknown_probe_version`; this adapter dual-supports nothing.
 //
 // What this adapter does:
 //   - It is a pure, local, no-op SEMANTIC MAPPING layer. Given an
-//     already-parsed Dixie probe object, it maps the probe's draft-v0 scenario
+//     already-parsed Dixie probe object, it maps the probe's draft-v1 scenario
 //     to the current local Admission Wedge proof scenario and emits a small,
 //     safe, deterministic alignment result. It proves the two sides agree at
 //     the semantic level; it wires nothing.
@@ -21,7 +31,7 @@
 //         malformed_or_unsafe_payload_fail_closed  -> malformed_fail_closed
 //   - It preserves both label sets: local fixture labels remain local PROOF
 //     labels, the local reducer reason codes remain local PROOF codes, and the
-//     Dixie probe labels remain Dixie-owned DRAFT v0 labels. It renames
+//     Dixie probe labels remain Dixie-owned DRAFT v1 labels. It renames
 //     nothing, mutates no fixture JSON, and mutates no reducer reason code.
 //     Neither label set is a frozen final schema, and Freeside Characters does
 //     not own the Dixie / Straylight vocabulary.
@@ -60,8 +70,8 @@ import {
 
 // -- vocabulary (preserved, not renamed) -----------------------------------
 
-// The Dixie draft v0 probe scenario ids (Dixie-owned DRAFT labels — preserved
-// verbatim, never coined or renamed here).
+// The Dixie draft probe scenario ids (Dixie-owned DRAFT labels — preserved
+// verbatim across the v0 → v1 hardening, never coined or renamed here).
 export const DIXIE_PROBE_SCENARIO_IDS = [
   "candidate_pending_not_recallable",
   "accept_candidate_to_admitted_assertion",
@@ -82,10 +92,19 @@ export const LOCAL_ADMISSION_SCENARIOS = [
 ] as const;
 export type LocalAdmissionScenario = (typeof LOCAL_ADMISSION_SCENARIOS)[number];
 
-// The one Dixie draft probe version this adapter understands. A different /
-// missing version fails closed (a future probe version reconciles under its own
-// gate; this adapter does not silently accept it).
+// The one Dixie draft probe version this adapter understands (Phase 45I: the
+// Dixie Phase 33E draft v1). A different / missing version — including the
+// historical draft v0 — fails closed with `unknown_probe_version` (a future
+// probe version reconciles under its own mirror-refresh gate; this adapter does
+// not silently accept it and dual-supports nothing).
 export const SUPPORTED_DIXIE_PROBE_VERSION =
+  "dixie_admission_wedge_probe_v1" as const;
+
+// The historical, now-unsupported draft v0 version. Named only so the adapter's
+// fail-closed posture on superseded versions is explicit and self-documenting;
+// the version check rejects ANY value other than SUPPORTED_DIXIE_PROBE_VERSION,
+// so this constant is not consulted at runtime.
+export const HISTORICAL_UNSUPPORTED_DIXIE_PROBE_VERSION =
   "dixie_admission_wedge_probe_v0" as const;
 
 const SUPPORTED_PROBE_KIND = "admission_wedge_contract_probe" as const;
@@ -131,7 +150,7 @@ export interface DixieProbeAlignmentOk {
   // the local proof scenario this Dixie probe maps onto (Phase 44C runner
   // label — a local PROOF label, preserved).
   readonly localScenario: LocalAdmissionScenario;
-  // the Dixie draft probe version (constant); marks this as DRAFT v0, not final.
+  // the Dixie draft probe version (constant); marks this as DRAFT v1, not final.
   readonly dixieProbeVersion: typeof SUPPORTED_DIXIE_PROBE_VERSION;
   // semantics agree on every known probe; the only deltas are naming / shape.
   readonly alignmentStatus: "aligned_semantics";
@@ -142,7 +161,7 @@ export interface DixieProbeAlignmentOk {
   readonly localReasonCode: AdmissionReducerReasonCode;
   // canned, public-safe statements of the aligned local meaning.
   readonly semanticAssertions: readonly string[];
-  // canned disclaimers: no rename, draft v0, not final schema, no-op only.
+  // canned disclaimers: no rename, draft v1, not final schema, no-op only.
   readonly notes: readonly string[];
   readonly publicSafe: true;
 }
@@ -167,7 +186,8 @@ const ALIGNMENT_NOTES: readonly string[] = [
   "no-op alignment only: no runtime wiring, no live Dixie call, no storage, no admission, no Discord behavior",
   "local fixture labels remain local proof labels — this adapter renames nothing",
   "local reducer reason codes remain local proof codes — this adapter mutates none of them",
-  "Dixie probe labels remain draft v0 (dixie_admission_wedge_probe_v0) — not final schema",
+  "Dixie probe labels remain draft v1 (dixie_admission_wedge_probe_v1) — not final schema",
+  "v1 compatibility here is a test-only semantic mapping, not production readiness; v0 is unsupported / historical and fails closed",
   "neither label set is a frozen final schema; Freeside Characters does not own the Dixie or Straylight vocabulary",
 ];
 
@@ -326,10 +346,11 @@ function sealAlignment(result: DixieProbeAlignment): DixieProbeAlignment {
 //
 // Accepts an ALREADY-PARSED Dixie probe object (the test reads the mirrored
 // probe JSON and passes the parsed object in; the adapter reads no file). Maps
-// the probe's draft-v0 scenario to the local proof scenario and returns a safe,
+// the probe's draft-v1 scenario to the local proof scenario and returns a safe,
 // deterministic alignment result. Fails closed (returns a sealed fail-closed
-// result; it does not throw) on any unknown / malformed probe shape, never
-// echoing a raw probe value.
+// result; it does not throw) on any unknown / malformed probe shape — including
+// an unsupported probe version such as the historical v0 — never echoing a raw
+// probe value.
 export function mapDixieProbe(probe: unknown): DixieProbeAlignment {
   const rec = isPlainObject(probe) ? probe : null;
   if (!rec) {
@@ -341,16 +362,24 @@ export function mapDixieProbe(probe: unknown): DixieProbeAlignment {
     return failClosed(DIXIE_PROBE_ADAPTER_REASON_CODES.unsupported_probe_shape);
   }
 
-  // probe_version must be the one supported draft v0.
+  // probe_version must be the one supported draft v1. Any other value —
+  // including the historical draft v0 — fails closed with unknown_probe_version
+  // (the raw version string is never echoed).
   if (getString(rec, "probe_version") !== SUPPORTED_DIXIE_PROBE_VERSION) {
     return failClosed(DIXIE_PROBE_ADAPTER_REASON_CODES.unknown_probe_version);
   }
 
   // metadata booleans must mark the probe non-runtime / non-production / draft.
-  // A probe that claims schema_final / runtime_enabled / production_admission,
-  // or that is not public_safe, is refused (the adapter never relaxes these).
+  // A probe that claims schema_final / canonical_schema / route_contract /
+  // runtime_enabled / production_admission, or that is not public_safe, is
+  // refused (the adapter never relaxes these). canonical_schema / route_contract
+  // are Dixie draft-v1 (Phase 33E) non-final markers; requiring them false keeps
+  // the adapter from ever accepting a probe that claims a canonical / live-route
+  // contract.
   if (
     rec.schema_final !== false ||
+    rec.canonical_schema !== false ||
+    rec.route_contract !== false ||
     rec.runtime_enabled !== false ||
     rec.production_admission !== false ||
     rec.public_safe !== true
