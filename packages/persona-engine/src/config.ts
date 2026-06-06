@@ -82,6 +82,23 @@ const ConfigSchema = z.object({
    */
   CODEX_MCP_URL: z.string().url().optional(),
 
+  // ─── inventory-api (Hyper Bun HTTP service — spotlight pfp source) ─────
+  /**
+   * Base URL of inventory-api, the building that serves a wallet's NFT profile
+   * picture (#87 GAP-2): GET {INVENTORY_API_URL}/profile/:wallet →
+   * { address, contract, imageUrl: string | null }.
+   *
+   * Consumed over the wire by the enriched-digest path (digest-orchestrator →
+   * fetchProfilePictureHttp), reusing the SAME env the mint path reads in
+   * apps/bot/src/index.ts. Optional + dormant-until-deployed: UNSET (CI / dev /
+   * pre-deploy) → the spotlight pre-resolve is skipped entirely (no fetch), so
+   * behavior is identical to today (DB pfp only). When set, inventory-api is the
+   * PRIMARY spotlight pfp and the freeside_auth DB `pfp_url` is the FALLBACK.
+   * A down / slow / malformed inventory-api fail-softs to the DB pfp — it can
+   * NEVER break or block the digest render.
+   */
+  INVENTORY_API_URL: z.string().url().optional(),
+
   // ─── freeside agent-gateway (jani — production LLM path) ──────────────
   FREESIDE_BASE_URL: z.string().url().default('https://api.freeside.0xhoneyjar.xyz'),
   FREESIDE_API_KEY: z.string().optional(),

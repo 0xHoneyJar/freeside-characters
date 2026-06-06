@@ -8,11 +8,15 @@
  * was a phantom dep and is dead). This module is the lightweight consumer-owned
  * SDK: one call, one route, no cross-repo package.
  *
- * Route (verified against inventory-api@831123c src/routes.ts):
+ * Routes:
  *   GET {baseUrl}/nfts/{contract}/{tokenId}
  *     200 → { name, description, image, attributes: [{ trait_type, value }] }
  *     400/404 → { error: { status, message, code? } }
  *   The 200 body is the metadata document directly (NOT wrapped).
+ *
+ *   GET {baseUrl}/profile/{wallet}  (#87 GAP-2 · spotlight pfp)
+ *     200 → { address, contract, imageUrl: string | null }
+ *     400/404/5xx → fail-soft to null (see fetchProfilePictureHttp).
  *
  * FAIL-SOFT (mirrors fetchIdentityProfile in announce-mint.ts EXACTLY): missing
  * baseUrl, non-OK status, timeout, or any throw → returns null. The caller
@@ -44,6 +48,14 @@ interface InventoryMetadataResponse {
   description?: string | null;
   image?: string | null;
   attributes?: Array<{ trait_type?: string; value?: string | number }> | null;
+}
+
+/** Raw 200 body shape from inventory-api GET /profile/:wallet (#87 GAP-2). */
+interface InventoryProfileResponse {
+  address?: string | null;
+  contract?: string | null;
+  /** https CDN pfp url for the spotlight surface, or null when none is on file. */
+  imageUrl?: string | null;
 }
 
 /** Image hosts allowed into a rendered Discord card (THJ sovereign assets). */
@@ -130,6 +142,76 @@ export async function fetchNftMetadataHttp(opts: {
         tokenId: opts.tokenId,
       },
       '[announce-mint] inventory-api fetch errored → fail-soft (no image / no traits)',
+    );
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Fetch a wallet's NFT profile picture from inventory-api over HTTP (#87 GAP-2).
+ *
+ * The exact fail-soft sibling of fetchNftMetadataHttp: AbortController +
+ * setTimeout(abort), `accept: application/json`, non-OK → logger.warn + null,
+ * any throw (network failure, timeout-abort, malformed JSON) → null, clearTimeout
+ * in finally. Missing baseUrl → no fetch, null (dormant-until-deployed; the digest
+ * stays DB-only until INVENTORY_API_URL is configured).
+ *
+ * The returned url passes the SAME `safeImageUrl` host-allowlist as the mint card
+ * — it lands in a Discord card's Section Thumbnail, so the trust boundary is
+ * identical (https on assets./metadata.0xhoneyjar.xyz only; anything else → null).
+ *
+ * Returns the validated https pfp url, or null on EVERY non-happy path. NEVER
+ * throws past this seam — a down/undeployed/slow/malformed inventory-api must not
+ * break or block the digest render (the load-bearing fail-soft invariant).
+ */
+export async function fetchProfilePictureHttp(opts: {
+  /** inventory-api base URL — e.g. https://inventory.0xhoneyjar.xyz */
+  baseUrl: string;
+  /** 0x-prefixed wallet address. */
+  wallet: string;
+  timeoutMs: number;
+  doFetch: typeof fetch;
+  logger: MintEventSubscriberLogger;
+}): Promise<string | null> {
+  // Defensive: missing baseUrl → no-op fail-soft (deploy hasn't configured it).
+  if (!opts.baseUrl || opts.baseUrl.trim().length === 0) return null;
+  const trimmed = opts.baseUrl.replace(/\/+$/, '');
+  // Lowercase the wallet in the path so a checksummed (mixed-case) address can't 404 against a
+  // case-sensitive inventory-api. Matches the LOWERCASED map-key normalization the resolver does
+  // (resolveInventoryPfps) — both ends agree on canonical lowercase regardless of input case.
+  const url = `${trimmed}/profile/${encodeURIComponent(opts.wallet.toLowerCase())}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+  try {
+    const res = await opts.doFetch(url, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      // 400/404 (unknown wallet / bad input) and 5xx all fail-soft to no pfp.
+      opts.logger.warn(
+        { status: res.status, wallet: opts.wallet },
+        '[spotlight-pfp] inventory-api non-OK → fail-soft (DB pfp fallback / no image)',
+      );
+      return null;
+    }
+    const body = (await res.json()) as InventoryProfileResponse;
+    // safeImageUrl: same Discord-card trust boundary as the mint card — null on
+    // null/non-https/off-allowlist-host. The DB pfp fallback then applies upstream.
+    return safeImageUrl(body.imageUrl);
+  } catch (err) {
+    // Honor the seam's contract: a network failure, timeout-abort, or malformed
+    // JSON fail-softs to null rather than propagating into the digest pipeline.
+    opts.logger.warn(
+      {
+        err: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+        wallet: opts.wallet,
+      },
+      '[spotlight-pfp] inventory-api fetch errored → fail-soft (DB pfp fallback / no image)',
     );
     return null;
   } finally {
