@@ -37,6 +37,18 @@
 > open the separate later gate that owns it (decision-map §7 / §8) — not to
 > relax it from this decision.
 
+> **Phase 45H status note (added later).** The Dixie probe hardening this gate
+> recommended (§9 / Option D) landed upstream as **Dixie Phase 33E / PR #122**
+> (draft **v1** — `dixie_admission_wedge_probe_v1`, all five scenarios
+> preserved, no sixth probe, still `schema_final: false`). Freeside Characters'
+> response is gated, not silent: **Phase 45H**
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`, docs / decision only)
+> records the Dixie v1 / Freeside v0 state, keeps the local mirrors and adapter
+> pinned to **v0** (the adapter still fails closed on v1), and selects a future
+> **Phase 45I** test-only / docs-fixture-bound mirror-refresh / adapter-
+> compatibility slice. No mirror was refreshed, no adapter constant widened, no
+> v1 compatibility claimed, and no live lane unblocked.
+
 ---
 
 ## 1. Phase title and status

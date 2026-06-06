@@ -1371,6 +1371,65 @@ not a Freeside Characters live admission implementation.
 
 ---
 
+### 5y. Phase 45H addendum — Dixie probe hardening landed as draft v1 (Dixie Phase 33E); Freeside v0 mirrors / adapter stay pinned, a future Phase 45I mirror-refresh is the recommended next lane
+
+> Added by Phase 45H
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`), 2026-06-06.
+> Targeted addendum, not a rewrite of this section; §5x stays in force.
+
+Status as of Phase 45H:
+
+- **Phase 45H is docs / decision only.** It records how Freeside Characters
+  should respond to Dixie's Phase 33E v1 probe hardening and adds small
+  cross-reference back-notes; it adds no source, test, fixture JSON, mirrored
+  probe, package, lockfile, config, CI, or generated change, refreshes no v0
+  mirror to v1, widens no adapter constant, renames no local fixture label,
+  mutates no reducer reason code, mutates no fixture JSON, and freezes no
+  schema. It edits no `../loa-dixie` file.
+- **The Dixie probe hardening Phase 45G recommended (§5x / Option D) landed
+  upstream.** Dixie Phase 33E / PR #122 bumped the five draft probes from
+  `dixie_admission_wedge_probe_v0` to `dixie_admission_wedge_probe_v1`
+  (`hardening_phase: "33E"`), added draft hardening placeholders (pending-vs-
+  denied, signer / authority draft, idempotency, receipt / audit split,
+  synthetic binding, recall eligibility, Straylight primitive review marker),
+  preserved all five Phase 33C semantic scenarios, and added no sixth probe.
+  Dixie Phase 33E is still **draft v1 — not frozen** (`schema_final: false`,
+  `canonical_schema: false`, `route_contract: false`).
+- **Freeside Characters stays pinned to v0 and gates the refresh.** The local
+  mirrored Dixie probes under `docs/admission-wedge/dixie-probes/` remain v0
+  historical / local proof mirrors, and the Phase 45F adapter still pins
+  `SUPPORTED_DIXIE_PROBE_VERSION = dixie_admission_wedge_probe_v0` and fails
+  closed (`unknown_probe_version`) on v1. Because Freeside reads local mirrors
+  and the adapter is not runtime-wired, the Dixie v1 bump breaks no Freeside
+  runtime or test — but the mirrors are now stale relative to Dixie's current
+  draft.
+- **Phase 45H selects Phase 45I — Admission Wedge Dixie v1 mirror-refresh /
+  adapter compatibility** as the recommended next lane: a future **test-only /
+  docs-fixture-bound** slice that refreshes the local mirrors to v1 (or adds a
+  named v1 mirror set), teaches the adapter to expect v1 (recommended: support
+  v1 in the main adapter, keep v0 fail-closed or historical-only), and proves
+  the v1 mappings / fail-closed / no-leak — with **no** runtime wiring and
+  **no** package export. Waiting for Dixie v2, dual v0/v1 support, a live
+  client / command, and a package export are all classified but not chosen.
+- **Live lanes remain blocked.** Live Dixie-backed admission, a live Dixie
+  admission route, a live Dixie call, a frozen final production schema,
+  production storage / admission / auth / consent, a Discord command, public
+  remember-this, Discord message-history ingestion, user chat becoming memory,
+  public rollout, Telegram / private chat, LLM / voice, a forget / revoke /
+  correction UI, package exports, adapter export, runtime wiring, and Finn
+  production wiring all remain blocked. Dixie Phase 33E stays a **draft v1**,
+  not production schema, and Freeside Characters does not own the Dixie /
+  Straylight vocabulary. Phase 45H expands the prior authorization in no way,
+  and §7 (live memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45H decision; it only records that
+Dixie probe hardening landed as draft v1, that the Freeside v0 mirrors / adapter
+stay pinned, and that the recommended next lane is a future Phase 45I v1
+mirror-refresh / adapter-compatibility slice, not a Freeside Characters live
+admission implementation.
+
+---
+
 ## 6. Decision gates before live Dixie client (Option C)
 
 Before a live Dixie client is allowed, all of the following must hold:
@@ -1478,8 +1537,36 @@ corresponding gates above are satisfied.
 
 ## 9. Recommended next phase
 
-> **Latest status (Phase 45G, 2026-06-05 · authoritative in §5x).**
-> Phase 45G has landed as a Freeside Characters-side **docs / decision
+> **Latest status (Phase 45H, 2026-06-06 · authoritative in §5y).**
+> Phase 45H has landed as a Freeside Characters-side **docs / decision gate**
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`, §5y) **responding to
+> Dixie's Phase 33E v1 probe hardening**: the Dixie probe hardening that Phase
+> 45G recommended (§5x / Option D) landed upstream as **Dixie Phase 33E /
+> PR #122**, which bumped the five draft probes from
+> `dixie_admission_wedge_probe_v0` to `dixie_admission_wedge_probe_v1` (still
+> `schema_final: false`, all five scenarios preserved, no sixth probe). Phase
+> 45H **does not refresh the local mirrors and changes no adapter, code, or
+> test**: the local mirrored Dixie probes stay pinned to v0, the Phase 45F
+> adapter still pins `SUPPORTED_DIXIE_PROBE_VERSION =
+> dixie_admission_wedge_probe_v0` and fails closed on v1, and Phase 45H adds no
+> source, test, fixture JSON, mirrored probe, adapter, reducer, runner,
+> package, lockfile, config, CI, or generated change, and edits no
+> `../loa-dixie` file. Phase 45H **selects Phase 45I — Admission Wedge Dixie v1
+> mirror-refresh / adapter compatibility** as the next gated lane: a future
+> **test-only / docs-fixture-bound** slice (not runtime, not live) that
+> refreshes the local mirrors to v1 and teaches the adapter to expect v1, with
+> **no** runtime wiring and **no** package export. **No Freeside Characters
+> implementation lane is authorized by Phase 45H**, and all live / runtime
+> lanes — live Dixie-backed admission, a live Dixie admission route, a live
+> Dixie call, a frozen production schema, production storage / admission /
+> auth / consent, a Discord command, public remember-this, Discord history
+> ingestion, user chat becoming memory, package exports, adapter export,
+> runtime wiring, and Finn production wiring — **remain blocked**; §7 and §8
+> stay in force.
+>
+> **Earlier status (Phase 45G, 2026-06-05 · §5x — historical / superseded as
+> latest status; still authoritative for the 45G acceptance it records).**
+> Phase 45G landed as a Freeside Characters-side **docs / decision
 > acceptance gate**
 > (`docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md`, §5x): it
 > accepts the Phase 45F no-op Dixie probe adapter / validator **only as a
@@ -1543,12 +1630,21 @@ corresponding gates above are satisfied.
 > need + a draft vocabulary), not a frozen contract. Phase 45C *then*
 > selected **Phase 45D — a docs / decision reconciliation matrix /
 > fixture-probe alignment gate** as the conservative next lane (historical;
-> the ladder has since advanced docs-only through Phase 45D → 45E → 45F →
-> **45G**, whose docs / decision acceptance gate (accepting the Phase 45F
-> no-op probe adapter / validator as a test-only semantic bridge and selecting
-> Dixie Phase 33D as the next cross-repo lane) is the latest status — see the
-> §5x banner above and §5x; the older §5w "latest status" is **historical /
-> superseded**); live admission, a live Dixie route, storage, a
+> the ladder has since advanced docs-only through Phase 45D → 45E → 45F → 45G →
+> **45H**, whose docs / decision gate
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`) responds to Dixie's
+> Phase 33E v1 probe hardening, keeps the local mirrors / adapter pinned to v0
+> without refreshing them or changing any adapter / code / test, and selects
+> **Phase 45I — Admission Wedge Dixie v1 mirror-refresh / adapter
+> compatibility** (a future test-only / docs-fixture-bound, not runtime / not
+> live, lane) as the next gated lane, is the latest status — see the §5y banner
+> above and §5y. The intermediate **Phase 45G** docs / decision acceptance gate
+> (accepting the Phase 45F no-op probe adapter / validator as a test-only
+> semantic bridge and selecting Dixie Phase 33D probe hardening as the next
+> cross-repo lane) is now **historical / superseded as the latest status** —
+> the §5x banner and §5x are the 45G record, not the current next step; the
+> older §5w "latest status" is likewise **historical / superseded**); live
+> admission, a live Dixie route, storage, a
 > command, package exports, and Finn production wiring all remain blocked.
 > The
 > intervening recommendation (**Phase 44C — a fixture-bound dev/operator
