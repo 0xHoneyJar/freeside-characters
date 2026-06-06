@@ -50,8 +50,10 @@ describe('fetchProfilePictureHttp · #87 GAP-2 spotlight pfp (fail-soft mirror o
     });
 
     expect(out).toBe(url);
-    // GETs {baseUrl}/profile/{encodeURIComponent(wallet)} — base trailing slashes trimmed.
-    expect(calledUrl).toBe(`https://inventory.0xhoneyjar.xyz/profile/${encodeURIComponent(WALLET)}`);
+    // GETs {baseUrl}/profile/{encodeURIComponent(wallet.toLowerCase())} — base trailing slashes
+    // trimmed, wallet LOWERCASED defensively so a checksummed address can't 404 a case-sensitive
+    // inventory-api (WALLET is intentionally mixed-case → this locks the normalization).
+    expect(calledUrl).toBe(`https://inventory.0xhoneyjar.xyz/profile/${encodeURIComponent(WALLET.toLowerCase())}`);
   });
 
   test('trims trailing slashes on baseUrl before composing the route', async () => {
@@ -72,7 +74,7 @@ describe('fetchProfilePictureHttp · #87 GAP-2 spotlight pfp (fail-soft mirror o
       doFetch,
       logger: silentLogger,
     });
-    expect(calledUrl).toBe(`https://inventory.0xhoneyjar.xyz/profile/${encodeURIComponent(WALLET)}`);
+    expect(calledUrl).toBe(`https://inventory.0xhoneyjar.xyz/profile/${encodeURIComponent(WALLET.toLowerCase())}`);
   });
 
   test('imageUrl: null in the body → null (no pfp on file)', async () => {

@@ -481,7 +481,10 @@ export async function resolveInventoryPfps(
     // Key by lowercased wallet so the synchronous resolvePfp lookup is case-insensitive: the
     // renderer can hand back the same wallet in a different case than score-api put on the
     // spotlight, and the PRIMARY inventory pfp must still hit (else it silently falls to DB).
-    if (r.status === 'fulfilled' && r.value.pfp) map.set(r.value.wallet.toLowerCase(), r.value.pfp);
+    // Cache fulfilled results EVEN WHEN pfp is null (known-no-pfp), so a wallet already confirmed
+    // to have no inventory pfp isn't re-fetched. Fail-soft is intact: only REJECTED resolves are
+    // dropped, and resolvePfp's `?? DB pfp` still applies (cached null is nullish → DB fallback).
+    if (r.status === 'fulfilled') map.set(r.value.wallet.toLowerCase(), r.value.pfp);
   }
   return map;
 }

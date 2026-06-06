@@ -178,7 +178,10 @@ export async function fetchProfilePictureHttp(opts: {
   // Defensive: missing baseUrl → no-op fail-soft (deploy hasn't configured it).
   if (!opts.baseUrl || opts.baseUrl.trim().length === 0) return null;
   const trimmed = opts.baseUrl.replace(/\/+$/, '');
-  const url = `${trimmed}/profile/${encodeURIComponent(opts.wallet)}`;
+  // Lowercase the wallet in the path so a checksummed (mixed-case) address can't 404 against a
+  // case-sensitive inventory-api. Matches the LOWERCASED map-key normalization the resolver does
+  // (resolveInventoryPfps) — both ends agree on canonical lowercase regardless of input case.
+  const url = `${trimmed}/profile/${encodeURIComponent(opts.wallet.toLowerCase())}`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
