@@ -8,7 +8,7 @@
 //   - this file (orchestrator integration: stub port → DigestPostResult shape)
 
 import { describe, expect, test } from 'bun:test';
-import { composeDigestPost, pickSpotlightDisplay, httpsImageUrl, enrichSpotlightPfp } from './digest-orchestrator.ts';
+import { composeDigestPost, pickSpotlightDisplay, httpsImageUrl, enrichSpotlightPfp, resolveInventoryPfps } from './digest-orchestrator.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
@@ -626,6 +626,52 @@ describe('composeDigestPost · enriched-v2 inventory-api spotlight pfp (#87 GAP-
     const json = JSON.stringify(result.payload.components);
     expect(json).not.toContain('evil.example.com'); // off-host url never reaches the card
     expect(json).toContain(DB_PFP); // fell back to DB pfp
+  });
+
+  // (g) case-insensitive map seam (adversarial review · mixed-case wallet from score-api). The
+  // PRIMARY-path claim is "inventory pfp wins" — but a silent miss falls to DB invisibly. The
+  // resolveInventoryPfps map is keyed by LOWERCASED wallet; resolvePfp lowercases on lookup. If
+  // score-api hands the same wallet back in a different case (spotlight vs rank_changes.climbed),
+  // the PRIMARY pfp must still resolve. These lock the map-key normalization directly.
+  test('(g) resolveInventoryPfps keys the map by lowercased wallet (case-insensitive PRIMARY)', async () => {
+    const MIXED = '0xAB00000000000000000000000000000000000Cd';
+    const map = await resolveInventoryPfps(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      // resolver returns a pfp for the mixed-case wallet it is handed (input is the spotlight wallet).
+      { fetchInventoryPfp: async () => INV_PFP },
+      [MIXED],
+    );
+    // stored under the lowercased key → a lowercased lookup (what resolvePfp does) hits …
+    expect(map.get(MIXED.toLowerCase())).toBe(INV_PFP);
+    // … and the raw mixed-case key is NOT what the map is keyed by (proves normalization happened,
+    // so a renderer that lowercases will always agree with this map regardless of input case).
+    expect(map.has(MIXED)).toBe(false);
+  });
+
+  test('(g2) inventory pfp resolves even when the digest spotlight wallet is UPPERCASE end-to-end', async () => {
+    // score-api returns the spotlight in a different case than the resolver normalizes to: the
+    // renderer lowercases on lookup, the map is lowercase-keyed → the PRIMARY pfp still wins.
+    const UPPER = '0xAB00000000000000000000000000000000000CD';
+    const result = await composeDigestPost(
+      config({ DIGEST_SURFACE: 'enriched-v2' }),
+      character,
+      'el-dorado',
+      invDeps({
+        fetchZoneDigest: async () =>
+          zoneDigestStub({
+            raw_stats: {
+              ...zoneDigestStub().raw_stats,
+              spotlight: { wallet: UPPER, reason: 'new_badge', details: {} },
+            },
+          }),
+        resolveSpotlightIdentity: async () => ({ handle: 'degenharu', pfp_url: DB_PFP }),
+        // inventory only knows the canonical lowercase address (real client echoes lowercase).
+        fetchInventoryPfp: async (w: string) => (w.toLowerCase() === UPPER.toLowerCase() ? INV_PFP : null),
+      }),
+    );
+    const json = JSON.stringify(result.payload.components);
+    expect(json).toContain(INV_PFP); // PRIMARY inventory pfp wins (no silent case-miss to DB)
+    expect(json).not.toContain(DB_PFP);
   });
 });
 

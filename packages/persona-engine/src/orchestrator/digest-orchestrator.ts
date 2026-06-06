@@ -202,7 +202,11 @@ async function composeEnrichedDigestPost(
     entries.map(async (e) => ({ wallet: e.spotlight.wallet, identity: await resolveIdentityFn(e.spotlight.wallet) })),
   );
   for (const r of resolved) {
-    if (r.status === 'fulfilled') identities.set(r.value.wallet, r.value.identity);
+    // key by lowercased wallet — score-api can hand back the same wallet in mixed case across
+    // its spotlight vs rank_changes.climbed fields, and the renderer looks these maps up by the
+    // entry's own wallet string. Normalizing both sides keeps the lookup case-insensitive so the
+    // resolved handle / pfp never silently miss (lowercasing never throws → fail-soft intact).
+    if (r.status === 'fulfilled') identities.set(r.value.wallet.toLowerCase(), r.value.identity);
   }
 
   // #87 GAP-2 · spotlight pfp from inventory-api (getProfilePicture over HTTP). The PRIMARY
@@ -224,9 +228,12 @@ async function composeEnrichedDigestPost(
 
   const components = buildEnrichedDigestComponentsV2(zd, {
     resolveFactorName: (id) => nameMap.get(id) ?? prettyFactorName(id),
-    resolveHandle: (w) => identities.get(w)?.handle ?? ANON_MEMBER,
+    // lowercased lookups — see the identities/inventoryPfp map-build above: both maps are keyed by
+    // lowercased wallet so a mixed-case wallet from score-api still resolves (case-insensitive,
+    // matching resolveBadge's existing convention).
+    resolveHandle: (w) => identities.get(w.toLowerCase())?.handle ?? ANON_MEMBER,
     // #87 GAP-2 · inventory-api pfp PRIMARY, freeside_auth DB pfp_url FALLBACK, null when neither.
-    resolvePfp: (w) => inventoryPfp.get(w) ?? identities.get(w)?.pfp_url ?? null,
+    resolvePfp: (w) => inventoryPfp.get(w.toLowerCase()) ?? identities.get(w.toLowerCase())?.pfp_url ?? null,
     resolveBadge: (w) => badgeMap.get(w.toLowerCase()) ?? null,
   });
 
@@ -436,8 +443,12 @@ async function fetchBadgeMap(
  * one wallet (→ DB pfp fallback, or no image), never propagates. The default resolver (the HTTP
  * client) already self-catches to null; allSettled additionally guards an injected resolver that
  * might throw. A down / undeployed / slow / malformed inventory-api can NEVER break the digest.
+ *
+ * Exported for the #87 GAP-2 case-insensitivity regression: the returned map is keyed by
+ * LOWERCASED wallet so the synchronous `resolvePfp` lookup (which lowercases too) hits even when
+ * score-api hands the same wallet back in a different case across its spotlight vs climbed fields.
  */
-async function resolveInventoryPfps(
+export async function resolveInventoryPfps(
   config: Config,
   deps: DigestOrchestratorDeps,
   wallets: readonly string[],
@@ -467,7 +478,10 @@ async function resolveInventoryPfps(
   );
   for (const r of settled) {
     // A rejected resolve (injected resolver threw) drops that wallet → DB fallback applies.
-    if (r.status === 'fulfilled' && r.value.pfp) map.set(r.value.wallet, r.value.pfp);
+    // Key by lowercased wallet so the synchronous resolvePfp lookup is case-insensitive: the
+    // renderer can hand back the same wallet in a different case than score-api put on the
+    // spotlight, and the PRIMARY inventory pfp must still hit (else it silently falls to DB).
+    if (r.status === 'fulfilled' && r.value.pfp) map.set(r.value.wallet.toLowerCase(), r.value.pfp);
   }
   return map;
 }
