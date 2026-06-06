@@ -10,10 +10,12 @@
     "./config": "./src/config.ts",
     "./orchestrator": "./src/orchestrator/index.ts",
     "./orchestrator/imagegen": "./src/orchestrator/imagegen/index.ts",
+    "./orchestrator/freeside_auth/server": "./src/orchestrator/freeside_auth/server.ts",
     "./score": "./src/score/index.ts",
     "./score/index": "./src/score/index.ts",
     "./score/types": "./src/score/types.ts",
     "./score/client": "./src/score/client.ts",
+    "./score/community-client": "./src/score/community-client.ts",
     "./compose/digest": "./src/compose/digest.ts",
     "./compose/voice-brief": "./src/compose/voice-brief.ts",
     "./compose/voice-memory": "./src/compose/voice-memory.ts",
@@ -26,14 +28,16 @@
     "./events/announce-mint": "./src/events/announce-mint.ts",
     "./events/mint-announcement-render": "./src/events/mint-announcement-render.ts",
     "./recall-wedge/multi-surface-recall-harness": "./src/recall-wedge/multi-surface-recall-harness.ts",
-    "./recall-wedge/live-dixie-client": "./src/recall-wedge/live-dixie-client.ts"
+    "./recall-wedge/live-dixie-client": "./src/recall-wedge/live-dixie-client.ts",
+    "./onboarding": "./src/onboarding/index.ts",
+    "./onboarding/verify-card": "./src/onboarding/verify-card.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#56585fd132941f9387b53d4916c905619dd0e8ea",
+    "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#68f5a89cb02c6b3ddf5ab14a1d65753bc02bd9fe",
     "@0xhoneyjar/medium-registry": "^0.2.0",
     "@effect/schema": "^0.75.0",
     "@noble/curves": "^1.7.0",

@@ -56,6 +56,19 @@ const ConfigSchema = z.object({
    *  `TENANT_SCORE_API_KEY` env. Unset = direct route (no gateway gate). */
   SCORE_BEARER: z.string().optional(),
 
+  // ─── shadow-onboarding LIVE ScoreSource (bd-tfl) ──────────────────────
+  /**
+   * Community-scoped score-api key for the Purupuru tier read (x-api-key). Its
+   * `api_key_community_scope.allowedCommunities` must include `purupuru`. This
+   * is the LIVE/MOCK FLAG for the shadow ScoreSource adapter:
+   *   set   → LIVE ScoreSource (reads real Purupuru tiers from score-api REST)
+   *   unset → MOCK ScoreSource (default; shadow preview works with no
+   *           score-api provisioning).
+   * See apps/bot/src/shadow/score-source.live.ts + composition-root.ts. */
+  SCORE_PURUPURU_API_KEY: z.string().optional(),
+  /** Community slug for the LIVE ScoreSource read. Defaults to `purupuru`. */
+  SCORE_PURUPURU_COMMUNITY: z.string().default('purupuru'),
+
   // ─── codex-mcp (gumi — mibera-codex lookup, public, no auth) ──────────
   /**
    * HTTP base URL of the codex MCP server. When set, the orchestrator

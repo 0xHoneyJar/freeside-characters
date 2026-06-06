@@ -19,6 +19,8 @@ import { ZONE_REGISTRY } from '../../../domain/zone-registry.ts';
 import { buildBillboardComponentsV2, dimDisplay } from './rich-render.ts';
 import { stripEmDashes } from '../../core/billboard-surface.ts';
 import { RUGGY_AVATAR_URL } from './present.ts';
+import { buildEnrichedMintAnnouncement } from '../../../events/mint-announcement-render.ts';
+import { buildVerifyCard } from '../../../onboarding/verify-card.ts';
 
 // Components V2 type ids
 const TEXT = 10;
@@ -140,6 +142,50 @@ export function galleryEnriched(s: DigestSnapshot): unknown[] {
   ]);
 }
 
+/** mint — the LIVE shadow-mint announcement, via the REAL `buildEnrichedMintAnnouncement`
+ *  renderer (events/mint-announcement-render.ts). This production surface had NO viewing path
+ *  until now (the prior 'pop-in' item was a spotlight stand-in, not the real mint card). Fixture
+ *  = an enriched Mibera Shadow mint (nym + image + traits); the fail-soft prod variant ships the
+ *  same Container minus the image/traits blocks. Ignores `s` — mints aren't zone-digest-shaped. */
+export function galleryMint(_s: DigestSnapshot): unknown[] {
+  const rendered = buildEnrichedMintAnnouncement({
+    displayName: 'velvetfang',
+    collection: 'Mibera Shadow',
+    tokenId: '234',
+    // stand-in image (resolvable) so the gallery renders the Thumbnail slot, not a broken
+    // 404 — the real mibera-shadow image resolves via inventory-api (blocked, inventory-api#8).
+    imageUrl: RUGGY_AVATAR_URL,
+    traits: [
+      { trait_type: 'Element', value: 'Shadow' },
+      { trait_type: 'Archetype', value: 'Wanderer' },
+      { trait_type: 'Era', value: 'Owsley' },
+      { trait_type: 'Swag', value: 'A' },
+    ],
+    txHash: '0x' + 'ab'.repeat(32),
+    chainId: 80094,
+    emittedAt: '2026-05-29T12:00:00Z',
+  });
+  return rendered.components as unknown[];
+}
+
+/** verify — the onboarding verify card (C1 · cycle-009). A Container with a custom_id button
+ *  (NOT a URL button) — the click is a MESSAGE_COMPONENT the bot receives + binds to the
+ *  clicker's discord_id (C2 dispatch). Shown in the gallery so the onboarding surface is viewable
+ *  alongside the scheduled/chat shapes. Ignores `s` — onboarding isn't zone-digest-shaped. */
+export function galleryVerify(_s: DigestSnapshot): unknown[] {
+  return buildVerifyCard();
+}
+
+/** reply — a chat-mode reply (composeReply path · single-turn, no tools), delivered as Pattern-B
+ *  webhook plain text. Representative two-beat in ruggy's voice; in prod this is LLM-generated per
+ *  the invoker's prompt. Shown so the gallery covers the chat surface, not just scheduled posts. */
+export function galleryReplyVoice(_s: DigestSnapshot): string {
+  return (
+    "owsley's been quiet since the weekend, yeah. couple traces overnight but nothing that moved the needle.\n\n" +
+    "if the liquid-backing crew stirs again i'll flag it."
+  );
+}
+
 /** A gallery item renders EITHER a Components V2 layout OR a plain voice-text message (micro). */
 export interface GalleryRender {
   readonly components?: unknown[];
@@ -161,4 +207,7 @@ export const POST_TYPE_GALLERY: ReadonlyArray<GalleryItem> = [
   { postType: 'question', label: 'question · invitation + thumbnail section', build: (s) => ({ components: galleryQuestion(s) }) },
   { postType: 'callout', label: 'callout · anomaly alert', build: (s) => ({ components: galleryCallout(s) }) },
   { postType: 'pop-in', label: 'pop-in · event spotlight', build: (s) => ({ components: gallerySpotlight(s) }) },
+  { postType: 'mint', label: 'mint · LIVE shadow-mint announcement (real renderer · nym+image+traits)', build: (s) => ({ components: galleryMint(s) }) },
+  { postType: 'reply', label: 'reply · chat-mode (ruggy voice · plain text · Pattern B webhook)', build: (s) => ({ text: galleryReplyVoice(s) }) },
+  { postType: 'verify', label: 'verify · onboarding card (C1 · custom_id button · cycle-009)', build: (s) => ({ components: galleryVerify(s) }) },
 ];

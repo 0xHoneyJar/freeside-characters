@@ -543,6 +543,24 @@ export function buildCommandSet(
     ],
   });
 
+  // bd-71y / bd-atm — the voiceless CM `/role-sync` admin command. System command
+  // (NOT character-bound), routed by dispatch.ts via ROLE_SYNC_COMMAND_NAME. The
+  // `mode` option (read by role-sync-interaction.ts: SHADOW preview default | LIVE
+  // apply) is SAFE-BY-DEFAULT — any non-LIVE value resolves to SHADOW. Authz +
+  // shadow/live gating live in runTierRoleGoLive; this only registers the surface.
+  commands.push({
+    name: 'role-sync',
+    description: 'preview or apply tier-to-role assignment (admin, shadow-first)',
+    options: [
+      {
+        name: 'mode',
+        description: 'SHADOW (preview, default) or LIVE (apply)',
+        type: STRING_OPTION_TYPE,
+        required: false,
+      } as unknown as CommandOption,
+    ],
+  });
+
   return commands;
 }
 

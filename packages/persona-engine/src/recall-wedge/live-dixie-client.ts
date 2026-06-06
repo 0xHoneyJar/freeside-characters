@@ -34,6 +34,16 @@
 //     (HTTP refusal classes + raw_reasons shape);
 //   - ../loa-dixie/app/tests/integration/recall-intake/route.test.ts (proven
 //     wire shape; Bearer/wallet-bridge auth; required headers).
+//   - ../loa-dixie/app/src/services/straylight-recall-intake/dev-seeded-estate.ts
+//     (Phase 32K dev/operator seeded estate — PUBLIC, non-secret signer /
+//     keyring labels exported so a caller can build a self-consistent
+//     `dev_signature`; the seed stores no secret and the dev signature carries
+//     no cryptographic authority);
+//   - ../loa-dixie/app/tests/integration/recall-intake/dev-seeded-live-estate.test.ts
+//     (Phase 32K dev-sign algorithm: canonical sorted-key JSON → sha256 →
+//     hmac_sha256 keyed by the public key_ref label).
+
+import { createHash, createHmac } from "node:crypto";
 
 // -- classification vocabulary ---------------------------------------------
 
@@ -519,6 +529,108 @@ export function buildLiveDixieRecallRequestPlan(
     body: requestBody,
     idempotencyKey,
     fingerprint: fingerprintForBody(requestBody),
+  };
+}
+
+// -- Phase 32K dev/operator seeded-estate signature ------------------------
+//
+// Dixie Phase 32K (../loa-dixie/.../dev-seeded-estate.ts) seeds a default-off,
+// dev/operator-only estate whose keyring carries a single signer entry. The
+// signer/keyring labels below are PUBLIC, non-secret identifiers that Dixie
+// EXPORTS precisely so a caller can construct a self-consistent
+// `dev_signature` envelope. They are constants here (not env-driven, not
+// secrets): the seed contract fixes the exact strings, the seed stores no
+// secret, and a `dev_signature` carries no cryptographic authority — it is
+// development-only and only accepted when Dixie's own seed gate is on. The
+// HMAC "key" is the public `key_ref` LABEL, not key material.
+//
+// The dev signature is verified by Dixie's Straylight runtime via
+// `signatures.ts#verifyEnvelopeSelfConsistency`, which recomputes the hash
+// from the request's canonical recall payload and the HMAC from the
+// envelope's `key_ref` — so the payload we sign here must mirror exactly the
+// payload Dixie reconstructs (the five fields below), and the request body
+// must carry the same field values.
+export const RECALL_DEV_SEED_SIGNER_ID =
+  "signer:dixie-dev-seeded-operator" as const;
+export const RECALL_DEV_SEED_SIGNER_TYPE = "actor_controller" as const;
+export const RECALL_DEV_SEED_KEY_REF =
+  "dev-seed-key:dixie-operator-smoke" as const;
+
+// The EXACT canonical payload the dev signature is computed over — these five
+// keys and no others, mirroring Dixie Phase 32K's `buildSignedBody`
+// (`actor_id`, `estate_id`, `task`, `environment_frame`, `risk_profile`).
+export interface DevSeededSignaturePayload {
+  readonly actor_id: string;
+  readonly estate_id: string;
+  readonly task: string;
+  readonly environment_frame: string;
+  readonly risk_profile: string;
+}
+
+// `sha256:<hex>` over the canonical sorted-key JSON of the payload. Uses the
+// same `stableStringify` canonicalizer the fingerprint path uses; it is
+// byte-identical to Dixie's `canonicalize` for a flat all-string payload
+// (sorted keys, JSON-encoded string values).
+export function computeDevSeededSignedPayloadHash(
+  payload: DevSeededSignaturePayload,
+): string {
+  const canonical = stableStringify(payload);
+  return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+}
+
+// `dev:<hex>` where `<hex>` = hmac_sha256(key_ref, signed_payload_hash),
+// mirroring Dixie Phase 32K's `devSignatureFor`.
+export function computeDevSeededSignature(
+  keyRef: string,
+  signedPayloadHash: string,
+): string {
+  return `dev:${createHmac("sha256", keyRef).update(signedPayloadHash).digest("hex")}`;
+}
+
+export interface BuildDevSeededSignatureInput {
+  readonly wallet: string;
+  readonly task: string;
+  readonly environmentFrame: LiveRecallEnvironmentFrame;
+  readonly riskProfile: LiveRecallRiskLevel;
+  readonly signatureId: string;
+  readonly signedAt: string;
+  // Optional overrides default to the public dev-seed labels above. Present so
+  // a future operator-seeded tenant with different labels can be driven
+  // without forking this helper; the demo path uses the defaults.
+  readonly signerId?: string;
+  readonly signerType?: LiveRecallSignatureEnvelopeInput["signer_type"];
+  readonly keyRef?: string;
+}
+
+// Build a fully self-consistent `dev_signature` envelope for the Phase 32K
+// dev/operator seeded estate. The signed payload binds
+// `actor_id === estate_id === wallet` (the route's authoritative-tenant rule),
+// so the hash Dixie recomputes server-side over the request matches. No secret
+// is read or stored; the signature is computed entirely from the public
+// labels and the (public-shaped) payload.
+export function buildDevSeededRecallSignature(
+  input: BuildDevSeededSignatureInput,
+): LiveRecallSignatureEnvelopeInput {
+  const signerId = input.signerId ?? RECALL_DEV_SEED_SIGNER_ID;
+  const signerType = input.signerType ?? RECALL_DEV_SEED_SIGNER_TYPE;
+  const keyRef = input.keyRef ?? RECALL_DEV_SEED_KEY_REF;
+  const signed_payload_hash = computeDevSeededSignedPayloadHash({
+    actor_id: input.wallet,
+    estate_id: input.wallet,
+    task: input.task,
+    environment_frame: input.environmentFrame,
+    risk_profile: input.riskProfile,
+  });
+  const signature = computeDevSeededSignature(keyRef, signed_payload_hash);
+  return {
+    signature_id: input.signatureId,
+    signer_id: signerId,
+    signer_type: signerType,
+    signature_type: "dev_signature",
+    signed_payload_hash,
+    signature,
+    signed_at: input.signedAt,
+    key_ref: keyRef,
   };
 }
 

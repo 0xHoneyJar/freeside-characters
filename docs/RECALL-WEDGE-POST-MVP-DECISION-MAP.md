@@ -680,6 +680,865 @@ This addendum does not duplicate the Phase 41C runbook; it only records
 that the Phase 41B live command now has an operational runbook and that
 the next acceptance step is a future Phase 41D, not Phase 41C.
 
+### 5l. Phase 41D addendum — controlled live-Dixie Discord smoke test accepted; safe wiring + fail-closed only, no served recall
+
+> Added by Phase 41D
+> (`docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-SMOKE-TEST-ACCEPTANCE.md`).
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 41D (2026-05-30):
+
+- **Phase 41D records controlled operator smoke-test acceptance for the
+  live command.** A human operator deployed Dixie live (Railway, healthy
+  service + Postgres, `GET /api/health` → 200), wired the **Freeside
+  Characters** service with the live Dixie env, and invoked
+  `/recall-wedge-live-demo` in one configured guild. The live path
+  reached the Dixie `/api/recall/intake` seam and **fail-closed safely**.
+- **It is docs-only.** It adds no source, test, package, lockfile,
+  fixture, config, CI, or generated change, and no handler /
+  registration / dispatch behavior change.
+- **It accepts safe wiring + fail-closed rendering, not served recall.**
+  The authenticated intake reached the Straylight seam and returned
+  `seam.storage_unavailable`; the command classified it as
+  `upstream_unavailable` and rendered an ephemeral operator-safe summary
+  (`classification` / `outcome` / `route` / `reason`) with **no
+  `raw_reasons`, no raw payload, no IDs / tokens / tenant / debug
+  material**.
+- **The current blocker for served recall is the unseeded live estate /
+  storage state.** Until it is seeded (and the seeding / admission path
+  is itself designed and gated — §7), the live command can prove safe
+  reach + safe fail-closed, not served recall content.
+- **No production / public claim, no Finn-healthy claim.** The run does
+  not claim production rollout, public recall, served memory, healthy
+  Finn integration (Finn was intentionally unreachable), persistent
+  production storage / admission, or cross-user auth / consent.
+- **Two documented operational caveats.** Startup auto-publish can remove
+  the dev-only live command (register after restart; do not restart
+  before invocation); and the manually minted Dixie JWT is short-lived
+  (refresh + restart before re-running if expired).
+- **Next decision options are recorded, none authorized here:** preserve
+  as controlled smoke acceptance; harden the runbook (docs-only); a tiny
+  operational patch so startup auto-publish does not erase the gated dev
+  command; design a seeded live estate / storage path; design a
+  longer-lived / safer dev service-token path; keep public rollout
+  blocked.
+- **Public-channel-visible recall, public recall, served memory, memory
+  admission, storage / admission, production / public rollout, Telegram /
+  private chat, LLM / voice, candidate writes, "remember this," cross-user
+  auth / consent, direct Finn runtime / audit wiring beyond existing
+  seams, and public renderer expansion all remain blocked** behind
+  separate later gates.
+
+This addendum does not duplicate the Phase 41D acceptance report; it only
+records that a controlled live-Dixie Discord run was accepted for safe
+wiring + fail-closed rendering, that served recall remains blocked on the
+unseeded estate / storage state, and that the **recommended next phase**
+answer is preserve / harden docs now, with seeded-storage and
+safer-token work sequenced later under their own gates.
+
+---
+
+### 5m. Phase 42A addendum — next MVP need is a seeded dev/operator live estate, not registration / token hardening
+
+> Added by Phase 42A
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md`), 2026-05-30.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 42A:
+
+- **Phase 42A is docs / decision gate only.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change, and no
+  handler / registration / dispatch / seed / storage change. It implements
+  nothing and seeds nothing.
+- **It selects the next MVP need: a seeded dev/operator live estate /
+  storage fixture.** Phase 41D proved the pipe works (live wiring, Dixie
+  reach, auth path, fail-closed classification, no-leak Discord render)
+  but fail-closed on `seam.storage_unavailable` because the live estate /
+  storage state is unseeded. The next meaningful MVP step is seeding a
+  tightly scoped dev/operator estate so the live path can prove a **safe
+  served live recall result**, not command-registration hardening and not
+  service-token hardening.
+- **It authorizes only a future seeded-estate lane (a future Phase 42B).**
+  The seed must be one dev/operator (or narrowly scoped fixture) estate
+  with one or a few reviewed deterministic assertions, deterministic /
+  reviewed / idempotent / safe-to-rerun, committing no secrets / live IDs
+  / tokens / URLs / keys, with tests / guards before any PR acceptance.
+  Seeded live memory must be a reviewed operator/dev fixture, **not user
+  chat ingestion**. It stays inside this doc's §6 (live Dixie client) and
+  §7 (live memory admission) gates.
+- **The accepted target proof is served live recall:** the controlled
+  operator `/recall-wedge-live-demo` path calls live Dixie, Dixie reads a
+  seeded live estate, Straylight returns a governed non-empty recall
+  result classified `served`, Freeside Characters renders only public /
+  operator-safe fields, and no raw / private / debug / source material
+  leaks.
+- **Priority ranking locked:** seeded live estate / storage first;
+  service-token hardening second (only if it becomes a hard blocker for
+  repeated smoke, behind its own decision); command-registration
+  hardening third (behind its own decision); public rollout remains
+  blocked throughout.
+- **Blocked work stays blocked.** Production memory admission,
+  candidate-memory writes, "remember this," arbitrary user writes, live
+  Discord message ingestion / history-as-memory, cross-user auth /
+  consent, public recall, public channel-visible recall, served recall as
+  a shipped capability, Telegram, private chat, LLM rewriting, character
+  voice, public renderer expansion, and Finn integration remain blocked
+  behind separate later gates. Phase 42A authorizes none of them and makes
+  no served-memory acceptance claim.
+- **Next decision options:** Phase 42B seeded live estate / storage design
+  or fixture spike (recommended); a separate token-hardening gate; a
+  separate command-registration-hardening gate; or stop and preserve Phase
+  41D as safe-failure acceptance.
+
+This addendum does not duplicate the Phase 42A gate doc; it only updates
+the post-MVP option matrix's **next-MVP-need** answer from "preserve /
+harden docs now, seeded-storage later" (Phase 41D §5l) to "a seeded
+dev/operator live estate / storage fixture (future Phase 42B) is the
+selected next MVP step, ahead of token and registration hardening, to
+prove a safe served live recall result."
+
+---
+
+### 5n. Phase 42D addendum — controlled dev/operator seeded live recall accepted; live `served` from Discord, not fixture-only; Admission Wedge is the next product wedge
+
+> Added by Phase 42D
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md`),
+> 2026-05-31. Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 42D:
+
+- **Phase 42D is docs / smoke-test acceptance only.** It adds no source,
+  test, package, lockfile, fixture, config, CI, or generated change, and no
+  handler / registration / dispatch / seed / storage change. It records a
+  single controlled dev/operator run.
+- **The seeded-estate lane Phase 42A selected (§5m) has been exercised and
+  accepted as served.** The lane resolved across the substrate boundary as:
+  Dixie-side seeding (direct Dixie Phase 32K v4b seeded smoke) + Freeside
+  Characters Phase 42B (safe pre-Dixie gate diagnostics) + Phase 42C
+  (seeded request / signature alignment), accepted here as Phase 42D. No
+  Phase 42A seed constraint was relaxed.
+- **The direct Dixie Phase 32K (v4b) seeded smoke passed** (off-Discord,
+  precondition): allowlist HTTP 201, token verify HTTP 200, recall HTTP
+  200, `outcome = served`, recall pack present, receipt present, raw
+  reasons absent.
+- **The Discord `/recall-wedge-live-demo` smoke passed**: an allowlisted
+  operator invoked it in the configured guild; the gated handler lazily
+  loaded the Phase 37C client; the client called live Dixie with the Phase
+  42C seeded-aligned request; Dixie's service token / seeded signer /
+  keyring accepted the call and read the seeded dev/operator estate; the
+  result classified `served` and rendered an **ephemeral** operator-safe
+  summary (`classification` / `outcome` / `route` / `reason` — all
+  `served` / `/api/recall/intake`).
+- **No leak.** The Discord output exposed **no** `raw_reasons`, raw Dixie
+  payload, recall pack body, receipt body, bounded-store scope, tenant /
+  debug material, JWT / token, seeded assertion IDs, stack traces, or
+  private IDs; output was guild-scoped, operator-gated, ephemeral, and
+  never public-channel-visible.
+- **MVP status: the live seeded recall proof is accepted as a controlled
+  dev/operator seeded live recall — not as production memory, production
+  memory admission, durable production storage, user-chat ingestion, or
+  public recall.** The current MVP proof is now live, not fixture-only. The
+  Phase 41D safe-fail-closed baseline still holds (seeding added the served
+  case without removing the safe-failure case).
+- **Does not prove:** production memory admission, user chat becoming
+  memory, remember-this / candidate writes, Discord history ingestion,
+  durable production storage, production auth / consent, cross-user consent
+  / sharing, public rollout, public-channel recall, Telegram / private-chat
+  surfaces, LLM rewriting, character voice rendering, or forget / revoke /
+  correction UI. Everything in §5l / §5m's blocked lists and §7 remains
+  blocked.
+- **Recommended next decision: open a docs-only Admission Wedge decision
+  gate** (e.g. `RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md`),
+  scoping the safe future shape of an admission wedge under the §7 gates —
+  **not** full production Straylight all at once. Phase 42D implements no
+  admission. Token-hardening and command-registration-hardening stay behind
+  their own separate decisions; public rollout stays blocked.
+
+This addendum does not duplicate the Phase 42D acceptance report; it only
+updates the option matrix's **proven-state** answer from "seeded estate
+selected as the next MVP need" (Phase 42A §5m) to "a controlled
+dev/operator seeded live recall has been served through Dixie and safely
+summarized in Discord, and is accepted — with the Admission Wedge
+decision-gate as the recommended next product wedge."
+
+---
+
+### 5o. Phase 43A addendum — Admission Wedge MVP selected as the next product wedge; write/admission half, not full production Straylight
+
+> Added by Phase 43A
+> (`docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md`),
+> 2026-05-31. Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 43A:
+
+- **Phase 43A is docs / decision gate only.** It adds no source, test,
+  package, lockfile, fixture, config, CI, or generated change, and no
+  command / Dixie route / Straylight store / seed / admission / memory
+  write. It **selects the next product wedge**; it does not implement it.
+- **The next wedge is the Admission Wedge MVP, not full production
+  Straylight.** Recall Wedge (accepted Phase 42D, §5n) proved read/recall:
+  already-admitted or seeded continuity state can be recalled safely
+  through a live Discord surface. The Admission Wedge is the missing
+  write/admission half: a candidate memory becomes admitted continuity
+  state through an explicit governed admission transition, then is recalled
+  later through the already-accepted Recall Wedge path. The product is not
+  real memory until there is a governed path for something to *become*
+  memory — but this is built as a **bounded second wedge**, not a giant
+  production system.
+- **Core invariant fixed:** candidate memory is not admitted memory;
+  candidate memory must not be recallable as governed continuity until an
+  explicit admission transition accepts it. No implicit promotion (consistent
+  with §7's raw → candidate → admitted separation); rejected candidates
+  never become recallable.
+- **Implementation lanes ranked (none authorized here):** Lane A —
+  fixture / operator admission packet (safest, recommended first); Lane B —
+  dev/operator-only explicit candidate command (a dev-only
+  `/remember-this`, riskier, separately gated, later); Lane C — automatic
+  Discord chat ingestion (**blocked**, §8); Lane D — full production
+  Straylight admission / storage / auth / consent (**blocked for now**,
+  reachable only under §7 in full).
+- **Posture held:** storage stays fixture / dev-operator deterministic
+  packet (durable Postgres-backed production estate storage remains later,
+  §7); authority stays synthetic / operator-dev only (cross-user consent
+  and production auth remain blocked); no public-channel output, no public
+  remember-this, no automatic memory from chat, no ambient listening, no raw
+  candidate payloads in public output.
+- **Cross-repo boundaries (decision level only, no implementation
+  authorized):** Straylight would own canonical admission / estate /
+  receipt semantics; Dixie would own the admission service route / policy /
+  auth boundary; Freeside Characters would be the live Discord surface /
+  controlled operator demo. All subject to §7 and a future gate.
+- **Does not authorize:** production memory admission, public remember-this,
+  Discord history ingestion, durable production storage, production auth /
+  consent, cross-user sharing, public rollout, a Discord command
+  implementation, a live Dixie admission route, a Straylight production
+  store, memory writes from Discord, LLM rewriting, character voice
+  admission / rendering, or forget / revoke / correction implementation.
+  Everything in §5l / §5n's blocked lists, §7, and §8 remains in force.
+- **Recommended next decision: Phase 43B — Admission Wedge MVP design
+  (docs / design or fixture-design only)** (`docs/ADMISSION-WEDGE-MVP-DESIGN.md`):
+  define the candidate / admission packet shape, the explicit admission
+  transition, the admission receipt / audit event, and the acceptance tests
+  **before** implementation, preferring Lane A — under the §7 gates. Phase
+  43A implements no admission.
+
+This addendum does not duplicate the Phase 43A gate doc; it only updates
+this section's **next-wedge** answer from "Admission Wedge decision-gate
+recommended" (Phase 42D §5n) to "Admission Wedge MVP selected as the next
+product wedge; Phase 43B docs/design-only is the recommended next step."
+
+---
+
+### 5p. Phase 44B addendum — fixture-bound reducer accepted; next lane is a fixture-bound dev/operator reducer runner (Phase 44C), not a live admission implementation
+
+> Added by Phase 44B
+> (`docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md`), 2026-06-02.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 44B:
+
+- **Phase 44B is docs / decision only.** It adds no source, test, fixture
+  JSON, package, lockfile, config, CI, or generated change, and no
+  handler / registration / dispatch / package-export change. It implements
+  nothing.
+- **It accepts the Phase 44A fixture-bound reducer (PR #156) as the local
+  reducer proof.** Phase 44A — the pure, dependency-free reducer / adapter
+  over the Phase 43C fixtures
+  (`packages/persona-engine/src/recall-wedge/admission-wedge-fixture-reducer.ts`)
+  — is accepted as sufficient proof of fixture-bound reducer semantics, the
+  local reducer input / output contract, fail-closed malformed-input
+  behavior, the safe-projection / no-leak posture, and the
+  candidate / admitted / rejected / superseded distinctions. It is **not**
+  accepted as production admission, runtime storage, a public command, or a
+  user-facing write path.
+- **It selects Phase 44C — a fixture-bound dev/operator reducer runner —
+  as the next lane.** A local script / test-only runner that reads the
+  existing Phase 43C fixtures, calls the existing Phase 44A reducer, and
+  prints operator-safe scenario summaries (before-admission excluded;
+  accepted included; rejected excluded; supersession corrected-only;
+  malformed fail-closed). It would add no fixtures, mutate no reducer
+  semantics, and call no Discord / Dixie / storage / network / LLM /
+  production auth. Exporting the reducer as a package surface is deferred;
+  a Dixie-side admission contract request is sequenced after the runner; a
+  live Dixie admission route and a dev/operator candidate command stay
+  blocked / separately gated.
+- **Live Dixie-backed admission, production storage / admission, public
+  remember-this, Discord history ingestion, user chat becoming memory,
+  production auth / consent, public rollout, Telegram / private chat, LLM /
+  voice, a forget / revoke / correction UI, and Finn production wiring all
+  remain blocked** behind separate later gates. Phase 44B expands the Phase
+  43A / 43B authorization in no way, and §7 (live memory admission gates)
+  and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 44B gate doc; it only updates
+this section's **next-lane** answer to "the Phase 44A fixture-bound
+reducer is accepted as the local reducer proof, and the next lane is a
+fixture-bound dev/operator reducer runner (Phase 44C), not a live
+admission implementation."
+
+---
+
+### 5q. Phase 44C addendum — fixture-bound dev/operator reducer runner added; runner only, no live admission
+
+> Added by Phase 44C, 2026-06-02. Targeted addendum, not a rewrite of this
+> section.
+
+Status as of Phase 44C:
+
+- **Phase 44C implements the Option A lane Phase 44B selected (§5p).** It
+  adds a local dev/operator runner
+  (`packages/persona-engine/src/recall-wedge/run-admission-wedge-fixture-demo.ts`
+  + `.test.ts`) that *reads* the existing Phase 43C fixtures and *calls* the
+  existing Phase 44A reducer to print operator-safe scenario summaries
+  (before-admission excluded; accepted included; rejected excluded;
+  supersession corrected-only; a synthetic malformed fail-closed case
+  constructed in memory, never written to fixture JSON). Each summary carries
+  only safe fields — scenario name, outcome, stable reducer reason code,
+  short fixture ids, an audit-link presence boolean, a canned one-liner — and
+  is sealed through the reducer's own no-leak scan.
+- **It mutates no fixture and reimplements no reducer semantics.** The runner
+  reads the Phase 43C fixtures read-only and composes the Phase 44A reducer;
+  it is the analogue of the accepted Recall Wedge Phase 35B dev/operator
+  runner.
+- **It is wired into no runtime path.** The runner is imported only by its
+  own test and a local `import.meta.main` CLI guard; it is not exported from
+  the package surface and is not reachable from Discord, Dixie, the renderer,
+  dispatch, startup, or command registration.
+- **Live Dixie-backed admission, production storage / admission, public
+  remember-this, Discord history ingestion, user chat becoming memory,
+  production auth / consent, public rollout, Telegram / private chat, LLM /
+  voice, a forget / revoke / correction UI, package exports, and Finn
+  production wiring all remain blocked** behind separate later gates. Phase
+  44C expands the Phase 43A / 43B / 44B authorization in no way, and §7 (live
+  memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 44C status note in
+`docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md` §12; it only records that
+the Phase 44B-selected runner lane is now implemented as a fixture-bound
+dev/operator runner, not a live admission implementation.
+
+---
+
+### 5r. Phase 44D addendum — fixture-bound runner accepted; next lane is a docs/cross-repo Dixie-side admission contract request (Phase 45A), not a live admission implementation
+
+> Added by Phase 44D
+> (`docs/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md`), 2026-06-02.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 44D:
+
+- **Phase 44D is docs / decision only.** It adds no source, test, fixture
+  JSON, package, lockfile, config, CI, or generated change, and no
+  handler / registration / dispatch / package-export change. It implements
+  nothing.
+- **It accepts the Phase 44C fixture-bound dev/operator reducer runner
+  (PR #158) as the local runner proof.** The runner
+  (`packages/persona-engine/src/recall-wedge/run-admission-wedge-fixture-demo.ts`)
+  — which *reads* the Phase 43C fixtures and *calls* the Phase 44A reducer
+  to print operator-safe scenario summaries (before-admission excluded;
+  accepted included; rejected excluded; supersession corrected-only;
+  malformed fail-closed) — is accepted as sufficient proof of fixture-bound
+  operator-readable runner behavior, the local demo / report output, the
+  five safe scenario summaries, the no-leak runner output posture, reducer
+  integration without runtime wiring, and the end-to-end local proof stack
+  (fixtures → reducer → runner). It is **not** accepted as production
+  admission, runtime storage, live Dixie admission, a public command, a
+  user-facing write path, or platform-level admission UX.
+- **It selects Phase 45A — a Dixie-side Admission Wedge contract request /
+  handoff — as the next lane.** A docs / cross-repo request artifact,
+  authored on the Freeside Characters side, that summarizes the proof stack
+  (43B design · 43C fixtures · 44A reducer · 44C runner), enumerates the
+  candidate / admitted / rejected / superseded semantics, and asks the
+  Dixie / Straylight owners to define or accept a live admission contract
+  *later* — carrying forward the invariant that candidate memory is not
+  admitted memory until an explicit admission transition accepts it. It
+  authorizes no implementation in any repo. Local hardening / an operator
+  runbook is deferred; a live Dixie admission route and a dev/operator
+  candidate command stay blocked / separately gated; a package export is
+  deferred until a consumer requires it.
+- **Live Dixie-backed admission, a Dixie-owned admission contract,
+  production storage / admission, public remember-this, Discord history
+  ingestion, user chat becoming memory, production auth / consent, public
+  rollout, Telegram / private chat, LLM / voice, a forget / revoke /
+  correction UI, package exports, and Finn production wiring all remain
+  blocked** behind separate later gates. Phase 44D expands the Phase 43A /
+  43B / 44B / 44C authorization in no way, and §7 (live memory admission
+  gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 44D gate doc; it only updates
+this section's **next-lane** answer to "the Phase 44C fixture-bound runner
+is accepted as the local runner proof, and the next lane is a docs /
+cross-repo Dixie-side admission contract request (Phase 45A), not a live
+admission implementation."
+
+---
+
+### 5s. Phase 45A addendum — Dixie-side admission contract request authored; cross-repo request only, no live admission implementation
+
+> Added by Phase 45A
+> (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`), 2026-06-02.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 45A:
+
+- **Phase 45A is a docs / cross-repo request only.** It adds no source,
+  test, fixture JSON, package, lockfile, config, CI, or generated change,
+  and no handler / registration / dispatch / package-export change. It
+  implements nothing in any repo and changes no Dixie code.
+- **It authors the Phase 44D-selected lane (§5r):** a Freeside
+  Characters-side request / handoff
+  (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`) that summarizes the
+  accepted proof stack (43B design · 43C fixtures · 44A reducer · 44C
+  runner), carries the invariant that candidate memory is not admitted
+  memory until an explicit admission transition accepts it, and enumerates
+  the contract decisions it asks the Dixie / Straylight owners to define or
+  accept *later* — candidate intake envelope, explicit admission
+  transition, admitted assertion shape, rejection transition, supersession /
+  correction transition, admission receipt / audit fields, recall-eligibility
+  boundary, service-auth-vs-end-user-authorization distinction, storage /
+  admission non-goals, and no-leak public-response requirements. It also
+  carries a clearly non-authoritative proposed minimum vocabulary the owner
+  must confirm, rename, or reject.
+- **It does not claim a Dixie admission contract already exists**, accepts
+  no contract, and authorizes no implementation. The next possible phases
+  it lists but does not authorize are a Dixie-side / cross-repo contract
+  acceptance or response (Phase 45B), a Freeside Characters reconciliation
+  against an accepted contract (Phase 45C), and — only after a contract
+  exists — a later live Dixie admission route gate and a later separately
+  gated dev/operator candidate command.
+- **Live Dixie-backed admission, a Dixie-owned admission contract,
+  production storage / admission, public remember-this, Discord
+  message-history ingestion, user chat becoming memory, production auth /
+  consent, public rollout, Telegram / private chat, LLM / voice, a forget /
+  revoke / correction UI, package exports, and Finn production wiring all
+  remain blocked** behind separate later gates. Phase 45A expands the Phase
+  43A / 43B / 44B / 44C / 44D authorization in no way, and §7 (live memory
+  admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45A request doc; it only records
+that the Phase 44D-selected lane is now authored as a docs / cross-repo
+Dixie-side admission contract request, not a live admission implementation.
+
+### 5t. Phase 45C addendum — Dixie responded (Phase 33A / PR #118); Freeside reconciliation authored; reconciliation matrix is the next lane, not a live admission implementation
+
+> Added by Phase 45C
+> (`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`), 2026-06-03.
+> Targeted addendum, not a rewrite of this section.
+
+Status as of Phase 45C:
+
+- **Phase 45C is docs / reconciliation only.** It adds no source, test,
+  fixture JSON, package, lockfile, config, CI, or generated change, and no
+  handler / registration / dispatch / package-export change. It implements
+  nothing in any repo and changes no Dixie code.
+- **Dixie answered the Phase 45A request (§5s) with Phase 33A / PR #118**
+  (`../loa-dixie/docs/ADMISSION-WEDGE-CONTRACT-RESPONSE.md`), a docs-only,
+  code-inspection-grounded contract response. Dixie **accepted** the *need*
+  for a Dixie-side or cross-repo-owned Admission Wedge contract before any
+  live implementation, the core candidate / admitted invariant, the no-leak /
+  fail-closed posture, the need to reconcile candidate / admitted / rejected /
+  superseded semantics against the canonical Straylight lifecycle vocabulary
+  (its §6 maps most proposed terms onto canonical names —
+  `candidate_pending` → `proposed`, `admitted` → the `admit_assertion` /
+  `assertion_admitted` act with resulting status `active`, `rejected` /
+  `candidate_not_admitted` / `candidate_rejected` → `transition_denied`,
+  `superseded` as-is), and a provisional **draft v0** vocabulary for
+  *future* fixture / probe alignment.
+- **Dixie did not freeze a production schema and did not implement a live
+  route.** It explicitly kept storage writes, production admission /
+  auth / consent, a public command, `/remember-this`, Discord history
+  ingestion, chat-becomes-memory, package exports, LLM / voice, Finn
+  production wiring, and a forget / revoke / correction UI blocked.
+- **Phase 45C records the Freeside-side reconciliation** and selects
+  **Phase 45D — a docs / decision reconciliation matrix / fixture-probe
+  alignment gate** as the conservative next lane (compare the local 43C /
+  44A / 44C proof stack against the Dixie 33A response; enumerate
+  vocabulary / field mismatches; decide later whether to update local
+  fixtures / reducer / runner labels — implementation still blocked).
+- **Live Dixie-backed admission, a live Dixie admission route, a frozen
+  final production schema, production storage / admission / auth / consent,
+  public remember-this, Discord message-history ingestion, user chat
+  becoming memory, public rollout, Telegram / private chat, LLM / voice, a
+  forget / revoke / correction UI, package exports, and Finn production
+  wiring all remain blocked** behind separate later gates. The current
+  local fixture / reducer / runner vocabulary remains valid local proof
+  labels until a future Phase 45D explicitly reconciles them. Phase 45C
+  expands the Phase 43A / 43B / 44B / 44D / 45A authorization in no way, and
+  §7 (live memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45C reconciliation doc; it only
+records that the Dixie response is now reconciled on the Freeside side and
+that the next lane is a docs / decision reconciliation matrix gate, not a
+live admission implementation.
+
+### 5u. Phase 45D addendum — reconciliation matrix authored; fixture-probe alignment decision (Dixie-first) is the next lane, not an implementation
+
+> Added by Phase 45D
+> (`docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md`), 2026-06-03.
+> Targeted addendum, not a rewrite of this section; §5t stays in force.
+
+Status as of Phase 45D:
+
+- **Phase 45D is docs / decision · docs-planning only.** It authors the
+  reconciliation matrix the §5t / Phase 45C lane selected and adds small
+  cross-reference back-notes; it adds no source, test, fixture JSON,
+  package, lockfile, config, CI, or generated change, renames no fixture
+  label, mutates no reducer reason code, and freezes no schema.
+- **The matrix converts the Phase 45C narrative reconciliation into three
+  explicit tables** — a per-label vocabulary matrix, a per-field
+  field / shape matrix, and an A–J contract-area matrix — each pinning a
+  status and a future action against the Dixie Phase 33A direction. It
+  surfaces the 3-way `rejected` / `candidate_not_admitted` /
+  `candidate_rejected` synonym collision, the proposal-only
+  `unsupported_admission_shape` vs the emitted `unsupported_fixture_shape`,
+  the missing idempotency key, and the `admission_authority` → canonical
+  `SignerType` mismatch.
+- **Phase 45D selects Phase 45E — a fixture-probe alignment decision /
+  Dixie-first handoff (docs / decision)** as the conservative next lane,
+  with a Dixie-first posture: Dixie / Straylight own the canonical
+  vocabulary, and Dixie Phase 33B is the likely first canonical
+  fixture / probe owner. Waiting for Dixie Phase 33B with no new Freeside
+  gate is an acceptable alternative.
+- **Live Dixie-backed admission, a live Dixie admission route, a frozen
+  final production schema, production storage / admission / auth / consent,
+  public remember-this, Discord message-history ingestion, user chat
+  becoming memory, public rollout, Telegram / private chat, LLM / voice, a
+  forget / revoke / correction UI, package exports, and Finn production
+  wiring all remain blocked** behind separate later gates. The current local
+  fixture / reducer / runner vocabulary remains valid local proof labels
+  until a separately-authorized fixture / probe alignment implementation
+  changes them. Phase 45D expands the prior authorization in no way, and §7
+  (live memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45D matrix; it only records that
+the matrix is authored and that the next lane is a fixture-probe alignment
+decision / Dixie-first handoff, not a live admission implementation.
+
+---
+
+### 5v. Phase 45E addendum — Dixie Phase 33C draft probes reconciled against the local proof stack; no-op adapter / validator (Phase 45F) is the next lane, not an implementation
+
+> Added by Phase 45E
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md`), 2026-06-04.
+> Targeted addendum, not a rewrite of this section; §5u stays in force.
+
+Status as of Phase 45E:
+
+- **Phase 45E is docs / decision only.** It authors the Dixie probe
+  reconciliation / local alignment decision the §5u / Phase 45D lane selected
+  and adds small cross-reference back-notes; it adds no source, test, fixture
+  JSON, package, lockfile, config, CI, or generated change, renames no local
+  fixture label, mutates no reducer reason code, and freezes no schema. It
+  edits no `../loa-dixie` file.
+- **The Dixie-first lane landed.** Dixie **Phase 33C / PR #120** authored the
+  canonical **draft v0** Admission Wedge contract probe set
+  (`../loa-dixie/docs/admission-wedge/fixtures/`): five synthetic, public-safe
+  probes (`probe_version: dixie_admission_wedge_probe_v0`, `schema_final: false`,
+  `runtime_enabled: false`, `production_admission: false`, `public_safe: true`)
+  plus a dependency-free validator. Phase 45E maps each probe
+  (`candidate_pending_not_recallable`,
+  `accept_candidate_to_admitted_assertion`, `reject_candidate_no_assertion`,
+  `supersede_with_corrected_assertion`,
+  `malformed_or_unsafe_payload_fail_closed`) onto the local fixture / reducer /
+  runner equivalents — clean at the semantic level, with only naming / shape
+  deltas — and carries forward the pending-vs-denied nuance
+  (`candidate_not_admitted` is *pending*, not denied) and that `corrected_active`
+  is a direction, not a canonical status.
+- **Phase 45E selects Phase 45F — a narrow, future-gated, test-only or
+  docs / fixture-bound no-op Dixie probe adapter / validator** as the next
+  lane: it would consume **mirrored** Dixie probe shapes and prove they map to
+  the current local semantics, with **no** runtime wiring and **no** live Dixie
+  calls. A local fixture-label rename is deferred until an adapter proves the
+  mapping; waiting for a future Dixie Phase 33D hardening is an acceptable
+  alternative.
+- **Live Dixie-backed admission, a live Dixie admission route, a frozen final
+  production schema, production storage / admission / auth / consent, public
+  remember-this, Discord message-history ingestion, user chat becoming memory,
+  public rollout, Telegram / private chat, LLM / voice, a forget / revoke /
+  correction UI, package exports, and Finn production wiring all remain
+  blocked** behind separate later gates. The current local fixture / reducer /
+  runner vocabulary remains valid local proof labels until a separately-
+  authorized fixture / probe alignment implementation changes them; Dixie Phase
+  33C is a **draft v0**, not production schema, and Freeside Characters does not
+  own the Dixie / Straylight vocabulary. Phase 45E expands the prior
+  authorization in no way, and §7 (live memory admission gates) and §8
+  (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45E decision; it only records that
+the Dixie Phase 33C probes are reconciled against the local proof stack and
+that the next lane is a narrow no-op adapter / validator (Phase 45F), not a
+live admission implementation.
+
+---
+
+### 5w. Phase 45F addendum — no-op Dixie probe adapter / validator added; test-only / docs-fixture-bound, no runtime wiring
+
+> Added by Phase 45F, 2026-06-04. Targeted addendum, not a rewrite of this
+> section; §5v stays in force.
+
+Status as of Phase 45F:
+
+- **Phase 45F adds a test-only / docs-fixture-bound no-op adapter / validator
+  over mirrored Dixie probes.** It implements the narrow Option A lane Phase
+  45E selected (§5v): local **mirrored** copies of the Dixie Phase 33C draft v0
+  probes under `docs/admission-wedge/dixie-probes/` (clearly marked local
+  mirrors, not canonical upstream truth) plus a pure local adapter
+  (`packages/persona-engine/src/recall-wedge/admission-wedge-dixie-probe-adapter.ts`
+  + `.test.ts`) that maps the five Dixie probe scenarios
+  (`candidate_pending_not_recallable` → `before_admission_excluded`,
+  `accept_candidate_to_admitted_assertion` → `accepted_admitted_included`,
+  `reject_candidate_no_assertion` → `rejected_excluded`,
+  `supersede_with_corrected_assertion` → `supersession_corrected_only`,
+  `malformed_or_unsafe_payload_fail_closed` → `malformed_fail_closed`) onto the
+  current local proof scenarios.
+- **It proves semantic mapping only.** The adapter is pure (no fs / network /
+  env / clock / storage), imports only the pure Phase 44A reducer, and the test
+  cross-checks each mapping against the existing Phase 44A reducer's output over
+  the Phase 43C fixtures (the same scenario plans the Phase 44C runner uses) —
+  not a reimplementation. It also proves no-leak over serialized results +
+  formatted summaries and fail-closed on synthetic malformed input.
+- **It does not rename local fixtures or reducer reason codes, mutates no
+  fixture JSON, and runtime-wires nothing.** The adapter is imported only by its
+  own test, is not exported from the package surface, and is reachable from no
+  Discord / dispatch / startup / registration / renderer / live-Dixie path.
+- **Live lanes remain blocked.** Live Dixie-backed admission, a live Dixie
+  admission route, a frozen final production schema, production storage /
+  admission / auth / consent, public remember-this, Discord message-history
+  ingestion, user chat becoming memory, public rollout, Telegram / private chat,
+  LLM / voice, a forget / revoke / correction UI, package exports, and Finn
+  production wiring all remain blocked. Dixie Phase 33C stays a **draft v0**,
+  not production schema, and Freeside Characters does not own the Dixie /
+  Straylight vocabulary. Phase 45F expands the prior authorization in no way,
+  and §7 (live memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45F adapter; it only records that
+the Phase 45E-selected no-op adapter / validator lane is now implemented as a
+test-only / docs-fixture-bound mapping proof, not a live admission
+implementation.
+
+---
+
+### 5x. Phase 45G addendum — Phase 45F adapter accepted as a test-only semantic bridge; Dixie Phase 33D probe hardening is the recommended next lane, not a Freeside implementation
+
+> Added by Phase 45G
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md`), 2026-06-05.
+> Targeted addendum, not a rewrite of this section; §5w stays in force.
+
+Status as of Phase 45G:
+
+- **Phase 45G is docs / decision only.** It accepts the Phase 45F adapter /
+  validator and adds small cross-reference back-notes; it adds no source, test,
+  fixture JSON, mirrored probe, package, lockfile, config, CI, or generated
+  change, renames no local fixture label, mutates no reducer reason code,
+  mutates no fixture JSON, and freezes no schema. It edits no `../loa-dixie`
+  file.
+- **Phase 45F is accepted as a bounded semantic bridge only.** Phase 45G
+  accepts that Phase 45F proved exactly: the five Dixie probe scenarios map to
+  the local proof scenarios (`candidate_pending_not_recallable` →
+  `before_admission_excluded`, `accept_candidate_to_admitted_assertion` →
+  `accepted_admitted_included`, `reject_candidate_no_assertion` →
+  `rejected_excluded`, `supersede_with_corrected_assertion` →
+  `supersession_corrected_only`, `malformed_or_unsafe_payload_fail_closed` →
+  `malformed_fail_closed`), semantic equivalence against the Phase 44A reducer,
+  no-leak over results / summaries, fail-closed on malformed input, and the
+  not-wired / not-exported static guards. It accepts that Phase 45F proves
+  **no** production schema, live route, storage, auth / consent, command,
+  `/remember-this`, package API stability, or final vocabulary.
+- **Phase 45G selects Dixie Phase 33D — Admission Wedge probe hardening /
+  contract vocabulary refinement** as the recommended next lane: a **cross-repo
+  handoff recommendation to Dixie** (not a Freeside Characters implementation
+  authorization), recommending docs / decision or docs + non-runtime probe
+  hardening that decides whether the draft v0 probes need stricter vocabulary /
+  field / signer-authority / receipt-audit / idempotency alignment and whether a
+  Straylight primitive review is required before any live route design.
+  Freeside-side adapter hardening is low-value without a found gap; a package
+  export and an adapter export are deferred; a live client / command is blocked.
+- **Live lanes remain blocked.** Live Dixie-backed admission, a live Dixie
+  admission route, a frozen final production schema, production storage /
+  admission / auth / consent, a Discord command, public remember-this, Discord
+  message-history ingestion, user chat becoming memory, public rollout,
+  Telegram / private chat, LLM / voice, a forget / revoke / correction UI,
+  package exports, adapter export, runtime wiring, and Finn production wiring
+  all remain blocked. Dixie Phase 33C stays a **draft v0**, not production
+  schema, and Freeside Characters does not own the Dixie / Straylight
+  vocabulary. Phase 45G expands the prior authorization in no way, and §7 (live
+  memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45G decision; it only records that
+the Phase 45F adapter is accepted as a bounded test-only semantic bridge and
+that the recommended next lane is a cross-repo Dixie Phase 33D probe hardening,
+not a Freeside Characters live admission implementation.
+
+---
+
+### 5y. Phase 45H addendum — Dixie probe hardening landed as draft v1 (Dixie Phase 33E); Freeside v0 mirrors / adapter stay pinned, a future Phase 45I mirror-refresh is the recommended next lane
+
+> Added by Phase 45H
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`), 2026-06-06.
+> Targeted addendum, not a rewrite of this section; §5x stays in force.
+
+Status as of Phase 45H:
+
+- **Phase 45H is docs / decision only.** It records how Freeside Characters
+  should respond to Dixie's Phase 33E v1 probe hardening and adds small
+  cross-reference back-notes; it adds no source, test, fixture JSON, mirrored
+  probe, package, lockfile, config, CI, or generated change, refreshes no v0
+  mirror to v1, widens no adapter constant, renames no local fixture label,
+  mutates no reducer reason code, mutates no fixture JSON, and freezes no
+  schema. It edits no `../loa-dixie` file.
+- **The Dixie probe hardening Phase 45G recommended (§5x / Option D) landed
+  upstream.** Dixie Phase 33E / PR #122 bumped the five draft probes from
+  `dixie_admission_wedge_probe_v0` to `dixie_admission_wedge_probe_v1`
+  (`hardening_phase: "33E"`), added draft hardening placeholders (pending-vs-
+  denied, signer / authority draft, idempotency, receipt / audit split,
+  synthetic binding, recall eligibility, Straylight primitive review marker),
+  preserved all five Phase 33C semantic scenarios, and added no sixth probe.
+  Dixie Phase 33E is still **draft v1 — not frozen** (`schema_final: false`,
+  `canonical_schema: false`, `route_contract: false`).
+- **Freeside Characters stays pinned to v0 and gates the refresh.** The local
+  mirrored Dixie probes under `docs/admission-wedge/dixie-probes/` remain v0
+  historical / local proof mirrors, and the Phase 45F adapter still pins
+  `SUPPORTED_DIXIE_PROBE_VERSION = dixie_admission_wedge_probe_v0` and fails
+  closed (`unknown_probe_version`) on v1. Because Freeside reads local mirrors
+  and the adapter is not runtime-wired, the Dixie v1 bump breaks no Freeside
+  runtime or test — but the mirrors are now stale relative to Dixie's current
+  draft.
+- **Phase 45H selects Phase 45I — Admission Wedge Dixie v1 mirror-refresh /
+  adapter compatibility** as the recommended next lane: a future **test-only /
+  docs-fixture-bound** slice that refreshes the local mirrors to v1 (or adds a
+  named v1 mirror set), teaches the adapter to expect v1 (recommended: support
+  v1 in the main adapter, keep v0 fail-closed or historical-only), and proves
+  the v1 mappings / fail-closed / no-leak — with **no** runtime wiring and
+  **no** package export. Waiting for Dixie v2, dual v0/v1 support, a live
+  client / command, and a package export are all classified but not chosen.
+- **Live lanes remain blocked.** Live Dixie-backed admission, a live Dixie
+  admission route, a live Dixie call, a frozen final production schema,
+  production storage / admission / auth / consent, a Discord command, public
+  remember-this, Discord message-history ingestion, user chat becoming memory,
+  public rollout, Telegram / private chat, LLM / voice, a forget / revoke /
+  correction UI, package exports, adapter export, runtime wiring, and Finn
+  production wiring all remain blocked. Dixie Phase 33E stays a **draft v1**,
+  not production schema, and Freeside Characters does not own the Dixie /
+  Straylight vocabulary. Phase 45H expands the prior authorization in no way,
+  and §7 (live memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45H decision; it only records that
+Dixie probe hardening landed as draft v1, that the Freeside v0 mirrors / adapter
+stay pinned, and that the recommended next lane is a future Phase 45I v1
+mirror-refresh / adapter-compatibility slice, not a Freeside Characters live
+admission implementation.
+
+---
+
+### 5z. Phase 45I addendum — local mirrors refreshed to Dixie draft v1; adapter is v1-compatible in tests, v0 fails closed, no runtime wiring
+
+> Added by Phase 45I, 2026-06-06. Targeted addendum, not a rewrite of this
+> section; §5y is now historical / satisfied and §5x stays in force.
+
+Status as of Phase 45I:
+
+- **Phase 45I is a test-only / docs-fixture-bound implementation slice.** It
+  acted on the lane Phase 45H selected (§5y, Option A): it refreshed the five
+  local mirrored Dixie probes under `docs/admission-wedge/dixie-probes/` from
+  **draft v0** to **draft v1** (`dixie_admission_wedge_probe_v1`, mirroring Dixie
+  **Phase 33E / PR #122** — all five Phase 33C semantic scenarios preserved, no
+  sixth mirror), updated the mirror README provenance, taught the adapter to
+  expect v1, and rewrote the adapter test. It adds no package, lockfile, config,
+  CI, or generated change, mutates no existing local Admission Wedge proof
+  fixture under `docs/admission-wedge/fixtures/`, renames no local proof label,
+  mutates no reducer reason code, freezes no schema, and edits no `../loa-dixie`
+  file.
+- **The adapter is now v1-compatible in tests; v0 is unsupported / historical
+  and fails closed.** `SUPPORTED_DIXIE_PROBE_VERSION` is now
+  `dixie_admission_wedge_probe_v1`; the adapter maps the five v1 probe scenarios
+  onto the local proof scenarios (`candidate_pending_not_recallable` →
+  `before_admission_excluded`, `accept_candidate_to_admitted_assertion` →
+  `accepted_admitted_included`, `reject_candidate_no_assertion` →
+  `rejected_excluded`, `supersede_with_corrected_assertion` →
+  `supersession_corrected_only`, `malformed_or_unsafe_payload_fail_closed` →
+  `malformed_fail_closed`), and any other version — including the historical v0,
+  and a future v999 — fails closed with `unknown_probe_version` (the raw version
+  string is never echoed). The adapter dual-supports nothing.
+- **It proves semantic mapping only.** The adapter stays pure (no fs / network /
+  env / clock / storage), imports only the pure Phase 44A reducer, and the test
+  cross-checks each v1 mapping against the existing Phase 44A reducer's output
+  over the Phase 43C fixtures (the same scenario plans the Phase 44C runner
+  uses) — not a reimplementation. It also proves the v1 hardening fields
+  (pending-vs-denied, draft signer / authority, idempotency placeholder,
+  synthetic binding, receipt / audit split, Straylight primitive review marker,
+  route / canonical-schema false), no-leak over serialized v1 results +
+  formatted summaries, and fail-closed on unsupported versions and tampered
+  shapes. **v1 compatibility in tests is not production readiness.**
+- **It runtime-wires nothing.** The adapter is imported only by its own test, is
+  not exported from the package surface, and is reachable from no Discord /
+  dispatch / startup / registration / renderer / live-Dixie path.
+- **Live lanes remain blocked.** Live Dixie-backed admission, a live Dixie
+  admission route, a live Dixie call, a frozen final production schema,
+  production storage / admission / auth / consent, a Discord command, public
+  remember-this, Discord message-history ingestion, user chat becoming memory,
+  public rollout, Telegram / private chat, LLM / voice, a forget / revoke /
+  correction UI, package exports, adapter export, runtime wiring, and Finn
+  production wiring all remain blocked. Dixie Phase 33E stays a **draft v1**, not
+  production schema, and Freeside Characters does not own the Dixie / Straylight
+  vocabulary. Phase 45I expands the prior authorization in no way, and §7 (live
+  memory admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45I status notes in
+`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md` and
+`docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md`; it only records
+that the Phase 45H-selected v1 mirror-refresh / adapter-compatibility slice is
+now implemented as a test-only / docs-fixture-bound mapping proof, not a live
+admission implementation. A future Dixie probe version change requires a future
+mirror-refresh gate.
+
+### 5aa. Phase 45J addendum — Phase 45I v1 refresh accepted as a test-only proof; next lane is the Dixie Phase 33F route-contract readiness gate
+
+> Added by Phase 45J, 2026-06-06. Targeted addendum, not a rewrite of this
+> section; §5z (Phase 45I) remains the authoritative record of the refresh and
+> stays in force, §5y is historical / satisfied, and §5x stays in force.
+
+Status as of Phase 45J:
+
+- **Phase 45J is a Freeside Characters-side docs / decision-only acceptance
+  gate** (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-ACCEPTANCE-GATE.md`). It
+  **accepts** the Phase 45I v1 mirror-refresh / adapter-compatibility slice (§5z)
+  only as a **test-only / docs-fixture-bound v1 mirror and adapter compatibility
+  proof**, states what it does not prove, and selects the next lane. It mutates no
+  mirror, adapter, test, fixture, probe, or code, exports nothing, and authorizes
+  no live admission.
+- **The adapter / package / runtime stay dead-ended.** The adapter remains local
+  proof infrastructure (not runtime infrastructure), is imported only by its own
+  test, is not exported from the package surface, and is reachable from no
+  Discord / dispatch / startup / registration / renderer / live-Dixie path. The
+  refreshed v1 mirrors remain local mirrors for tests, not canonical upstream
+  truth; Dixie remains the canonical owner of the probe draft and Straylight
+  remains the canonical primitive / vocabulary owner where applicable.
+- **v1 compatibility in tests is not production readiness.** Phase 45I proved the
+  two sides agree at the semantic level across Dixie's v0 → v1 hardening; it
+  proves nothing about route contract, storage, auth / consent, idempotency,
+  signer / authority, identity binding, or any production surface.
+- **Selected next lane: Dixie Phase 33F — Admission Wedge route-contract
+  readiness gate** (a cross-repo handoff recommendation to Dixie, not a Freeside
+  Characters implementation authorization and not route design). Phase 33F should
+  decide *whether* route-contract design can begin and what preconditions remain;
+  it should not implement the route, add storage / auth / live calls, or freeze a
+  final schema.
+- **Live lanes remain blocked.** A live Dixie-backed admission route, a live Dixie
+  call, a frozen final production schema, production storage / admission / auth /
+  consent, a Discord command, public remember-this, Discord message-history
+  ingestion, user chat becoming memory, public rollout, Telegram / private chat,
+  LLM / voice, a forget / revoke / correction UI, package exports, adapter export,
+  runtime wiring, route design in Freeside Characters, and Finn production wiring
+  all remain blocked. Dixie Phase 33E stays a **draft v1**, not production schema,
+  and Freeside Characters does not own the Dixie / Straylight vocabulary.
+  Phase 45J expands the prior authorization in no way, and §7 (live memory
+  admission gates) and §8 (prohibitions) stay in force.
+
+This addendum does not duplicate the Phase 45J acceptance gate; it only records
+that the Phase 45I refresh is now **accepted** as a test-only / docs-fixture-bound
+proof and that the recommended next lane is the cross-repo Dixie Phase 33F
+route-contract readiness gate.
+
 ---
 
 ## 6. Decision gates before live Dixie client (Option C)
@@ -789,10 +1648,370 @@ corresponding gates above are satisfied.
 
 ## 9. Recommended next phase
 
-**Recommended next phase: Phase 35B — explicit dev/operator Recall
-Wedge demo runner.**
+> **Latest status (Phase 45J, 2026-06-06 · authoritative in §5aa).**
+> Phase 45J has landed as a Freeside Characters-side **docs / decision-only
+> acceptance gate**
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-ACCEPTANCE-GATE.md`, §5aa). It
+> **accepts the Phase 45I v1 mirror-refresh / adapter-compatibility slice (§5z)
+> only as a test-only / docs-fixture-bound v1 mirror and adapter compatibility
+> proof** — proving the two sides agree at the semantic level across Dixie's
+> v0 → v1 hardening, and **nothing more**. Phase 45J mutates no mirror, adapter,
+> test, fixture, probe, or code, adds no package / lockfile / config / CI /
+> generated change, edits no `../loa-dixie` file, exports nothing, and authorizes
+> no live admission. **v1 compatibility in tests is not production readiness:**
+> Phase 45I does **not** by itself prove production schema, a live admission
+> route, route-contract readiness, a storage model, production auth / consent,
+> package API stability, final vocabulary, final idempotency semantics,
+> production signer / authority semantics, production tenant / estate / actor
+> identity binding, a completed Straylight primitive review, or runtime rollout.
+> The adapter / package / runtime **remain dead-ended** — the adapter is local
+> proof infrastructure imported only by its own test, is not exported from the
+> package surface, and is reachable from no Discord / dispatch / startup /
+> registration / renderer / live-Dixie path; the refreshed v1 mirrors stay local
+> test mirrors, not canonical upstream truth. Phase 45J **selects Dixie Phase
+> 33F — Admission Wedge route-contract readiness gate** as the next recommended
+> lane: a **cross-repo handoff recommendation to Dixie**, not a Freeside
+> Characters implementation authorization, and a **route-contract readiness
+> gate** — it decides *whether* route-contract design can begin and what
+> preconditions remain, and is **not** route implementation and **not** route
+> design in Freeside Characters. Dixie remains the **canonical upstream owner**
+> of the probe draft and Straylight remains the **canonical primitive /
+> substrate vocabulary owner** where applicable; Freeside Characters does not own
+> the Dixie / Straylight vocabulary. **No Freeside Characters implementation lane
+> is authorized,** and all live / runtime lanes — a live Dixie-backed admission
+> route, a live Dixie call, a frozen final production schema, a final schema
+> freeze, production storage / admission / auth / consent, local production
+> memory admission, a Discord command, `/remember-this`, public remember-this,
+> Discord history ingestion, user chat becoming memory, public rollout, package
+> exports, adapter export, renderer / dispatch / startup / registration changes,
+> runtime wiring, route design in Freeside Characters, a route / API handler,
+> LLM / voice, a forget / revoke / correction UI, and Finn production wiring —
+> **remain blocked**; §7 (live memory admission gates) and §8 (prohibitions)
+> stay in force. Dixie Phase 33E stays a **draft v1** (not production schema),
+> and a future Dixie probe version change requires a future mirror-refresh gate.
+>
+> **Earlier status (Phase 45I, 2026-06-06 · §5z — historical / satisfied as
+> latest status; the accepted prior implementation).**
+> Phase 45I landed as a Freeside Characters-side **test-only /
+> docs-fixture-bound implementation slice** (§5z), acting on the lane Phase 45H
+> selected. It **refreshed the five local mirrored Dixie probes from draft v0 to
+> draft v1** (`dixie_admission_wedge_probe_v1`, mirroring **Dixie Phase 33E /
+> PR #122** — all five scenarios preserved, no sixth mirror), updated the mirror
+> README provenance, **bumped the Phase 45F adapter's
+> `SUPPORTED_DIXIE_PROBE_VERSION` to `dixie_admission_wedge_probe_v1`** (v0 is
+> now an unsupported / historical version that fails closed with
+> `unknown_probe_version`; the adapter dual-supports nothing), and rewrote the
+> adapter test to prove the v1 mappings, the v1 hardening fields, semantic
+> equivalence against the Phase 44A reducer over the Phase 43C fixtures, the
+> v0 / v999 unsupported-version fail-closed, the no-leak over v1 outputs, and the
+> not-wired / not-exported static guards. Phase 45I adds **no** package,
+> lockfile, config, CI, or generated change, mutates **no** existing local
+> Admission Wedge proof fixture under `docs/admission-wedge/fixtures/`, renames
+> no local proof label, mutates no reducer reason code, freezes no schema, and
+> edits no `../loa-dixie` file. **v1 compatibility in tests is not production
+> readiness** — Phase 45I does **not** by itself prove production schema, a live
+> admission route, route-contract readiness, a storage model, production auth /
+> consent, package API stability, final vocabulary, final idempotency semantics,
+> production signer / authority semantics, production tenant / estate / actor
+> identity binding, a completed Straylight primitive review, or runtime rollout.
+> Phase 45J (§5aa, the latest-status banner above) has since **accepted Phase
+> 45I only as this bounded test-only / docs-fixture-bound v1 mirror and adapter
+> compatibility proof** and selected the Dixie Phase 33F route-contract readiness
+> gate as the next lane. All live / runtime lanes — live Dixie-backed admission,
+> a live Dixie admission route, a live Dixie call, a frozen production schema,
+> production storage / admission / auth / consent, a Discord command, public
+> remember-this, Discord history ingestion, user chat becoming memory, package
+> exports, adapter export, runtime wiring, and Finn production wiring — **remain
+> blocked**; §7 and §8 stay in force. Dixie Phase 33E stays a **draft v1** (not
+> production schema), Dixie remains the canonical upstream owner of the probe
+> draft and Straylight the canonical primitive / vocabulary owner where
+> applicable, and Freeside Characters does not own the Dixie / Straylight
+> vocabulary. A future Dixie probe version change requires a future
+> mirror-refresh gate.
+>
+> **Earlier status (Phase 45H, 2026-06-06 · §5y — historical / satisfied).**
+> Phase 45H landed as a Freeside Characters-side **docs / decision gate**
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`, §5y) **responding to
+> Dixie's Phase 33E v1 probe hardening**: the Dixie probe hardening that Phase
+> 45G recommended (§5x / Option D) landed upstream as **Dixie Phase 33E /
+> PR #122**, which bumped the five draft probes from
+> `dixie_admission_wedge_probe_v0` to `dixie_admission_wedge_probe_v1` (still
+> `schema_final: false`, all five scenarios preserved, no sixth probe). Phase
+> 45H itself did **not** refresh the local mirrors or change any adapter, code,
+> or test; it recorded the Dixie v1 / Freeside v0 state and **selected Phase 45I
+> — Admission Wedge Dixie v1 mirror-refresh / adapter compatibility** as the next
+> gated lane. That selected lane has since been **satisfied by Phase 45I** (see
+> the latest-status banner above and §5z): the local mirrors are now v1 and the
+> adapter pins v1. Phase 45H authorized no Freeside Characters implementation
+> lane itself, and all live / runtime lanes remained blocked; §7 and §8 stay in
+> force.
+>
+> **Earlier status (Phase 45G, 2026-06-05 · §5x — historical / superseded as
+> latest status; still authoritative for the 45G acceptance it records).**
+> Phase 45G landed as a Freeside Characters-side **docs / decision
+> acceptance gate**
+> (`docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md`, §5x): it
+> accepts the Phase 45F no-op Dixie probe adapter / validator **only as a
+> test-only / docs-fixture-bound semantic bridge** — proving the five Dixie
+> probe scenarios map onto the Phase 44A reducer scenarios with no-leak and
+> fail-closed behaviour, and **nothing more** (no production schema, live
+> route, storage, auth / consent, command, package API stability, or final
+> vocabulary). Phase 45G adds no source, test, fixture JSON, mirrored probe,
+> adapter, reducer, runner, package, lockfile, config, CI, or generated change,
+> and edits no `../loa-dixie` file. Phase 45G **selects Dixie Phase 33D —
+> Admission Wedge probe hardening / contract vocabulary refinement** as the
+> next recommended lane: a **cross-repo handoff recommendation to Dixie**, not
+> a Freeside Characters implementation authorization. **No Freeside Characters
+> implementation lane is authorized**, and all live / runtime lanes — live
+> Dixie-backed admission, a live Dixie admission route, a frozen production
+> schema, production storage / admission / auth / consent, a Discord command,
+> public remember-this, Discord history ingestion, user chat becoming memory,
+> package exports, adapter export, runtime wiring, and Finn production wiring —
+> **remain blocked**; §7 and §8 stay in force.
+>
+> **Earlier status (Phase 45F, 2026-06-04 · §5w — historical / superseded).**
+> Phase 45F landed the test-only / docs-fixture-bound **no-op Dixie probe
+> adapter / validator over local mirrored Dixie probes** (§5w) — local mirrors
+> of the Dixie Phase 33C draft v0 probes plus a pure adapter that maps the five
+> Dixie probe scenarios onto the Phase 44A reducer's scenarios and cross-checks
+> them, proving semantic mapping and no-leak only. It wires nothing at runtime,
+> exports nothing from the package surface, and calls no live Dixie route.
+> Phase 45G (above) has since accepted it as a bounded test-only semantic
+> bridge; read this and the Phase 45A / 45C / 45D status text below as
+> **historical / superseded** — the ladder trail that led here, not the current
+> next step.
+>
+> **Earlier status (Phase 45A, 2026-06-02 · §5s — historical / superseded).**
+> Phase 44D selected **Phase 45A — a docs / cross-repo Dixie-side Admission
+> Wedge contract request / handoff**, and that selection is now
+> **satisfied**: Phase 45A is authored as this contract request / handoff
+> (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`, §5s) — a Freeside
+> Characters-side request that hands the accepted proof stack (43B design ·
+> 43C fixtures · 44A reducer · 44C runner) to the Dixie / Straylight owners
+> and asks them to define or accept a live admission contract *later*. Phase
+> 45A authored only that Freeside Characters-side docs / cross-repo request /
+> handoff: it implements nothing in any repo, changes no Dixie code, accepts
+> no contract, and does **not** claim a Dixie admission contract already
+> exists. **Phase 45A is therefore no longer a future / current recommended
+> next phase; it is the current authored artifact.** Future possible phases
+> remain **Phase 45B** (a Dixie-side / cross-repo response or contract
+> acceptance), **Phase 45C** (a Freeside Characters reconciliation against an
+> accepted contract), or — only after a contract exists — later separately
+> gated live Dixie admission route / dev-operator candidate command work;
+> **none of those future phases are authorized by Phase 45A.**
+>
+> **Update (Phase 45C, 2026-06-03 · authoritative in §5t).** Dixie has since
+> answered the Phase 45A request with **Phase 33A / PR #118** (a docs-only
+> contract response that accepts the *need* for a contract, the core
+> invariant, the no-leak posture, and a provisional **draft v0** vocabulary,
+> but freezes no production schema and implements no live route), and Phase
+> 45C (`docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md`, docs /
+> reconciliation only) reconciles that response on the Freeside side. The
+> "Phase 45C reconciliation against an accepted contract" framing above is
+> refined accordingly: the accepted artifact is a contract *response* (the
+> need + a draft vocabulary), not a frozen contract. Phase 45C *then*
+> selected **Phase 45D — a docs / decision reconciliation matrix /
+> fixture-probe alignment gate** as the conservative next lane (historical;
+> the ladder has since advanced through Phase 45D → 45E → 45F → 45G → 45H →
+> 45I → **45J**. The docs / decision gate **Phase 45H**
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`) responded to Dixie's
+> Phase 33E v1 probe hardening and **selected** Phase 45I — Admission Wedge
+> Dixie v1 mirror-refresh / adapter compatibility — without itself refreshing
+> any mirror or changing any adapter / code / test. **Phase 45I** then performed
+> that lane as a **test-only / docs-fixture-bound** slice: it refreshed the local
+> mirrors to **draft v1** (`dixie_admission_wedge_probe_v1`) and bumped the
+> adapter's `SUPPORTED_DIXIE_PROBE_VERSION` to v1 (v0 now fails closed as an
+> unsupported / historical version), proving the v1 mappings / hardening fields /
+> semantic equivalence / no-leak with **no** runtime wiring and **no** package
+> export. The docs / decision acceptance gate **Phase 45J**
+> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-ACCEPTANCE-GATE.md`) then
+> **accepted Phase 45I only as a test-only / docs-fixture-bound v1 mirror and
+> adapter compatibility proof** — noting it does not by itself prove production
+> schema, a live admission route, route-contract readiness, storage, auth /
+> consent, package API stability, final vocabulary, final idempotency, signer /
+> authority, identity binding, a completed Straylight primitive review, or
+> runtime rollout — and **selected Dixie Phase 33F — Admission Wedge
+> route-contract readiness gate** (a cross-repo handoff recommendation to Dixie,
+> not a Freeside Characters implementation authorization, and a route-contract
+> readiness gate rather than route implementation or route design in Freeside
+> Characters) as the next recommended lane. **Phase 45J is the latest status**
+> — see the §5aa banner above and §5aa; **Phase 45I (§5z) is the accepted prior
+> implementation, now historical / satisfied as the latest status**, and Phase
+> 45H (§5y) remains **historical / satisfied**. The intermediate
+> **Phase 45G** docs / decision acceptance gate (accepting the Phase 45F no-op
+> probe adapter / validator as a test-only semantic bridge and selecting Dixie
+> Phase 33D probe hardening as the next cross-repo lane) is **historical /
+> superseded as the latest status** — the §5x banner and §5x are the 45G record,
+> not the current next step; the older §5w "latest status" is likewise
+> **historical / superseded**); live admission, a live Dixie route, storage, a
+> command, package exports, and Finn production wiring all remain blocked.
+> The
+> intervening recommendation (**Phase 44C — a fixture-bound dev/operator
+> reducer runner**) is **completed**: the runner landed via PR #158 and is
+> accepted by Phase 44D (§5r). The Phase 43A-era recommendation that
+> follows (**Phase 43B — Admission Wedge MVP design**) is **historical and
+> already completed**: the Phase 43B design was authored, the Phase 43C
+> fixture contract landed via PR #155, and the Phase 44A fixture-bound
+> reducer landed via PR #156 (accepted by Phase 44B, §5p). Read the
+> remainder of this section as the superseded ladder trail, not the current
+> next step. §7 (live memory admission gates) and §8 (prohibitions) stay in
+> force; no blocked lane is unblocked.
 
-Suggested scope:
+**Phase 43A-era recommended next phase (historical / completed): Phase 43B
+— Admission Wedge MVP design (docs / design or fixture-design only).**
+Suggested doc: `docs/ADMISSION-WEDGE-MVP-DESIGN.md` — **now authored** (docs
+/ design only): it defines the candidate / admission packet shapes, the
+admission transition, the admission receipt, and the §7-governed acceptance
+tests as concrete targets, preferring Lane A, and implements no admission.
+
+> **Supersession note.** This section originally recommended **Phase 35B
+> — explicit dev/operator Recall Wedge demo runner** (preserved as
+> historical context below). That recommendation is **superseded.** The
+> Recall Wedge ladder has since been built and accepted all the way
+> through **Phase 42D** (controlled dev/operator seeded live recall served
+> through Dixie and safely summarized in Discord — see §5n), and **Phase
+> 43A** (`docs/RECALL-WEDGE-POST-ACCEPTANCE-ADMISSION-WEDGE-DECISION-GATE.md`,
+> see §5o) selected the **Admission Wedge MVP** — the write/admission half
+> — as the next product wedge. The §5b–§5o addenda are the authoritative
+> ladder record; this section's current recommendation follows them.
+
+Per Phase 43A (§5o) and its gate doc §M, the then-recommended next phase
+was **Phase 43B — Admission Wedge MVP design** (now completed; the
+**Phase 44C** runner then recommended per §5p is likewise completed; and
+the **Phase 45A** docs / cross-repo Dixie-side admission contract request
+that Phase 44D then selected per §5r is now **authored and satisfied** —
+see §5s and the current banner above. Phase 45A is no longer a future /
+current recommendation; it is the current authored artifact. Future
+possible phases (Phase 45B Dixie-side / cross-repo response or contract
+acceptance, Phase 45C Freeside Characters reconciliation against an
+accepted contract, or later separately gated live-route / candidate-command
+work) remain listed but are **not authorized by Phase 45A**).
+Phase 43B's scope was:
+
+- docs / design or fixture-design only — **no implementation** of the
+  admission wedge;
+- define the candidate / admission packet shape and the gate doc §G
+  candidate-vs-admitted taxonomy in concrete (but still design-level)
+  terms;
+- define the explicit admission transition (the candidate → admitted
+  door) and the admission receipt / audit event;
+- define the §I acceptance tests (made concrete) **before**
+  implementation;
+- prefer **Lane A** (fixture / operator admission packet) as the first
+  proof;
+- keep storage at fixture / dev-operator deterministic packet, authority
+  synthetic / operator-dev only, and every public-surface posture intact;
+- preserve the core invariant: candidate memory is not admitted memory,
+  and a candidate is not recallable as governed continuity until an
+  explicit admission transition accepts it;
+- subject to §7 (live memory admission gates); everything in §8 and the
+  Phase 43A §N blocked list stays blocked.
+
+A later **Phase 43C** (or equivalent) would be the first reviewed Lane A
+implementation, only after 43B's design is accepted. A dev-only
+`/remember-this` (Lane B) is a separately gated, riskier, later follow-up
+— not Phase 43B, not the MVP wedge's first step.
+
+> **Status note (Phase 43C fixture / operator-contract).** A Phase 43C
+> **fixture / operator-contract** now exists at
+> `docs/admission-wedge/fixtures/`: deterministic candidate → transition
+> → admitted → recall-proof fixtures plus a dependency-free validator
+> that proves the §43A/§43B invariant (candidate is not admitted memory,
+> not recallable before admission, recallable only after an explicit
+> accept; rejected never recalls; supersession does not leak the wrong
+> prior state). It is **contract-only** — no runtime, no command, no live
+> admission route, no storage. The runtime Lane A implementation and the
+> §7 live-memory-admission gates remain in force and separately gated.
+
+> **Status note (Phase 44A fixture-bound reducer / adapter).** Phase 44A
+> adds a pure, dependency-free local reducer / adapter over the Phase 43C
+> fixtures at
+> `packages/persona-engine/src/recall-wedge/admission-wedge-fixture-reducer.ts`
+> (+ test), proving the §43A/§43B invariant *in code* against the
+> already-existing fixture graph (classify candidate · apply transition ·
+> project recall proof · reduce scenario, with stable fail-closed reason
+> codes and a no-leak seal on every safe projection). It is **fixture-bound
+> only**: it admits nothing, stores nothing, reaches no network, and is
+> imported only by its own test — **not** wired into Discord, Dixie, the
+> public renderer, the live client, dispatch, startup, command
+> registration, or any package export. It **does not** authorize a live
+> admission implementation, production admission, production storage,
+> production auth / consent, public remember-this, Discord history
+> ingestion, user chat becoming memory, a live Dixie admission route, or
+> any Finn production wiring. The runtime Lane A implementation and the §7
+> live-memory-admission gates remain in force and separately gated.
+
+> **Status note (Phase 44B reducer acceptance / next-lane gate).** Phase
+> 44B (`docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md`, docs / decision
+> only) accepts the Phase 44A reducer (PR #156) as the fixture-bound local
+> reducer proof and selects **Phase 44C — a fixture-bound dev/operator
+> reducer runner** (a local script / test-only runner that reads the Phase
+> 43C fixtures, calls the Phase 44A reducer, and prints operator-safe
+> scenario summaries) as the next lane. It implements nothing; it
+> authorizes no production admission, runtime storage, public command,
+> user-facing write path, live Dixie admission route, or Finn production
+> wiring. See §5p. The runtime Lane A implementation and the §7
+> live-memory-admission gates remain in force and separately gated.
+
+> **Status note (Phase 44C fixture-bound dev/operator reducer runner).**
+> Phase 44C implements the Phase 44B-selected Option A lane: a local
+> dev/operator runner
+> (`packages/persona-engine/src/recall-wedge/run-admission-wedge-fixture-demo.ts`
+> + test) that reads the Phase 43C fixtures, calls the Phase 44A reducer,
+> and prints operator-safe scenario summaries (before-admission excluded;
+> accepted included; rejected excluded; supersession corrected-only; a
+> synthetic malformed fail-closed case). It mutates no fixture, reimplements
+> no reducer semantics, is imported only by its own test + a local CLI guard
+> (not exported, wired into no runtime path), and authorizes no live
+> admission, storage, command, Dixie route, network call, package export,
+> LLM / voice, or Finn production wiring. See §5q and
+> `docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md` §12. The runtime Lane A
+> implementation and the §7 live-memory-admission gates remain in force and
+> separately gated.
+
+> **Status note (Phase 44D runner acceptance / next-lane gate).** Phase
+> 44D (`docs/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md`, docs / decision
+> only) accepts the Phase 44C runner (PR #158) as the fixture-bound local
+> runner proof — fixtures → reducer → runner, with operator-safe scenario
+> summaries and a no-leak output posture — and selects **Phase 45A — a
+> docs / cross-repo Dixie-side admission contract request / handoff** as the
+> next lane. The Phase 45A artifact would summarize the Freeside Characters
+> proof stack (43B design · 43C fixtures · 44A reducer · 44C runner),
+> enumerate the candidate / admitted / rejected / superseded semantics, and
+> ask the Dixie / Straylight owners to define or accept a live admission
+> contract *later*; it authorizes no implementation in any repo. Phase 44D
+> implements nothing; it authorizes no production admission, runtime
+> storage, live Dixie admission, a Dixie-owned admission contract, a public
+> command, a user-facing write path, a package export, or Finn production
+> wiring. See §5r. The runtime Lane A implementation and the §7
+> live-memory-admission gates remain in force and separately gated.
+
+> **Status note (Phase 45A Dixie-side admission contract request).** Phase
+> 45A (`docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md`, docs / cross-repo
+> request only) authors the Phase 44D-selected lane: a Freeside
+> Characters-side request / handoff that summarizes the proof stack (43B
+> design · 43C fixtures · 44A reducer · 44C runner), carries the §D
+> invariant, and enumerates the candidate-intake / transition / admitted /
+> rejection / supersession / receipt / recall-eligibility / auth / no-leak
+> contract decisions it asks the Dixie / Straylight owners to define or
+> accept *later*. It implements nothing in any repo, changes no Dixie code,
+> accepts no contract, and does **not** claim a Dixie admission contract
+> already exists. See §5s. The runtime Lane A implementation and the §7
+> live-memory-admission gates remain in force and separately gated.
+
+### 9.1 Historical context — superseded Phase 35B recommendation
+
+> **Superseded.** Kept for ladder continuity only. The recommendation
+> below was the original next step when this map was written at Phase 35A;
+> it was carried out and the ladder has since advanced through Phase 42D
+> and the Phase 43A Admission Wedge decision gate (see the supersession
+> note above and §5b–§5o). Do **not** treat the following as the current
+> recommended next phase.
+
+**Original (superseded) recommended next phase: Phase 35B — explicit
+dev/operator Recall Wedge demo runner.**
+
+Suggested scope (historical):
 
 - small / medium implementation PR;
 - **package script or CLI runner** over the existing cross-interface
