@@ -65,6 +65,14 @@ open the reconciliation gate that owns the refresh rather than silently editing
 here. This directory carries **no live Dixie calls, no storage, no auth, no
 `remember-this`, no Discord ingestion, and no production behavior.**
 
+> **Phase 45H status note (added later).** Dixie has since hardened the draft
+> probes to **v1** (`dixie_admission_wedge_probe_v1`, Dixie Phase 33E / PR #122
+> — all five scenarios preserved, no sixth probe). These mirrors **remain v0**
+> historical / local proof mirrors; they were **not** refreshed. Freeside
+> Characters' gated response is `docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`
+> (Phase 45H, docs / decision only), which defers the v1 mirror refresh /
+> adapter compatibility to a future, separately-gated **Phase 45I**.
+
 ## Provenance
 
 - `../loa-dixie/docs/admission-wedge/fixtures/README.md` — Dixie Phase 33C draft
