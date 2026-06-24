@@ -88,6 +88,10 @@ import {
   buildCommandSet,
   registerRecallWedgeLiveDemoCommand,
 } from '../lib/publish-commands.ts';
+// bd-uia: the deferred runner lives in dispatch.ts (defer-first ACK + background
+// @original PATCH). Imported here to drive the deferral with an injected slow
+// live client — an app→app import (NOT across the app→package boundary).
+import { runRecallWedgeLiveDemoDeferred } from './dispatch.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1847,14 +1851,112 @@ describe('Phase 41B · dispatch wiring', () => {
     expect(dispatchSource).toMatch(
       /interaction\.data\?\.name\s*===\s*RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME/,
     );
-    expect(dispatchSource).toMatch(
+    // bd-uia: the live command now DEFERS first (type 5 ephemeral) and runs the
+    // gated handler in a background @original PATCH — it no longer blocks the 3s
+    // ACK window on the Dixie network call. The synchronous `return await
+    // handleRecallWedgeLiveDemoInteraction(interaction)` shape is intentionally gone.
+    expect(dispatchSource).not.toMatch(
       /return\s+await\s+handleRecallWedgeLiveDemoInteraction\(interaction\)/,
     );
+    expect(dispatchSource).toMatch(
+      /void\s+runRecallWedgeLiveDemoDeferred\(interaction\)/,
+    );
+    expect(dispatchSource).toContain('DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE');
   });
 
   test('dispatch still routes the harness command independently', () => {
     expect(dispatchSource).toContain('handleRecallWedgeDemoInteraction');
     expect(dispatchSource).toContain('RECALL_WEDGE_DEMO_COMMAND_NAME');
+  });
+});
+
+// =====================================================================
+// bd-uia · deferred-ACK behavior (defer-first; @original PATCH off the 3s clock)
+// =====================================================================
+
+describe('bd-uia · /recall-wedge-live-demo defers past the 3s ACK window', () => {
+  // A controllable slow live client: `liveRecallViaDixie` blocks on a deferred
+  // gate so the test can prove the network round-trip is awaited INSIDE the
+  // background runner (post-ACK), not before the dispatcher responds.
+  function slowClient(result: LiveDixieRecallResult): {
+    module: RecallWedgeLiveDixieClientModule;
+    release: () => void;
+    recallStarted: () => boolean;
+  } {
+    let release!: () => void;
+    let started = false;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const module: RecallWedgeLiveDixieClientModule = {
+      loadLiveDixieClientConfigFromEnv: () => DUMMY_CONFIG,
+      liveRecallViaDixie: async () => {
+        started = true;
+        await gate;
+        return result;
+      },
+      buildDevSeededRecallSignature,
+      findBannedPublicSubstring,
+    };
+    return { module, release, recallStarted: () => started };
+  }
+
+  function spyPatchFetch(): {
+    patches: Array<{ url: string; body: string }>;
+    restore: () => void;
+  } {
+    const patches: Array<{ url: string; body: string }> = [];
+    const spy = spyOn(globalThis, 'fetch').mockImplementation((async (
+      url: string,
+      init?: { body?: string },
+    ) => {
+      patches.push({ url: String(url), body: String(init?.body ?? '') });
+      return new Response('', { status: 200 });
+    }) as unknown as typeof fetch);
+    return { patches, restore: () => spy.mockRestore() };
+  }
+
+  test('content reaches @original via a background PATCH only AFTER the slow Dixie call resolves', async () => {
+    const { patches, restore } = spyPatchFetch();
+    try {
+      const client = slowClient(liveResult('served'));
+      const run = runRecallWedgeLiveDemoDeferred(interaction(), fullEnv(), {
+        loadLiveClient: async () => client.module,
+      });
+
+      // The dispatcher has already ACKed (DEFERRED). The network work is now
+      // running here, off the 3s clock — and nothing is PATCHed until it lands.
+      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(client.recallStarted()).toBe(true);
+      expect(patches.length).toBe(0);
+
+      client.release();
+      await run;
+
+      // Exactly one @original PATCH carrying the served render.
+      expect(patches.length).toBe(1);
+      expect(patches[0]!.url).toContain('/messages/@original');
+      expect(patches[0]!.body).toContain('classification: served');
+    } finally {
+      restore();
+    }
+  });
+
+  test('a failed live client still PATCHes @original with the generic refusal (no raw error to Discord)', async () => {
+    const { patches, restore } = spyPatchFetch();
+    try {
+      await runRecallWedgeLiveDemoDeferred(interaction(), fullEnv(), {
+        loadLiveClient: async () => {
+          throw new Error('boom');
+        },
+      });
+      expect(patches.length).toBe(1);
+      expect(patches[0]!.url).toContain('/messages/@original');
+      expect(patches[0]!.body).toContain(RECALL_WEDGE_LIVE_DEMO_GENERIC_REFUSAL);
+    } finally {
+      restore();
+    }
   });
 });
 
