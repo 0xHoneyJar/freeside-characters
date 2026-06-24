@@ -529,6 +529,38 @@ next phase is the place to weigh them.
   served memory as a capability, and everything in §K remain blocked.
   Phase 42A makes no served-memory acceptance claim.
 
+### N.2 Phase 42D note — the §N.d seeded lane was taken; the safe failure here advanced to a safe served recall
+
+> Added by Phase 42D
+> (`docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md`),
+> 2026-05-31.
+
+- **The seeded-estate lane (this acceptance's §N option `d`, selected by
+  Phase 42A) has been exercised and accepted as served.** The §J blocker
+  recorded here — the unseeded live estate / storage state — was resolved
+  by a Dixie-side seed of a reviewed deterministic dev/operator estate
+  (direct Dixie Phase 32K v4b seeded smoke), paired with Freeside
+  Characters Phase 42B (safe pre-Dixie gate diagnostics) and Phase 42C
+  (seeded request / signature alignment), accepted as Phase 42D.
+- **The same controlled path now returns `served`, not
+  `upstream_unavailable`.** Where this run reached the Straylight seam and
+  fail-closed on `seam.storage_unavailable` (§F), the Phase 42D run reached
+  a seeded estate and returned the §F-shaped ephemeral operator-safe
+  summary with `classification` / `outcome` / `route` / `reason` all
+  `served` / `/api/recall/intake` — still with **no `raw_reasons`, no raw
+  payload, no recall pack body, no receipt body, no IDs / tokens / tenant /
+  debug / stack-trace exposure.**
+- **The §F safe-fail-closed result remains the accepted baseline.** Seeding
+  added the served case; it did not remove the safe-failure case. Against
+  an unseeded estate, an invalid / expired token, or an unauthenticated
+  call, the seam still fails closed exactly as accepted here.
+- **No new authorization.** Phase 42D accepts a controlled dev/operator
+  seeded live recall only — no production memory, no production memory
+  admission, no durable production storage, no user-chat ingestion, no
+  public recall, no cross-user consent / sharing. Everything in §K and §H
+  stays in force; the recommended next step is a docs-only Admission Wedge
+  decision gate, not production rollout.
+
 ---
 
 ## O. Acceptance criteria for Phase 41D
@@ -557,6 +589,11 @@ Phase 41D is acceptable if:
 
 ## P. Cross-references
 
+- `docs/RECALL-WEDGE-SEEDED-LIVE-DISCORD-SMOKE-ACCEPTANCE.md` — Phase 42D
+  seeded live Discord smoke acceptance; records that the §N option `d`
+  seeded lane was taken and the §J unseeded-estate blocker resolved into a
+  safe served live recall (controlled dev/operator proof); §N.2 records its
+  note.
 - `docs/RECALL-WEDGE-SEEDED-LIVE-ESTATE-DECISION-GATE.md` — Phase 42A
   seeded live estate / storage decision gate; selects the seeded
   dev/operator estate (this acceptance's §N option `d`) as the next MVP

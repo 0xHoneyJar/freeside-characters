@@ -22,6 +22,19 @@ const DEFAULT_STATEMENT = 'link your wallet to your discord to unlock the verifi
 export interface OnboardingWiring {
   onboarding: OnboardingRuntime;
   verify: VerifyRuntime;
+  /**
+   * C-4 multi-tenant verify-message config read. Populated from env when the
+   * freeside-worlds config service URL is set; undefined keeps the verify card
+   * on its single-tenant code defaults (the service is NOT deployed yet ·
+   * freeside-worlds arrakis-e5jk/C-6). A post site passes these straight into
+   * `buildVerifyCardForGuild(...)`.
+   */
+  worldConfig: {
+    /** WORLDS_CONFIG_API_URL — config-service base URL. Empty/unset → defaults only. */
+    configBaseUrl?: string;
+    /** WORLDS_CONFIG_SERVICE_TOKEN — read-gate `x-service-token`. */
+    serviceToken?: string;
+  };
 }
 
 /** Build both runtimes from env, or null if onboarding is not fully configured (→ stays off). */
@@ -79,5 +92,11 @@ export function buildOnboardingWiringFromEnv(env: NodeJS.ProcessEnv = process.en
     noRuntime: false,
   };
 
-  return { onboarding, verify };
+  // C-4 · per-world verify-message config seam (fail-soft: unset → code defaults).
+  const worldConfig = {
+    configBaseUrl: env.WORLDS_CONFIG_API_URL?.trim() || undefined,
+    serviceToken: env.WORLDS_CONFIG_SERVICE_TOKEN?.trim() || undefined,
+  };
+
+  return { onboarding, verify, worldConfig };
 }

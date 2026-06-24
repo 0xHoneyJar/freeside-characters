@@ -87,6 +87,16 @@ import {
   RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME,
   handleRecallWedgeLiveDemoInteraction,
 } from './recall-wedge-live-demo.ts';
+import { ROLE_SYNC_COMMAND_NAME } from '../shadow/role-sync-trigger.ts';
+import {
+  computeRoleSyncOutcome,
+  type RoleSyncInteractionDeps,
+} from '../shadow/role-sync-interaction.ts';
+import {
+  handleRoleSyncComponentInteraction,
+  isForeignRoleSyncSquat,
+  isRoleSyncComponentInteraction,
+} from '../shadow/role-sync-dispatch.ts';
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 const DISCORD_CHAR_LIMIT = 2000;
@@ -170,6 +180,28 @@ export function getActiveOnboardingRuntime(): OnboardingRuntime {
 }
 
 /**
+ * Module-level role-sync deps (bd-71y) — the deploy wires this at boot via
+ * `setRoleSyncDeps()` (world, role-map reader, orchestration invoker, world
+ * config, token metadata, transition version, clock). UNSET ⇒ the `/role-sync`
+ * command is not available (the trigger is opt-in: a deployment that does not
+ * run the onboarding/role-dispenser building simply never wires it). Mirrors the
+ * quest-runtime composition seam: dispatch owns routing, the deps own behavior.
+ *
+ * The trigger code itself is VOICELESS (no persona-engine import); only this
+ * router file — which already imports persona-engine for the chat path — knows
+ * the command name.
+ */
+let roleSyncDeps: RoleSyncInteractionDeps | undefined;
+
+export function setRoleSyncDeps(deps: RoleSyncInteractionDeps): void {
+  roleSyncDeps = deps;
+}
+
+export function getRoleSyncDeps(): RoleSyncInteractionDeps | undefined {
+  return roleSyncDeps;
+}
+
+/**
  * Per-interaction AuthContext stash · cycle-B sprint-1 review fix (PR #53
  * Blocker #1 · cross-reviewer flatline CRITICAL). The auth-bridge attaches
  * an AuthContext per Discord interaction · downstream quest dispatch reads
@@ -218,8 +250,16 @@ export async function dispatchSlashCommand(
   // cycle-009 · sprint-2 — early-detect the onboarding verify button / slash (C2).
   // Intercepted AFTER anti-spam + circuit + auth-bridge so it inherits all three.
   const isOnboarding = isOnboardingInteraction(interaction);
+  // bd-20x — early-detect a `rolesync:` apply/confirm/cancel button click (type 3).
+  // Intercepted in the SAME band as onboarding (after anti-spam + circuit + auth-bridge).
+  const isRoleSyncComponent = isRoleSyncComponentInteraction(interaction);
 
-  if (!isQuest && !isOnboarding && interaction.type !== InteractionType.APPLICATION_COMMAND) {
+  if (
+    !isQuest &&
+    !isOnboarding &&
+    !isRoleSyncComponent &&
+    interaction.type !== InteractionType.APPLICATION_COMMAND
+  ) {
     return ephemeralReply(`unsupported interaction type ${interaction.type}`);
   }
 
@@ -344,6 +384,54 @@ export async function dispatchSlashCommand(
   // not character-bound).
   if (isQuest) {
     return handleQuestInteraction(interaction, activeQuestRuntime);
+  }
+
+  // ─── bd-71y — voiceless CM tier→role sync trigger (`/role-sync`) ────
+  // A system (NOT character-bound) admin command. Routed here — after the
+  // auth-bridge attach (so the verified AuthContext / claims.sub is the
+  // resolved CM actor) and before per-character resolution. Authz against
+  // admin_principals happens INSIDE runTierRoleGoLive (deny ⇒ refuse, no
+  // reads); a non-verified invoker is refused by the trigger core. The whole
+  // path is VOICELESS — the response is the structural CV2 render. The command
+  // is available only when the deployment wired `setRoleSyncDeps()`.
+  if (interaction.data?.name === ROLE_SYNC_COMMAND_NAME) {
+    const deps = getRoleSyncDeps();
+    if (!deps) {
+      return ephemeralReply(
+        'the role-sync trigger is not configured on this deployment.',
+      );
+    }
+    // The trigger does network work (identity-api + score-api leaderboard) that
+    // exceeds Discord's 3s ACK window, so DEFER (ephemeral) immediately + run the
+    // sync in the background, PATCHing @original with the structural result.
+    // Mirrors the onboarding deferral. Returning the full response synchronously
+    // timed the interaction out ("application did not respond").
+    void runRoleSyncDeferred(interaction, interactionCtx.auth, deps);
+    return {
+      type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+      data: { flags: MessageFlags.EPHEMERAL },
+    };
+  }
+
+  // ─── bd-20x — two-step Apply→Confirm→LIVE component interception ────
+  // A `rolesync:` apply/confirm/cancel BUTTON click (MESSAGE_COMPONENT type 3).
+  // Routed in the SAME band as the /role-sync slash + onboarding — after the
+  // auth-bridge attach (so the verified AuthContext is available) and before
+  // per-character resolution. The CLICKER's actor is re-resolved by the handler
+  // (isolated identity-api resolution, INDEPENDENT of AUTH_BACKEND) so authz binds
+  // to whoever confirmed. apply/cancel → UPDATE_MESSAGE (no write); confirm → a
+  // STALE GUARD then DEFERRED_UPDATE_MESSAGE + a background LIVE apply through the
+  // gate. The whole path is VOICELESS + performs ZERO direct role mutations (the
+  // LIVE write happens inside runRoleSyncTrigger → the substrate gate).
+  if (isRoleSyncComponent) {
+    const deps = getRoleSyncDeps();
+    if (!deps) {
+      return ephemeralReply('the role-sync trigger is not configured on this deployment.');
+    }
+    if (isForeignRoleSyncSquat(interaction)) {
+      return ephemeralReply('that control is not available.');
+    }
+    return handleRoleSyncComponentInteraction(interaction, interactionCtx.auth, deps);
   }
 
   // ─── cycle-009 · sprint-2 — onboarding verify interception (C2) ─────
@@ -1240,6 +1328,63 @@ async function patchOriginal(
     throw new Error(
       `interactions: PATCH @original failed status=${response.status} body=${txt.slice(0, 200)}`,
     );
+  }
+}
+
+/**
+ * PATCH the deferred response with an arbitrary data payload (CV2 components OR
+ * content). `patchOriginal` only carries plain content; the role-sync `rendered`
+ * outcome is a Components-V2 payload (flags IS_COMPONENTS_V2 + components), so
+ * this sends the data object verbatim. Same endpoint + no-Authorization contract.
+ */
+async function patchOriginalData(
+  interaction: DiscordInteraction,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const url = `${DISCORD_API_BASE}/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`;
+  const channelId =
+    interaction.channel_id ?? `dm:${interactionInvoker(interaction)?.id ?? 'unknown'}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  recordPatchOutcome(channelId, response.status);
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '<unreadable body>');
+    throw new Error(
+      `interactions: PATCH @original (data) failed status=${response.status} body=${txt.slice(0, 200)}`,
+    );
+  }
+}
+
+/**
+ * DEFERRED background runner for `/role-sync`. After the dispatcher ACKs with a
+ * deferred ephemeral response, this computes the outcome (identity-api +
+ * score-api leaderboard network work — the reason we deferred past the 3s ACK
+ * window) and PATCHes @original: `rendered` → the structural CV2 payload;
+ * `refused`/`error` → a plain ephemeral status string. Never throws (it is void-ed).
+ */
+async function runRoleSyncDeferred(
+  interaction: DiscordInteraction,
+  auth: AuthContext | undefined,
+  deps: RoleSyncInteractionDeps,
+): Promise<void> {
+  try {
+    const outcome = await computeRoleSyncOutcome(interaction, auth, deps);
+    // BOTH CV2 render paths (leaderboard-centric `rendered` + member-centric
+    // `rendered-members`, bd-l08) PATCH @original with the structural payload.
+    if (outcome.kind === 'rendered' || outcome.kind === 'rendered-members') {
+      await patchOriginalData(interaction, {
+        ...(outcome.payload as unknown as Record<string, unknown>),
+        flags: (outcome.payload.flags as number) | MessageFlags.EPHEMERAL,
+      });
+    } else {
+      await patchOriginal(interaction, true, outcome.message);
+    }
+  } catch (err) {
+    console.error('role-sync: deferred run failed:', err);
+    await patchOriginal(interaction, true, 'role-sync failed — see logs.').catch(() => {});
   }
 }
 

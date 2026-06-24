@@ -118,6 +118,34 @@ export const resolveEngineConfigForGuild = (
 };
 
 /**
+ * Reverse of `resolveWorldForGuild`: given a world slug, find the first
+ * Discord guild_id that world declares.
+ *
+ * Used by the bot's `/guild-roles` endpoint (role-awareness surface) so the
+ * dashboard can resolve `?world=SLUG` → guild → role list. First-declared
+ * guild wins (a world with multiple guilds picks its primary by declaration
+ * order — same operator-controlled ordering convention as
+ * `resolveWorldForGuild`).
+ *
+ * Returns null when:
+ *   - no manifest's slug matches `world_slug`, OR
+ *   - the matched manifest declares no guild_ids (empty / absent array).
+ *
+ * Pure-data function · no IO · no Discord API call.
+ */
+export const resolveGuildForWorld = (
+  world_slug: string,
+  manifests: readonly WorldManifestQuestSubset[],
+): string | null => {
+  for (const m of manifests) {
+    if (m.slug !== world_slug) continue;
+    if (!m.guild_ids || m.guild_ids.length === 0) return null;
+    return m.guild_ids[0]!;
+  }
+  return null;
+};
+
+/**
  * cycle-B sprint-1 (B-1.7): resolve the canonical tenant_id for a Discord
  * guild from the world-manifest registry.
  *

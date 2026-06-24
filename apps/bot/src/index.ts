@@ -40,7 +40,8 @@ import {
   startInteractionServer,
   type InteractionServerHandle,
 } from './discord-interactions/server.ts';
-import { setQuestRuntime, setOnboardingRuntime } from './discord-interactions/dispatch.ts';
+import { setQuestRuntime, setOnboardingRuntime, setRoleSyncDeps } from './discord-interactions/dispatch.ts';
+import { buildRoleSyncBootDepsFromEnv } from './shadow/role-sync-boot.ts';
 import { buildMemoryDevQuestRuntime } from './quest-runtime-bootstrap.ts';
 import { buildOnboardingWiringFromEnv } from './onboarding-runtime.ts';
 import {
@@ -496,6 +497,42 @@ async function main(): Promise<void> {
     );
   }
 
+  // ─── bd-atm — voiceless CM `/role-sync` boot-wire (SHADOW-first) ──────────
+  // Compose the LIVE role-sync deps and wire them into the dispatcher, so
+  // `/role-sync` actually RUNS (bd-71y built the command + bd-m2v built the
+  // orchestrator; this is the composition that calls setRoleSyncDeps).
+  //
+  // FAIL-CLOSED + OPT-IN: buildRoleSyncBootDepsFromEnv returns null unless
+  // ROLE_SYNC_ENABLED is truthy AND the vendored world manifest
+  // (apps/bot/worlds/<world>.yaml) is readable with guild_id + namespace_prefix.
+  // When null, `/role-sync` reports "not configured on this deployment" — a
+  // clean refusal, never a silent partial wire. The onboarding/role-dispenser
+  // is a SEPARABLE, VOICELESS building: a deployment that does not run it simply
+  // never sets ROLE_SYNC_ENABLED. The actor is resolved via identity-api,
+  // INDEPENDENT of AUTH_BACKEND (see shadow/identity-actor-resolver.ts).
+  try {
+    const roleSyncDeps = buildRoleSyncBootDepsFromEnv(() => getBotClient(config));
+    if (roleSyncDeps) {
+      setRoleSyncDeps(roleSyncDeps);
+      console.log(
+        `role-sync:      wired · world=${roleSyncDeps.world} · ` +
+          `manifest=apps/bot/worlds/${roleSyncDeps.world}.yaml · ` +
+          `score=${process.env.SCORE_PURUPURU_API_KEY ? 'LIVE' : 'MOCK (SHADOW preview shows creates only)'} · ` +
+          `config-service=${process.env.CONFIG_SERVICE_URL ? 'wired' : 'seed-map fallback'} · ` +
+          `actor=identity-api (${process.env.IDENTITY_API_URL?.trim() || 'identity.0xhoneyjar.xyz'}, AUTH_BACKEND-independent)`,
+      );
+    } else {
+      console.log(
+        'role-sync:      DISABLED (set ROLE_SYNC_ENABLED=1 + ensure apps/bot/worlds/<world>.yaml exists)',
+      );
+    }
+  } catch (err) {
+    // A composition error must NOT crash the bot — the role-dispenser is an
+    // optional, separable building. Log + continue (the command stays "not
+    // configured" until the misconfig is fixed).
+    console.error('role-sync:      wiring failed (command stays unconfigured):', err);
+  }
+
   // V0.7-A.0: Discord Interactions endpoint for slash commands.
   // Disjoint from digest cron — failure here doesn't affect Pattern B writes.
   let interactionServer: InteractionServerHandle | null = null;
@@ -515,12 +552,31 @@ async function main(): Promise<void> {
           `DISCORD_BOT_TOKEN + ONBOARDING_VERIFIED_ROLE_ID + ONBOARDING_STATE_SECRET to enable)`,
       );
     }
+    // World manifests for the `/guild-roles` role-awareness surface. Derived
+    // from the same guild env the quest runtime uses (QUEST_GUILD_ID falls
+    // back to DISCORD_GUILD_ID). Single-world (mibera) until the
+    // freeside-worlds registry loader lands (cycle-B B-1.12 swap target);
+    // empty guild_ids → `/guild-roles` resolves 404 world_not_found.
+    // NOTE: the WORLD is `mibera`. "mongolian" is a CHARACTER within mibera,
+    // not a world — the dashboard, config service, and P4 all key this guild's
+    // role-map by the world slug `mibera`, so the role-awareness manifest must
+    // resolve `world=mibera` (not the character name).
+    const roleAwarenessGuildId =
+      process.env.QUEST_GUILD_ID ?? process.env.DISCORD_GUILD_ID;
+    const roleAwarenessManifests: readonly WorldManifestQuestSubset[] = [
+      {
+        slug: 'mibera',
+        tenant_id: 'mibera',
+        guild_ids: roleAwarenessGuildId ? [roleAwarenessGuildId] : [],
+      },
+    ];
     try {
       interactionServer = startInteractionServer({
         config,
         characters,
         port: config.INTERACTIONS_PORT,
         verifyRuntime: onboardingWiring?.verify,
+        manifests: roleAwarenessManifests,
       });
       console.log(
         `interactions:   listening on :${interactionServer.port} · ` +

@@ -32,8 +32,14 @@ import {
   LIVE_DIXIE_CLIENT_MAX_TIMEOUT_MS,
   LIVE_DIXIE_DISALLOWED_ENVIRONMENT_FRAMES,
   LIVE_DIXIE_RECALL_CLASSIFICATIONS,
+  RECALL_DEV_SEED_KEY_REF,
+  RECALL_DEV_SEED_SIGNER_ID,
+  RECALL_DEV_SEED_SIGNER_TYPE,
   LiveDixieClientConfigError,
+  buildDevSeededRecallSignature,
   buildLiveDixieRecallRequestPlan,
+  computeDevSeededSignature,
+  computeDevSeededSignedPayloadHash,
   computeLiveDixieRequestFingerprint,
   createIdempotencyReuseDetector,
   findBannedPublicSubstring,
@@ -43,6 +49,7 @@ import {
   type LiveDixieFetchLike,
   type LiveRecallInput,
 } from "./live-dixie-client.ts";
+import { createHash, createHmac } from "node:crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -448,6 +455,147 @@ describe("idempotency · key/content fingerprinting", () => {
     );
     // Only the first call hit the fake network; the second short-circuited.
     expect(calls).toBe(1);
+  });
+});
+
+// -- 2b. Phase 32K dev/operator seeded-estate signature -------------------
+
+describe("dev-seeded-estate signature · Phase 32K dev-sign algorithm", () => {
+  // Independent re-implementation of Dixie Phase 32K's canonicalize → sha256 →
+  // hmac, as the source of truth this client must match byte-for-byte
+  // (mirrors ../loa-dixie/.../dev-seeded-live-estate.test.ts).
+  function canonicalize(v: unknown): string {
+    if (v === null) return "null";
+    if (typeof v === "boolean") return v ? "true" : "false";
+    if (typeof v === "number") return JSON.stringify(v);
+    if (typeof v === "string") return JSON.stringify(v);
+    if (Array.isArray(v)) return "[" + v.map(canonicalize).join(",") + "]";
+    if (typeof v === "object") {
+      const obj = v as Record<string, unknown>;
+      const keys = Object.keys(obj).sort();
+      const parts: string[] = [];
+      for (const k of keys) {
+        const child = obj[k];
+        if (child === undefined) continue;
+        parts.push(JSON.stringify(k) + ":" + canonicalize(child));
+      }
+      return "{" + parts.join(",") + "}";
+    }
+    throw new Error(`canonicalize: unsupported type ${typeof v}`);
+  }
+  function refSha256Of(value: unknown): string {
+    const bytes = typeof value === "string" ? value : canonicalize(value);
+    return "sha256:" + createHash("sha256").update(bytes).digest("hex");
+  }
+  function refDevSignatureFor(keyRef: string, payloadHash: string): string {
+    return `dev:${createHmac("sha256", keyRef).update(payloadHash).digest("hex")}`;
+  }
+
+  const PAYLOAD = {
+    actor_id: WALLET,
+    estate_id: WALLET,
+    task: "phase-32k-dev-seed-smoke",
+    environment_frame: "private_chat",
+    risk_profile: "low",
+  };
+
+  test("exports the PUBLIC Phase 32K dev-seed labels verbatim", () => {
+    expect(RECALL_DEV_SEED_SIGNER_ID).toBe("signer:dixie-dev-seeded-operator");
+    expect(RECALL_DEV_SEED_SIGNER_TYPE).toBe("actor_controller");
+    expect(RECALL_DEV_SEED_KEY_REF).toBe("dev-seed-key:dixie-operator-smoke");
+  });
+
+  test("computeDevSeededSignedPayloadHash matches the reference sha256 over canonical sorted-key JSON", () => {
+    expect(computeDevSeededSignedPayloadHash(PAYLOAD)).toBe(refSha256Of(PAYLOAD));
+    expect(computeDevSeededSignedPayloadHash(PAYLOAD)).toMatch(
+      /^sha256:[0-9a-f]{64}$/,
+    );
+  });
+
+  test("hash is independent of input key order (canonicalization sorts keys)", () => {
+    const reordered = {
+      risk_profile: "low",
+      task: "phase-32k-dev-seed-smoke",
+      estate_id: WALLET,
+      actor_id: WALLET,
+      environment_frame: "private_chat",
+    };
+    expect(computeDevSeededSignedPayloadHash(reordered)).toBe(
+      computeDevSeededSignedPayloadHash(PAYLOAD),
+    );
+  });
+
+  test("computeDevSeededSignature matches the reference hmac_sha256(key_ref, hash)", () => {
+    const hash = computeDevSeededSignedPayloadHash(PAYLOAD);
+    expect(computeDevSeededSignature(RECALL_DEV_SEED_KEY_REF, hash)).toBe(
+      refDevSignatureFor(RECALL_DEV_SEED_KEY_REF, hash),
+    );
+    expect(computeDevSeededSignature(RECALL_DEV_SEED_KEY_REF, hash)).toMatch(
+      /^dev:[0-9a-f]{64}$/,
+    );
+  });
+
+  test("buildDevSeededRecallSignature produces a fully self-consistent envelope from the public labels", () => {
+    const env = buildDevSeededRecallSignature({
+      wallet: WALLET,
+      task: "phase-32k-dev-seed-smoke",
+      environmentFrame: "private_chat",
+      riskProfile: "low",
+      signatureId: "sig_phase32k",
+      signedAt: "2026-05-30T00:00:00.000Z",
+    });
+    expect(env.signer_id).toBe(RECALL_DEV_SEED_SIGNER_ID);
+    expect(env.signer_type).toBe(RECALL_DEV_SEED_SIGNER_TYPE);
+    expect(env.key_ref).toBe(RECALL_DEV_SEED_KEY_REF);
+    expect(env.signature_type).toBe("dev_signature");
+    expect(env.signature_id).toBe("sig_phase32k");
+    expect(env.signed_at).toBe("2026-05-30T00:00:00.000Z");
+    // The hash is over the five canonical fields bound to the wallet.
+    expect(env.signed_payload_hash).toBe(refSha256Of(PAYLOAD));
+    // The signature is hmac over that hash keyed by the key_ref label.
+    expect(env.signature).toBe(
+      refDevSignatureFor(RECALL_DEV_SEED_KEY_REF, env.signed_payload_hash),
+    );
+    // It carries none of the old Phase 37C placeholders.
+    expect(env.signature).not.toBe("devsig");
+    expect(env.signed_payload_hash).not.toBe(
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    );
+  });
+
+  test("a request plan built around the dev-seeded signature carries it on the wire", () => {
+    const signature = buildDevSeededRecallSignature({
+      wallet: WALLET,
+      task: "phase-32k-dev-seed-smoke",
+      environmentFrame: "private_chat",
+      riskProfile: "low",
+      signatureId: "sig_phase32k",
+      signedAt: "2026-05-30T00:00:00.000Z",
+    });
+    const plan = buildLiveDixieRecallRequestPlan(
+      buildInput({
+        task: "phase-32k-dev-seed-smoke",
+        environmentFrame: "private_chat",
+        riskProfile: "low",
+        detailLevel: "standard",
+        receiptDetail: "standard",
+        signature,
+      }),
+      buildConfig(),
+    );
+    const request = (plan.body as Record<string, unknown>).request as Record<
+      string,
+      unknown
+    >;
+    const sig = request.signature as Record<string, unknown>;
+    expect(sig.signer_id).toBe(RECALL_DEV_SEED_SIGNER_ID);
+    expect(sig.key_ref).toBe(RECALL_DEV_SEED_KEY_REF);
+    expect(sig.signature_type).toBe("dev_signature");
+    expect(sig.signed_payload_hash).toBe(signature.signed_payload_hash);
+    expect(sig.signature).toBe(signature.signature);
+    expect(request.environment_frame).toBe("private_chat");
+    expect(request.include_receipt_detail).toBe("standard");
+    expect((plan.body as Record<string, unknown>).detail_level).toBe("standard");
   });
 });
 
