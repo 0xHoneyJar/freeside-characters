@@ -64,7 +64,14 @@ export interface ResolvedWallet {
 let pool: Pool | null = null;
 let poolInitTried = false;
 
-function getPool(): Pool | null {
+/**
+ * Lazy singleton pg pool over RAILWAY_MIBERA_DATABASE_URL (the mibera-db that
+ * hosts midi_profiles + surface_config). Exported so other read-only consumers
+ * (e.g. onboarding/surface-config.ts) reuse THIS pool rather than opening a
+ * second connection. Returns null when the env var is unset — callers MUST
+ * treat null as "DB unavailable" and fall through to their own defaults.
+ */
+export function getPool(): Pool | null {
   if (pool) return pool;
   if (poolInitTried) return null;
   poolInitTried = true;

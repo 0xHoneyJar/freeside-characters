@@ -171,7 +171,15 @@ export function galleryMint(_s: DigestSnapshot): unknown[] {
 /** verify — the onboarding verify card (C1 · cycle-009). A Container with a custom_id button
  *  (NOT a URL button) — the click is a MESSAGE_COMPONENT the bot receives + binds to the
  *  clicker's discord_id (C2 dispatch). Shown in the gallery so the onboarding surface is viewable
- *  alongside the scheduled/chat shapes. Ignores `s` — onboarding isn't zone-digest-shaped. */
+ *  alongside the scheduled/chat shapes. Ignores `s` — onboarding isn't zone-digest-shaped.
+ *
+ *  DB-0 (arrakis-ojm0): this PREVIEW item intentionally stays on code-constant defaults
+ *  (buildVerifyCard() → {}). The gallery is an RLHF/experiment surface, not the live onboarding
+ *  post — wiring a per-world DB read into a rateable preview is the wrong semantics, and the
+ *  GalleryItem.build interface is synchronous (rlhf-preview.ts maps it sync), so threading the
+ *  async config here would force an interface-wide refactor. The LIVE config-aware seam is
+ *  buildVerifyCardForWorld(worldId) in onboarding/verify-card.ts; the live verify-card post
+ *  path consumes it (that post path is not yet built in this repo — see scaffold report). */
 export function galleryVerify(_s: DigestSnapshot): unknown[] {
   return buildVerifyCard();
 }

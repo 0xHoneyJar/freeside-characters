@@ -9,6 +9,10 @@
 // The `onboard:` custom_id namespace is RESERVED here (RT-6 prefix-ownership) — the dispatch
 // rejects any foreign component that squats the prefix.
 
+// DB-0 (arrakis-ojm0): the per-world config read-shim. Only buildVerifyCardForWorld (the
+// async live resolver) touches it; buildVerifyCard stays pure (no network, no identity).
+import { getSurfaceConfig } from './surface-config.ts';
+
 // Discord component type ids (mirror deliver/enriched-render.ts).
 const COMPONENT_CONTAINER = 17;
 const COMPONENT_TEXT_DISPLAY = 10;
@@ -34,6 +38,9 @@ export interface VerifyCardOpts {
   /** button label. */
   buttonLabel?: string;
 }
+
+/** The CM-overridable keys of VerifyCardOpts. Keep in sync with the interface above. */
+const VERIFY_CARD_COPY_KEYS: readonly string[] = ['title', 'body', 'buttonLabel'];
 
 /**
  * Build the verify card as a Components V2 container (send with IS_COMPONENTS_V2 flag).
@@ -67,4 +74,48 @@ export function buildVerifyCard(opts: VerifyCardOpts = {}): unknown[] {
       ],
     },
   ];
+}
+
+/**
+ * DB-0 (arrakis-ojm0) · config-aware live resolver. The async entry the LIVE verify-card
+ * post path uses (the preview gallery stays synchronous + byte-identical · see
+ * preview/adapters/discord/post-type-gallery.ts galleryVerify).
+ *
+ * SHIPS DARK / DEFAULT-OFF: reads surface_config for (worldId, 'onboarding:verify'). The
+ * config copy is applied ONLY when the row exists AND `enabled = true`. Every other path —
+ * no DB, no row, disabled row, read error/timeout — resolves to `{}` and therefore to the
+ * exact code-constant card buildVerifyCard() renders today.
+ *
+ * @param worldId world slug. The caller MUST supply this; there is no world default here so
+ *        the per-world contract is explicit at the call site.
+ */
+export async function buildVerifyCardForWorld(
+  worldId: string,
+  resolveConfig: typeof getSurfaceConfig = getSurfaceConfig,
+): Promise<unknown[]> {
+  const cfg = await resolveConfig(worldId, 'onboarding:verify');
+  if (!cfg?.enabled) return buildVerifyCard({});
+
+  // Narrow the CM-supplied copy to the keys VerifyCardOpts actually renders, and warn on any
+  // unknown keys. Without this, an enabled row with a wrong key name (e.g. {"header":...}
+  // instead of {"title":...}) is accepted structurally but silently ignored — the row is
+  // "enabled" yet the card renders defaults, with no signal. Surfacing it makes the
+  // misconfiguration visible at read time (BB #180 MEDIUM).
+  const opts: VerifyCardOpts = {};
+  const unknown: string[] = [];
+  for (const [k, v] of Object.entries(cfg.copy)) {
+    if (VERIFY_CARD_COPY_KEYS.includes(k)) {
+      (opts as Record<string, string>)[k] = v;
+    } else {
+      unknown.push(k);
+    }
+  }
+  if (unknown.length > 0) {
+    console.warn(
+      `[verify-card] world=${worldId} surface=onboarding:verify — surface_config row has keys not in VerifyCardOpts (ignored): ${unknown.join(
+        ', ',
+      )} · valid keys: ${VERIFY_CARD_COPY_KEYS.join(', ')}`,
+    );
+  }
+  return buildVerifyCard(opts);
 }
