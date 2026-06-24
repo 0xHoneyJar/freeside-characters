@@ -18,8 +18,22 @@
  */
 
 import type { Config } from '../config.ts';
-import type { ZoneDigest, ZoneId, RawStats, NarrativeShape } from './types.ts';
+import type {
+  GetDimensionBreakdownResponse,
+  GetRecentEventsResponse,
+  PulseDimension,
+  PulseDimensionBreakdown,
+  ZoneDigest,
+  ZoneId,
+  RawStats,
+  NarrativeShape,
+  GetRecentBadgesArgs,
+  GetRecentBadgesResponse,
+  BadgeRarity,
+  BadgeType,
+} from './types.ts';
 import { ZONE_TO_DIMENSION } from './types.ts';
+import { fetchWithRetry, type FetchRetryOptions } from './retry.ts';
 
 interface McpInitResult {
   sessionId: string;
@@ -39,6 +53,38 @@ interface McpToolResult {
 
 const MCP_PROTOCOL_VERSION = '2024-11-05';
 
+/**
+ * Retry policy for score-mcp transport calls. The weekly digest cron sweeps
+ * all zones in a tight loop, so the burst trips score-mcp's rate limit and the
+ * last zone (owsley-lab) used to drop on the first un-retried 429. Honors the
+ * server's Retry-After and logs each backoff (labelled init vs tool) so the
+ * waits are visible in the Sunday cron's prod logs.
+ */
+function scoreRetryOpts(
+  label: 'init' | 'tool',
+  extra: Partial<FetchRetryOptions> = {},
+): FetchRetryOptions {
+  return {
+    ...extra,
+    onRetry: ({ attempt, status, delayMs, reason }) => {
+      console.warn(
+        `score-mcp/${label}: retry ${attempt} in ${delayMs}ms — ${reason}` +
+          (status ? ` (status ${status})` : ''),
+      );
+    },
+  };
+}
+
+// The initialize handshake is NOT idempotent under 5xx: a 504 gateway timeout
+// may mean the upstream already created a session before the proxy gave up, so
+// retrying would orphan it. Restrict init retries to 429, where the server
+// provably rejected the request and created nothing (the actual digest-sweep
+// failure mode). tools/call keeps the full transient set.
+const SCORE_INIT_RETRY_OPTS: FetchRetryOptions = scoreRetryOpts('init', {
+  retryableStatuses: new Set([429]),
+});
+const SCORE_TOOL_RETRY_OPTS: FetchRetryOptions = scoreRetryOpts('tool');
+
 /** Parse a single SSE response body into the embedded JSON-RPC envelope. */
 function parseSseEnvelope<T>(body: string): McpJsonRpcEnvelope<T> {
   // SSE format: lines like `event: message\ndata: {json}\n\n`. Find the data line.
@@ -50,25 +96,36 @@ function parseSseEnvelope<T>(body: string): McpJsonRpcEnvelope<T> {
   return JSON.parse(json) as McpJsonRpcEnvelope<T>;
 }
 
-async function mcpInit(url: string, key: string): Promise<McpInitResult> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-      'X-MCP-Key': key,
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: MCP_PROTOCOL_VERSION,
-        clientInfo: { name: 'freeside-ruggy', version: '0.4.0' },
-        capabilities: {},
+function authHeaders(key: string, bearer?: string): Record<string, string> {
+  return {
+    'X-MCP-Key': key,
+    ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+  };
+}
+
+async function mcpInit(url: string, key: string, bearer?: string): Promise<McpInitResult> {
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...authHeaders(key, bearer),
       },
-    }),
-  });
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: MCP_PROTOCOL_VERSION,
+          clientInfo: { name: 'freeside-characters', version: '0.6.0' },
+          capabilities: {},
+        },
+      }),
+    },
+    SCORE_INIT_RETRY_OPTS,
+  );
 
   if (!response.ok) {
     throw new Error(`mcp init failed: ${response.status} ${await response.text()}`);
@@ -88,7 +145,7 @@ async function mcpInit(url: string, key: string): Promise<McpInitResult> {
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
-      'X-MCP-Key': key,
+      ...authHeaders(key, bearer),
       'Mcp-Session-Id': sessionId,
     },
     body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
@@ -103,22 +160,27 @@ async function mcpToolCall<T>(
   sessionId: string,
   toolName: string,
   toolArgs: Record<string, unknown>,
+  bearer?: string,
 ): Promise<T> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-      'X-MCP-Key': key,
-      'Mcp-Session-Id': sessionId,
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...authHeaders(key, bearer),
+        'Mcp-Session-Id': sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Math.floor(Math.random() * 1e9),
+        method: 'tools/call',
+        params: { name: toolName, arguments: toolArgs },
+      }),
     },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: Math.floor(Math.random() * 1e9),
-      method: 'tools/call',
-      params: { name: toolName, arguments: toolArgs },
-    }),
-  });
+    SCORE_TOOL_RETRY_OPTS,
+  );
 
   if (!response.ok) {
     throw new Error(`mcp tools/call failed: ${response.status} ${await response.text()}`);
@@ -147,11 +209,120 @@ export async function fetchZoneDigest(config: Config, zone: ZoneId): Promise<Zon
   }
 
   const url = `${config.SCORE_API_URL}/mcp`;
-  const { sessionId } = await mcpInit(url, config.MCP_KEY);
-  return mcpToolCall<ZoneDigest>(url, config.MCP_KEY, sessionId, 'get_zone_digest', {
-    zone,
-    window: 'weekly',
-  });
+  const bearer = config.SCORE_BEARER;
+  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer);
+  return mcpToolCall<ZoneDigest>(
+    url,
+    config.MCP_KEY,
+    sessionId,
+    'get_zone_digest',
+    { zone, window: 'weekly' },
+    bearer,
+  );
+}
+
+export async function fetchDimensionBreakdown(
+  config: Config,
+  dimension?: PulseDimension,
+  // cycle-007 S8 r4 (operator pivot 2026-05-17): opened window type to 7|30|90
+  // for the dashboard-aligned pulse digest. score-mcp accepts all three; the
+  // 7d path landed on score-dashboard side via 80d715f (FETCH_MIN_DAYS=14 floor).
+  window: 7 | 30 | 90 = 30,
+): Promise<GetDimensionBreakdownResponse> {
+  if (config.STUB_MODE && !config.MCP_KEY) {
+    const dimensions = dimension
+      ? [generateStubDimensionBreakdown(dimension)]
+      : (['og', 'nft', 'onchain'] as const).map((dim) => generateStubDimensionBreakdown(dim));
+    return {
+      dimensions,
+      schema_version: '1.1.0',
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (!config.MCP_KEY) {
+    throw new Error('MCP_KEY required for live score-mcp; or set STUB_MODE=true for synthetic data');
+  }
+
+  const url = `${config.SCORE_API_URL}/mcp`;
+  const bearer = config.SCORE_BEARER;
+  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer);
+  return mcpToolCall<GetDimensionBreakdownResponse>(
+    url,
+    config.MCP_KEY,
+    sessionId,
+    'get_dimension_breakdown',
+    { window, ...(dimension ? { dimension } : {}) },
+    bearer,
+  );
+}
+
+/**
+ * fetchRecentBadges — score-mcp `get_recent_badges` tool (issue #83).
+ *
+ * Note: limit-only (no window param). Agent tracks "since last poll" via
+ * `earned_at` cursor on its own side. If earnings.length === limit, you may
+ * be missing some (bump limit or repoll faster).
+ *
+ * Per issue #83 MCP-client hygiene: tool errors surface as `isError: true`,
+ * not thrown exceptions. mcpToolCall handles that; this wrapper is parallel
+ * to fetchRecentEvents.
+ */
+export async function fetchRecentBadges(
+  config: Config,
+  args: GetRecentBadgesArgs = {},
+): Promise<GetRecentBadgesResponse> {
+  if (config.STUB_MODE && !config.MCP_KEY) {
+    return generateStubRecentBadges(args);
+  }
+
+  if (!config.MCP_KEY) {
+    throw new Error(
+      'MCP_KEY required for live get_recent_badges; or set STUB_MODE=true for synthetic data',
+    );
+  }
+
+  const url = `${config.SCORE_API_URL}/mcp`;
+  const bearer = config.SCORE_BEARER;
+  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer);
+  return mcpToolCall<GetRecentBadgesResponse>(
+    url,
+    config.MCP_KEY,
+    sessionId,
+    'get_recent_badges',
+    args as Record<string, unknown>,
+    bearer,
+  );
+}
+
+export async function fetchRecentEvents(
+  config: Config,
+  limit = 10,
+): Promise<GetRecentEventsResponse> {
+  if (config.STUB_MODE && !config.MCP_KEY) {
+    return {
+      events: [],
+      by_factor: [],
+      schema_version: '1.1.0',
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  if (!config.MCP_KEY) {
+    throw new Error('MCP_KEY required for live score-mcp; or set STUB_MODE=true for synthetic data');
+  }
+
+  const url = `${config.SCORE_API_URL}/mcp`;
+  const bearer = config.SCORE_BEARER;
+  const { sessionId } = await mcpInit(url, config.MCP_KEY, bearer);
+  return mcpToolCall<GetRecentEventsResponse>(
+    url,
+    config.MCP_KEY,
+    sessionId,
+    'get_recent_events',
+    { limit },
+    bearer,
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -277,6 +448,117 @@ export function generateStubZoneDigest(zone: ZoneId): ZoneDigest {
   };
 }
 
+export function generateStubDimensionBreakdown(dimension: PulseDimension): PulseDimensionBreakdown {
+  const now = Date.now();
+  const labels = {
+    og: 'OG',
+    nft: 'NFT',
+    onchain: 'Onchain',
+  } as const;
+  const factorIds = {
+    og: ['og:sets', 'og:articles', 'og:cubquests'],
+    nft: ['nft:mibera', 'nft:honeycomb', 'nft:fractures'],
+    onchain: ['onchain:lp_provide', 'onchain:liquid_backing', 'onchain:staking'],
+  } as const;
+  const topFactors = factorIds[dimension].map((factorId, i) => {
+    const total = Math.max(1, 14 - i * 4);
+    const previous = Math.max(1, 10 - i * 2);
+    return {
+      factor_id: factorId,
+      display_name: factorId.split(':')[1]!.replace(/_/g, ' '),
+      primary_action: null,
+      total,
+      previous,
+      delta_pct: ((total - previous) / previous) * 100,
+      delta_count: total - previous,
+      factor_stats: stubFactorStats(total, 5 + i, 70 + i * 10, now),
+    };
+  });
+  const previous = topFactors.reduce((sum, factor) => sum + factor.previous, 0);
+  const total = topFactors.reduce((sum, factor) => sum + factor.total, 0);
+  return {
+    id: dimension,
+    display_name: labels[dimension],
+    total_events: total,
+    previous_period_events: previous,
+    delta_pct: previous === 0 ? null : ((total - previous) / previous) * 100,
+    delta_count: total - previous,
+    inactive_factor_count: 2,
+    total_factor_count: topFactors.length + 2,
+    top_factors: topFactors,
+    cold_factors: [
+      {
+        factor_id: `${dimension}:quiet_corner`,
+        display_name: 'quiet corner',
+        primary_action: null,
+        total: 0,
+        previous: 0,
+        delta_pct: null,
+        delta_count: 0,
+      },
+      {
+        factor_id: `${dimension}:sleeping_bees`,
+        display_name: 'sleeping bees',
+        primary_action: null,
+        total: 0,
+        previous: 0,
+        delta_pct: null,
+        delta_count: 0,
+      },
+    ],
+  };
+}
+
+function stubFactorStats(
+  eventCount: number,
+  uniqueActors: number,
+  rank: number,
+  now: number,
+): NonNullable<PulseDimensionBreakdown['top_factors'][number]['factor_stats']> {
+  const percentile = { value: eventCount, reliable: true };
+  return {
+    history: {
+      active_days: 90,
+      last_active_date: new Date(now).toISOString().slice(0, 10),
+      stale: false,
+      no_data: false,
+      sufficiency: { p50: true, p90: true, p99: true },
+    },
+    occurrence: { active_day_frequency: 0.4, current_is_active: true },
+    magnitude: {
+      event_count: eventCount,
+      percentiles: {
+        p10: percentile,
+        p25: percentile,
+        p50: percentile,
+        p75: percentile,
+        p90: percentile,
+        p95: percentile,
+        p99: percentile,
+      },
+      current_percentile_rank: rank,
+    },
+    cohort: {
+      unique_actors: uniqueActors,
+      percentiles: {
+        p10: { value: 1, reliable: true },
+        p25: { value: 2, reliable: true },
+        p50: { value: 3, reliable: true },
+        p75: { value: 5, reliable: true },
+        p90: { value: 8, reliable: true },
+        p95: { value: 13, reliable: true },
+        p99: { value: 21, reliable: true },
+      },
+      current_percentile_rank: 70,
+    },
+    cadence: {
+      days_since_last_active: 0,
+      median_active_day_gap_days: 2,
+      current_gap_percentile_rank: 40,
+    },
+  };
+}
+
 function buildStubNarrative(zone: ZoneId, label: string, stats: RawStats): NarrativeShape {
   const totalEvents = stats.window_event_count ?? stats.top_event_count ?? 0;
   const activeWallets = stats.window_wallet_count ?? stats.top_wallet_count ?? 0;
@@ -337,4 +619,118 @@ function synthUUID(i: number, j: number): string {
   for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   const hex = hash.toString(16).padStart(8, '0');
   return `${hex}-0000-4000-8000-${hex}0000`;
+}
+
+/**
+ * Stub generator for get_recent_badges (cycle-007 S8 kitchen · issue #83).
+ * Deterministic-enough output for playground iteration. Honors badge_type
+ * + badge_id filters + limit (default 50, cap 200) per the production tool.
+ */
+export function generateStubRecentBadges(
+  args: GetRecentBadgesArgs = {},
+): GetRecentBadgesResponse {
+  const limit = Math.max(1, Math.min(args.limit ?? 50, 200));
+  const now = Date.now();
+  const types: BadgeType[] = [
+    'pioneer',
+    'count',
+    'timing',
+    'streak',
+    'collection',
+    'quality',
+    'behavior',
+  ];
+  const rarities: BadgeRarity[] = [
+    'common',
+    'uncommon',
+    'rare',
+    'epic',
+    'legendary',
+    'mythic',
+  ];
+  const seedEarnings: ReadonlyArray<{
+    badge_id: string;
+    badge_name: string;
+    badge_type: BadgeType;
+    rarity: BadgeRarity;
+    description: string;
+  }> = [
+    {
+      badge_id: 'behavior:hodler',
+      badge_name: 'True HODLer',
+      badge_type: 'behavior',
+      rarity: 'rare',
+      description:
+        'Acquire at least twice as much as you sell across all tracked collections',
+    },
+    {
+      badge_id: 'pioneer:first_mint_week',
+      badge_name: 'Pioneer · First Week',
+      badge_type: 'pioneer',
+      rarity: 'epic',
+      description: 'Minted within the first week of the collection going live',
+    },
+    {
+      badge_id: 'count:5_mint_burst',
+      badge_name: 'Five-Mint Burst',
+      badge_type: 'count',
+      rarity: 'common',
+      description: 'Five mints within a single 24h window',
+    },
+    {
+      badge_id: 'timing:weekend_warrior',
+      badge_name: 'Weekend Warrior',
+      badge_type: 'timing',
+      rarity: 'uncommon',
+      description: 'Active across 4+ consecutive weekends',
+    },
+    {
+      badge_id: 'streak:30_day_holder',
+      badge_name: 'Thirty-Day Streak',
+      badge_type: 'streak',
+      rarity: 'rare',
+      description: 'Held a primary asset for 30+ consecutive days without selling',
+    },
+    {
+      badge_id: 'collection:cross_set',
+      badge_name: 'Cross-Set Collector',
+      badge_type: 'collection',
+      rarity: 'legendary',
+      description: 'Owns at least one piece from every tracked collection',
+    },
+    {
+      badge_id: 'quality:floor_lifter',
+      badge_name: 'Floor Lifter',
+      badge_type: 'quality',
+      rarity: 'mythic',
+      description: 'Single transaction lifted the floor by ≥10%',
+    },
+  ];
+
+  const filtered = seedEarnings.filter((e) => {
+    if (args.badge_type && e.badge_type !== args.badge_type) return false;
+    if (args.badge_id && e.badge_id !== args.badge_id) return false;
+    return true;
+  });
+
+  const earnings = Array.from({ length: Math.min(limit, filtered.length || 1) }, (_, i) => {
+    const seed = filtered[i % Math.max(filtered.length, 1)] ?? seedEarnings[i % seedEarnings.length]!;
+    void rarities;
+    void types;
+    return {
+      badge_id: seed.badge_id,
+      badge_name: seed.badge_name,
+      badge_type: seed.badge_type,
+      rarity: seed.rarity,
+      description: seed.description,
+      // Newest first, spaced ~3 min apart for visual ordering in the playground.
+      earned_at: new Date(now - i * 3 * 60_000).toISOString(),
+      wallet: synthAddress(i, 'badge'),
+    };
+  });
+
+  return {
+    earnings,
+    generated_at: new Date().toISOString(),
+  };
 }

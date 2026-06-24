@@ -1,0 +1,284 @@
+# Loa Framework Configuration (Submodule Mode)
+# This file is yours to customize - framework updates will never modify it
+
+# Installation mode (DO NOT CHANGE - use mount-loa.sh to switch to standard)
+installation_mode: submodule
+
+# Submodule settings
+submodule:
+  path: .loa
+  # ref: main  # Uncomment to track specific ref
+
+# =============================================================================
+# Persistence Mode
+# =============================================================================
+persistence_mode: standard
+
+# =============================================================================
+# Integrity Enforcement
+# =============================================================================
+# Note: Submodule mode uses git submodule integrity instead of checksums
+integrity_enforcement: warn
+
+# =============================================================================
+# Agent Configuration
+# =============================================================================
+disabled_agents: []
+
+# =============================================================================
+# Structured Memory
+# =============================================================================
+memory:
+  notes_file: grimoires/loa/NOTES.md
+  trajectory_dir: grimoires/loa/a2a/trajectory
+  trajectory_retention_days: 30
+
+# =============================================================================
+# Context Hygiene
+# =============================================================================
+compaction:
+  enabled: true
+  threshold: 5
+
+# =============================================================================
+# Integrations
+# =============================================================================
+integrations:
+  - github
+
+# =============================================================================
+# Flatline Protocol (multi-model adversarial review)
+# =============================================================================
+# Enabled manually 2026-05-11 for bug-20260511-b6eb97 PR #54 review.
+# 3-model: Opus (primary) + OpenAI Codex (secondary) + Gemini (tertiary).
+# auto_trigger=false so this only runs on explicit /flatline-review invocation.
+flatline_protocol:
+  enabled: true
+  auto_trigger: false
+  phases:
+    prd: false
+    sdd: false
+    sprint: false
+  models:
+    primary: opus              # Claude Opus 4.7 (resolves via aliases below → claude-headless)
+    secondary: gpt-5.5         # OpenAI GPT-5.5 (resolves via aliases below → codex-headless) · upgraded 2026-05-11 · -pro variant had cycle-102 transport disconnects
+    tertiary: gemini-3.1-pro   # Gemini 3.1 Pro (resolves via aliases below → gemini-headless) · upgraded 2026-05-11
+  thresholds:
+    high_consensus: 700
+    disputed_delta: 300
+    low_value: 400
+    blocker_skeptic: 700
+
+# =============================================================================
+# FAGAN code-review panel (construct-fagan · cycle-008 · multimodel review)
+# =============================================================================
+# `/fagan --mode thorough` (reviewing-diffs mode:thorough) fans a diff out to N
+# voices from DISTINCT base corpora so reviews fail differently. Distinct from
+# flatline (PRD/SDD · numeric cross-scoring): FAGAN reviews CODE with severity-enum
+# findings + a severity-cluster merge. Operator-tunable; the panel reads the voice
+# roster from FAGAN_PANEL_VOICES (exported from voices[] below); default = fast.
+fagan_protocol:
+  mode: fast                   # fast (single gpt-5.5 via codex) | thorough (the panel)
+  voices:                      # id:role:adapter:model · role: reviewer|skeptic · adapter: claude|codex|cursor
+    - opus-skeptic:skeptic:claude:opus                 # Anthropic · security-careful dissent seat
+    - gpt-reviewer:reviewer:codex:gpt-5.5              # OpenAI · proven bug-catcher
+    - composer-reviewer:reviewer:cursor:composer-2.5   # Moonshot-Kimi · coding-specialist (needs Cursor Pro)
+  # V2 candidates (gated): gemini-3.1-pro (free, already wired) | grok-4.1-fast (xAI · needs api.x.ai key)
+  gate:
+    lone_critical_holds: true  # a single voice's critical/major → CHANGES_REQUIRED (popularity-trap defense)
+    consensus_min_voices: 2    # a finding seen by ≥2 voices = consensus tier (high confidence)
+    fail_closed: true          # unknown severity → blocking; all-voices-dropped → CHANGES_REQUIRED
+
+# =============================================================================
+# Hounfour — model-heterogeneous agent routing + cheval transport config
+# =============================================================================
+# Routes flatline (and other agents) through cheval.py provider adapters.
+# 2026-05-11: switched all three providers to *-headless variants so flatline
+# bills against the operator's CLI subscription auth (codex / gemini / claude)
+# instead of the API keys (OPENAI_API_KEY quota exceeded · GOOGLE_API_KEY
+# project access denied as of this date).
+# Per feedback_multimodel_via_clis memory: "Use the CLIs I have them authed
+# already."
+hounfour:
+  # Route Flatline calls through cheval (model-invoke) instead of legacy
+  # direct-API path. Required for the *-headless adapters to fire.
+  flatline_routing: true
+
+  feature_flags:
+    google_adapter: true
+    deep_research: true
+    flatline_routing: true
+    metering: true
+    thinking_traces: true
+    jam_geometry: false
+    context_filtering: false
+
+  # Provider name → adapter type. The canonical names (anthropic / openai /
+  # google) are kept so existing alias resolutions (e.g. `opus` →
+  # `anthropic:claude-opus-4-7`) still land correctly; only the TYPE under
+  # each name is swapped to the headless variant. Anyone else who expects
+  # `openai:gpt-5.3-codex` to mean "OpenAI API" needs to re-bind explicitly.
+  providers:
+    anthropic:
+      type: claude-headless  # routes through `claude -p` (Claude Code CLI · OAuth)
+      read_timeout: 600.0
+      models:
+        claude-opus-4-7:
+          capabilities: [chat, tools, function_calling, thinking_traces]
+          context_window: 200000
+          pricing:
+            input_per_mtok: 0  # subscription-billed
+            output_per_mtok: 0
+    openai:
+      type: codex-headless   # routes through `codex exec` (~/.codex/auth.json)
+      read_timeout: 600.0
+      models:
+        gpt-5.3-codex:
+          capabilities: [chat, code]
+          context_window: 400000
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+          extra:
+            reasoning_effort: high
+        gpt-5.5:
+          capabilities: [chat, code]
+          context_window: 500000
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+          extra:
+            reasoning_effort: high
+        gpt-5.5-pro:
+          capabilities: [chat, code]
+          context_window: 500000
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+          extra:
+            reasoning_effort: xhigh
+    google:
+      type: gemini-headless  # routes through `gemini -p` (~/.gemini/settings.json)
+      read_timeout: 600.0
+      models:
+        gemini-2.5-pro:
+          capabilities: [chat]
+          context_window: 1048576
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+        gemini-3-pro:
+          capabilities: [chat]
+          context_window: 2097152
+          pricing:
+            input_per_mtok: 0
+            output_per_mtok: 0
+
+# Run Mode — autonomous sprint execution.
+# Required for /run sprint-plan + /run sprint-N invocations.
+run_mode:
+  enabled: true
+  defaults:
+    max_cycles: 20
+    timeout_hours: 8
+  sprint_plan:
+    branch_prefix: "feat/"
+    default_branch_name: "ambient-events-as-rave"
+    consolidate_pr: true
+    commit_prefix: "feat"
+    include_commits_by_sprint: true
+
+# Simstim — HITL-accelerated 8-phase development workflow.
+# "Experience the AI's work while maintaining your own consciousness." — Gibson
+simstim:
+  enabled: true
+  # Sub-phases (cycle-006 substrate-presentation refactor · operator-enabled 2026-05-16).
+  # Phase 3.5: Bridgebuilder design review on SDD before Flatline.
+  # Phase 4.5: Red Team adversarial security design on SDD.
+  bridgebuilder_design_review: true
+  flatline:
+    auto_accept_high_consensus: true
+    show_disputed: true
+    show_blockers: true
+    phases:
+      - prd
+      - sdd
+      - sprint
+
+# Phase 3.5 · Bridgebuilder design review (cycle-006 opt-in).
+# Reviews SDD against 6 dimensions (architectural soundness, requirement coverage,
+# scale alignment, risk identification, frame questioning, pattern recognition).
+bridgebuilder_design_review:
+  enabled: true
+  persona_path: ".claude/data/bridgebuilder-persona.md"
+  lore_enabled: true
+  vision_capture: true
+
+# Phase 4.5 · Red Team adversarial security design (cycle-006 opt-in).
+# Generates attack scenarios against SDD; confirmed attacks (severity >700)
+# become sprint tasks.
+red_team:
+  enabled: true
+  simstim:
+    auto_trigger: true
+
+# Run Bridge — autonomous excellence loop (cycle-004).
+# Refer to grimoires/loa/cycles/cycle-004 for cycle-specific docs;
+# do NOT date-stamp this comment (will rot — RB-005).
+run_bridge:
+  enabled: true
+  defaults:
+    # depth IS the max-iterations cap (RB-001 partial-FP resolution).
+    # Explicit alias kept here for grep-clarity; mirrors depth above.
+    depth: 3
+    max_iterations: 3
+    per_sprint: false
+    # flatline_threshold: 0.05 means avg findings/iteration delta ≤ 5%.
+    # Expected convergence: 2-3 iterations for well-scoped sprints.
+    # Bridge enters HALTED if exceeds total_hours (24h) before flatline.
+    flatline_threshold: 0.05
+    consecutive_flatline: 2
+  timeouts:
+    per_iteration_hours: 4
+    total_hours: 24
+  github_trail:
+    post_comments: true
+    # update_pr_body: true overwrites PR description on each iteration
+    # (RB-003 risk: manually-authored content gets clobbered).
+    # PR descriptions containing the literal marker `<!-- bridge:no-update -->`
+    # are SKIPPED by the trail-writer to protect operator-authored bodies.
+    update_pr_body: true
+    pr_body_opt_out_marker: "<!-- bridge:no-update -->"
+  ground_truth:
+    enabled: true
+  vision_registry:
+    enabled: true
+    # auto_capture: true tags each captured vision with provenance
+    # (bridge-id + iteration + PR url + finding-id) so untraced entries
+    # are impossible by construction. See bridge-vision-capture.sh.
+    auto_capture: true
+  rtfm:
+    enabled: true
+    # max_fix_iterations: 1 keeps each iteration bounded; RTFM gate is
+    # a fail-soft gate (logged warning, not blocking). Cascading docs
+    # fixes flow through the natural bridge iteration loop, not the
+    # RTFM retry path. (RB-004 deferred — upstream-Loa-defined behavior.)
+    max_fix_iterations: 1
+  lore:
+    enabled: true
+    categories:
+      # mibera = THJ-canonical lore taxonomy (vault/wiki/concepts/mibera-*)
+      - mibera
+  # Bridgebuilder review config block (RB-009 addressed).
+  # Post-PR Bridgebuilder loop posts review as PR comment per iteration.
+  bridgebuilder:
+    persona_path: ".claude/data/bridgebuilder-persona.md"
+    enabled: true
+    # Comment redaction: gitleaks-inspired secret patterns stripped from
+    # posted reviews (SDD §3.5.2 / Flatline SKP-006).
+    redaction_enabled: true
+    # Truncation: bodies > 65KB truncate prose, preserve findings JSON.
+    # Bodies > 256KB extract findings-only.
+    max_body_bytes: 65536
+  pipeline_self_review:
+    enabled: false  # opt-in per cycle

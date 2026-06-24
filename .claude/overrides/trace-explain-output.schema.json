@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://freeside-characters/trace-explain-output.v1.json",
+  "title": "trace:explain output schema · v1 (INV-13 FROZEN)",
+  "description": "Stable contract for `bun run trace:explain` JSON output. Per cycle-007 INV-13 + Flatline IMP-003 (Phase 2 · 870): schema FROZEN at v1 · changes require explicit schema_version bump · downstream consumers (Loa chat · E2E test) lock against this.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "identified_layer", "identified_op", "likely_source", "raw", "warnings"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "identified_layer": {
+      "type": "string",
+      "enum": ["substrate", "voice", "presentation", "medium-render", "orchestrator", "unknown"]
+    },
+    "identified_op": {
+      "type": ["string", "null"]
+    },
+    "likely_source": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "line_range"],
+          "properties": {
+            "file": { "type": "string" },
+            "line_range": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 1 },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        }
+      ]
+    },
+    "raw": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

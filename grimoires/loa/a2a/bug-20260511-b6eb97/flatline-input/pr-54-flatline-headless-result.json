@@ -1,0 +1,130 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 2,
+    "disputed_count": 4,
+    "low_value_count": 0,
+    "blocker_count": 2,
+    "model_agreement_percent": 50,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "Explicitly matching follow-up POST prefix variants plus discord.js wire-surface errors improves attribution quality and reduces ambiguous telemetry buckets with modest implementation cost.",
+      "gpt_score": 730,
+      "opus_score": 880,
+      "tertiary_score": 950,
+      "delta": 150,
+      "average_score": 805,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "This enforces a stated invariant that currently relies on discipline. A startup/test assertion is low cost and prevents subtle idempotency regressions from future template edits.",
+      "gpt_score": 860,
+      "opus_score": 820,
+      "tertiary_score": 880,
+      "delta": 40,
+      "average_score": 840,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-005",
+      "description": "Unicode/locale bypass coverage is a legitimate hardening idea, but given current English-only upstream error sources this is likely premature relative to other priorities.",
+      "gpt_score": 330,
+      "opus_score": 680,
+      "tertiary_score": 850,
+      "delta": 350,
+      "average_score": 505,
+      "source": "gpt_scored",
+      "would_integrate": false,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-006",
+      "description": "The substitution-kind mismatch is mainly an observability/voice-consistency concern, not a correctness break. Documenting the trade-off is cheap and clarifies intent.",
+      "gpt_score": 560,
+      "opus_score": 0,
+      "tertiary_score": null,
+      "delta": 560,
+      "average_score": 560,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-007",
+      "description": "A single integration-style dispatch-path test closes a critical gap that helper-level unit tests cannot catch: ensuring sanitizer invocation at real write surfaces.",
+      "gpt_score": 790,
+      "opus_score": 0,
+      "tertiary_score": null,
+      "delta": 790,
+      "average_score": 790,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-008",
+      "description": "Cross-linking doctrine and implementation docs is low effort and improves maintainability/discoverability, though it is process quality rather than runtime risk reduction.",
+      "gpt_score": 580,
+      "opus_score": 0,
+      "tertiary_score": null,
+      "delta": 580,
+      "average_score": 580,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-001",
+      "concern": "Raw-error matching is brittle and may miss real leak variants despite the 'load-bearing boundary' claim. Current patterns require exact start-of-string shapes and exact literals (for example `{\"type\":\"error\"` with no whitespace variation), so variants like leading whitespace/newlines, `{\"type\": \"error\"...}`, or provider wording drift can bypass substitution and reach Discord.",
+      "severity": "HIGH",
+      "severity_score": 735,
+      "why_matters": "The primary objective of this PR is preventing raw upstream error text from leaking to users. Pattern miss means the invariant fails exactly when upstream formats change or wrappers prepend formatting.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts (RAW_API_ERROR_PATTERNS, especially `raw-json-error-envelope` and anchored literal patterns)",
+      "recommendation": "Normalize input before matching (`trimStart`, optional collapse of leading wrapper prefixes), broaden JSON-envelope detection to tolerate whitespace, and add a conservative fallback for obvious server-error envelopes. Add explicit tests for leading whitespace/newline and spaced JSON (`{\"type\": \"error\"...}`).",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "The generic catch-all regex (`generic-error-class-prefix`) creates a high risk of false positives by matching any PascalCase identifier ending in 'Error', 'Exception', or 'Failure' at the start of a string.",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "This can lead to silent corruption of valid bot responses. If an LLM legitimately generates content starting with a term like 'ComponentInitializationError: ...' as part of a code explanation, it will be incorrectly replaced with a generic in-character error, confusing the user and breaking the intended interaction.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts",
+      "recommendation": "Strengthen the guardrails for the generic catch-all pattern. Require a more definitive error signature, such as the presence of a colon and space after the identifier (`...Failure: `), or limit it to a known set of upstream error prefixes. Additionally, document this limitation in `CHARACTER-AUTHORING.md` as a constraint on character voice.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "pr",
+  "document": "grimoires/loa/a2a/bug-20260511-b6eb97/flatline-input/pr-54-diff.md",
+  "domain": "software development",
+  "tertiary_model_used": "gemini-2.5-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "interactive",
+    "mode_reason": "Default (no explicit mode specified)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-11T20:52:52Z",
+  "metrics": {
+    "total_latency_ms": 350000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

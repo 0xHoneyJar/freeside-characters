@@ -5,6 +5,11 @@
  * These types are kept in sync until the score-vault repo lands and we can
  * import from `@score-vault/ports`. Until then, these mirror what zerker's
  * MCP server returns from `get_zone_digest`.
+ *
+ * KEPT HONEST BY `score/schema-drift.test.ts` (cycle-008 capability-wiring slice 3):
+ * offline mirror-integrity on every PR + an MCP_KEY-gated live freshness check that asserts
+ * the real upstream advertises a schema_version this mirror handles (run on railway/cron,
+ * not keyless CI).
  */
 
 export const RAW_STATS_SCHEMA_VERSION = '1.0.0';
@@ -50,12 +55,10 @@ export const ZONE_TO_DIMENSION = {
   'owsley-lab': 'onchain',
 } as const satisfies Record<ZoneId, ZoneDimension>;
 
-export const ZONE_FLAVOR = {
-  stonehenge: { emoji: '🗿', name: 'Stonehenge', dimension: 'overall' },
-  'bear-cave': { emoji: '🐻', name: 'Bear Cave', dimension: 'og' },
-  'el-dorado': { emoji: '⛏️', name: 'El Dorado', dimension: 'nft' },
-  'owsley-lab': { emoji: '🧪', name: 'Owsley Lab', dimension: 'onchain' },
-} as const satisfies Record<ZoneId, { emoji: string; name: string; dimension: ZoneDimension }>;
+// cycle-007 S1/T1.3 · ZONE_FLAVOR DELETED — canonical zone-display map lives at
+// packages/persona-engine/src/domain/zone-registry.ts::ZONE_REGISTRY (D1 closure).
+// Callers migrated to ZONE_REGISTRY (record access) + safeResolveZone{DisplayName,RichLabel} (with SKP-003 try/catch).
+// Per Flatline INV-12 + Red Team AC-RT-002: prevents kebab leak through canonical resolver.
 
 /**
  * Display-cased dimension names — used in prose where the dimension reads as
@@ -146,6 +149,14 @@ export interface RawStats {
   top_movers: TopMover[];
   top_events: RecentEvent[];
   spotlight: Spotlight | null;
+  /**
+   * OPTIONAL curated multi-user spotlight array (cycle-008 · the RLHF V3 leaderboard
+   * direction · V2 hook). When score-api later provides a curated list, the enriched
+   * digest renderer PREFERS it over client-side derivation (deriveSpotlights). Absent
+   * today — the derive path ([spotlight, ...rank_changes.climbed]) is the V1 source.
+   * Additive + optional so the v1.0.0/v2.0.0 mirror stays backward-compatible.
+   */
+  spotlights?: Spotlight[];
   rank_changes: RankChanges;
   factor_trends: FactorTrend[];
 }
@@ -210,4 +221,406 @@ export interface ZoneDigest {
 export interface GetZoneDigestArgs {
   zone: ZoneId;
   window?: 'weekly';
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Cycle-021 ruggy-pulse-mcp — 4 new pulse-shaped tools (score-mibera PR #111)
+// ══════════════════════════════════════════════════════════════════════
+//
+// Hand-mirrored from score-mibera/src/mcp/tools/* + the *.v1.json response
+// schemas at score-mibera/src/mcp/schemas/. All four tools emit
+// `schema_version: '1.0.0'` and an ISO-8601 `generated_at`. Wire-format
+// stability: `schema_version` is a pinned const, not a pattern.
+//
+// Cadence ownership: operator-scheduled (cron-wired), not agent-chosen.
+// Ruggy's persona prompt selects WHICH tool to call given a fired schedule;
+// it does NOT decide WHEN to post. Window param + generated_at support any
+// operator cadence (weekly summary / daily recap / hourly ticker).
+
+export type PulseWindow = 7 | 30 | 90;
+export type PulseDimension = 'og' | 'nft' | 'onchain';
+
+// ──────────────────────────────────────────────────────────────────────
+// get_community_counts — windowed KPI snapshot
+// ──────────────────────────────────────────────────────────────────────
+
+export interface CommunityCountsCoreFields {
+  active_members: number;       // active_in_window
+  active_7d: number;             // always-7d definitional signal
+  new_in_window: number;
+  inactive_30d: number;
+  recently_churned: number;
+  stickiness: number | null;     // active_7d / active_30d (DAU/MAU)
+}
+
+/**
+ * Prior-period count anchor. Same field names as the count-typed Core fields,
+ * with null when prior-period data is missing. **Values are COUNTS.**
+ */
+export interface CommunityCountsPreviousFields {
+  active_members: number | null;
+  active_7d: number | null;
+  new_in_window: number | null;
+  inactive_30d: number | null;
+  recently_churned: number | null;
+  stickiness: number | null;
+}
+
+/**
+ * Period-over-period delta payload. Field NAMES match the count fields for
+ * structural consistency with the server schema, but the VALUES are **percent
+ * changes**, not counts. A `deltas.active_members` of `42` means +42% PoP,
+ * not 42 members. `null` when the prior-period denominator is 0 (never Infinity).
+ *
+ * The shape is intentionally distinct from CommunityCountsPreviousFields so
+ * call sites cannot accidentally treat a percent change as a member count.
+ * (Per BB-001 review on PR #73 — semantic-collision guard.)
+ */
+export interface CommunityCountsDeltaFields {
+  /** PoP percent change in active_in_window count. null if prior is 0. */
+  active_members: number | null;
+  /** PoP percent change in active_7d count. null if prior is 0. */
+  active_7d: number | null;
+  /** PoP percent change in new_in_window count. null if prior is 0. */
+  new_in_window: number | null;
+  /** PoP percent change in inactive_30d count. null if prior is 0. */
+  inactive_30d: number | null;
+  /** PoP percent change in recently_churned count. null if prior is 0. */
+  recently_churned: number | null;
+  /** PoP percent change in stickiness ratio. null if prior is 0. */
+  stickiness: number | null;
+}
+
+export interface GetCommunityCountsArgs {
+  window: PulseWindow;
+}
+
+export interface GetCommunityCountsResponse extends CommunityCountsCoreFields {
+  window_days: PulseWindow;
+  /** Prior-period values (counts). null fields if prior data missing. */
+  previous: CommunityCountsPreviousFields;
+  /** PoP percent changes for each field. null when prior is 0 (never Infinity). */
+  deltas: CommunityCountsDeltaFields;
+  /**
+   * Family-wide minor bump. get_community_counts has no `factor_stats`
+   * surface (cycle-022 enrichment landed on the two factor-keyed tools
+   * only) but the family schema bumps together per the cycle-020 minor-
+   * bump convention. Accept both during the consumer transition.
+   */
+  schema_version: '1.0.0' | '1.1.0';
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// factor_stats — cycle-022 verification-primitives substrate (PR #116)
+// ──────────────────────────────────────────────────────────────────────
+//
+// score-mibera enriches every live per-factor object on get_dimension_breakdown
+// + get_recent_events with this `factor_stats` block — empirical percentile
+// ranks of the current window against the factor's own trailing history
+// (730-day cap), per-tier sufficiency, per-percentile reliability flags,
+// occurrence frequency, and active-day-gap cadence.
+//
+// **Numbers, not verdicts.** The substrate enforces (via a no-verdict test
+// on the score-api side: factor-stats.service.test.ts) that NO
+// `gate_suggestion` / `held` / `shifted` / `verdict` / `blocked` keys appear
+// anywhere in the response. The consumer (freeside-characters) maps these
+// numbers → permitted prose register; score-mibera does NOT parse prose.
+//
+// See the score-mibera doctrine in:
+//   - https://github.com/0xHoneyJar/score-mibera/issues/115 (doctrine)
+//   - https://github.com/0xHoneyJar/score-mibera/pull/116 (shipped)
+//   - score-api/src/services/factor-stats.service.ts:57 (canonical type)
+//
+// Absent on historic factors (catalog status:'historic'). Always present
+// when factor_stats is emitted; null fields signal "history too thin to
+// support this specific statistic" — never a fabricated number.
+
+export type FactorStatsPercentileKey = 'p10' | 'p25' | 'p50' | 'p75' | 'p90' | 'p95' | 'p99';
+
+export interface FactorStatsSurface {
+  /** Present on `magnitude` only — current-window event_count. */
+  event_count?: number;
+  /** Present on `cohort` only — current-window unique_actors. */
+  unique_actors?: number;
+  /**
+   * Per-percentile {value, reliable}. `reliable: false` means the underlying
+   * history is too thin to support THIS specific percentile — even if
+   * history.sufficiency.p50 is true, p99 may not be.
+   */
+  percentiles: Record<FactorStatsPercentileKey, { value: number | null; reliable: boolean }>;
+  /**
+   * Leave-one-out empirical rank of the current window vs the factor's own
+   * trailing distribution. null when history is too thin to rank.
+   */
+  current_percentile_rank: number | null;
+}
+
+export interface FactorStats {
+  history: {
+    active_days: number;
+    /** ISO date YYYY-MM-DD; null when no_data. */
+    last_active_date: string | null;
+    /**
+     * last_active_date older than FACTOR_STATS_STALENESS_DAYS (default 45).
+     * Surfaces dormancy without conflating with "no data".
+     */
+    stale: boolean;
+    /** Factor exists in catalog but has zero history rows. */
+    no_data: boolean;
+    /** Present+true ONLY on the degraded-failure path (score-api SDD §6). */
+    error?: boolean;
+    /** Present+true ONLY for an unknown/unresolvable factor_id. */
+    unknown_factor?: boolean;
+    /**
+     * Per-tier sufficiency. p50 requires ≥10 active days, p90 ≥30, p99 ≥60
+     * (env-configurable via FACTOR_STATS_SUFFICIENCY_{P50,P90,P99} on the
+     * score-api side).
+     */
+    sufficiency: { p50: boolean; p90: boolean; p99: boolean };
+  };
+  occurrence: {
+    /**
+     * Fraction of trailing-window days that saw events for this factor.
+     * The hurdle's "gate" dimension — magnitude rank is conditional on this.
+     */
+    active_day_frequency: number;
+    /** Was today an active day at all. */
+    current_is_active: boolean;
+  };
+  magnitude: FactorStatsSurface;
+  cohort: FactorStatsSurface;
+  cadence: {
+    days_since_last_active: number;
+    median_active_day_gap_days: number | null;
+    /**
+     * Plain empirical rank (NOT leave-one-out) — the current
+     * days-since-last is an ongoing, not-yet-completed gap.
+     */
+    current_gap_percentile_rank: number | null;
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// get_dimension_breakdown — per-dim activity ordering + cold factors
+// ──────────────────────────────────────────────────────────────────────
+
+export interface PulseDimensionFactor {
+  factor_id: string;
+  display_name: string;
+  /** Verb-style action label (e.g. "Boosted Validator"). null if not set in catalog. */
+  primary_action: string | null;
+  total: number;
+  previous: number;
+  delta_pct: number | null;
+  delta_count: number;
+  /**
+   * cycle-022 verification-primitives enrichment (score-mibera PR #116).
+   * Absent for historic factors (catalog status:'historic'). Numbers, not
+   * verdicts — see FactorStats below.
+   */
+  factor_stats?: FactorStats;
+}
+
+export interface PulseDimensionBreakdown {
+  id: PulseDimension;
+  display_name: string;
+  total_events: number;
+  previous_period_events: number;
+  delta_pct: number | null;
+  delta_count: number;
+  /** Count of factors in this dimension's catalog with zero events in window. */
+  inactive_factor_count: number;
+  total_factor_count: number;
+  /** ALL active factors (total > 0), sorted desc by total, factor_id ASC tie-break. */
+  top_factors: PulseDimensionFactor[];
+  /** ALL zero-row factors, sorted asc by display_name, factor_id ASC tie-break. */
+  cold_factors: PulseDimensionFactor[];
+}
+
+export interface GetDimensionBreakdownArgs {
+  window: PulseWindow;
+  /** Omit (or undefined) to return all 3 dimensions; set to filter. NO 'all' literal. */
+  dimension?: PulseDimension;
+}
+
+export interface GetDimensionBreakdownResponse {
+  dimensions: PulseDimensionBreakdown[];
+  /**
+   * 1.0.0 = pre cycle-022; 1.1.0 = cycle-022 substrate live (per-factor
+   * `factor_stats` enrichment). Pre-existing fields are byte-identical
+   * across the bump — accept both during the consumer transition.
+   */
+  schema_version: '1.0.0' | '1.1.0';
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// get_recent_events — flat list + by_factor roll-up
+// ──────────────────────────────────────────────────────────────────────
+
+export interface RecentEventRow {
+  event_id: string;
+  wallet: string;
+  factor_id: string;
+  factor_display_name: string;
+  dimension: PulseDimension;
+  category_key: string;
+  /** Server-formatted human-readable string (e.g. "Minted Candies #3221"). */
+  description: string;
+  raw_value: number | null;
+  raw_value_kind: string;
+  timestamp: string;             // ISO-8601
+}
+
+export interface ByFactorRollup {
+  factor_id: string;
+  factor_display_name: string;
+  dimension: PulseDimension;
+  /** Event-volume count (not unique participants). */
+  count: number;
+  /** Up to 3 distinct wallets (case-preserved from first occurrence; dedup is case-insensitive). */
+  sample_wallets: string[];
+  /**
+   * cycle-022 verification-primitives enrichment (score-mibera PR #116).
+   * Absent for historic factors (catalog status:'historic'). Numbers, not
+   * verdicts — see FactorStats below.
+   */
+  factor_stats?: FactorStats;
+}
+
+export interface GetRecentEventsArgs {
+  /** Default 50, max 200. */
+  limit?: number;
+  dimension?: PulseDimension;
+}
+
+export interface GetRecentEventsResponse {
+  events: RecentEventRow[];
+  /** Grouped by factor_id, ordered by count DESC + factor_id ASC tie-break. */
+  by_factor: ByFactorRollup[];
+  /**
+   * 1.0.0 = pre cycle-022; 1.1.0 = cycle-022 substrate live (per-factor
+   * `factor_stats` enrichment on `by_factor[]`; `events[]` is byte-identical
+   * across the bump). Accept both during the consumer transition.
+   */
+  schema_version: '1.0.0' | '1.1.0';
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// get_most_active_wallets — ranked wallets in window
+// ──────────────────────────────────────────────────────────────────────
+
+export interface MostActiveWalletEntry {
+  /** 1-indexed, derived from array order. */
+  rank: number;
+  wallet: string;
+  event_count: number;
+  primary_dimension: PulseDimension;
+  /** Distinct dimensions this wallet was active in. */
+  dimension_count: number;
+  first_event_at: string;
+  last_event_at: string;
+}
+
+export interface GetMostActiveWalletsArgs {
+  window: PulseWindow;
+  /** Default 10, max 100. */
+  limit?: number;
+  /** Default 'all'. */
+  dimension?: PulseDimension | 'all';
+}
+
+export interface GetMostActiveWalletsResponse {
+  window_days: PulseWindow;
+  wallets: MostActiveWalletEntry[];
+  /** Count of all wallets matching the window+filters, before LIMIT. */
+  total_candidates: number;
+  /**
+   * Family-wide minor bump. get_most_active_wallets has no `factor_stats`
+   * surface (wallet-keyed, not factor-keyed) but the family schema bumps
+   * together per the cycle-020 minor-bump convention. Accept both during
+   * the consumer transition.
+   */
+  schema_version: '1.0.0' | '1.1.0';
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// get_recent_badges — earnings feed (cycle-007 S8 kitchen exhibit · issue #83)
+// ──────────────────────────────────────────────────────────────────────
+
+export type BadgeType =
+  | 'pioneer'
+  | 'count'
+  | 'timing'
+  | 'streak'
+  | 'collection'
+  | 'quality'
+  | 'behavior';
+
+export type BadgeRarity =
+  | 'common'
+  | 'uncommon'
+  | 'rare'
+  | 'epic'
+  | 'legendary'
+  | 'mythic';
+
+export interface BadgeEarning {
+  badge_id: string;
+  badge_name: string;
+  badge_type: BadgeType;
+  rarity: BadgeRarity;
+  description: string | null;
+  earned_at: string;
+  wallet: string;
+}
+
+export interface GetRecentBadgesArgs {
+  badge_type?: BadgeType;
+  badge_id?: string;
+  /** 1-200, default 50. Issue #83 note: poll cadence owned by agent (no window param). */
+  limit?: number;
+}
+
+export interface GetRecentBadgesResponse {
+  earnings: BadgeEarning[];
+  generated_at: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Pulse error envelopes (shared with all 4 tools)
+// ──────────────────────────────────────────────────────────────────────
+//
+// Tools return either a success response (one of the *Response interfaces
+// above) OR an error envelope inside `result.content[0].text`. SDK-layer
+// rejections (zod parse failures) come back as JSON-RPC `error` at the
+// envelope level — those never reach `result`. See score-mibera SDD §7.
+
+export interface FeatureDisabledEnvelope {
+  error: 'feature_disabled';
+  code: 'FEATURE_DISABLED';
+  message: string;
+}
+
+export interface UpstreamErrorEnvelope {
+  error: 'upstream_error';
+  code: 'UPSTREAM_ERROR';
+  tool: string;
+  message: string;
+}
+
+export type PulseErrorEnvelope = FeatureDisabledEnvelope | UpstreamErrorEnvelope;
+
+/** Type-narrowing helper for pulse-tool consumers. */
+export function isPulseError(v: unknown): v is PulseErrorEnvelope {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'code' in v &&
+    ((v as { code: string }).code === 'FEATURE_DISABLED' ||
+      (v as { code: string }).code === 'UPSTREAM_ERROR')
+  );
 }

@@ -1,0 +1,1193 @@
+/**
+ * Reply composer (V0.7-A.0 + V0.7-A.1 Phase D) — slash-command chat-mode pipeline.
+ *
+ * Mirror of `composeForCharacter` for conversational replies. The substrate
+ * supplies plumbing (ledger snapshot, env context, prompt build, LLM call,
+ * chunk split); the character supplies voice via persona.md.
+ *
+ * Civic-layer note: this is a SUBSTRATE-level composer. It speaks Discord
+ * shape (chunks, character limits) and persona-engine shape (config,
+ * CharacterConfig, LedgerEntry) — never both. Characters consume the
+ * result through `apps/bot/src/discord-interactions/dispatch.ts`.
+ *
+ * V0.7-A.0 invariants honored:
+ *   - No memory primitive — ledger is in-process per channel only.
+ *   - No persistent state — restart loses ledger by design.
+ *   - Voice fidelity preserved via persona template + chat-mode override.
+ *
+ * V0.7-A.1 Phase D — chat-mode tool surface (closes the operator's
+ * "ChatGPT-natural tool use" gap):
+ *   - With `CHAT_MODE=orchestrator|auto` and LLM_PROVIDER=anthropic:
+ *     route through `runOrchestratorQuery` with the character's declared
+ *     `mcps` scope. Per-character MCP isolation: ruggy gets score+codex+
+ *     emojis+rosenzu+freeside_auth; satoshi gets codex+imagegen.
+ *   - With `CHAT_MODE=naive` OR a non-anthropic provider: keep the V0.7-A.0
+ *     `invokeChat()` single-turn path (no MCPs, no tools).
+ *   - The environment-context block (`compose/environment.ts`) is built
+ *     and substituted into the prompt pair regardless of routing — same
+ *     `## Environment` grounding lands either way.
+ */
+
+import { type Options } from '@anthropic-ai/claude-agent-sdk';
+import { resolveQuery } from '../observability/raindrop-instrumentation.ts';
+import type { Config } from '../config.ts';
+import type { CharacterConfig } from '../types.ts';
+import type { ZoneId } from '../score/index.ts';
+import { Effect } from 'effect';
+import { buildPrompt, BuildPromptError } from '../persona/loader.ts';
+import {
+  buildEnvironmentContext,
+  type RecentMessage,
+} from './environment.ts';
+import {
+  runOrchestratorQuery,
+  type ToolResultEvent,
+  type ToolUseEvent,
+} from '../orchestrator/index.ts';
+import {
+  composeWithImage,
+  type CodexGrailResult,
+  type EnrichedPayload,
+} from '../deliver/embed-with-image.ts';
+import {
+  inspectGrailRefs,
+  type GrailRefValidation,
+} from '../deliver/grail-ref-guard.ts';
+import { stripAttachedImageUrls } from '../deliver/strip-image-urls.ts';
+import {
+  EMOJIS,
+  findById,
+  findByName,
+  pickByMoods,
+  renderEmoji,
+  shuffle,
+  type EmojiKind,
+} from '../orchestrator/emojis/registry.ts';
+import {
+  appendToLedger,
+  getLedgerSnapshot,
+  type LedgerEntry,
+} from '../conversation/ledger.ts';
+import { sampleVoiceCard, renderVoiceCard } from '../voice/sampler.ts';
+import type { VoiceCard } from '../voice/grimoire.ts';
+import { getVoiceWeightsFor } from '../voice/config-loader.ts';
+
+/**
+ * Witness picker — binds the grimoire sampler to ruggy's custom emoji
+ * registry. Picks ONE emoji name whose mood tags match the sampled card's
+ * stance. Returns null when the card's exit isn't `custom_emoji` (no need
+ * to pick) or when no mood-fit is available.
+ *
+ * Stance → mood heuristic (deliberately loose · the LLM still has freedom):
+ *   - density=fragment + splash=sparse → "cool" or "dazed" emoji (low-key)
+ *   - shape=single_punchline + bullet_palette includes 🚨 → "flex" or "shocked"
+ *   - exit=bear_emoji or silence → don't bother (returns null)
+ *   - default → "cool" mood for static · catches the "vibe" register
+ *
+ * The picker is character-scoped via `kind`. Per-character mood mappings
+ * could compose later when satoshi/mongolian want this surface — for now
+ * ruggy's the only character using the grimoire.
+ */
+function pickWitnessFromRegistry(card: Omit<VoiceCard, 'witness'>, kind: EmojiKind = 'ruggy'): string | null {
+  if (card.exit !== 'custom_emoji') return null;
+  // Match stance to mood-search terms · the registry has flex/cool/dazed/
+  // celebrate/cute/love/snark/etc · pick reaches via mood tags.
+  let moods: string[];
+  if (card.bullet_palette.includes('🚨')) {
+    moods = ['shocked', 'flex'];
+  } else if (card.density === 'fragment' || card.splash === 'sparse') {
+    moods = ['cool', 'dazed'];
+  } else if (card.splash === 'lush') {
+    moods = ['celebrate', 'cute', 'love'];
+  } else {
+    moods = ['cool', 'cute'];
+  }
+  const candidates = pickByMoods(moods as never, kind);
+  if (candidates.length === 0) return null;
+  const shuffled = shuffle(candidates);
+  return shuffled[0]?.name ?? null;
+}
+
+export interface ReplyComposeArgs {
+  config: Config;
+  character: CharacterConfig;
+  /** The user's message text (the slash-command `prompt:` option). */
+  prompt: string;
+  /** Discord channel id where the slash was invoked. */
+  channelId: string;
+  /**
+   * V0.7-A.1: codex zone resolved by the caller (apps/bot dispatcher
+   * resolves channelId→zone via `getZoneForChannel`). Undefined when the
+   * channel is outside the four codex-mapped zones (DM, etc.) — the
+   * environment block falls back to the "outside the codex-mapped zones"
+   * line and skips the room-read line.
+   */
+  zone?: ZoneId;
+  /**
+   * V0.7-A.1: other characters loaded into the same Discord shell process
+   * (caller's CHARACTERS env split, minus self). Surfaces as the "Other
+   * characters present" line when non-empty.
+   */
+  otherCharactersHere?: string[];
+  /** Discord user id of the invoker (stored in ledger for transcript). */
+  authorId: string;
+  /** Discord username (or display name) of the invoker. */
+  authorUsername: string;
+  /**
+   * V0.7-A.1: optional callback fired when the LLM emits a `tool_use` block
+   * during chat-mode orchestrator round-trips. The dispatcher uses this to
+   * PATCH the deferred Discord message with progress ("🔧 pulling X…").
+   * No-op when the chat path resolves to naive (no tools available).
+   */
+  onToolUse?: (event: ToolUseEvent) => void;
+  /**
+   * V0.7-A.3: optional callback fired when a `tool_result` block arrives
+   * from the SDK loop. Used by `composeReplyWithEnrichment` to capture
+   * codex grail envelopes for env-aware image attachment composition.
+   * No-op when the chat path resolves to naive (no tools fire).
+   */
+  onToolResult?: (event: ToolResultEvent) => void;
+  options?: {
+    /** How many recent ledger entries to feed the prompt. Default 10. */
+    historyDepth?: number;
+    /** For telemetry only — actual ephemeral flag handled by dispatch. */
+    ephemeral?: boolean;
+  };
+}
+
+export interface ReplyComposeResult {
+  /** The full reply text (pre-split). */
+  content: string;
+  /** Pre-split chunks, each ≤ 2000 chars (Discord message limit). */
+  chunks: string[];
+  contextUsed: {
+    ledgerSize: number;
+    promptTokens?: number;
+    durationMs: number;
+  };
+}
+
+const DISCORD_CHAR_LIMIT = 2000;
+const DEFAULT_HISTORY_DEPTH = 10;
+
+export async function composeReply(
+  args: ReplyComposeArgs,
+): Promise<ReplyComposeResult | null> {
+  const t0 = Date.now();
+  const historyDepth = args.options?.historyDepth ?? DEFAULT_HISTORY_DEPTH;
+  const history = getLedgerSnapshot(args.channelId, historyDepth);
+
+  // V0.7-A.1 Phase D: build the environment-context block from the resolved
+  // zone + ledger snapshot. Empty string when nothing useful to say (no
+  // zone + no tool guidance + no presence) — substitution is a no-op.
+  const recentMessages: RecentMessage[] = history.map((h) => ({
+    authorUsername: h.authorUsername,
+    content: h.content,
+    timestampMs: h.timestamp ? Date.parse(h.timestamp) : undefined,
+  }));
+  const environmentContext = buildEnvironmentContext({
+    character: args.character,
+    zone: args.zone,
+    recentMessages,
+    otherCharactersHere: args.otherCharactersHere,
+  });
+
+  // 2026-05-12 — voice grimoire: sample a per-fire stance card and
+  // inject as {{VOICE_GRIMOIRE}}. Persona reads the card and shapes
+  // accordingly. Operator-tunable weights via voice.config.yaml at
+  // repo root · falls back to DEFAULT_VOICE_WEIGHTS when no config.
+  const voiceCard = sampleVoiceCard({
+    seed: `${args.channelId}:${args.authorId}:${Date.now()}`,
+    channelId: args.channelId,
+    weights: getVoiceWeightsFor(args.character.id),
+    witnessPicker: (c) => pickWitnessFromRegistry(c, 'ruggy'),
+  });
+  const voiceGrimoire = renderVoiceCard(voiceCard);
+
+  // cycle-008 T2.8 · direct Effect-shaped buildPrompt (per Flatline FR-10).
+  // BuildPromptError propagates via Promise rejection · structural/invariant
+  // errors surface to caller's runtime error handler · INPUT errors halt this
+  // reply with structured trace (logged via Effect.tapError below).
+  const { systemPrompt, userMessage } = await Effect.runPromise(
+    buildPrompt({
+      character: args.character,
+      shape: {
+        kind: 'reply',
+        transcript: history.map((h) => ({
+          role: h.role,
+          authorUsername: h.authorUsername,
+          content: h.content,
+        })),
+        authorUsername: args.authorUsername,
+        userPrompt: args.prompt,
+      },
+      environmentContext,
+      voiceGrimoire,
+      // chat-mode: cycle-008 args (activeFactors / priorWeekHint) deliberately
+      // undefined · buildPrompt skips cron-arg validation for shape.kind === 'reply'.
+    }).pipe(
+      Effect.tapError((err) =>
+        Effect.sync(() => {
+          if (err instanceof BuildPromptError) {
+            console.error(
+              `[reply] BuildPromptError category=${BuildPromptError.categoryFor(err.kind)} kind=${err.kind}`,
+              err.detail ?? '',
+            );
+          }
+        }),
+      ),
+    ),
+  );
+
+  // Routing decision: orchestrator (full MCP scope) vs naive (V0.7-A.0
+  // single-turn). Decided per call by `CHAT_MODE` + provider resolution.
+  const replyText = (await routeChatLLM(args.config, {
+    character: args.character,
+    systemPrompt,
+    userMessage,
+    zone: args.zone,
+    onToolUse: args.onToolUse,
+    onToolResult: args.onToolResult,
+  })) ?? '';
+
+  if (!replyText || replyText.trim().length === 0) {
+    return null;
+  }
+
+  const trimmed = replyText.trim();
+  const chunks = splitForDiscord(trimmed, DISCORD_CHAR_LIMIT);
+
+  // Ledger discipline: append BOTH the user message AND the character
+  // reply, in order. Future invocations in the same channel see this as
+  // shared context. The ledger entry stores the FULL reply (not chunks)
+  // so transcript rendering doesn't repeat the split.
+  const nowIso = new Date().toISOString();
+  const userEntry: LedgerEntry = {
+    role: 'user',
+    content: args.prompt.trim(),
+    authorId: args.authorId,
+    authorUsername: args.authorUsername,
+    timestamp: nowIso,
+  };
+  const characterEntry: LedgerEntry = {
+    role: 'character',
+    content: trimmed,
+    characterId: args.character.id,
+    authorId: args.character.id,
+    authorUsername: args.character.displayName ?? args.character.id,
+    timestamp: new Date().toISOString(),
+  };
+  appendToLedger(args.channelId, userEntry);
+  appendToLedger(args.channelId, characterEntry);
+
+  return {
+    content: trimmed,
+    chunks,
+    contextUsed: {
+      ledgerSize: history.length,
+      durationMs: Date.now() - t0,
+    },
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// V0.7-A.3 — env-aware enrichment (additive surface, option C per spec §4.1)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Tool names whose result envelopes may carry grail image URLs that the
+ * env-aware composer should attach (V1: codex grail tools only — mibera
+ * + archetype + fracture deferred to V1.5 per spec §6 BARTH cut).
+ */
+const CODEX_IMAGE_TOOL_NAMES = new Set([
+  'mcp__codex__lookup_grail',
+  'mcp__codex__lookup_mibera',
+  'mcp__codex__search_codex',
+]);
+
+export interface EnrichedReplyResult extends ReplyComposeResult {
+  /** Webhook payload with text + optional image attachments. */
+  payload: EnrichedPayload;
+  /** Tool results captured during the run (in stream order). */
+  toolResults: ToolResultEvent[];
+  /** V0.7-A.3 grail-ref guard validation (spec §11.2 — V1 warning-only). */
+  grailRefValidation: GrailRefValidation;
+}
+
+/**
+ * V0.7-A.3 sibling composer (additive surface — preserves `composeReply`
+ * contract per spec §4.1 option C). Wraps `composeReply` + collects tool
+ * results from the SDK loop, then:
+ *   1. runs `composeWithImage` to build a webhook payload with optional
+ *      grail image attachments (env-aware bytes-on-the-wire pattern)
+ *   2. runs `validateGrailRefs` (spec §11.2) on the reply text — V1
+ *      appends a warning footer when the LLM cited unverified grail
+ *      refs; V1.5 will strip + reinforce persona instruction.
+ *
+ * Returns null when `composeReply` does — empty/no-result is the same
+ * shape upstream.
+ *
+ * Existing callers (digest, weaver, callout) continue calling `composeReply`
+ * unchanged. New callers (chat dispatch.ts) opt-in to enrichment by calling
+ * this entry point.
+ */
+export async function composeReplyWithEnrichment(
+  args: ReplyComposeArgs,
+): Promise<EnrichedReplyResult | null> {
+  const captured: ToolResultEvent[] = [];
+  // Compose with a hooked onToolResult — tool envelopes flow into `captured`
+  // alongside whatever the caller's own onToolResult does (chained, not replaced).
+  const result = await composeReply({
+    ...args,
+    onToolResult: (event) => {
+      captured.push(event);
+      args.onToolResult?.(event);
+    },
+  });
+  if (!result) return null;
+
+  // V0.7-A.3 §11.2: post-process for grail-ref hallucinations. Refs that
+  // arrived in this session's tool results are session-canonical (allowed
+  // even if not in the V1 hardcoded canonical set); other refs fall to
+  // invalid → operator-only telemetry (warning log + structured field on
+  // EnrichedReplyResult.grailRefValidation). Bridgebuilder F4 (2026-05-02):
+  // V1 is telemetry-only by design — no user-visible footer; persona
+  // illusion is preserved. V1.5 may add an in-voice signal (character
+  // refusing the reach) per spec §11.2.
+  const sessionGrailRefs = extractSessionGrailRefs(captured);
+  const inspected = inspectGrailRefs(result.content, sessionGrailRefs);
+  if (inspected.validation.invalid.length > 0) {
+    console.warn(
+      `[grail-ref-guard] ${args.character.id}/chat flagged unverified refs ` +
+        `${JSON.stringify(inspected.validation.invalid)} ` +
+        `(session refs: ${JSON.stringify(Array.from(sessionGrailRefs))})`,
+    );
+  }
+
+  // F4: grail-ref-guard text is unchanged — original chunks would still be
+  // accurate. But B2a (V0.7-A.3 hotfix 2026-05-02) introduces conditional
+  // text mutation: when the env-aware composer attaches image bytes, strip
+  // the corresponding URL paste from the LLM voice prose. Operator's prod
+  // run had attached=1 but Discord automod still deleted the message
+  // because the URL was inline in voice text. Bytes-on-the-wire is the
+  // contract; URL inline defeats the env-aware design.
+  //
+  // F10 polish (2026-05-02): single source of truth — strip BEFORE building
+  // the final payload using composeWithImage's authoritative attachedUrls
+  // (derived from successful fetches only, not from input candidates). This
+  // eliminates the prior `payload.content = stripped` mutation + dropped
+  // the `extractAttachedUrls(...).slice(...)` workaround whose ordering
+  // assumption (input order = attached order) was the F4 invariant smell.
+  // CMP-boundary 2026-05-04 finding 3 (vault doctrine
+  // `[[chat-medium-presentation-boundary]]`): order candidates by their
+  // first citation in the voice text BEFORE composeWithImage attaches.
+  // Default maxAttachments=1 means slot[0] wins · ordering matters.
+  //
+  // Operator dogfood `/satoshi prompt:"the dark grail"` (2026-05-03 6:14PM PT)
+  // surfaced the bug: voice cited Black Hole (@g876) but Fire image attached
+  // because search_codex returned [Fire, Black Hole] · candidates[0] was Fire.
+  // search_codex result order is RELEVANCE-ranked (Fire 0.88 lost to Black Hole
+  // 0.92 by 0.04) but voice authoritatively cited Black Hole — image must
+  // match voice citation, not search relevance.
+  //
+  // V0.7-A.5 SDD §4.2 specifies this helper for the multi-attach cycle ·
+  // extracted standalone here as a CMP-boundary micro-fix · multi-attach
+  // (maxAttachments>1) stays parked in V0.7-A.5 cycle.
+  const grailCandidates = orderAttachmentsByCitation(
+    inspected.text,
+    extractGrailCandidates(captured),
+  );
+  const initialPayload = await composeWithImage(inspected.text, grailCandidates);
+  const attachedUrls = initialPayload.attachedUrls ?? [];
+
+  let finalContent = inspected.text;
+  let finalChunks = result.chunks;
+  if (attachedUrls.length > 0) {
+    const stripped = stripAttachedImageUrls(inspected.text, attachedUrls);
+    if (stripped !== inspected.text) {
+      console.warn(
+        `[embed-with-image] stripped ${attachedUrls.length} inline image URL(s) from reply text ` +
+          `(character=${args.character.id})`,
+      );
+      finalContent = stripped;
+      // Re-chunk the stripped text — boundaries shift when text mutates.
+      finalChunks = splitForDiscord(stripped, DISCORD_CHAR_LIMIT);
+    }
+  }
+  // CMP-boundary 2026-05-04 (vault doctrine `[[chat-medium-presentation-boundary]]`
+  // finding 2): translate backend `@g<id>` annotation into NFT-style display
+  // `Mibera #<id>` BEFORE the user-visible chunks lock in. The `@g` shape is
+  // load-bearing for the upstream grail-ref-guard (hallucination detection)
+  // but operator-felt friction: "I prefer if there's a translation layer that
+  // actually translates it to kind of normal speak ... actual NFT number
+  // cleanly and the name of the collection" (2026-05-04 /smol session).
+  // Substrate refs persist UNCHANGED in `grailRefValidation` + telemetry —
+  // only `content` + `chunks` get the chat-medium translation.
+  const grailTranslated = translateGrailRefsForChat(finalContent);
+  // CMP-boundary 2026-05-04 finding 5 (vault doctrine
+  // `[[chat-medium-presentation-boundary]]`): translate raw `:name:` emoji
+  // shortcodes into Discord render format `<:name:id>` (or `<a:name:id>`
+  // for animated). LLM commonly emits raw shortcode form (matches persona
+  // doc + meme convention) but Discord renders raw `:name:` as plain text.
+  // Operator dogfood `/ruggy "what's xabbu's score"` 2026-05-04 8:36 PT
+  // surfaced this — `:ruggy_salute:` rendered as text.
+  // Side effect: hallucinated names (`ruggy_salute` not in registry) are
+  // silently dropped per persona's `fall back to bear emoji` convention,
+  // preventing fake-emoji text leaks.
+  const displayContent = translateEmojiShortcodes(grailTranslated);
+  const displayChunks =
+    displayContent === finalContent
+      ? finalChunks
+      : splitForDiscord(displayContent, DISCORD_CHAR_LIMIT);
+
+  // Single source of truth: payload.content always matches displayContent.
+  // No mutation of composeWithImage's returned object.
+  const payload = { ...initialPayload, content: displayContent };
+
+  return {
+    ...result,
+    content: displayContent,
+    chunks: displayChunks,
+    payload,
+    toolResults: captured,
+    grailRefValidation: inspected.validation,
+  };
+}
+
+/**
+ * Translate backend `@g<id>` grail refs into chat-medium NFT-style display.
+ *
+ * CMP-boundary 2026-05-04 finding 2 (vault doctrine
+ * `[[chat-medium-presentation-boundary]]`): the `@g<id>` shape is the
+ * canonical backend annotation that `grail-ref-guard.ts` validates against
+ * the canonical-43 set. It must persist in voice-text input so the guard's
+ * hallucination detection stays load-bearing. But the user-visible chat
+ * presentation should read as `Mibera #<id>` — operator-friendly NFT-style
+ * naming per operator framing 2026-05-04: "actual NFT number cleanly and
+ * the name of the collection, obviously within brackets or within the code
+ * area."
+ *
+ * Implementation: simple regex substitution. Preserves any surrounding
+ * backticks / parentheses the LLM emits — the wrapping characters stay,
+ * only the inner ref shape changes (e.g. `(\`@g876\`)` → `(\`Mibera #876\`)`).
+ *
+ * Future enrichment (V1.5 / cycle B asset-pipeline composition): swap
+ * `Mibera #<id>` for `<NAME> · Mibera #<id>` by joining against codex MCP
+ * cache (e.g. "Black Hole · Mibera #876"). Deferred per operator
+ * "richer T2 = NICE-TO-HAVE · DEFER" framing — adds latency + codex MCP
+ * coupling for diminishing-returns enrichment.
+ */
+export function translateGrailRefsForChat(text: string): string {
+  return text.replace(/@g(\d+)/g, 'Mibera #$1');
+}
+
+/**
+ * Translate raw `:name:` emoji shortcodes into Discord render format
+ * `<:name:id>` (static) or `<a:name:id>` (animated).
+ *
+ * CMP-boundary 2026-05-04 finding 5 (vault doctrine
+ * `[[chat-medium-presentation-boundary]]`): the LLM emits raw `:name:`
+ * shortcodes per persona convention + meme-typing habit, but Discord
+ * renders raw shortcode as plain text — only `<:name:id>` triggers
+ * the custom-emoji render. Operator dogfood `/ruggy "what's xabbu's
+ * score"` 2026-05-04 8:36 PT showed `:ruggy_salute:` rendering as text.
+ *
+ * Substrate truth: emoji registry holds canonical names + IDs (43 emojis
+ * fetched from THJ guild 2026-04-29 · see
+ * `orchestrator/emojis/registry.ts`). `findByName` + `renderEmoji`
+ * already produce the correct Discord format including `a` prefix for
+ * animated entries. This function is the chat-medium presentation
+ * adapter that lifts raw shortcodes into Discord render shape.
+ *
+ * Hallucination handling: when the LLM invents a custom-prefix shortcode
+ * NOT in the registry (e.g. `ruggy_salute`), we silently DROP it rather
+ * than leaking the fake shortcode as text. Falls in line with persona's
+ * existing "fall back to bear emoji" rule for dev-channel cases. Only
+ * drops shortcodes with `ruggy_` or `mibera_` prefix (custom emoji
+ * convention) — non-custom shortcodes (`:colon:`, ascii art with
+ * colons, time stamps, etc.) are left untouched.
+ *
+ * Pattern: `:[a-zA-Z][a-zA-Z0-9_]*:` requires alpha-start to avoid time
+ * `12:30` collisions; underscore + alphanumeric allowed thereafter to
+ * match Discord's emoji name grammar.
+ */
+/**
+ * Module-load: derive known custom-emoji prefixes from the registry itself.
+ *
+ * Bridgebuilder PR #32 pass-2 MED `F1-underscore-heuristic-false-positives`:
+ * the previous heuristic ("contains underscore → drop on miss") was
+ * over-eager · it would silently consume legitimate non-emoji shortcodes
+ * like `:my_var:`, `:file_path:`, technical jargon. The fix is
+ * registry-as-source-of-truth: collect prefixes from registered names
+ * (`ruggy_*` and `mibera_*` today · auto-extends as registry grows for
+ * new personas like yetinaut_*, honeybee_*, etc) and only drop on miss
+ * when the shortcode shape matches a KNOWN prefix.
+ *
+ * False positives now bounded by data the operator controls (registry).
+ * `:my_var:` passes through · `:ruggy_salute:` (hallucinated but matches
+ * `ruggy_` prefix) gets dropped.
+ */
+const KNOWN_EMOJI_PREFIXES: ReadonlySet<string> = new Set(
+  EMOJIS.flatMap((e) => {
+    const name = e.name.toLowerCase();
+    // Underscore-shape (e.g. `ruggy_aaa` → `ruggy_`)
+    const underscoreMatch = name.match(/^([a-z0-9]+_)/);
+    if (underscoreMatch) return [underscoreMatch[1]!];
+    // Bridgebuilder PR #32 pass-3 MED `F1-prefix-derivation`: single-word
+    // entries (e.g. `mibera`, `yetinaut`) contribute `<name>_` as a potential
+    // hallucination prefix · so `:mibera_xyz:` drops even when no `mibera_*`
+    // entry exists yet. Bound by registered names · still data-driven.
+    if (/^[a-z][a-z0-9]*$/.test(name)) return [`${name}_`];
+    return [];
+  }),
+);
+
+export function translateEmojiShortcodes(text: string): string {
+  // 2026-05-12 KEEPER pass: validate fully-shaped `<:name:id>` / `<a:name:id>`
+  // tokens against the registry. LLM occasionally emits the full Discord render
+  // shape with a HALLUCINATED snowflake ID (e.g. `<:ruggy_eyes:1234567890123456789>`)
+  // — Discord renders such a token as broken `:name:` plain text on miss. The
+  // earlier passes (`<:ID>` repair · `:name:` shortcode upgrade) DON'T touch
+  // fully-shaped tokens, so this pass runs FIRST and authoritatively rewrites
+  // them. If name is registered → force canonical ID + animated prefix
+  // (registry is source of truth). If name unknown but custom-prefix-shaped →
+  // drop · same hallucination semantics as the `:name:` pass.
+  // Capture-group note (BB F1 2026-05-12): the `a?` is non-capturing — the
+  // canonical animated prefix is derived from the registry entry's `animated`
+  // flag via `renderEmoji`, so the LLM's claimed prefix doesn't influence
+  // output. This means we transparently fix BOTH directions: LLM emits
+  // `<:dab:fake>` for animated ruggy_dab → output `<a:ruggy_dab:canonical>`;
+  // LLM emits `<a:ruggy_cheers:fake>` for non-animated ruggy_cheers → output
+  // `<:ruggy_cheers:canonical>`. Both inversions tested.
+  const nameValidated = text.replace(
+    /( ?)<(?:a)?:([a-zA-Z][a-zA-Z0-9_]*):(\d{17,20})>/g,
+    (match, leadingSpace: string, name: string, id: string) => {
+      const entry = findByName(name);
+      if (entry) {
+        // Hit · force canonical render (correct ID + correct animated prefix).
+        // The LLM's claimed ID is ignored — registry wins.
+        if (entry.id !== id) {
+          console.warn(`[emoji-translate] corrected hallucinated ID for :${name}: (${id} → ${entry.id})`);
+        }
+        return `${leadingSpace}${renderEmoji(entry)}`;
+      }
+      // Miss + custom-emoji-prefix-shaped → drop (same logic as `:name:` pass).
+      const lower = name.toLowerCase();
+      for (const prefix of KNOWN_EMOJI_PREFIXES) {
+        if (lower.startsWith(prefix)) {
+          console.warn(`[emoji-translate] dropped hallucinated <:${name}:${id}> token (matched prefix '${prefix}' but no registry entry)`);
+          return '';
+        }
+      }
+      // Miss + non-custom-shape → pass through (defensive · covers edge cases
+      // like `<:something_unrelated:1234567890123456789>` that isn't custom-emoji).
+      return match;
+    },
+  );
+
+  // Issue #35 (2026-05-04): repair bare `<:ID>` and `<a:ID>` tokens. The LLM
+  // (or upstream MCP tool result) sometimes emits the ID-only form without
+  // the `:name:` segment — Discord renders that as plain text since the
+  // canonical shape is `<:NAME:ID>`. Look up by ID and re-emit the correct
+  // shape; pass through if the snowflake isn't in the registry (covers
+  // `<:randomNumber>` non-emoji false positives).
+  const idNormalized = nameValidated.replace(/<a?:(\d{17,20})>/g, (match, id: string) => {
+    const entry = findById(id);
+    return entry ? renderEmoji(entry) : match;
+  });
+
+  // Bridgebuilder PR #32 pass-1 LOW `F1-whitespace-artifact`: consume one
+  // preceding space when dropping a hallucinated shortcode so we don't leak
+  // double-spaces / trailing whitespace into Discord output.
+  // Issue #35 lookbehind: skip `:name:` patterns that sit inside an
+  // already-valid `<:name:id>` or `<a:name:id>` token (otherwise pass-2
+  // would corrupt valid shortcodes pass-1 just emitted).
+  return idNormalized.replace(/( ?)(?<!<a?):([a-zA-Z][a-zA-Z0-9_]*):/g, (match, leadingSpace: string, name: string) => {
+    const entry = findByName(name);
+    if (entry) {
+      // Hit · render Discord format · keep the leading space.
+      return `${leadingSpace}${renderEmoji(entry)}`;
+    }
+    // Miss + matches a known custom-emoji prefix from registry →
+    // custom-emoji-shaped hallucination · drop (also drop the preceding
+    // space if one was matched · no whitespace artifact).
+    const lower = name.toLowerCase();
+    for (const prefix of KNOWN_EMOJI_PREFIXES) {
+      if (lower.startsWith(prefix)) {
+        // Bridgebuilder PR #32 pass-3 MED `F5-silent-drop-no-observability`:
+        // emit a debug log per dropped hallucination so operators can see
+        // when LLM emoji drift recurs (signal for persona drift OR registry
+        // gap worth filling). Cardinality bounded by LLM creativity ·
+        // single console.warn line per drop · low log volume in normal use.
+        console.warn(`[emoji-translate] dropped hallucinated shortcode :${name}: (matched prefix '${prefix}' but no registry entry)`);
+        return '';
+      }
+    }
+    // Miss + not a known-prefix shape → not a custom-emoji-shaped hallucination ·
+    // pass through unchanged (covers `:my_var:`, `:file_path:`, technical jargon).
+    return match;
+  });
+}
+
+/**
+ * Order grail candidates by their first-citation position in voice text.
+ *
+ * CMP-boundary 2026-05-04 finding 3 (vault doctrine
+ * `[[chat-medium-presentation-boundary]]`): with default maxAttachments=1,
+ * `composeWithImage` attaches `candidates[0]`. If that order doesn't match
+ * the voice text's citation order, the user sees image-text mismatch.
+ *
+ * Operator dogfood `/satoshi prompt:"the dark grail"` (2026-05-03 6:14PM PT)
+ * surfaced this: search_codex returned [Fire 0.88, Black Hole 0.92] but
+ * voice authoritatively cited Black Hole. composeWithImage attached Fire
+ * (candidates[0] by search relevance) — wrong image for the cited grail.
+ *
+ * V0.7-A.5 SDD §4.2 specifies this helper for the multi-attach cycle ·
+ * extracted standalone here as a CMP-boundary micro-fix · multi-attach
+ * (maxAttachments>1) stays parked in V0.7-A.5 cycle scope.
+ *
+ * Algorithm:
+ *   1. For each candidate with a `ref` field of shape `@g<id>`, find first
+ *      occurrence position of that ref in `text`.
+ *   2. Sort candidates by citation position (earliest first).
+ *   3. Candidates with no `ref` OR whose ref is uncited go to the END,
+ *      preserving relative input order (stable sort).
+ *
+ * Returns a NEW array · does not mutate input.
+ */
+export function orderAttachmentsByCitation(
+  text: string,
+  candidates: CodexGrailResult[],
+): CodexGrailResult[] {
+  // Build position map per candidate. Position = index of first match in
+  // text, or Infinity if uncited (sorts to end). Stable sort preserves
+  // relative order among uncited (and cited-at-same-position) entries.
+  //
+  // Bridgebuilder PR #29 MED `ref-substring-collision` (2026-05-04):
+  // bare `text.indexOf('@g876')` matches `@g8761` as a prefix substring
+  // (same digit-prefix collision class as the bug this fix targets).
+  // Use a negative-lookahead regex `\\g<id>(?!\\d)` to require a digit
+  // boundary so `@g876` does NOT match inside `@g8761`.
+  const positions = candidates.map((c, idx) => {
+    const ref = c.ref;
+    if (typeof ref !== 'string') {
+      return { c, pos: Number.POSITIVE_INFINITY, idx };
+    }
+    const pos = findRefPosition(text, ref);
+    return { c, pos, idx };
+  });
+  positions.sort((a, b) => {
+    if (a.pos !== b.pos) return a.pos - b.pos;
+    return a.idx - b.idx; // stable: preserve input order on ties
+  });
+  return positions.map((p) => p.c);
+}
+
+/**
+ * Find the first occurrence of a grail ref in text WITHOUT digit-prefix
+ * collisions. `@g876` must not match inside `@g8761` (different grail).
+ *
+ * Returns the match index, or `Number.POSITIVE_INFINITY` if not found
+ * (so positions can be naturally compared in the sort).
+ */
+function findRefPosition(text: string, ref: string): number {
+  // Escape regex metacharacters in ref (defensive · ref is `@g<digits>` so
+  // typically just `@` which isn't special, but if codex MCP ever returns
+  // a ref with regex-special chars, escape protects us).
+  const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Negative-lookahead `(?!\d)` requires the char after ref to be NOT a
+  // digit (or end-of-string), preventing `@g876` from matching `@g8761`.
+  const re = new RegExp(escaped + '(?!\\d)');
+  const match = re.exec(text);
+  return match ? match.index : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Pull `@g<id>` / `#<id>` shaped strings out of the captured tool result
+ * envelopes so the grail-ref-guard's sessionRefs override can permit them
+ * even when they're outside the V1 hardcoded canonical set. Conservative:
+ * only mines `ref` fields and the top-level `id` field if string-shaped.
+ */
+function extractSessionGrailRefs(events: ToolResultEvent[]): string[] {
+  const refs = new Set<string>();
+  for (const event of events) {
+    if (!CODEX_IMAGE_TOOL_NAMES.has(event.name)) continue;
+    if (event.parsed === undefined || event.parsed === null) continue;
+    collectRefsFromValue(event.parsed, refs);
+  }
+  return Array.from(refs);
+}
+
+function collectRefsFromValue(value: unknown, out: Set<string>): void {
+  if (typeof value !== 'object' || value === null) return;
+  if (Array.isArray(value)) {
+    for (const v of value) collectRefsFromValue(v, out);
+    return;
+  }
+  const o = value as Record<string, unknown>;
+  if (typeof o.ref === 'string' && /^@?g?\d+$/.test(o.ref)) {
+    out.add(o.ref);
+  }
+  if (typeof o.id === 'string' && /^\d+$/.test(o.id)) {
+    out.add(o.id);
+  }
+  for (const key of ['result', 'grail', 'mibera', 'data', 'results', 'matches', 'items']) {
+    if (key in o) collectRefsFromValue(o[key], out);
+  }
+}
+
+/**
+ * Filter captured tool results to grail-image candidates the env-aware
+ * composer can attach. Drops:
+ *   - non-codex tool results
+ *   - error envelopes (is_error true)
+ *   - results that don't parse as JSON
+ *   - results without an image / image_url field
+ *
+ * For `search_codex`, the parsed envelope is `SearchHit[]` (top-level array
+ * per the codex MCP server contract — verified against
+ * /tmp/codex-probe/src/lookups/search.ts:204 + server.ts handler). All hits
+ * are scanned in order and the first with an `image` field wins (V0.7-A.3
+ * hotfix B1 — bridgebuilder F9 deferred lands here). The top-1 hit may be
+ * a non-grail entry (core-lore, etc.) so top-1-only would silently drop
+ * grails. Each parsed envelope is shape-coerced to the
+ * {ref, name, image, image_url} subset that composeWithImage expects.
+ */
+function extractGrailCandidates(events: ToolResultEvent[]): CodexGrailResult[] {
+  const out: CodexGrailResult[] = [];
+  for (const event of events) {
+    if (!CODEX_IMAGE_TOOL_NAMES.has(event.name)) continue;
+    if (event.isError) continue;
+    if (event.parsed === undefined || event.parsed === null) continue;
+
+    const candidate = pickFirstGrailFromEnvelope(event.name, event.parsed);
+    if (candidate) out.push(candidate);
+  }
+  return out;
+}
+
+/**
+ * Exported for tests (V0.7-A.3 hotfix B1 envelope-shape coverage). Internal
+ * helper otherwise — callers should use `composeReplyWithEnrichment`.
+ */
+export function pickFirstGrailFromEnvelope(
+  toolName: string,
+  parsed: unknown,
+): CodexGrailResult | null {
+  // search_codex envelope: SearchHit[] (top-level array) — verified against
+  // /tmp/codex-probe/src/lookups/search.ts:204 + server.ts handler. The
+  // earlier `{ results: [...] }` assumption was wrong; the real shape is
+  // a JSON-stringified array of SearchHit. Also: scan ALL hits (not just
+  // top-1) because the top hit may be a non-grail entry (core-lore, etc.)
+  // even when a later hit is a grail with an image field. Bridgebuilder
+  // F9 deferred-finding lands here as part of the V0.7-A.3 hotfix B1.
+  if (toolName === 'mcp__codex__search_codex') {
+    if (!Array.isArray(parsed)) return null;
+    if (parsed.length === 0) return null;
+    for (const hit of parsed) {
+      const candidate = coerceCandidate(hit);
+      if (candidate && (candidate.image || candidate.image_url)) {
+        return candidate;
+      }
+    }
+    // Telemetry: search returned hits but none had image-bearing candidates —
+    // operators can diagnose envelope-shape regressions or non-grail-only
+    // result sets. Reached after loop = no image-bearing hit found (early
+    // return inside loop on first hit). V0.7-A.3 polish F8 (2026-05-02):
+    // dead `imageBearing` counter removed — it was only ever incremented
+    // for hits that had image fields BUT failed coerceCandidate, and the
+    // post-loop emit gated on it being zero, which was always true here.
+    console.warn(
+      `[embed-with-image] search_codex returned ${parsed.length} hits but none had image field`,
+    );
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  // lookup_grail / lookup_mibera envelope: flat object with image field, OR
+  // { result: {...} } / { grail: {...} } / { mibera: {...} } shape variants.
+  // Try both — flat first, then nested.
+  const flat = coerceCandidate(parsed);
+  if (flat?.image || flat?.image_url) return flat;
+
+  const obj = parsed as Record<string, unknown>;
+  for (const key of ['result', 'grail', 'mibera', 'data']) {
+    const nested = coerceCandidate(obj[key]);
+    if (nested?.image || nested?.image_url) return nested;
+  }
+  return null;
+}
+
+function coerceCandidate(raw: unknown): CodexGrailResult | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const o = raw as Record<string, unknown>;
+  const candidate: CodexGrailResult = {};
+  if (typeof o.ref === 'string') candidate.ref = o.ref;
+  if (typeof o.name === 'string') candidate.name = o.name;
+  if (typeof o.image === 'string') candidate.image = o.image;
+  if (typeof o.image_url === 'string') candidate.image_url = o.image_url;
+  if (typeof o.description === 'string') candidate.description = o.description;
+  // Keep only when at least one image field surfaced — otherwise candidate is moot.
+  if (!candidate.image && !candidate.image_url) return null;
+  return candidate;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Chat-mode LLM routing (V0.7-A.1 Phase D)
+// ──────────────────────────────────────────────────────────────────────
+
+interface ChatInvokeArgs {
+  character: CharacterConfig;
+  systemPrompt: string;
+  userMessage: string;
+  /** Optional resolved zone — passed through to orchestrator for telemetry. */
+  zone?: ZoneId;
+  /** V0.7-A.1: tool_use stream callback (orchestrator path only). */
+  onToolUse?: (event: ToolUseEvent) => void;
+  /** V0.7-A.3: tool_result stream callback (orchestrator path only). */
+  onToolResult?: (event: ToolResultEvent) => void;
+}
+
+/**
+ * Decide whether chat-mode flows through the orchestrator (with the
+ * character's per-character MCP scope) or the naive `invokeChat()` path.
+ *
+ *   CHAT_MODE=naive          — always naive
+ *   CHAT_MODE=orchestrator   — always orchestrator (errors if not SDK-eligible)
+ *   CHAT_MODE=auto (default) — orchestrator when provider is SDK-eligible
+ *                              (anthropic OR bedrock); naive for stub/freeside
+ *
+ * V0.11.1: bedrock is now SDK-eligible. The orchestrator's `buildSdkEnv`
+ * sets CLAUDE_CODE_USE_BEDROCK=1 + AWS bearer token when LLM_PROVIDER=bedrock,
+ * and the Anthropic Agent SDK routes through Bedrock with full tool support
+ * via inference profile model IDs (per Loa PR #662). This unblocks chat-mode
+ * tool calling for the operator's Bedrock-backed Opus 4.7 deployment.
+ */
+export function shouldUseOrchestrator(config: Config): boolean {
+  if (config.CHAT_MODE === 'naive') return false;
+  if (config.CHAT_MODE === 'orchestrator') return true;
+  // auto: orchestrator when provider is SDK-eligible (anthropic OR bedrock).
+  const provider = resolveChatProvider(config);
+  return provider === 'anthropic' || provider === 'bedrock';
+}
+
+/**
+ * Top-level chat-mode router. Branches between orchestrator (full per-
+ * character MCP scope, multi-turn) and naive (single-turn, no tools).
+ *
+ * V0.10.2: chat-route telemetry per session-09 codex-rescue recommendation
+ * (`grimoires/loa/specs/kickoff-tool-call-faking-investigation-2026-05-02.md`).
+ * One log line per chat surfaces (a) which path we resolved to, (b) the
+ * provider resolution, (c) the character's `mcps` scope. If `useOrchestrator`
+ * is `false` in production, the LLM is faking tool calls because the SDK has
+ * no tools wired (naive path). That confirms H2 (provider routing) — the
+ * top-priority hypothesis post codex review.
+ */
+async function routeChatLLM(config: Config, req: ChatInvokeArgs): Promise<string> {
+  const useOrchestrator = shouldUseOrchestrator(config);
+  console.warn('[chat-route]', {
+    character: req.character.id,
+    chatMode: config.CHAT_MODE,
+    llmProvider: config.LLM_PROVIDER,
+    resolvedProvider: resolveChatProvider(config),
+    useOrchestrator,
+    mcps: req.character.mcps,
+  });
+
+  if (useOrchestrator) {
+    const result = await runOrchestratorQuery(config, {
+      character: req.character,
+      systemPrompt: req.systemPrompt,
+      userMessage: req.userMessage,
+      zone: req.zone,
+      postType: 'chat',
+      onToolUse: req.onToolUse,
+      onToolResult: req.onToolResult,
+    });
+    return result.text;
+  }
+  // Naive path has no tools wired — onToolUse + onToolResult are no-ops here.
+  return invokeChat(config, req);
+}
+
+async function invokeChat(config: Config, req: ChatInvokeArgs): Promise<string> {
+  // Provider resolution mirrors agent-gateway.ts but for chat-mode the
+  // anthropic path is the canonical one. Stub returns a canned in-voice
+  // reply; freeside path uses the gateway's chat shape; bedrock path is
+  // Eileen's satoshi setup (in-flight at apps/character-satoshi/...).
+  switch (resolveChatProvider(config)) {
+    case 'anthropic':
+      return invokeChatAnthropicSdk(config, req);
+    case 'stub':
+      return invokeChatStub(req);
+    case 'freeside':
+      return invokeChatFreeside(config, req);
+    case 'bedrock':
+      return invokeChatBedrock(config, req);
+  }
+}
+
+export type ChatProvider = 'stub' | 'anthropic' | 'freeside' | 'bedrock';
+
+export function resolveChatProvider(config: Config): ChatProvider {
+  switch (config.LLM_PROVIDER) {
+    case 'stub':
+      return 'stub';
+    case 'anthropic':
+      if (!config.ANTHROPIC_API_KEY) {
+        throw new Error('LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is unset');
+      }
+      return 'anthropic';
+    case 'freeside':
+      if (!config.FREESIDE_API_KEY) {
+        throw new Error('LLM_PROVIDER=freeside but FREESIDE_API_KEY is unset');
+      }
+      return 'freeside';
+    case 'bedrock':
+      if (!config.AWS_BEARER_TOKEN_BEDROCK && !config.BEDROCK_API_KEY) {
+        throw new Error('LLM_PROVIDER=bedrock but AWS_BEARER_TOKEN_BEDROCK or BEDROCK_API_KEY is unset');
+      }
+      return 'bedrock';
+    case 'auto':
+      // V0.12: bedrock-first when AWS env present (cost-bearing default ·
+      // operator-named 2026-05-01) → anthropic (dev fallback) → stub →
+      // freeside. Mirrors agent-gateway.ts:resolveProvider so digest path
+      // and chat path agree on which provider auto resolves to. The
+      // orchestrator's resolveOrchestratorBackend already preferred
+      // bedrock here; this brings the chat-mode telemetry resolver in line.
+      if (config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY) return 'bedrock';
+      if (config.ANTHROPIC_API_KEY) return 'anthropic';
+      if (config.STUB_MODE) return 'stub';
+      if (config.FREESIDE_API_KEY) return 'freeside';
+      throw new Error(
+        'LLM_PROVIDER=auto: no chat provider available — set AWS_BEARER_TOKEN_BEDROCK, ANTHROPIC_API_KEY, STUB_MODE=true, or FREESIDE_API_KEY',
+      );
+  }
+}
+
+async function invokeChatAnthropicSdk(
+  config: Config,
+  req: ChatInvokeArgs,
+): Promise<string> {
+  // Single-turn chat shape: no MCP servers, no allowed tools, no skills.
+  // Subprocess env scrubbed of CLAUDECODE_* so the SDK uses direct
+  // Anthropic auth (mirrors orchestrator/index.ts buildSdkEnv).
+  const env: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.startsWith('CLAUDE_CODE_') || k === 'CLAUDECODE' || k === 'CLAUDE_PLUGIN_DATA') {
+      continue;
+    }
+    env[k] = v;
+  }
+  env.ANTHROPIC_API_KEY = config.ANTHROPIC_API_KEY!;
+
+  const options: Options = {
+    systemPrompt: req.systemPrompt,
+    model: config.ANTHROPIC_MODEL,
+    mcpServers: {},
+    allowedTools: [],
+    permissionMode: 'dontAsk',
+    settingSources: [],
+    tools: [],
+    maxTurns: 1,
+    effort: 'low',
+    env,
+    stderr: (data) => {
+      if (config.LOG_LEVEL === 'debug') {
+        console.error(`[sdk:chat] ${data.trimEnd()}`);
+      }
+    },
+  };
+
+  let text = '';
+  const query = await resolveQuery();
+  for await (const message of query({ prompt: req.userMessage, options })) {
+    if (message.type !== 'result') continue;
+    if (message.subtype === 'success') {
+      text = message.result;
+      break;
+    }
+    throw new Error(
+      `composeReply: SDK chat error subtype=${message.subtype}` +
+        (message.errors?.length ? ` errors=${message.errors.join('; ')}` : ''),
+    );
+  }
+  return text;
+}
+
+async function invokeChatBedrock(config: Config, req: ChatInvokeArgs): Promise<string> {
+  const apiKey = config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY;
+  if (!apiKey) {
+    throw new Error('LLM_PROVIDER=bedrock but AWS_BEARER_TOKEN_BEDROCK or BEDROCK_API_KEY is unset');
+  }
+
+  const region = config.BEDROCK_TEXT_REGION || config.AWS_REGION;
+  const modelId = config.BEDROCK_TEXT_MODEL_ID;
+  if (!modelId) {
+    throw new Error('LLM_PROVIDER=bedrock but BEDROCK_TEXT_MODEL_ID is unset');
+  }
+
+  const encodedModelId = encodeURIComponent(modelId);
+  const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodedModelId}/converse`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      system: [
+        {
+          text: req.systemPrompt,
+        },
+      ],
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              text: req.userMessage,
+            },
+          ],
+        },
+      ],
+      inferenceConfig: {
+        maxTokens: 1024,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`bedrock chat error: ${response.status} ${await response.text()}`);
+  }
+
+  const data = (await response.json()) as {
+    output?: {
+      message?: {
+        content?: Array<{ text?: string }>;
+      };
+    };
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+    };
+  };
+
+  const text = data.output?.message?.content
+    ?.map((part) => part.text)
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+
+  if (!text) {
+    throw new Error(`bedrock chat returned no text: ${JSON.stringify(data)}`);
+  }
+
+  return text;
+}
+
+async function invokeChatFreeside(
+  config: Config,
+  req: ChatInvokeArgs,
+): Promise<string> {
+  const url = `${config.FREESIDE_BASE_URL}/api/agents/invoke`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(config.FREESIDE_API_KEY && { 'x-api-key': config.FREESIDE_API_KEY }),
+    },
+    body: JSON.stringify({
+      agent: 'default',
+      modelAlias: config.FREESIDE_AGENT_MODEL,
+      messages: [
+        { role: 'system', content: req.systemPrompt },
+        { role: 'user', content: req.userMessage },
+      ],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`freeside agent-gateway chat error: ${response.status} ${await response.text()}`);
+  }
+  const data = (await response.json()) as { text: string };
+  return data.text;
+}
+
+function invokeChatStub(req: ChatInvokeArgs): string {
+  // Voice-shaped canned replies — keeps STUB_MODE smoke testing meaningful
+  // (operators can verify the dispatch + ledger + chunk pipeline without
+  // burning Anthropic credits or risking voice drift in tests).
+  const id = req.character.id;
+  if (id === 'satoshi') {
+    return 'the ledger acknowledges stub mode. attention is the asset; you brought yours. that is the relevant transaction.';
+  }
+  if (id === 'ruggy') {
+    return [
+      'yo, ruggy here, stub-mode (no llm wired).',
+      ``,
+      `you said: "${truncate(req.userMessage, 120)}"`,
+      ``,
+      `wire ANTHROPIC_API_KEY + LLM_PROVIDER=anthropic to get the real voice. stay groovy.`,
+    ].join('\n');
+  }
+  return `[stub reply from ${req.character.displayName ?? req.character.id}]`;
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n - 1) + '…';
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Chunk splitting (Discord 2000-char message limit)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Split content into Discord-safe chunks, preferring natural break points.
+ * Order: paragraph (\n\n) → line (\n) → sentence (. ) → word ( ) → hard cut.
+ *
+ * Pattern source: `~/Documents/GitHub/ruggy-moltbot/src/handlers/chat.ts:192-238`
+ * (splitLongMessage). Same shape, no functional changes.
+ */
+export function splitForDiscord(content: string, maxLength: number): string[] {
+  if (content.length <= maxLength) return [content];
+
+  const out: string[] = [];
+  let remaining = content;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLength) {
+      out.push(remaining);
+      break;
+    }
+
+    let splitAt = maxLength;
+    const paragraph = remaining.lastIndexOf('\n\n', maxLength);
+    if (paragraph > maxLength * 0.5) {
+      splitAt = paragraph + 2;
+    } else {
+      const line = remaining.lastIndexOf('\n', maxLength);
+      if (line > maxLength * 0.5) {
+        splitAt = line + 1;
+      } else {
+        const sentence = remaining.lastIndexOf('. ', maxLength);
+        if (sentence > maxLength * 0.5) {
+          splitAt = sentence + 2;
+        } else {
+          const word = remaining.lastIndexOf(' ', maxLength);
+          if (word > maxLength * 0.5) {
+            splitAt = word + 1;
+          }
+        }
+      }
+    }
+
+    out.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+
+  // Filter empty chunks — whitespace-only LLM output or trim-on-boundary
+  // edge cases can yield empty strings, which Discord rejects with 400
+  // (bridgebuilder F10 2026-04-30).
+  return out.filter((c) => c.length > 0);
+}

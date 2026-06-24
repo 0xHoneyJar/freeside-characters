@@ -29,10 +29,11 @@
  *   - V0.6-D adds a token-bucket queue per webhook.
  */
 
-import { ChannelType } from 'discord.js';
+import { AttachmentBuilder, ChannelType } from 'discord.js';
 import type { Client, Webhook, TextChannel, NewsChannel } from 'discord.js';
 import type { CharacterConfig } from '../types.ts';
 import type { DigestPayload } from './embed.ts';
+import { postComponentsV2 } from './cv2-post.ts';
 
 /**
  * Webhook name used for the shell. One webhook per channel per shell —
@@ -110,11 +111,120 @@ export async function sendViaWebhook(
     character.webhookUsername ?? character.displayName ?? character.id;
   const avatarURL = character.webhookAvatarUrl;
 
+  // cycle-008 S9 · Components V2 beat → raw POST to the webhook URL with the identity override
+  // + ?wait=true&with_components=true (discord.js's send-builder rejects raw component JSON, and
+  // webhooks drop components without the query flag). Bounded 429 retry via the shared helper.
+  if (payload.components !== undefined) {
+    const url = new URL(webhook.url);
+    url.searchParams.set('wait', 'true');
+    url.searchParams.set('with_components', 'true');
+    const json = await postComponentsV2(url.toString(), {
+      username,
+      avatar_url: avatarURL,
+      flags: payload.flags,
+      components: payload.components,
+      allowed_mentions: { parse: [] },
+    });
+    return { posted: true, messageId: json.id ?? '' };
+  }
+
   const message = await webhook.send({
     username,
     avatarURL,
     content: payload.content,
     embeds: payload.embeds as never,
+    allowedMentions: { parse: [] },
+  });
+
+  return { posted: true, messageId: message.id };
+}
+
+/**
+ * Send a plain-text chat reply through the channel webhook with per-character
+ * identity (V0.7-A.0). Mirror of `sendViaWebhook` but for the conversation
+ * surface — no embed, no digest payload shape, just the LLM's reply text.
+ *
+ * Pattern B identity preservation for slash command replies: the user sees
+ * the character's avatar + username as the speaker, not the shell-bot
+ * identity. Aligns chat replies with digest writes per Eileen's vault canon.
+ *
+ * V0.7-A.3: optional `files` carries grail-image attachments composed by
+ * `composeWithImage` (env-aware bytes-on-the-wire pattern). Each file is
+ * wrapped in a discord.js `AttachmentBuilder` and passed via webhook.send's
+ * `files` channel — bypasses Discord automod URL blocklists that filter
+ * `assets.0xhoneyjar.xyz` and similar. Mirror of imagegen V0.11.3's
+ * `sendImageReplyViaWebhook` shape; the chat surface gets the same
+ * primitive without forking call sites.
+ */
+export async function sendChatReplyViaWebhook(
+  webhook: Webhook,
+  character: CharacterConfig,
+  content: string,
+  files?: Array<{ name: string; data: Buffer; contentType?: string }>,
+): Promise<{ posted: true; messageId: string }> {
+  const username =
+    character.webhookUsername ?? character.displayName ?? character.id;
+  const avatarURL = character.webhookAvatarUrl;
+
+  const attachments = files?.map(
+    (f) => new AttachmentBuilder(f.data, { name: f.name }),
+  );
+
+  const message = await webhook.send({
+    username,
+    avatarURL,
+    content,
+    ...(attachments && attachments.length > 0 ? { files: attachments } : {}),
+    allowedMentions: { parse: [] },
+  });
+
+  return { posted: true, messageId: message.id };
+}
+
+/**
+ * V0.11.3: send an imagegen reply via the channel webhook with the
+ * generated image attached. Mirrors `sendChatReplyViaWebhook` but adds
+ * a multipart file part so Discord renders the image inline.
+ *
+ * Background: V0.7-A.1's imagegen scaffold returned a synthetic
+ * `attachment://...` URL but never actually attached the bytes. The
+ * V0.11.x dev-guild test (issue #14) caught the gap — Bedrock Stability
+ * delivered real bytes (`placeholder=false`); the webhook send only
+ * posted the meaningless URL as text content. Discord can't resolve
+ * `attachment://` without a multipart file part.
+ *
+ * The fix: take the image bytes (decoded from base64), build a
+ * discord.js `AttachmentBuilder`, and pass via `files` in `webhook.send`.
+ * Discord renders PNG/JPG/GIF attachments inline below the text content.
+ *
+ * Pattern B identity preservation holds — per-character `username` +
+ * `avatarURL` overrides apply the same as for chat replies.
+ */
+export async function sendImageReplyViaWebhook(
+  webhook: Webhook,
+  character: CharacterConfig,
+  args: {
+    /** Caption text shown above the image (model + seed metadata, etc). */
+    content: string;
+    /** Raw image bytes (e.g., decoded from Bedrock's base64 payload). */
+    imageBytes: Buffer;
+    /** Filename Discord shows on the attachment (e.g., "image-12345.png"). */
+    filename: string;
+  },
+): Promise<{ posted: true; messageId: string }> {
+  const username =
+    character.webhookUsername ?? character.displayName ?? character.id;
+  const avatarURL = character.webhookAvatarUrl;
+
+  const attachment = new AttachmentBuilder(args.imageBytes, {
+    name: args.filename,
+  });
+
+  const message = await webhook.send({
+    username,
+    avatarURL,
+    content: args.content,
+    files: [attachment],
     allowedMentions: { parse: [] },
   });
 

@@ -9,13 +9,30 @@
  *   question  open-ended invitation. random.
  *   callout   anomaly alert. trigger-driven.
  *
- * Same OG voice carries across all six. Different shape per type.
+ * V0.7-A.2 (compose unification):
+ *   reply     conversational chat-mode reply. on-demand (slash command).
+ *
+ * Same OG voice carries across all seven shapes. Different shape per type.
  * The arcade move: surprise > schedule. Mix shapes so channels feel alive.
  */
 
-import type { ZoneDigest } from '../score/types.ts';
+import type { ZoneDigest } from '../score/index.ts';
 
-export type PostType = 'digest' | 'micro' | 'weaver' | 'lore_drop' | 'question' | 'callout';
+export type PostType =
+  | 'digest'
+  | 'micro'
+  | 'weaver'
+  | 'lore_drop'
+  | 'question'
+  | 'callout'
+  | 'reply';
+
+/**
+ * Cron-driven post types — the original 6 PostTypes that fire from the
+ * scheduler (digest backbone + pop-in random + weaver weekly + callout
+ * trigger). Distinct from `'reply'`, which is on-demand only.
+ */
+export type CronPostType = Exclude<PostType, 'reply'>;
 
 export const ALL_POST_TYPES: readonly PostType[] = [
   'digest',
@@ -24,7 +41,30 @@ export const ALL_POST_TYPES: readonly PostType[] = [
   'lore_drop',
   'question',
   'callout',
+  'reply',
 ] as const;
+
+export const CRON_POST_TYPES: readonly CronPostType[] = [
+  'digest',
+  'micro',
+  'weaver',
+  'lore_drop',
+  'question',
+  'callout',
+] as const;
+
+/**
+ * cycle-008 slice 2b · why an event-driven pop-in fired — the live moment the micro voice should
+ * lean into. NEUTRAL substrate signal (which canon event class, which kansei axis), never numbers;
+ * the persona does the voicing. Carried cron → composeZonePost → composeMicroPost → voice ctx, and
+ * surfaced as RUNTIME context in the prompt (never the persona doc — operator owns ruggy's persona.md).
+ */
+export interface EventTrigger {
+  /** kansei axis that crossed (press/strangers/gravity/drift), or null for a gravity-class bypass. */
+  readonly axis: 'press' | 'strangers' | 'gravity' | 'drift' | null;
+  /** canon event class that triggered it (e.g. 'awakening', 'fracture'), or null. */
+  readonly eventClass: string | null;
+}
 
 export interface PostTypeSpec {
   type: PostType;
@@ -80,6 +120,13 @@ export const POST_TYPE_SPECS: Record<PostType, PostTypeSpec> = {
     cadence: 'trigger',
     maxLines: 5,
     description: 'anomaly alert — fires when raw_stats exceeds threshold',
+  },
+  reply: {
+    type: 'reply',
+    useEmbed: false,
+    cadence: 'random',
+    maxLines: 12,
+    description: 'on-demand conversational reply (slash-command chat) — 1-3 paragraphs, addressed',
   },
 };
 
@@ -138,6 +185,13 @@ export function postTypeFitsData(postType: PostType, digest: ZoneDigest): boolea
     case 'lore_drop':
     case 'question':
       return popInFits(digest);
+    case 'reply':
+      // V0.7-A.2: 'reply' is on-demand (slash-command), not cron-driven.
+      // It doesn't consume a ZoneDigest. If a cron scheduler asks "does
+      // this fit?" with postType='reply', that's misclassification — the
+      // schedule shouldn't broadcast a reply-shaped prompt to a zone.
+      // Bridgebuilder F2 (PR #8 review): fail-closed beats fail-open here.
+      return false;
   }
 }
 

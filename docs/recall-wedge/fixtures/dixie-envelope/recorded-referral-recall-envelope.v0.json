@@ -1,0 +1,42 @@
+{
+  "fixture_id": "recorded-referral-recall-envelope-001",
+  "fixture_kind": "recorded_dixie_recall_envelope",
+  "fixture_version": "phase-35d.0",
+  "envelope_version": "recall_wedge.dixie_envelope.v0",
+  "input_envelope_kind": "recorded_dixie_recall_envelope",
+  "source_interface": "private_web_chat",
+  "source_surface_note": "carrier source is private web chat; the projection target inside this envelope is a character-boundary referral on the public discord render surface",
+  "synthetic": true,
+  "non_production_authorization_note": "This envelope is synthetic and reviewed. It contains no real user data, no live Dixie response, no live Finn output, and no governed Straylight memory. Authorized for non-production fixture use in Phase 35D only.",
+  "envelope_scope_note": "This represents a recorded Dixie-shaped recall response in which the recall has been downgraded to a character-boundary referral. It is NOT raw chat log memory. It does NOT constitute admission of any chat content into governed Straylight memory.",
+  "session_id": "session_PRIVATE_SENTINEL_DIXIE_SESSION_ID_002",
+  "message_id": "msg_PRIVATE_SENTINEL_DIXIE_MESSAGE_ID_002",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "target_projection": {
+    "recall_interface": "public_discord",
+    "render_surface": "discord_public_character",
+    "character_frame": "ruggy"
+  },
+  "public_recall_payload": {
+    "outcome": "referral",
+    "public_summary": "this question lives closer to a different character frame",
+    "public_referral_message": "that lives closer to satoshi — try /satoshi for codex matters",
+    "safe_referral_target": "satoshi",
+    "included_count": 0,
+    "marked_count": 0,
+    "redacted_count": 0,
+    "excluded_count": 0,
+    "public_reason_counts": {},
+    "public_reason_labels": [],
+    "denied_or_refused": true
+  },
+  "raw_dixie_debug": {
+    "raw_reasons": [
+      "outside_ruggy_boundary_PRIVATE_SENTINEL_DIXIE_RAW",
+      "character_boundary_referral_rule_PRIVATE_SENTINEL_DIXIE_RAW"
+    ],
+    "raw_session_trace": "trace_PRIVATE_SENTINEL_DIXIE_RAW_REFERRAL_TRACE",
+    "operator_private_note": "operator-only diagnostic context for this referral envelope PRIVATE_SENTINEL_DIXIE_RAW"
+  },
+  "source_material": "character_boundary_envelope_source_blob_PRIVATE_SENTINEL_DIXIE_RAW"
+}

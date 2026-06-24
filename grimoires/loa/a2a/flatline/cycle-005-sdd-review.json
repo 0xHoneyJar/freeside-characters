@@ -1,0 +1,147 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 5,
+    "disputed_count": 0,
+    "low_value_count": 0,
+    "blocker_count": 5,
+    "model_agreement_percent": 100,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "High-value clarification. A deterministic factor_id rule is necessary for stable telemetry, repeatable tests, and the stated pure-function behavior. Implementation cost is low because it is mainly an SDD/API decision plus focused tests.",
+      "gpt_score": 910,
+      "opus_score": 880,
+      "tertiary_score": 900,
+      "delta": 30,
+      "average_score": 895,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "This is one of the most important gaps because merge policy directly affects gate correctness and production false positives or negatives. The helper sits at a boundary between tool data and validation behavior, so ambiguity here is expensive. Cost is moderate but justified.",
+      "gpt_score": 930,
+      "opus_score": 870,
+      "tertiary_score": 880,
+      "delta": 60,
+      "average_score": 900,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-003",
+      "description": "Trace propagation across imperative and Effect contexts is a real observability risk. The ROI is high if FR-6 is a core requirement, though the implementation may require some careful Effect/OpenTelemetry integration decisions and may be harder to test than pure logic.",
+      "gpt_score": 820,
+      "opus_score": 820,
+      "tertiary_score": 880,
+      "delta": 0,
+      "average_score": 820,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-006",
+      "description": "The hash algorithm should be pinned because draft_hash is a correlation key across logs and OTEL events. This is low-cost and prevents a subtle integration failure. It is just below critical because any single imported helper would likely solve it without much architectural impact.",
+      "gpt_score": 790,
+      "opus_score": 850,
+      "tertiary_score": 840,
+      "delta": 60,
+      "average_score": 820,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-009",
+      "description": "Empty-zone behavior should be specified because cron edge cases are plausible and renderer failure would be user-visible. The expected fallback is likely simple, so this is a worthwhile contract and test addition.",
+      "gpt_score": 720,
+      "opus_score": 760,
+      "tertiary_score": 860,
+      "delta": 40,
+      "average_score": 740,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-002",
+      "concern": "Factor attribution for prose violations is unresolved and marked TBD, making the core validation semantics ambiguous.",
+      "severity": "HIGH",
+      "severity_score": 735,
+      "why_matters": "Running checks against all active factors can create noisy false positives, while checking only the first referenced factor can miss the actual unsupported claim. Either behavior can make telemetry untrustworthy and block future enforcement.",
+      "location": "Component 1 prose-gate loop and factor_id determination",
+      "recommendation": "Specify a deterministic factor-reference algorithm before implementation, including behavior for zero, one, and multiple referenced factors, and add tests for each case.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "Misattribution of Factor Stats in Regex Rules",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "The V1 strategy of checking against 'ALL active factors' or 'the FIRST factor referenced' is structurally flawed. If a draft mentions multiple factors, evaluating a claim like 'structural shift' against the wrong factor's stats will generate false positive violations, rendering the telemetry data useless for future tuning.",
+      "location": "Component Specs 1: prose-gate.ts (check callback)",
+      "recommendation": "Implement a proximity-based lookup: extract the nearest factor name mentioned within the same sentence or paragraph as the regex match to determine the correct factor_id, or default to 'unknown' if ambiguous.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "The SDD proposes hardcoded mood emojis including \ud83d\udd25 and \u26a1, which conflicts with the repository's voice rules banning those user-facing emoji tells and requiring emoji selection through the registry.",
+      "severity": "HIGH",
+      "severity_score": 710,
+      "why_matters": "This can reintroduce explicitly prohibited persona surface behavior and bypass the established emoji construct boundary.",
+      "location": "Component 3 mood-emoji.ts and AGENTS.md voice rules / construct boundaries",
+      "recommendation": "Replace hardcoded emojis with approved registry-mediated mood tags or confirm an explicit operator exception in the PRD/SDD before implementation.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "The prose-gate is telemetry-only, so claims that are known to be unsupported can still be delivered to Discord unchanged.",
+      "severity": "HIGH",
+      "severity_score": 760,
+      "why_matters": "If the gate detects a false leaderboard or statistical claim but still publishes it, the system preserves persona illusion at the cost of user-visible misinformation. This is especially risky because the feature's purpose is to constrain overclaiming.",
+      "location": "NFR-1, Component 1 prose-gate, Component 5 composeReplyWithEnrichment",
+      "recommendation": "Define a V1 blocking or downgrade policy for at least high-confidence violations, or explicitly require staging-only telemetry until observed violation rates are understood.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "factor_id resolution in inspectProse is unspecified (TBD) \u2014 V1 ambiguity between 'first factor referenced by name' vs 'all active factors' creates non-deterministic violation semantics",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "The same draft text could emit different violations depending on which heuristic ships. Telemetry built on this becomes unreliable for downstream cohort/percentile analysis, and the V1.5 register-downgrade loop will inherit the ambiguity. SDD explicitly says 'TBD' inline \u2014 that's a contract gap shipping to prod.",
+      "location": "Component Spec \u00a71 (prose-gate.ts) \u2014 'Loop: for each rule...' paragraph",
+      "recommendation": "Resolve the TBD before merge. Pick one deterministic mapping (recommend: match factor_id by name-mention proximity in draft within an N-token window; fall back to 'no factor_id' when no name appears, emit reason='no-factor-context'). Add this to the schema and write a regression test that pins the choice.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "sdd",
+  "document": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/sdd.md",
+  "domain": " public api for non",
+  "tertiary_model_used": "gemini-3.1-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "interactive",
+    "mode_reason": "Default (no explicit mode specified)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-16T01:44:42Z",
+  "metrics": {
+    "total_latency_ms": 95000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

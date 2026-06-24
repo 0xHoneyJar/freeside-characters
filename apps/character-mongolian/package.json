@@ -1,0 +1,7 @@
+{
+  "name": "@freeside-characters/character-mongolian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NPC persona for Munkh, the Mongolian Grail (#507, Ancestor). First mibera-as-npc instance. Quest character with judgment capability.",
+  "type": "module"
+}

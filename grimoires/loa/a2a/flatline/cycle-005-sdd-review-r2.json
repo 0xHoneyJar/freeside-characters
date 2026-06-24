@@ -1,0 +1,252 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 7,
+    "disputed_count": 5,
+    "low_value_count": 0,
+    "blocker_count": 7,
+    "model_agreement_percent": 66,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "Clear compile-time contract mismatch between pseudocode usage and declared options. Very low implementation cost and high confidence; should be fixed before implementation proceeds.",
+      "gpt_score": 930,
+      "opus_score": 880,
+      "tertiary_score": 950,
+      "delta": 50,
+      "average_score": 905,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "Conflicting enum definitions inside the same SDD are likely to create divergent implementations and broken filtering. Cheap to reconcile and directly protects gate behavior.",
+      "gpt_score": 940,
+      "opus_score": 890,
+      "tertiary_score": 900,
+      "delta": 50,
+      "average_score": 915,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-003",
+      "description": "Undefined helper affects core gate correctness and data-shape assumptions. Specifying input, output, and absent-stats behavior is necessary for reliable implementation, with modest documentation cost.",
+      "gpt_score": 885,
+      "opus_score": 860,
+      "tertiary_score": 850,
+      "delta": 25,
+      "average_score": 872.5,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-004",
+      "description": "The silence fallback is a named path with insufficient contract detail, creating real risk of duplicate or incompatible Shape-A implementations. Worth integrating, though slightly less critical than type mismatches.",
+      "gpt_score": 850,
+      "opus_score": 840,
+      "tertiary_score": 800,
+      "delta": 10,
+      "average_score": 845,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-005",
+      "description": "A layout selector without an explicit decision tree leaves the SDD underspecified at a central behavioral branch. Tests can verify but should not be the only spec source. High ROI to integrate.",
+      "gpt_score": 910,
+      "opus_score": 870,
+      "tertiary_score": 920,
+      "delta": 40,
+      "average_score": 890,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-006",
+      "description": "Regex escaping is a concrete runtime-safety issue with plausible real inputs. The fix is small, though narrower in blast radius than the top structural issues.",
+      "gpt_score": 790,
+      "opus_score": 720,
+      "tertiary_score": 750,
+      "delta": 70,
+      "average_score": 755,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-007",
+      "description": "Pipeline scope contradiction could cause implementation drift and unintended chat-mode wiring. Clarifying V1 digest-only behavior has high value and low cost.",
+      "gpt_score": 875,
+      "opus_score": 710,
+      "tertiary_score": 850,
+      "delta": 165,
+      "average_score": 792.5,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-011",
+      "description": "Bounded proximity factors are important for telemetry cardinality and readable logs, but the severity depends on draft density and attribute limits. A cap and dedupe rule are sensible.",
+      "gpt_score": 650,
+      "opus_score": 0,
+      "tertiary_score": 550,
+      "delta": 650,
+      "average_score": 650,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-012",
+      "description": "The one-time warning ambiguity is real but low-risk compared with core gate behavior. Worth clarifying if touching this section, but not a blocker.",
+      "gpt_score": 540,
+      "opus_score": 0,
+      "tertiary_score": 450,
+      "delta": 540,
+      "average_score": 540,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-013",
+      "description": "Emoji passthrough behavior is a fragile formatting contract that should be documented and tested, especially because corruption would be user-visible. Moderate cost, clear benefit.",
+      "gpt_score": 720,
+      "opus_score": 0,
+      "tertiary_score": 780,
+      "delta": 720,
+      "average_score": 720,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-014",
+      "description": "Test exporter injection is valuable for reliable span assertions, though the risk depends on how Effect layers are actually composed. It should be specified enough to keep tests deterministic.",
+      "gpt_score": 700,
+      "opus_score": 0,
+      "tertiary_score": 850,
+      "delta": 700,
+      "average_score": 700,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-015",
+      "description": "The rule-to-factor application model is central to gate correctness. Without an explicit pairing strategy, implementers may produce materially different violation behavior. High-value clarification.",
+      "gpt_score": 865,
+      "opus_score": 0,
+      "tertiary_score": 900,
+      "delta": 865,
+      "average_score": 865,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-003",
+      "concern": "Chat mode remains completely unguarded against structural hallucinations",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "The prose gate is explicitly excluded from `composeReplyWithEnrichment` in V1. Since `inspectProse` is a pure, synchronous regex function with minimal latency overhead, leaving the interactive chat surface exposed to the same hallucinations it solves in digests is an unnecessary risk.",
+      "location": "Component Specs #5 (Digest path) / System Overview",
+      "recommendation": "Integrate `inspectProse` into the chat-mode path (`composeReplyWithEnrichment`) in V1. Even if configured hardcoded to 'log' mode initially, the telemetry is necessary to understand chat hallucination rates.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "Prose gate fails open when factor names are paraphrased",
+      "severity": "CRITICAL",
+      "severity_score": 850,
+      "why_matters": "The `attributeFactor` function requires an exact string match of `display_name`. If the LLM paraphrases the factor name, attribution fails, resulting in `no-factor-context`. The digest path explicitly filters out `no-factor-context`, meaning hallucinated claims that don't use the exact factor name will completely bypass the `skip` and `silence` modes.",
+      "location": "packages/persona-engine/src/deliver/prose-gate.ts (attributeFactor) and cron/scheduler.ts (highViolations filter)",
+      "recommendation": "Do not filter out `no-factor-context` from `highViolations`. Unattributed statistical claims should be treated as violations. Additionally, implement fallback attribution (e.g., default to the digest's primary factor if attribution fails).",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "Prose-gate regex denylist is trivially bypassable by morphological/Unicode variants and synonyms; LLM output is non-deterministic and will drift around the patterns",
+      "severity": "HIGH",
+      "severity_score": 740,
+      "why_matters": "The gate is positioned as the deterministic safety net for unsupported epistemic claims (cluster claims, p99-rare, structural-shift). A model that emits 'co-ordinated cluster', 'lock\u200bstep', 'p-99 rare', 'structurally shifting', 'unparalleled', 'extreme tail event', or NFKC-equivalent fullwidth/combining-mark variants slips past the three case-insensitive word-boundary regexes entirely. Once operators trust the gate ('telemetry-only contract, persona illusion preserved'), undetected violations become invisible failures rather than loud ones, which is worse than no gate at all because confidence is miscalibrated.",
+      "location": "\u00a71 prose-gate.ts \u00b7 PROSE_GATE_RULES const \u00b7 NFR-6 test-coverage claim",
+      "recommendation": "(a) NFKC-normalize + zero-width strip the draft before regex match (mirror the L7 cycle-098 sprint-7 HIGH-2 closure pattern that already exists in this repo's framework lineage). (b) Document the bypass surface explicitly in NFR-1 and add an NFR stating 'gate detects literal pattern occurrences only \u2014 semantic equivalents are not in scope for V1; V1.5 LLM-judge closes this gap'. (c) Add adversarial regression cases (hyphen variants, fullwidth, zero-width insertions, common synonyms) to prose-gate.test.ts so the bypass surface is at least named, not silently shipped.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Skipping checks for absent factor stats validates hallucinations",
+      "severity": "HIGH",
+      "severity_score": 780,
+      "why_matters": "If the LLM makes a quantitative claim (e.g., 'structural shift' or 'p99 rare') about a factor that is historic or has no current stats, the system skips the check. Making a statistical claim without data is a hallucination and should not be permitted.",
+      "location": "Failure Modes + Recovery (factor_stats absent)",
+      "recommendation": "If a rule matches but the attributed factor has no stats (`factorStatsByFactorId` returns undefined), emit a new violation type (e.g., `unsupported-claim`) rather than skipping the check.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "The SDD contradicts itself on whether the prose gate runs on chat replies or digest only.",
+      "severity": "CRITICAL",
+      "severity_score": 840,
+      "why_matters": "Different implementers could wire the gate into `composeReplyWithEnrichment` despite the later V1 constraint saying chat-mode must skip `inspectProse`. That changes user-facing slash-command behavior and may suppress or reroute explicit replies unexpectedly.",
+      "location": "System Overview diagram, Component Spec 1 kill-switch handling, Component Spec 5 digest path",
+      "recommendation": "Make one authoritative V1 routing statement. Remove `inspectProse` from the chat-reply diagram and any `composeReplyWithEnrichment` caller references, or explicitly mark them V1.5-only.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "The gate's factor-stat shape appears incompatible with the documented `FactorStatsSurface`.",
+      "severity": "HIGH",
+      "severity_score": 735,
+      "why_matters": "Rules reference `stats.cohort.unique_actors`, but the Data Models section says `cohort` is `FactorStatsSurface` with `{event_count, percentiles, current_percentile_rank}`. If the mirrored PR #77 type does not actually expose `unique_actors` at that path, the implementation will not compile or will silently skip the cohort rule after local workarounds.",
+      "location": "Prose gate regex rules, Data Models: FactorStats",
+      "recommendation": "Paste the exact PR #77 `FactorStats` mirror into the SDD and update rule paths to match it. Add a compile-time fixture test using the real imported type.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "`ProseGateValidation` is defined inconsistently across the document.",
+      "severity": "HIGH",
+      "severity_score": 760,
+      "why_matters": "The public API includes `no-factor-context`, while the Data Models section omits it and adds `rank-null`; the rule definitions return `rank-below-threshold` even when rank is null. This will cause type drift, failed tests, or telemetry consumers that cannot parse emitted reasons.",
+      "location": "Component Spec 1 Public API, Data Models, Failure Modes",
+      "recommendation": "Define one canonical reason union and use it everywhere. If null rank must be distinguishable, make the structural-shift rule return `rank-null` explicitly before the below-threshold branch.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "sdd",
+  "document": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/sdd.md",
+  "domain": " public api for non",
+  "tertiary_model_used": "gemini-3.1-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "interactive",
+    "mode_reason": "Default (no explicit mode specified)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-16T02:04:23Z",
+  "metrics": {
+    "total_latency_ms": 181000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

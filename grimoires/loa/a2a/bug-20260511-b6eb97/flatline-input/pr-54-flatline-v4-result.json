@@ -1,0 +1,142 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 3,
+    "disputed_count": 4,
+    "low_value_count": 0,
+    "blocker_count": 2,
+    "model_agreement_percent": 60,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "Reclassifying sanitizer telemetry from error to warn has high operational ROI and very low implementation cost; it preserves signal while preventing alert-channel noise.",
+      "gpt_score": 870,
+      "opus_score": 820,
+      "tertiary_score": 920,
+      "delta": 50,
+      "average_score": 845,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "This closes a real boundary-condition gap where splitting can create a new start-of-string match context after sanitization; the risk is meaningful and the fix is straightforward and likely idempotent-safe.",
+      "gpt_score": 920,
+      "opus_score": 880,
+      "tertiary_score": 950,
+      "delta": 40,
+      "average_score": 900,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-004",
+      "description": "A dev-mode invariant check for template idempotency is a strong regression guard against future character/template drift, with moderate complexity and good long-term safety payoff.",
+      "gpt_score": 760,
+      "opus_score": 760,
+      "tertiary_score": 850,
+      "delta": 0,
+      "average_score": 760,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-007",
+      "description": "A dedicated sanitizer firing metric materially improves production observability and trend analysis at low implementation cost, especially compared with log scraping.",
+      "gpt_score": 740,
+      "opus_score": 0,
+      "tertiary_score": 880,
+      "delta": 740,
+      "average_score": 740,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-008",
+      "description": "Adding a colonless secondary pattern may catch future SDK drift, but it reopens false-positive pressure and relies on speculative formats; useful idea but uncertain net value now.",
+      "gpt_score": 500,
+      "opus_score": 0,
+      "tertiary_score": 300,
+      "delta": 500,
+      "average_score": 500,
+      "source": "gpt_scored",
+      "would_integrate": false,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-009",
+      "description": "Exporting pattern metadata for tests improves ordering/invariant coverage and reduces brittle string-based assertions, but this is a test ergonomics enhancement rather than runtime risk reduction.",
+      "gpt_score": 580,
+      "opus_score": 0,
+      "tertiary_score": 550,
+      "delta": 580,
+      "average_score": 580,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-010",
+      "description": "Extracting a shared helper for error-template composition reduces drift across multiple call sites with low risk and moderate maintenance payoff.",
+      "gpt_score": 620,
+      "opus_score": 0,
+      "tertiary_score": 720,
+      "delta": 620,
+      "average_score": 620,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-001",
+      "concern": "Detection regexes are brittle to upstream format drift because most specific patterns require exact prefixes and numeric status codes (for example `API Error: \\d+`, `bedrock chat error: \\d+`). Variants like `API error: overloaded`, `upstream API Error: ...`, or statusless messages can bypass substitution.",
+      "severity": "HIGH",
+      "severity_score": 770,
+      "why_matters": "A bypass reintroduces raw provider/internal error leakage at the chat boundary, breaking the stated in-character-only invariant.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts (RAW_API_ERROR_PATTERNS)",
+      "recommendation": "Broaden matching to tolerate case/prefix variants and non-numeric tails, and add a fallback heuristic for common leak tokens (`api error`, `internal server error`, provider names) with tight false-positive guards.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Homoglyph/confusable bypass remains open by design (deferred), and NFKC + `\\p{Cf}` stripping does not catch script-mixed lookalikes (for example Cyrillic/Greek letters in `API Error`).",
+      "severity": "HIGH",
+      "severity_score": 730,
+      "why_matters": "An attacker or malformed upstream string can evade pattern matching while still presenting a visually identical leaked error to users.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts (`probe` normalization strategy)",
+      "recommendation": "Implement script-confusable folding or mixed-script detection on the probe path, then test adversarial variants (Cyrillic A/P/I, Greek Ε, etc.) against all blocker patterns.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "pr",
+  "document": "grimoires/loa/a2a/bug-20260511-b6eb97/flatline-input/pr-54-diff-v4.md",
+  "domain": "software development",
+  "tertiary_model_used": "gemini-2.5-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "hitl",
+    "mode_reason": "Simstim workflow active (.run/simstim-state.json state=RUNNING)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-11T21:14:09Z",
+  "metrics": {
+    "total_latency_ms": 236000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

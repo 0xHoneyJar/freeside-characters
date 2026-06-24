@@ -1,5 +1,80 @@
 # Changelog
 
+> ⚠️ changelog drift: tags advanced to **v0.11.3** (2026-05-01) without entries; the
+> `[Unreleased]` block below is mislabeled "cycle-004" but holds older shipped work.
+> Retroactive reconciliation of v0.10.0–v0.11.3 is a separate hygiene task. The
+> entry below resumes the log at the cycle-008 state.
+
+## [0.12.0] — 2026-05-23 — cycle-008 capability-wiring + FAGAN-thorough
+
+### Added
+- **Enriched-v2 digest, live** — the weekly digest is now a Components V2 *billboard*
+  (voiceless by design): real `raw_stats` spotlight identity + NFT pfp, factor movers,
+  members-warm footer. `DIGEST_SURFACE=enriched-v2`.
+- **Capability-wiring** (3 slices): in-process spotlight identity resolve (freeside_auth) ·
+  event-driven micro pop-in via the ambient router → stir-tier · `score/types.ts` as the
+  sanctioned shim with a schema-drift test.
+- **FAGAN-thorough** multimodel code-review panel wired (`fagan_protocol` in `.loa.config.yaml`):
+  opus-skeptic + gpt-reviewer + composer-reviewer, lone-critical-holds-the-gate consensus.
+
+### Fixed
+- **Digest spotlight sanitize** — external identity (discord_username / mibera_id) now runs
+  through `escapeDiscordMarkdown` at the presentation boundary (CLAUDE.md invariant; caught by
+  the FAGAN panel). Defends against markdown distortion in the spotlight line.
+- **Digest spotlight availability** — bounded the in-process `resolveWallet` call (5s
+  `Promise.race`) so a stalled Postgres lookup can't wedge the per-zone cron lock (FAGAN
+  opus-skeptic).
+- **FAGAN composer voice** — switched the cursor adapter from `--mode plan` (agentic loop,
+  timed out → voice silently dropped) to `--mode ask` (single-shot Q&A, ~65s). The panel now
+  runs at its true 3-voice width. *(construct-fagan repo)*
+
+### Changed
+- **README** rewritten around the three-surface model (chat · scheduled billboard · event
+  pop-in), the substrate piece-map, quests (env-gated multi-world), and current status.
+
+### Tests
+- typecheck green (both packages) · `bun test` 1125 pass / 2 skip / 0 fail (71 files).
+
+## [Unreleased] — cycle-004 in progress
+
+### Added
+- **Reaction-bar signaling primitive** (community-stickiness feedback for "what sticks"):
+  - `packages/persona-engine/src/deliver/reaction-bar.ts` — bot auto-attaches 3 seed reactions to every digest (👀 useful · 🤔 unclear · 🪲 bug/data-wrong). Fail-soft: reaction errors never fail delivery.
+  - `packages/persona-engine/src/deliver/reaction-bar.test.ts` — 14 tests (mock Discord client, channel/message failures, per-reaction failures, anti-Goodhart length invariant)
+  - `apps/bot/scripts/digest-tally.ts` — operator-side tally with baseline+delta comparison, sample-size warning, doctrine-framing output
+  - `DIGEST_REACTION_BAR_ENABLED` config (default `true`) for per-deploy toggling
+  - Wired into `deliverZoneDigest` after both webhook-shell and bot-fallback paths
+  - **Reviewed by KEEPER + OSTROM (dual construct review)**: 💤 removed (KEEPER: preemptive-judgment mood mismatch with ruggy voice); 🪲 shipped day-one (OSTROM: deferring would cause retroactive data loss when verifier ships); baseline/delta tally view added (KEEPER: structural memory); sample-size warning added (KEEPER: noise floor); TS-level Goodhart constraint added (OSTROM: scope-creep invariant).
+- **cycle-004 S1A foundation slice**: `compose/llm-gateway/` four-folder structure (`domain/ ports/ live/ mock/`) establishing the substrate-refactor pattern.
+  - Port (`compose/llm-gateway/ports/llm-gateway.port.ts`): `LLMGateway` Context.Tag with `LLMError` discriminated union (6 variants: RateLimit · EmptyResponse · Auth · MalformedResponse · ContentTooLarge · Transport) + `isLLMError` type guard.
+  - Live adapter (`compose/llm-gateway/live/anthropic.live.ts`): Effect-wrapped adapter delegating to legacy `agent-gateway.ts::invoke()`. Regex-dispatch `classifyLegacyError()` translates legacy Error messages → typed LLMError variants. **Bridge pattern**: classification helper goes away after caller migration (S1A.T7).
+  - Mock adapter (`compose/llm-gateway/mock/recorded.mock.ts`): fixture-based with SHA-256 message-hash precision, first-match-wins, success + error fixtures.
+  - Contract test (`compose/llm-gateway/llm-gateway.contract.test.ts`): 19 tests across 5 dimensions (LLMError shape · classifyLegacyError dispatch · RecordedMock matching · userMessage hashing · Effect-shape contract).
+- Sprint-1a Decision Log entries in `grimoires/loa/NOTES.md` capturing the bridge-pattern cleanup plan + 6 ACCEPTED-DEFERRED ACs + the BB invalid_llm_response gap.
+
+### Changed
+- `run_bridge` config block added to `.loa.config.yaml` (cycle-004): enabled with depth/max_iterations cap, pr_body_opt_out_marker, bridgebuilder review block, mibera-canonical lore taxonomy.
+
+### Tests
+- Test suite: 641 → 674 (+19 llm-gateway contract test · +14 reaction-bar). No regressions.
+
+
+## [0.9.0] — 2026-05-01 — environment substrate (Phases B-E · cycle-001)
+
+
+Cycle-001 (V0.7-A.1 environment substrate) — closes the operator's "ChatGPT-natural tool use" gap. Three layers compose:
+
+- **Substrate awareness** (Phases B–C): channel↔zone reverse map + environment context builder + rosenzu's moment-half (place + moment lens via `read_room` tool)
+- **Tooled chat** (Phase D · MEDIUM-risk): chat-mode replies now flow through orchestrator with per-character MCP scope when conditions allow; CHAT_MODE env flag for revert
+
+### Added
+
+- **V0.7-A.1**: environment substrate (Phases B-E · cycle-001) (#6)
+- **loa**: mount loa framework on freeside-characters
+
+_Source: PR #6_
+
+
 ## [0.6.0-C reconciliation] — 2026-04-30
 
 ### Cabal-rotation retirement + satoshi/ruggy voice rewrite per gumi corrections

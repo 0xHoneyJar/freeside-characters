@@ -1,0 +1,31 @@
+{
+  "fixture_kind": "admission_recall_proof",
+  "fixture_version": "phase-43c.0",
+  "schema_version": "admission-wedge-mvp.0",
+  "schema_note": "design-level doctrine vocabulary, not an implemented schema, not a storage table, not a Dixie/Straylight API contract (see docs/ADMISSION-WEDGE-MVP-DESIGN.md F.5)",
+  "synthetic": true,
+  "proof_id": "proof-002",
+  "proof_phase": "after_admission",
+  "actor_id": "freeside-characters:shared-substrate",
+  "estate_id": "estate-operator-dev-001",
+  "recall_route": "/api/recall/intake",
+  "recall_classification": "served",
+  "recall_result": "included",
+  "inclusion_reason": "admitted_active_assertion",
+  "included_assertion_ids": ["assn-001"],
+  "excluded_candidate_ids": ["cand-001"],
+  "public_recall_output": {
+    "public_summary": "operator participates in the admission-wedge fixture proof",
+    "denied_or_refused": false,
+    "rendered_candidate_payload": false
+  },
+  "audit_links": {
+    "source_candidate_id": "cand-001",
+    "admission_transition_id": "trans-001",
+    "admission_receipt_ref": "rcpt-001",
+    "audit_link_note": "the source candidate and admission receipt are preserved as audit links only; the raw candidate is NOT treated as ordinary recall material and is not rendered"
+  },
+  "no_leak_note": "only the admitted assertion's public_safe summary is recallable; the raw candidate, candidate_payload, body_private, source material, receipt body, and authority identifier are not rendered",
+  "reuse_note": "reuses the accepted Recall Wedge served behavior unchanged; same classification/outcome/route the recall half already produces",
+  "authorization_note": "synthetic, reviewed, fixture/operator-only; demonstrates an admitted assertion becomes recall-eligible only after an explicit admission transition"
+}

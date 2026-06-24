@@ -1,0 +1,50 @@
+import type { Config } from '../config.ts';
+import type { CharacterConfig } from '../types.ts';
+import type { ZoneId } from '../score/index.ts';
+import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
+import type { VoiceGenPort } from '../ports/voice-gen.port.ts';
+import type { PresentationPort } from '../ports/presentation.port.ts';
+import type { VoiceAugment } from '../domain/voice-augment.ts';
+import type { MicroMessage } from '../domain/post-messages.ts';
+import type { EventTrigger } from '../compose/post-types.ts';
+import type { DigestPayload } from '../deliver/embed.ts';
+import { createScoreMcpLive } from '../live/score-mcp.live.ts';
+import { createClaudeSdkLive } from '../live/claude-sdk.live.ts';
+import { presentation } from '../live/discord-render.live.ts';
+import { deriveShape } from '../domain/derive-shape.ts';
+
+export interface MicroPostResult {
+  readonly zone: ZoneId;
+  readonly postType: 'micro';
+  readonly message: MicroMessage;
+  readonly payload: DigestPayload;
+}
+
+export interface MicroOrchestratorDeps {
+  readonly score?: ScoreFetchPort;
+  readonly voice?: VoiceGenPort;
+  readonly presentation?: PresentationPort;
+  /** cycle-008 slice 2b · the event-driven moment this micro reacts to (axis + class). Threaded
+   * into the voice ctx so the LLM leans into the live event; absent for non-event micros. */
+  readonly eventTrigger?: EventTrigger;
+}
+
+export async function composeMicroPost(
+  config: Config,
+  character: CharacterConfig,
+  zone: ZoneId,
+  deps: MicroOrchestratorDeps = {},
+): Promise<MicroPostResult> {
+  const score = deps.score ?? createScoreMcpLive(config);
+  const voiceGen = deps.voice ?? createClaudeSdkLive(config, character);
+  const renderer = deps.presentation ?? presentation;
+
+  const snapshot = await score.fetchDigestSnapshot(zone);
+  const derived = deriveShape({ snapshot, crossZone: [snapshot] });
+  const augment: VoiceAugment | undefined = config.VOICE_DISABLED
+    ? undefined
+    : await voiceGen.generateDigestVoice(snapshot, { derived, postType: 'micro', eventTrigger: deps.eventTrigger });
+
+  const message = renderer.renderMicro(snapshot, augment);
+  return { zone, postType: 'micro', message, payload: presentation.toMicroPayload(message) };
+}

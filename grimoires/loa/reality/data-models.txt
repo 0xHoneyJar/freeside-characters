@@ -1,0 +1,83 @@
+=== Interfaces & type aliases (top-level public) ===
+176:export type Config = z.infer<typeof ConfigSchema>;
+19:export type EmojiAffinityKind = 'mibera' | 'ruggy';
+48:export interface CharacterConfig {
+209:export interface SlashCommandSpec {
+222:export type SlashCommandHandler = 'chat' | 'imagegen';
+224:export interface SlashCommandOption {
+240:export type DiscordApplicationCommandOptionType = 3 | 4 | 5 | 10;
+250:export type CabalArchetype =
+261:export type { ZoneId, PostType };
+19:export type {
+30:export type { Config } from './config.ts';
+31:export type { FireRequest, SchedulerHandles, ScheduleArgs } from './cron/scheduler.ts';
+61:export type { ReplyComposeArgs, ReplyComposeResult } from './compose/reply.ts';
+66:export type { EnrichedReplyResult } from './compose/reply.ts';
+68:export type {
+83:export type {
+94:export type { GrailRefValidation } from './deliver/grail-ref-guard.ts';
+118:export type { VoiceDisciplineOpts } from './deliver/sanitize.ts';
+122:export type { ChatProvider } from './compose/reply.ts';
+127:export type { ResolvedProvider } from './compose/agent-gateway.ts';
+140:export type { ToolMoodMapping } from './expression/tool-mood-map.ts';
+148:export type {
+159:export type { SilenceRegistry } from './expression/silence-register.ts';
+170:export type {
+179:export type { McpToolContract, McpServerContract } from './orchestrator/_schema/index.ts';
+183:export type {
+194:export type { ToolUseEvent, ToolResultEvent } from './orchestrator/index.ts';
+205:export type { LedgerEntry } from './conversation/ledger.ts';
+218:export type { RecentMessage, BuildEnvironmentContextArgs } from './compose/environment.ts';
+226:export type {
+38:export interface RecentMessage {
+45:export interface BuildEnvironmentContextArgs {
+3:export interface BedrockTextToImageArgs {
+9:export interface BedrockGeneratedImage {
+52:export interface InvokeRequest {
+61:export interface InvokeResponse {
+66:export type ResolvedProvider = 'stub' | 'anthropic' | 'freeside' | 'bedrock';
+21:export type PostType =
+35:export type CronPostType = Exclude<PostType, 'reply'>;
+56:export interface PostTypeSpec {
+115:export type VoiceMediumId = "discord-webhook" | "discord-interaction" | "cli" | "telegram-stub";
+126:export interface VoiceDisciplineOpts {
+62:export interface ReplyComposeArgs {
+109:export interface ReplyComposeResult {
+224:export interface EnrichedReplyResult extends ReplyComposeResult {
+803:export type ChatProvider = 'stub' | 'anthropic' | 'freeside' | 'bedrock';
+49:export type Invocation =
+75:export interface ComposeEnvironment {
+87:export interface ComposeArgs {
+112:export type ComposeResult =
+
+=== Zod schemas ===
+4:const ConfigSchema = z.object({
+6:  STUB_MODE: z.string().default('true').transform((v) => v === 'true'),
+21:  LLM_PROVIDER: z.enum(['stub', 'anthropic', 'freeside', 'bedrock', 'auto']).default('auto'),
+29:  SCORE_API_URL: z.string().url().default('https://score-api-production.up.railway.app'),
+30:  SCORE_API_KEY: z.string().optional(),
+31:  MCP_KEY: z.string().optional(),
+34:  SCORE_BEARER: z.string().optional(),
+47:  CODEX_MCP_URL: z.string().url().optional(),
+50:  FREESIDE_BASE_URL: z.string().url().default('https://api.freeside.0xhoneyjar.xyz'),
+51:  FREESIDE_API_KEY: z.string().optional(),
+52:  FREESIDE_AGENT_MODEL: z.enum(['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect']).default('reasoning'),
+55:  AWS_REGION: z.string().default('eu-central-1'),
+56:  AWS_BEARER_TOKEN_BEDROCK: z.string().optional(),
+57:  BEDROCK_API_KEY: z.string().optional(),
+59:  BEDROCK_TEXT_REGION: z.string().default('us-west-2'),
+60:  BEDROCK_TEXT_MODEL_ID: z.string().optional(),
+61:  BEDROCK_STABILITY_MODEL_ID: z.string().optional(),
+63:  BEDROCK_IMAGE_REGION: z.string().default('us-east-1'),
+64:  BEDROCK_IMAGE_TEXT_TO_IMAGE_REGION: z.string().default('us-west-2'),
+66:  BEDROCK_IMAGE_DEFAULT_ACTION: z.enum([
+83:  BEDROCK_IMAGE_TEXT_TO_IMAGE_MODEL_ID: z.string().optional(),
+84:  BEDROCK_IMAGE_STYLE_TRANSFER_MODEL_ID: z.string().optional(),
+85:  BEDROCK_IMAGE_STYLE_GUIDE_MODEL_ID: z.string().optional(),
+86:  BEDROCK_IMAGE_SEARCH_AND_REPLACE_MODEL_ID: z.string().optional(),
+87:  BEDROCK_IMAGE_SEARCH_AND_RECOLOR_MODEL_ID: z.string().optional(),
+88:  BEDROCK_IMAGE_REMOVE_BACKGROUND_MODEL_ID: z.string().optional(),
+89:  BEDROCK_IMAGE_OUTPAINT_MODEL_ID: z.string().optional(),
+90:  BEDROCK_IMAGE_INPAINT_MODEL_ID: z.string().optional(),
+91:  BEDROCK_IMAGE_FAST_UPSCALE_MODEL_ID: z.string().optional(),
+92:  BEDROCK_IMAGE_ERASE_OBJECT_MODEL_ID: z.string().optional(),

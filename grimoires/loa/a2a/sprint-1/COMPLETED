@@ -1,0 +1,10 @@
+Sprint 1: Channel↔Zone Reverse Map (Phase B)
+Cycle: cycle-001 (V0.7-A.1 environment substrate)
+Implementation Commit: 67e350c
+Reviewed: 2026-05-02 (engineer-feedback.md — All good with documented concerns)
+Audited: 2026-05-02 (auditor-sprint-feedback.md — APPROVED, no findings)
+Completed: 2026-05-02T01:42:00Z
+
+ACs (6/6): all ✓ Met
+Beads: bd-3ru epic + bd-1dp/1kr/2bf tasks closed, security-approved label
+Spec Reference: grimoires/loa/specs/build-environment-substrate-v07a1.md (Phase B)

@@ -1,0 +1,6 @@
+packages/persona-engine/src/expression/error-register.ts:152: * @deprecated 2026-05-04 — operator directive: when the bot (loa) speaks
+packages/persona-engine/src/orchestrator/freeside_auth/server.ts:247:// can be called. score-mibera advertises MIBERA-XXXXXX support but returns
+packages/persona-engine/src/orchestrator/freeside_auth/server.ts:381:      hint: 'empty mibera_id — provide MIBERA-XXXXXX or numeric form',
+packages/persona-engine/src/orchestrator/freeside_auth/server.ts:414:        hint: `no profile matched mibera_id '${miberaId}' — verify format (MIBERA-XXXXXX) or drop the owner wallet directly`,
+packages/persona-engine/src/orchestrator/freeside_auth/server.ts:515:      'REVERSE resolver — Mibera ID (MIBERA-XXXXXX or alternate forms) → owner wallet address. Use when an operator references a Mibera by ID and you need the owner wallet to chain into get_wallet_scorecard. Bridges the gap that score-mibera explicitly cannot cross (score-api returns `mibera_not_resolvable` because midi_profiles lives in midi-interface DB · this resolver IS in-bot with that DB connection). Returns `found: false` + `hint` when unknown/ambiguous/db-unavailable.',
+packages/persona-engine/src/orchestrator/freeside_auth/server.ts:520:            'Mibera ID — typically MIBERA-XXXXXX (case-insensitive). Trimmed before lookup.',

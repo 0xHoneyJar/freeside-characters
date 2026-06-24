@@ -1,30 +1,179 @@
 import { z } from 'zod';
-import type { ZoneId } from './score/types.ts';
+import type { ZoneId } from './score/index.ts';
 
 const ConfigSchema = z.object({
   // ─── stub mode ────────────────────────────────────────────────────────
   STUB_MODE: z.string().default('true').transform((v) => v === 'true'),
 
+  // ─── reaction-bar (community-stickiness signaling primitive) ──────────
+  /** When true, bot auto-reacts on every successfully delivered digest
+   * with the 3 seed reactions (👀 useful · 🤔 unclear · 💤 noise).
+   * Defaults to true. Set false to disable autoreact on a per-deploy
+   * basis without code changes. See packages/persona-engine/src/deliver/
+   * reaction-bar.ts + grimoires/loa/context/track-2026-05-14-signaling-
+   * primitive-reaction-bar.md. */
+  DIGEST_REACTION_BAR_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v === 'true'),
+
+  // ─── digest surface (cycle-008 S9) ────────────────────────────────────
+  /** Which digest surface the cron renders.
+   *  'pulse' (default) = the score-dashboard per-dimension card mirror.
+   *  'enriched-v2'     = the RLHF-validated enriched Components V2 billboard
+   *  (hero + factor movers + spotlight + wallets-warm). Flip to 'enriched-v2'
+   *  after canary. See deliver/enriched-render.ts + the digest orchestrator. */
+  DIGEST_SURFACE: z.enum(['pulse', 'enriched-v2']).default('pulse'),
+
   // ─── explicit LLM provider (V0.4 — codex-rescue F1: replace implicit
   // key-presence inference; fail loud if intent is ambiguous) ────────────
-  /** stub | anthropic | freeside | auto (auto = back-compat: anthropic key
-   *  wins → stub → freeside, matching V0.3 behavior). Defaults to 'auto'
-   *  for back-compat; recommend explicit value in production. */
-  LLM_PROVIDER: z.enum(['stub', 'anthropic', 'freeside', 'auto']).default('auto'),
+  /** stub | anthropic | freeside | bedrock | auto.
+   *
+   *  V0.12 auto-rule (operator-named 2026-05-01 · cost-bearing default):
+   *  bedrock-first when AWS env present (AWS_BEARER_TOKEN_BEDROCK or
+   *  BEDROCK_API_KEY) → anthropic (dev/local fallback when ANTHROPIC_API_KEY
+   *  is set) → stub (STUB_MODE=true) → freeside. ANTHROPIC_API_KEY remains
+   *  an explicit opt-in for dev — set `LLM_PROVIDER=anthropic`, or unset
+   *  the AWS bedrock env vars in your dev shell.
+   *
+   *  Defaults to 'auto'; recommend an explicit value in production for
+   *  legibility (silences the boot-log notice). */
+  LLM_PROVIDER: z.enum(['stub', 'anthropic', 'freeside', 'bedrock', 'auto']).default('auto'),
+  /** When true, digest rendering skips voice generation entirely. The
+   * deterministic embed still renders from score-mcp substrate data. */
+  VOICE_DISABLED: z.string().default('false').transform((v) => v === 'true'),
 
   // ─── score-mcp (zerker — production data path) ────────────────────────
+  // Direct path (V0.5-): SCORE_API_URL=https://score-api-production.up.railway.app, MCP_KEY set, SCORE_BEARER unset.
+  // Gateway path (V0.7+): SCORE_API_URL=https://mcp.0xhoneyjar.xyz/score, MCP_KEY + SCORE_BEARER both set.
+  // The gateway is registry-shaped: it declares each upstream's auth via the federation manifest;
+  // callers compose the request from the declaration. SCORE_BEARER passes the gateway gate;
+  // X-MCP-Key (sourced from MCP_KEY) satisfies the upstream's announced auth.
   SCORE_API_URL: z.string().url().default('https://score-api-production.up.railway.app'),
   SCORE_API_KEY: z.string().optional(),
   MCP_KEY: z.string().optional(),
+  /** Bearer for the freeside-mcp-gateway gate. Matches the gateway's
+   *  `TENANT_SCORE_API_KEY` env. Unset = direct route (no gateway gate). */
+  SCORE_BEARER: z.string().optional(),
+
+  // ─── shadow-onboarding LIVE ScoreSource (bd-tfl) ──────────────────────
+  /**
+   * Community-scoped score-api key for the Purupuru tier read (x-api-key). Its
+   * `api_key_community_scope.allowedCommunities` must include `purupuru`. This
+   * is the LIVE/MOCK FLAG for the shadow ScoreSource adapter:
+   *   set   → LIVE ScoreSource (reads real Purupuru tiers from score-api REST)
+   *   unset → MOCK ScoreSource (default; shadow preview works with no
+   *           score-api provisioning).
+   * See apps/bot/src/shadow/score-source.live.ts + composition-root.ts. */
+  SCORE_PURUPURU_API_KEY: z.string().optional(),
+  /** Community slug for the LIVE ScoreSource read. Defaults to `purupuru`. */
+  SCORE_PURUPURU_COMMUNITY: z.string().default('purupuru'),
+
+  // ─── codex-mcp (gumi — mibera-codex lookup, public, no auth) ──────────
+  /**
+   * HTTP base URL of the codex MCP server. When set, the orchestrator
+   * registers `mcp__codex__*` tools (lookup_zone, lookup_archetype,
+   * lookup_factor, lookup_grail, lookup_mibera, list_zones,
+   * list_archetypes, validate_world_element).
+   *
+   * Local dev: `http://localhost:3000` (run `bun run http` in
+   * `0xHoneyJar/construct-mibera-codex`). Railway: TBD when Path B ships.
+   * No auth header — codex is public-read.
+   */
+  CODEX_MCP_URL: z.string().url().optional(),
+
+  // ─── inventory-api (Hyper Bun HTTP service — spotlight pfp source) ─────
+  /**
+   * Base URL of inventory-api, the building that serves a wallet's NFT profile
+   * picture (#87 GAP-2): GET {INVENTORY_API_URL}/profile/:wallet →
+   * { address, contract, imageUrl: string | null }.
+   *
+   * Consumed over the wire by the enriched-digest path (digest-orchestrator →
+   * fetchProfilePictureHttp), reusing the SAME env the mint path reads in
+   * apps/bot/src/index.ts. Optional + dormant-until-deployed: UNSET (CI / dev /
+   * pre-deploy) → the spotlight pre-resolve is skipped entirely (no fetch), so
+   * behavior is identical to today (DB pfp only). When set, inventory-api is the
+   * PRIMARY spotlight pfp and the freeside_auth DB `pfp_url` is the FALLBACK.
+   * A down / slow / malformed inventory-api fail-softs to the DB pfp — it can
+   * NEVER break or block the digest render.
+   */
+  INVENTORY_API_URL: z.string().url().optional(),
 
   // ─── freeside agent-gateway (jani — production LLM path) ──────────────
   FREESIDE_BASE_URL: z.string().url().default('https://api.freeside.0xhoneyjar.xyz'),
   FREESIDE_API_KEY: z.string().optional(),
   FREESIDE_AGENT_MODEL: z.enum(['cheap', 'fast-code', 'reviewer', 'reasoning', 'architect']).default('reasoning'),
 
+  // ─── amazon bedrock-native ────────────────────────────────────────────
+  AWS_REGION: z.string().default('eu-central-1'),
+  AWS_BEARER_TOKEN_BEDROCK: z.string().optional(),
+  BEDROCK_API_KEY: z.string().optional(),
+
+  BEDROCK_TEXT_REGION: z.string().default('us-west-2'),
+  BEDROCK_TEXT_MODEL_ID: z.string().optional(),
+  BEDROCK_STABILITY_MODEL_ID: z.string().optional(),
+
+  BEDROCK_IMAGE_REGION: z.string().default('us-east-1'),
+  BEDROCK_IMAGE_TEXT_TO_IMAGE_REGION: z.string().default('us-west-2'),
+
+  BEDROCK_IMAGE_DEFAULT_ACTION: z.enum([
+    'text-to-image',
+    'style-transfer',
+    'style-guide',
+    'search-and-replace',
+    'search-and-recolor',
+    'remove-background',
+    'outpaint',
+    'inpaint',
+    'fast-upscale',
+    'erase-object',
+    'creative-upscale',
+    'control-structure',
+    'control-sketch',
+    'conservative-upscale',
+  ]).default('text-to-image'),
+
+  BEDROCK_IMAGE_TEXT_TO_IMAGE_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_STYLE_TRANSFER_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_STYLE_GUIDE_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_SEARCH_AND_REPLACE_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_SEARCH_AND_RECOLOR_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_REMOVE_BACKGROUND_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_OUTPAINT_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_INPAINT_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_FAST_UPSCALE_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_ERASE_OBJECT_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_CREATIVE_UPSCALE_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_CONTROL_STRUCTURE_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_CONTROL_SKETCH_MODEL_ID: z.string().optional(),
+  BEDROCK_IMAGE_CONSERVATIVE_UPSCALE_MODEL_ID: z.string().optional(),
+
   // ─── anthropic-direct (V0 LLM testing) ────────────────────────────────
   ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),
+  /** Default flipped sonnet-4-6 → opus-4-7 (operator pick 2026-04-30 ·
+   *  V0.7-A.0 ship pass · highest voice-fidelity model for both digest
+   *  and chat-mode pipelines). Override via env when a per-deploy cost
+   *  tradeoff calls for sonnet/haiku. */
+  ANTHROPIC_MODEL: z.string().default('claude-opus-4-7'),
+
+  /**
+   * V0.7-A.1 Phase D — chat-mode tool surface routing.
+   *
+   *   `auto` (default)   — Use orchestrator path when LLM_PROVIDER resolves
+   *                        to anthropic (full per-character MCP scope at
+   *                        chat time). Fall back to naive `invokeChat()`
+   *                        for stub/freeside/bedrock providers.
+   *   `orchestrator`     — Force orchestrator path. Errors at runtime if
+   *                        the resolved provider isn't anthropic.
+   *   `naive`            — Force the V0.7-A.0 single-turn path (no MCPs,
+   *                        no tools). Revert hatch when chat-mode tool use
+   *                        regresses voice fidelity or otherwise misbehaves.
+   *
+   * The orchestrator path is what closes the operator's "ChatGPT-natural
+   * tool use" gap (per kickoff 2026-05-01). The naive path is the V0.7-A.0
+   * floor — works on every provider, no tools.
+   */
+  CHAT_MODE: z.enum(['auto', 'orchestrator', 'naive']).default('auto'),
 
   // ─── discord delivery — bot client OR webhook fallback ────────────────
   DISCORD_BOT_TOKEN: z.string().optional(),
@@ -65,9 +214,20 @@ const ConfigSchema = z.object({
   /** Where weaver posts land — usually stonehenge (cross-zone observatory). */
   WEAVER_PRIMARY_ZONE: z.enum(['stonehenge', 'bear-cave', 'el-dorado', 'owsley-lab']).default('stonehenge'),
 
+  // ─── V0.7-A.0 — Discord Interactions endpoint (slash commands) ────────
+  /** Ed25519 public key from Discord developer portal. When unset the
+   *  interactions server doesn't start (digest cron path is unaffected). */
+  DISCORD_PUBLIC_KEY: z.string().optional(),
+  /** Port the interactions HTTP server binds to (default 3001). */
+  INTERACTIONS_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+
   // ─── meta ─────────────────────────────────────────────────────────────
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  /** cycle-008 T3.2 · cron voice builder selector. 'canonical' → buildPrompt
+   *  (persona.md · stats-out-of-voice); anything else → legacy buildVoiceBrief.
+   *  Resolve via parsePromptBuilder(). Unset = legacy (prod-safe default). */
+  LOA_PROMPT_BUILDER: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -84,6 +244,23 @@ export function loadConfig(): Config {
 export function isDryRun(config: Config): boolean {
   if (config.DISCORD_BOT_TOKEN) return false;
   return !config.DISCORD_WEBHOOK_URL || config.DISCORD_WEBHOOK_URL === '';
+}
+
+export type PromptBuilderMode = 'canonical' | 'legacy';
+
+/**
+ * cycle-008 T3.2 · resolve the cron voice builder. Returns 'canonical' ONLY on
+ * the literal string 'canonical'; everything else (unset, '', typos, casing,
+ * whitespace) returns 'legacy', with a stderr warning for unrecognized non-empty
+ * values. Default-legacy keeps production on the proven path until the operator
+ * explicitly opts in (e.g. for the railway live-voice attestation · OP-G2).
+ */
+export function parsePromptBuilder(raw: string | undefined): PromptBuilderMode {
+  if (raw === 'canonical') return 'canonical';
+  if (raw !== undefined && raw !== '' && raw !== 'legacy') {
+    console.warn(`[config] LOA_PROMPT_BUILDER="${raw}" unrecognized; falling back to 'legacy'`);
+  }
+  return 'legacy';
 }
 
 export function getZoneChannelId(config: Config, zone: ZoneId): string | undefined {

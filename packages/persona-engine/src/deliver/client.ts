@@ -18,6 +18,7 @@
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import type { TextChannel, NewsChannel, ThreadChannel } from 'discord.js';
 import type { Config } from '../config.ts';
+import { postComponentsV2 } from './cv2-post.ts';
 
 let cachedClient: Client | null = null;
 let readyPromise: Promise<Client> | null = null;
@@ -54,7 +55,11 @@ export async function getBotClient(config: Config): Promise<Client | null> {
 
 async function startClient(config: Config): Promise<Client> {
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
+    // GuildMembers (privileged, enabled in the dev portal) is required for
+    // guild.members.fetch() — the role-sync roster read (who has which role).
+    // Without it the gateway never sends member chunks and fetch times out
+    // ("Members didn't arrive in time"). Guilds alone is insufficient.
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
   });
 
   // Lifecycle handlers — invalidate cache on disconnect/error so the
@@ -90,11 +95,37 @@ async function startClient(config: Config): Promise<Client> {
   });
 }
 
+/**
+ * Discord channel post. Two payload shapes (mutually-exclusive in PRACTICE,
+ * but kept loosely typed for backward compat with the cycle-008 digest path):
+ *
+ *   - Legacy: `{ content, embeds[, flags] }` — content + embeds passed to discord.js.
+ *   - Components V2: `{ flags: 1<<15, components[] }` — content + embeds MUST NOT be
+ *     populated; Discord REST rejects the call when both are present (BB#106 F-001).
+ *
+ * The runtime branches on `components`: when defined, ONLY `flags + components` are
+ * forwarded to Discord (content + embeds are silently dropped — see line 110 below).
+ * Callers MUST NOT set content / embeds when using the V2 path; doing so is dead-code
+ * at runtime but indicates a wire-shape bug.
+ */
 export async function postToChannel(
   client: Client,
   channelId: string,
-  payload: { content: string; embeds: object[] },
+  payload: { content?: string; embeds?: object[]; flags?: number; components?: unknown[] },
 ): Promise<{ posted: true; messageId: string }> {
+  // cycle-008 S9 · Components V2 → raw REST to the channel (Bot auth) + ?with_components=true.
+  // discord.js channel.send rejects raw component JSON; raw REST is the proven path.
+  if (payload.components !== undefined) {
+    const token = client.token;
+    if (!token) throw new Error('postToChannel: client has no token for Components V2 REST');
+    const json = await postComponentsV2(
+      `https://discord.com/api/v10/channels/${channelId}/messages?with_components=true`,
+      { flags: payload.flags, components: payload.components },
+      { authorization: `Bot ${token}` },
+    );
+    return { posted: true, messageId: json.id ?? '' };
+  }
+
   const channel = await client.channels.fetch(channelId);
   if (!channel) throw new Error(`channel not found: ${channelId}`);
   if (!isSendable(channel)) {

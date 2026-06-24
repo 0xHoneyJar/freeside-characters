@@ -1,6 +1,20 @@
 # Deploy
 
-V0.6-D deploy shape: **1 bot account · 2 Railway services · webhook-shell pattern.** One Discord App acts as the runtime shell hosting N characters via per-channel webhooks with per-message identity override (`username` + `avatar_url`). Per Eileen's `puruhani-as-spine.md`: *"the Discord App becomes the interface/runtime shell."*
+> ⚠️ **STATUS (2026-04-30)**: this doc describes the V0.6-D **target** deploy
+> shape (2 Railway services). Reality after V0.7-A.0 ship: there is **1
+> Railway service** (`prod-ruggy`) running the V0.6 + V0.7-A.0 codebase
+> against THJ guild + project-purupuru staging guild (the same bot account
+> is in both guilds; channel IDs differ per env). GitHub auto-deploy is NOT
+> wired — deploys go via `railway up`. Slash commands registered guild-scoped
+> to project-purupuru only. Full doc rewrite is pending.
+>
+> **Quick reference for V0.7-A.0**: required env on Railway = `ANTHROPIC_API_KEY`,
+> `ANTHROPIC_MODEL` (set to `claude-opus-4-7`), `DISCORD_BOT_TOKEN`,
+> `DISCORD_PUBLIC_KEY`, `INTERACTIONS_PORT=3001`, `MCP_KEY`, `CHARACTERS=ruggy,satoshi`.
+> Plus 4 zone channel IDs. See [`DISCORD-INTERACTIONS-SETUP.md`](DISCORD-INTERACTIONS-SETUP.md)
+> for the slash-command-specific setup.
+
+V0.6-D deploy shape (target): **1 bot account · 2 Railway services · webhook-shell pattern.** One Discord App acts as the runtime shell hosting N characters via per-channel webhooks with per-message identity override (`username` + `avatar_url`). Per Eileen's `puruhani-as-spine.md`: *"the Discord App becomes the interface/runtime shell."*
 
 > ECS migration via `loa-freeside` is queued (see end of this doc). Railway is the active path.
 

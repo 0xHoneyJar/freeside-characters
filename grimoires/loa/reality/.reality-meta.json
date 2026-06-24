@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-05-11T16:37:08Z",
+  "loa_version": "v1.148.0",
+  "repo_commit": "6d133bf86dc6ec0ee07a4cc48be2a0597b08a8df",
+  "staleness_days": 7,
+  "files": {
+    "index.md": { "lines": 34, "bytes": 1651, "est_tokens": 412 },
+    "api-surface.md": { "lines": 89, "bytes": 3868, "est_tokens": 967 },
+    "types.md": { "lines": 192, "bytes": 5519, "est_tokens": 1379 },
+    "interfaces.md": { "lines": 56, "bytes": 3678, "est_tokens": 919 },
+    "structure.md": { "lines": 74, "bytes": 4934, "est_tokens": 1233 },
+    "entry-points.md": { "lines": 89, "bytes": 2523, "est_tokens": 630 },
+    "architecture-overview.md": { "lines": 80, "bytes": 5390, "est_tokens": 1347 }
+  },
+  "total_est_tokens": 6890,
+  "budget_total": 8500,
+  "within_budget": true
+}

@@ -1,6 +1,6 @@
 {
   "name": "freeside-characters",
-  "version": "0.6.0",
+  "version": "0.12.0",
   "private": true,
   "description": "Participation-agent umbrella for the HoneyJar ecosystem. Substrate (persona-engine) + characters (ruggy, satoshi, ...) + Discord bot runtime.",
   "type": "module",
@@ -9,11 +9,22 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "bash scripts/fixup-events-bun.sh && (cd packages/persona-engine && bash ../../scripts/rebuild-events-dist.sh) && bash scripts/fixup-substrate-bun.sh",
     "dev": "bun run --cwd apps/bot dev",
     "start": "bun run --cwd apps/bot start",
     "build": "bun run --cwd apps/bot build",
     "test": "bun run --cwd apps/bot test",
     "typecheck": "bun run --cwd packages/persona-engine typecheck && bun run --cwd apps/bot typecheck",
+    "lint:seam": "bash scripts/audit-substrate-presentation-seam.sh",
+    "lint:zone-source": "bun run scripts/lint-no-kebab-zoneid-in-voice-prompt.ts",
+    "lint:manifest-monotonic": "bash scripts/lint-manifest-monotonic.sh",
+    "lint:append-discipline": "bash scripts/audit-jsonl-append-discipline.sh",
+    "lint:cycle-007": "bun run lint:zone-source && bash scripts/lint-manifest-monotonic.sh && bash scripts/audit-jsonl-append-discipline.sh",
+    "trace:latest": "bun run scripts/trace.ts latest",
+    "trace:get": "bun run scripts/trace.ts get",
+    "trace:layer": "bun run scripts/trace.ts layer",
+    "trace:voice": "bun run scripts/trace.ts voice",
+    "trace:explain": "bun run scripts/trace.ts explain",
     "digest:once": "bun run --cwd apps/bot digest:once",
     "discord:invite": "bun run scripts/print-invite-link.ts"
   },

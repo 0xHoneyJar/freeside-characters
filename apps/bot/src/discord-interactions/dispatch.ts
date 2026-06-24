@@ -1,0 +1,1464 @@
+/**
+ * Slash command dispatch (V0.7-A.0).
+ *
+ * Discord sends an APPLICATION_COMMAND interaction (POST to our endpoint).
+ * We:
+ *   1. Apply the anti-spam invariant guard (bot-author skip).
+ *   2. Resolve which character the command targets (`/ruggy` → ruggy, etc).
+ *   3. ACK the interaction with a deferred "Application is thinking..." response.
+ *   4. Kick off composeReply in the background.
+ *   5. PATCH the original deferred message with the LLM reply when ready
+ *      (or with a friendly error on timeout/failure).
+ *
+ * The hard rules:
+ *   - 14m30s timeout (Discord interaction token expires at exactly 15:00;
+ *     PATCH after that = 404 + silent UI freeze).
+ *   - 5 req / 2 sec rate limit on follow-ups (per Gemini DR 2026-04-30).
+ *     Multi-chunk replies throttle at 1.5s between sends.
+ *   - Circuit breaker: 3 consecutive 403s on a channel → blacklist ID
+ *     in-process · halt processing until restart (prevents 10K invalid req
+ *     / 10 min Cloudflare global ban from cascading orphaned PATCHes).
+ *
+ * Anti-spam invariant (operator-named load-bearing 2026-04-30):
+ *   characters NEVER respond to bot-authored invocations · NEVER respond
+ *   to webhook invocations · ONLY respond to explicit user invocations.
+ */
+
+import {
+  appendToLedger,
+  composeErrorBody,
+  composeReplyWithEnrichment,
+  composeToolUseStatusForCharacter,
+  getBotClient,
+  getOrCreateChannelWebhook,
+  invalidateWebhookCache,
+  sanitizeOutboundBody,
+  sendChatReplyViaWebhook,
+  sendImageReplyViaWebhook,
+  splitForDiscord,
+  stripVoiceDisciplineDrift,
+  type CharacterConfig,
+  type Config,
+  type EnrichedFile,
+  type ErrorClass,
+  type LedgerEntry,
+  type SlashCommandHandler,
+} from '@freeside-characters/persona-engine';
+import { invokeStability } from '@freeside-characters/persona-engine/orchestrator/imagegen';
+import type { ToolUseEvent } from '@freeside-characters/persona-engine';
+import { resolveSlashCommands, resolveSlashCommandTarget, selectedCharacterIds } from '../character-loader.ts';
+import {
+  handleQuestInteraction,
+  isQuestInteraction,
+  noQuestRuntime,
+  type QuestRuntime,
+} from './quest-dispatch.ts';
+import {
+  handleOnboardingInteraction,
+  isForeignOnboardSquat,
+  isOnboardingInteraction,
+  noOnboardingRuntime,
+  runOnboardingPrecheck,
+  type OnboardingRuntime,
+} from './onboarding-dispatch.ts';
+import { getZoneForChannel } from '../lib/channel-zone-map.ts';
+import {
+  attachAuthContext,
+  AuthBridgeError,
+  type AuthContext,
+  type InteractionContext,
+} from '../auth-bridge.ts';
+import { getAuthBridgeDeps } from '../auth-bridge-deps.ts';
+import {
+  InteractionResponseType,
+  InteractionType,
+  MessageFlags,
+  interactionInvoker,
+  readBooleanOption,
+  readStringOption,
+  type DiscordInteraction,
+  type DiscordInteractionResponse,
+} from './types.ts';
+import {
+  RECALL_WEDGE_DEMO_COMMAND_NAME,
+  handleRecallWedgeDemoInteraction,
+} from './recall-wedge-demo.ts';
+import {
+  RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME,
+  handleRecallWedgeLiveDemoInteraction,
+} from './recall-wedge-live-demo.ts';
+import { ROLE_SYNC_COMMAND_NAME } from '../shadow/role-sync-trigger.ts';
+import {
+  computeRoleSyncOutcome,
+  type RoleSyncInteractionDeps,
+} from '../shadow/role-sync-interaction.ts';
+import {
+  handleRoleSyncComponentInteraction,
+  isForeignRoleSyncSquat,
+  isRoleSyncComponentInteraction,
+} from '../shadow/role-sync-dispatch.ts';
+
+const DISCORD_API_BASE = 'https://discord.com/api/v10';
+const DISCORD_CHAR_LIMIT = 2000;
+const FOLLOW_UP_THROTTLE_MS = 1_500; // ≥1.5s between follow-ups (5 req / 2 sec ceiling)
+const TOKEN_LIFETIME_MS = 14 * 60 * 1000 + 30 * 1000; // 14m30s safety margin under 15-min hard expiry
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+
+// Per-channel circuit breaker state. Keyed by channel_id (or interaction.id
+// fallback for DMs). A channel is blacklisted after N consecutive 403s on
+// PATCH/POST attempts; subsequent dispatches in that channel short-circuit
+// until process restart.
+interface CircuitState {
+  consecutive403s: number;
+  blacklisted: boolean;
+}
+const circuitStates = new Map<string, CircuitState>();
+
+function getCircuitState(channelId: string): CircuitState {
+  let s = circuitStates.get(channelId);
+  if (!s) {
+    s = { consecutive403s: 0, blacklisted: false };
+    circuitStates.set(channelId, s);
+  }
+  return s;
+}
+
+function recordPatchOutcome(channelId: string, status: number): void {
+  const s = getCircuitState(channelId);
+  if (status === 403) {
+    s.consecutive403s += 1;
+    if (s.consecutive403s >= CIRCUIT_BREAKER_THRESHOLD) {
+      s.blacklisted = true;
+      console.error(
+        `interactions: circuit breaker tripped for channel ${channelId} ` +
+          `(${s.consecutive403s} consecutive 403s) — blacklisted until restart`,
+      );
+    }
+  } else {
+    s.consecutive403s = 0;
+  }
+}
+
+/**
+ * Main entry — handles APPLICATION_COMMAND interactions.
+ *
+ * Returns the immediate Discord response (deferred ACK or error). Side
+ * effects: when the command is valid, kicks off `doReplyAsync` to PATCH
+ * the deferred message later.
+ */
+/**
+ * Module-level quest runtime — operators wire this via setQuestRuntime() at
+ * boot. Defaults to the no-op runtime (quests are off until configured).
+ *
+ * cycle-Q · sprint-3 · Q3.5: per SDD §5.5 the bot consumer owns the runtime
+ * composition (catalog source · world-manifest source · Pg pools · player
+ * resolver). The interceptor reads from this module-level binding so the
+ * surgical change to dispatch.ts is a 3-line block (per architect lock note).
+ */
+let activeQuestRuntime: QuestRuntime = noQuestRuntime;
+
+export function setQuestRuntime(runtime: QuestRuntime): void {
+  activeQuestRuntime = runtime;
+}
+
+export function getActiveQuestRuntime(): QuestRuntime {
+  return activeQuestRuntime;
+}
+
+// cycle-009 · sprint-2 · onboarding runtime (C2). Same module-level-binding pattern
+// as the quest runtime: index.ts wires it at boot via setOnboardingRuntime(); the
+// no-op default degrades every verify click to the `new` branch (safe — the web
+// flow's link is idempotent), so dev guilds never crash on a verify button.
+let activeOnboardingRuntime: OnboardingRuntime = noOnboardingRuntime;
+
+export function setOnboardingRuntime(runtime: OnboardingRuntime): void {
+  activeOnboardingRuntime = runtime;
+}
+
+export function getActiveOnboardingRuntime(): OnboardingRuntime {
+  return activeOnboardingRuntime;
+}
+
+/**
+ * Module-level role-sync deps (bd-71y) — the deploy wires this at boot via
+ * `setRoleSyncDeps()` (world, role-map reader, orchestration invoker, world
+ * config, token metadata, transition version, clock). UNSET ⇒ the `/role-sync`
+ * command is not available (the trigger is opt-in: a deployment that does not
+ * run the onboarding/role-dispenser building simply never wires it). Mirrors the
+ * quest-runtime composition seam: dispatch owns routing, the deps own behavior.
+ *
+ * The trigger code itself is VOICELESS (no persona-engine import); only this
+ * router file — which already imports persona-engine for the chat path — knows
+ * the command name.
+ */
+let roleSyncDeps: RoleSyncInteractionDeps | undefined;
+
+export function setRoleSyncDeps(deps: RoleSyncInteractionDeps): void {
+  roleSyncDeps = deps;
+}
+
+export function getRoleSyncDeps(): RoleSyncInteractionDeps | undefined {
+  return roleSyncDeps;
+}
+
+/**
+ * Per-interaction AuthContext stash · cycle-B sprint-1 review fix (PR #53
+ * Blocker #1 · cross-reviewer flatline CRITICAL). The auth-bridge attaches
+ * an AuthContext per Discord interaction · downstream quest dispatch reads
+ * it via `getAuthContextForInteraction(interaction.id)` to compose the
+ * Sietch Layer (cycle-B B-1.9 · @freeside-quests/engine) at the right
+ * boundary.
+ *
+ * Map keyed by `interaction.id` (Discord snowflake · 17-20 digits · stable
+ * for the interaction lifetime). Entries auto-expire when the dispatch
+ * worker calls `clearAuthContextForInteraction` after PATCHing the reply ·
+ * worst-case stale entries (worker crashes mid-flight) age out via the
+ * MAX_AUTH_CTX_ENTRIES cap below.
+ */
+const authContextByInteractionId = new Map<string, AuthContext>();
+const MAX_AUTH_CTX_ENTRIES = 500;
+
+const setAuthContextForInteraction = (
+  interaction_id: string,
+  auth: AuthContext,
+): void => {
+  if (authContextByInteractionId.size >= MAX_AUTH_CTX_ENTRIES) {
+    // Evict oldest · simple FIFO via insertion-order Map iteration
+    const firstKey = authContextByInteractionId.keys().next().value;
+    if (firstKey !== undefined) authContextByInteractionId.delete(firstKey);
+  }
+  authContextByInteractionId.set(interaction_id, auth);
+};
+
+export const getAuthContextForInteraction = (
+  interaction_id: string,
+): AuthContext | undefined => authContextByInteractionId.get(interaction_id);
+
+export const clearAuthContextForInteraction = (interaction_id: string): void => {
+  authContextByInteractionId.delete(interaction_id);
+};
+
+export async function dispatchSlashCommand(
+  interaction: DiscordInteraction,
+  config: Config,
+  characters: CharacterConfig[],
+): Promise<DiscordInteractionResponse> {
+  // cycle-Q · sprint-3 · Q3.5 — early-detect quest substrate interactions
+  // (slash + button + modal_submit). The actual interception lands AFTER
+  // the anti-spam guard below so quest commands inherit the same protection.
+  const isQuest = isQuestInteraction(interaction);
+  // cycle-009 · sprint-2 — early-detect the onboarding verify button / slash (C2).
+  // Intercepted AFTER anti-spam + circuit + auth-bridge so it inherits all three.
+  const isOnboarding = isOnboardingInteraction(interaction);
+  // bd-20x — early-detect a `rolesync:` apply/confirm/cancel button click (type 3).
+  // Intercepted in the SAME band as onboarding (after anti-spam + circuit + auth-bridge).
+  const isRoleSyncComponent = isRoleSyncComponentInteraction(interaction);
+
+  if (
+    !isQuest &&
+    !isOnboarding &&
+    !isRoleSyncComponent &&
+    interaction.type !== InteractionType.APPLICATION_COMMAND
+  ) {
+    return ephemeralReply(`unsupported interaction type ${interaction.type}`);
+  }
+
+  // ─── Anti-spam invariant guard ─────────────────────────────────────
+  // Operator-named load-bearing: characters NEVER respond to bots.
+  // The webhook-author check is a defense-in-depth on top of `bot:true`
+  // since some Discord API versions don't reliably set the bot flag on
+  // webhook-authored invocations (Gemini DR 2026-04-30).
+  const invoker = interactionInvoker(interaction);
+  if (!invoker) {
+    console.warn(`interactions: dropped command with no invoker (id=${interaction.id})`);
+    return ephemeralReply('could not resolve invoker — skipping.');
+  }
+  if (invoker.bot === true) {
+    console.warn(
+      `interactions: ANTI-SPAM SKIP · bot invocation rejected ` +
+        `(invoker=${invoker.username}/${invoker.id})`,
+    );
+    return ephemeralReply('characters do not respond to bot invocations.');
+  }
+
+  // ─── Phase 39B · dev-only Recall Wedge demo command ────────────────
+  // Authority: docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md (Phase
+  // 39A). The handler is self-contained (pure Phase 38A harness, no LLM, no
+  // live Dixie, no webhook, no deferred PATCH). It is async only because it
+  // lazily imports the harness AFTER its gates pass (Phase 39B patch · no
+  // harness evaluation at bot startup). It fails closed to a single generic
+  // ephemeral refusal unless the demo is
+  // enabled AND the guild + operator allowlists pass. Routed here — before
+  // character resolution / auth-bridge — because it is NOT character-bound
+  // and must not inherit the chat/imagegen async delivery path. No new
+  // logging is added: the handler enforces the §K no-raw-id posture.
+  if (!isQuest && interaction.data?.name === RECALL_WEDGE_DEMO_COMMAND_NAME) {
+    // Async: the Phase 38A harness is dynamically imported only after the
+    // handler's gates pass (no harness evaluation at bot startup). dispatch
+    // is already async, so we simply await the gated response.
+    return await handleRecallWedgeDemoInteraction(interaction);
+  }
+
+  // ─── Phase 41B · dev/operator-only LIVE Dixie Recall Wedge demo ────
+  // Authority: docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md (Phase
+  // 41A). SEPARATE command from `/recall-wedge-demo` — it never mutates or
+  // aliases the harness command. The handler evaluates its own enable / guild
+  // / operator gates FIRST and only then lazily imports the Phase 37C live
+  // Dixie client (the sole live-egress seam); a refused interaction loads no
+  // client and makes no network request. It fails closed to a single generic
+  // ephemeral refusal on every refused / unknown / unsafe / error path. Routed
+  // here — before character resolution / auth-bridge — because it is NOT
+  // character-bound and must not inherit the chat/imagegen async delivery
+  // path. No new logging is added: the handler enforces the §K no-raw-id /
+  // no-secret posture.
+  if (
+    !isQuest &&
+    interaction.data?.name === RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME
+  ) {
+    return await handleRecallWedgeLiveDemoInteraction(interaction);
+  }
+
+  // ─── Circuit breaker pre-check ─────────────────────────────────────
+  const channelId = interaction.channel_id ?? `dm:${invoker.id}`;
+  const circuit = getCircuitState(channelId);
+  if (circuit.blacklisted) {
+    console.warn(
+      `interactions: circuit breaker active · skipping channel ${channelId}`,
+    );
+    return ephemeralReply(
+      'this channel is temporarily unavailable for character replies. try again after the next restart.',
+    );
+  }
+
+  // ─── cycle-B sprint-1 · auth-bridge attach (Blocker #1 fix) ───────
+  // Per AC-B1.6 + cross-reviewer flatline (PR #53 · CRITICAL Blocker #1):
+  // every interaction gets an AuthContext attached BEFORE quest dispatch
+  // OR character routing. Lock-7 default AUTH_BACKEND=anon makes this a
+  // fast no-op (anon AuthContext attached); flipping to freeside-jwt
+  // activates the verified path (post bun-link of @freeside-auth/engine
+  // + setAuthBridgeDeps wired at boot in index.ts).
+  //
+  // Failure modes:
+  //   - verified-required route + missing/invalid JWT → AuthBridgeError
+  //     thrown · we map to ephemeral 401 reply (operator-readable code +
+  //     reason in audit log via attachAuthContext's logger)
+  //   - verified-with-anon-fallback route + verify failure → audit-log
+  //     anon-fallback ctx attached · interaction proceeds with anon-tier
+  //     downstream (Lock-7 storm warning if fallbacks accumulate)
+  //   - public route → anon ctx attached, no verification attempted
+  const interactionCtx: InteractionContext = {
+    interaction_id: interaction.id,
+    guild_id: interaction.guild_id ?? null,
+    discord_id: invoker.id,
+  };
+  const cmdName = interaction.data?.name ?? (isQuest ? 'quest' : 'unknown');
+  try {
+    await attachAuthContext({
+      interaction,
+      ctx: interactionCtx,
+      commandName: cmdName,
+      deps: getAuthBridgeDeps(),
+    });
+  } catch (err) {
+    if (err instanceof AuthBridgeError) {
+      console.warn(
+        `interactions: 401 fail-closed · cmd=${cmdName} code=${err.code} ` +
+          `reason="${err.reason}" user=${invoker.id}`,
+      );
+      return ephemeralReply(
+        `authentication required: ${err.code}. (route is verified-required · please /verify and try again)`,
+      );
+    }
+    // Unknown error · bubble to outer handler (logs + connects to alerting)
+    throw err;
+  }
+  if (interactionCtx.auth) {
+    setAuthContextForInteraction(interaction.id, interactionCtx.auth);
+  }
+
+  // ─── cycle-Q · sprint-3 · Q3.5 — quest substrate interception ──────
+  // After anti-spam + circuit-breaker pre-checks, route quest_*
+  // interactions (slash + button + modal_submit) to
+  // @0xhoneyjar/quests-discord-renderer dispatchQuestInteraction.
+  // Per-character resolution below is bypassed (quest is a system command,
+  // not character-bound).
+  if (isQuest) {
+    return handleQuestInteraction(interaction, activeQuestRuntime);
+  }
+
+  // ─── bd-71y — voiceless CM tier→role sync trigger (`/role-sync`) ────
+  // A system (NOT character-bound) admin command. Routed here — after the
+  // auth-bridge attach (so the verified AuthContext / claims.sub is the
+  // resolved CM actor) and before per-character resolution. Authz against
+  // admin_principals happens INSIDE runTierRoleGoLive (deny ⇒ refuse, no
+  // reads); a non-verified invoker is refused by the trigger core. The whole
+  // path is VOICELESS — the response is the structural CV2 render. The command
+  // is available only when the deployment wired `setRoleSyncDeps()`.
+  if (interaction.data?.name === ROLE_SYNC_COMMAND_NAME) {
+    const deps = getRoleSyncDeps();
+    if (!deps) {
+      return ephemeralReply(
+        'the role-sync trigger is not configured on this deployment.',
+      );
+    }
+    // The trigger does network work (identity-api + score-api leaderboard) that
+    // exceeds Discord's 3s ACK window, so DEFER (ephemeral) immediately + run the
+    // sync in the background, PATCHing @original with the structural result.
+    // Mirrors the onboarding deferral. Returning the full response synchronously
+    // timed the interaction out ("application did not respond").
+    void runRoleSyncDeferred(interaction, interactionCtx.auth, deps);
+    return {
+      type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+      data: { flags: MessageFlags.EPHEMERAL },
+    };
+  }
+
+  // ─── bd-20x — two-step Apply→Confirm→LIVE component interception ────
+  // A `rolesync:` apply/confirm/cancel BUTTON click (MESSAGE_COMPONENT type 3).
+  // Routed in the SAME band as the /role-sync slash + onboarding — after the
+  // auth-bridge attach (so the verified AuthContext is available) and before
+  // per-character resolution. The CLICKER's actor is re-resolved by the handler
+  // (isolated identity-api resolution, INDEPENDENT of AUTH_BACKEND) so authz binds
+  // to whoever confirmed. apply/cancel → UPDATE_MESSAGE (no write); confirm → a
+  // STALE GUARD then DEFERRED_UPDATE_MESSAGE + a background LIVE apply through the
+  // gate. The whole path is VOICELESS + performs ZERO direct role mutations (the
+  // LIVE write happens inside runRoleSyncTrigger → the substrate gate).
+  if (isRoleSyncComponent) {
+    const deps = getRoleSyncDeps();
+    if (!deps) {
+      return ephemeralReply('the role-sync trigger is not configured on this deployment.');
+    }
+    if (isForeignRoleSyncSquat(interaction)) {
+      return ephemeralReply('that control is not available.');
+    }
+    return handleRoleSyncComponentInteraction(interaction, interactionCtx.auth, deps);
+  }
+
+  // ─── cycle-009 · sprint-2 — onboarding verify interception (C2) ─────
+  // The verify button (custom_id onboard:verify) / /onboard slash. Returns a
+  // deferred ephemeral ACK synchronously (H-3 · never exceeds the 3s window),
+  // then fires the background pre-check which mints a single-use handoff token
+  // (C3) + PATCHes the ephemeral reply with the opaque verify URL. Like quests,
+  // per-character resolution below is bypassed (onboarding is a system flow).
+  if (isOnboarding) {
+    const ack = handleOnboardingInteraction(interaction);
+    // Only the deferred branch has background work; the guild-only instant reply doesn't.
+    if (ack.type === InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE) {
+      void runOnboardingPrecheck(interaction, activeOnboardingRuntime);
+    }
+    return ack;
+  }
+  // RT-6 — a foreign component squatting the reserved `onboard:` prefix is rejected,
+  // not silently handled (defense-in-depth; server.ts only forwards onboard:verify today).
+  if (isForeignOnboardSquat(interaction)) {
+    return ephemeralReply('that control is not available.');
+  }
+
+// —— Resolve target command + handler ————————————————————————
+// V0.7-A.1: characters may declare divergent commands (e.g. /satoshi-image alongside /satoshi).
+const commandName = interaction.data?.name;
+if (!commandName) {
+  return ephemeralReply('no command name in interaction.');
+}
+
+const target = resolveSlashCommandTarget(commandName, characters);
+if (!target) {
+  const available = characters
+    .flatMap((c) => resolveSlashCommands(c).map((s) => `/${s.name}`))
+    .join(', ');
+  return ephemeralReply(
+    `unknown command: \`${commandName}\`. available: ${available || '(none loaded)'}`,
+  );
+}
+
+const { character, spec } = target;
+const handler = spec.handler;
+
+  // ─── Read options ──────────────────────────────────────────────────
+  const prompt = readStringOption(interaction, 'prompt');
+  if (!prompt || prompt.trim().length === 0) {
+    return ephemeralReply('prompt is required.');
+  }
+  const ephemeral = readBooleanOption(interaction, 'ephemeral') ?? false;
+
+  // ─── Defer + kick off async work ───────────────────────────────────
+  // The deferred response opens a 15-min token window. We must PATCH
+  // /messages/@original before that window expires or the UI freezes.
+  void doReplyAsync({
+    interaction,
+    config,
+    character,
+    handler,
+    prompt: prompt.trim(),
+    ephemeral,
+    channelId,
+    invoker,
+  }).catch((err) => {
+    // doReplyAsync handles its own errors, but a top-level catch here
+    // prevents an unhandled rejection from crashing the bot.
+    console.error(`interactions: doReplyAsync top-level error:`, err);
+  });
+
+  return {
+    type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+    data: ephemeral ? { flags: MessageFlags.EPHEMERAL } : {},
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Async reply worker
+// ──────────────────────────────────────────────────────────────────────
+
+interface AsyncWorkerArgs {
+  interaction: DiscordInteraction;
+  config: Config;
+  character: CharacterConfig;
+  handler: SlashCommandHandler;
+  prompt: string;
+  ephemeral: boolean;
+  channelId: string;
+  invoker: { id: string; username: string };
+}
+
+/**
+ * V0.7-A.1: handler-aware async dispatch. Each handler shares the same
+ * delivery primitives (deliverViaWebhook / deliverViaInteraction, the
+ * 14m30s timeout, the circuit breaker) but produces its own reply chunks.
+ * New handlers register here as additional cases — `chat` and `imagegen`
+ * land first.
+ */
+async function doReplyAsync(args: AsyncWorkerArgs): Promise<void> {
+  switch (args.handler) {
+    case 'chat':
+      return doReplyChat(args);
+    case 'imagegen':
+      return doReplyImagegen(args);
+  }
+}
+
+async function doReplyChat(args: AsyncWorkerArgs): Promise<void> {
+  const { interaction, config, character, prompt, ephemeral, channelId, invoker } = args;
+  const t0 = Date.now();
+  // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip so substituted bodies
+  // and normal error bodies share identical treatment (codex C4 · 2026-05-11).
+  // IMP-006: This is a deliberate trade-off. The sanitizer substitutes
+  // with the 'error' kind template, even if the upstream failure was a
+  // 'timeout' or 'empty' class. The primary goal is preventing a raw
+  // API error leak; kind-attribution is secondary.
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
+
+  console.log(
+    `interactions: ${character.id}/chat dispatch · invoker=${invoker.username} ` +
+      `channel=${channelId} ephemeral=${ephemeral} prompt="${truncate(prompt, 80)}"`,
+  );
+
+  try {
+    // V0.7-A.1 Phase D: resolve channelId → zone before invoking the
+    // composer so the substrate's environment-context block can ground the
+    // LLM in WHERE it is. Zone is undefined for DMs and non-codex-mapped
+    // channels — composeReply degrades gracefully.
+    const zone = getZoneForChannel(config, channelId);
+    const otherCharactersHere = selectedCharacterIds().filter((id) => id !== character.id);
+
+    // V0.12 expression layer (kickoff-2026-05-01 §4.2): when the
+    // orchestrator surfaces a tool_use block mid-stream, PATCH the deferred
+    // message with CHARACTER expression — animated emoji from the
+    // character's catalog (ruggy) or in-voice plain-text register (satoshi).
+    // The substrate routes via tool-mood-map; the character supplies the
+    // catalog. Per multi-axis-daemon-architecture §axis-3, the loading
+    // state IS the body-part firing in real time — make it visible.
+    //
+    // Pre-V0.12 used `toolVerb()` for a generic 🔧+text marker. That marker
+    // was substrate-voice during a moment that should be character-voice
+    // (category error per civic-layer). Unmapped tools now resolve to null
+    // (substrate-shaped quiet) — preferable to substrate-shaped noise.
+    //
+    // The dispatcher's existing flow handles final delivery: ephemeral=true
+    // PATCHes again with the response; ephemeral=false delivers via Pattern B
+    // webhook and then DELETEs the deferred placeholder. So progressive
+    // status is naturally replaced by the final artifact in either case.
+    //
+    // Fire-and-forget: PATCH errors are logged but don't block the round-trip.
+    // We coalesce by tool ID (SDK re-emits guard) AND by minimum interval
+    // (bridgebuilder F4 PR #8 — rapid tool chains spamming PATCHes).
+    // 500ms gate skips middle updates in rapid bursts; the LAST tool in
+    // a burst still gets a PATCH because composeReply's resolution always
+    // PATCHes the final reply (or webhook + DELETE), so the skipped
+    // intermediate is replaced naturally.
+    const seenToolIds = new Set<string>();
+    const seenToolNames: string[] = [];
+    // V0.12 (kickoff §4.5 · KANSEI timing pass): bumped from 500ms to
+    // 800ms per YANAGI cadence — the wait should disappear into character
+    // presence, not call attention to itself as a jittery indicator.
+    // Floor of 800ms gives each emoji-patch room to register visually
+    // before the next; ceiling guidance in docs/EXPRESSION-TIMING.md.
+    const MIN_TOOL_PATCH_INTERVAL_MS = 800;
+    let lastToolPatchMs = 0;
+    const onToolUse = (event: ToolUseEvent): void => {
+      if (seenToolIds.has(event.id)) return;
+      seenToolIds.add(event.id);
+      seenToolNames.push(event.name);
+
+      // Resolve the moment to character expression. Returns null when the
+      // substrate should stay quiet (unmapped tool, or intentional silence
+      // for self-referential / V1-deferred tools like emojis/imagegen).
+      // Voice-discipline strip applied as defense-in-depth (cmp-boundary §9):
+      // shell-bot status text bypasses the chat-mode strip in deliverViaWebhook,
+      // so apply here. Static templates are em-dash-clean today, but this
+      // catches future regressions.
+      const rawStatus = composeToolUseStatusForCharacter(character, event.name);
+      const status = rawStatus === null ? null : stripVoiceDisciplineDrift(rawStatus);
+      console.log(
+        `interactions: ${character.id}/chat tool_use · ${event.name} · status=${
+          status === null ? 'null(skip)' : `"${status}"`
+        }`,
+      );
+      if (status === null) return;
+
+      const now = Date.now();
+      if (now - lastToolPatchMs < MIN_TOOL_PATCH_INTERVAL_MS) {
+        // Recent PATCH within the gate — skip this update; the next
+        // distinct tool (or the final reply) will take its place.
+        return;
+      }
+      lastToolPatchMs = now;
+      patchOriginal(
+        interaction,
+        ephemeral,
+        sanitizeOutboundBody(status, character.id, errorTemplate),
+      ).catch((err) => {
+        console.warn(
+          `interactions: ${character.id}/chat onToolUse PATCH failed (best-effort):`,
+          err,
+        );
+      });
+    };
+
+    // V0.7-A.3: switched from composeReply → composeReplyWithEnrichment
+    // (additive sibling per spec §4.1 option C). The wrapper captures
+    // codex grail tool results from the SDK loop and runs composeWithImage
+    // to fetch image bytes for env-aware webhook attachment. Existing
+    // composeReply contract unchanged; this is opt-in at the call site.
+    //
+    // Wrap in a 14m30s timeout so we never PATCH against an expired
+    // interaction token (404 → silent freeze in Discord UI).
+    const result = await Promise.race([
+      composeReplyWithEnrichment({
+        config,
+        character,
+        prompt,
+        channelId,
+        zone,
+        otherCharactersHere,
+        onToolUse,
+        authorId: invoker.id,
+        authorUsername: invoker.username,
+      }),
+      timeoutAfter(TOKEN_LIFETIME_MS),
+    ]);
+
+    if (result === TIMEOUT_SENTINEL) {
+      console.error(
+        `interactions: ${character.id}/chat TIMEOUT after ${Date.now() - t0}ms · channel=${channelId}`,
+      );
+      await deliverError(interaction, config, character, channelId, ephemeral, 'timeout');
+      return;
+    }
+
+    if (!result) {
+      console.warn(
+        `interactions: ${character.id}/chat composeReply returned null · channel=${channelId}`,
+      );
+      await deliverError(interaction, config, character, channelId, ephemeral, 'empty');
+      return;
+    }
+
+    // V0.10.2 telemetry (session-09 codex-rescue): post-compose log
+    // surfaces tool_uses count + names per chat reply. Pairs with
+    // [chat-route] log to confirm orchestrator path actually fired tools.
+    // Together they distinguish H1 (SDK denying) vs H2 (naive path
+    // active) vs H3 (persona contamination) vs H4 (server registration).
+    //
+    // V0.7-A.3 telemetry adds: tool_results count + grail attachment count
+    // (after composeWithImage runs) so operators can see whether codex
+    // results landed AND whether the env-aware composer attached bytes.
+    const attachedFiles = result.payload.files ?? [];
+    console.log(
+      `interactions: ${character.id}/chat tool_uses=${seenToolIds.size} ` +
+        `names=[${seenToolNames.join(',')}] ` +
+        `tool_results=${result.toolResults.length} ` +
+        `attached=${attachedFiles.length} ` +
+        `text_len=${result.content.length} ` +
+        `channel=${channelId}`,
+    );
+
+    // Voice-discipline transforms applied per-chunk before delivery
+    // (cmp-boundary §9 · cycle-r sprint-1 fast-follow 2026-05-05). The
+    // digest path applies these via embed.ts/buildPostPayload, but the
+    // chat-mode reply path (slash commands → composeReplyWithEnrichment
+    // → sendChatReplyViaWebhook) bypasses buildPostPayload entirely.
+    // Sprint 1 originally wired only the digest path; this surface
+    // catches the slash-command output where Eileen flagged em-dashes
+    // 2026-05-04. Strip runs on chunks (bot output) only · the user's
+    // prompt quote-prepend in deliverViaWebhook is applied AFTER this
+    // transform so user text passes through unchanged.
+    const cleanedChunks = result.chunks.map((chunk) =>
+      stripVoiceDisciplineDrift(chunk),
+    );
+
+    // Delivery routing:
+    //   - ephemeral=true   → interaction PATCH (webhooks can't be ephemeral ·
+    //                        invoker chose this · accepts shell identity)
+    //                        V1: ephemeral path drops attachments; the
+    //                        underlying interaction PATCH endpoint doesn't
+    //                        carry multipart files in this dispatcher today
+    //                        (mirrors imagegen ephemeral fallback).
+    //   - ephemeral=false  → Pattern B webhook (per-character avatar + username)
+    //                        with the user's prompt quote-prepended for channel
+    //                        context · grail image bytes attached to first chunk
+    //                        when payload.files is populated · PATCH fallback
+    //                        if webhook delivery fails (without attachment).
+    if (ephemeral) {
+      await deliverViaInteraction(interaction, character, cleanedChunks, true);
+    } else {
+      try {
+        await deliverViaWebhook(
+          interaction,
+          config,
+          character,
+          channelId,
+          cleanedChunks,
+          prompt,
+          invoker.username,
+          attachedFiles,
+        );
+      } catch (webhookErr) {
+        console.warn(
+          `interactions: ${character.id}/chat webhook delivery failed · falling back to PATCH:`,
+          webhookErr,
+        );
+        invalidateWebhookCache(channelId);
+        await deliverViaInteraction(interaction, character, cleanedChunks, false);
+      }
+    }
+
+    console.log(
+      `interactions: ${character.id}/chat delivered · ` +
+        `channel=${channelId} chunks=${result.chunks.length} ` +
+        `attached=${attachedFiles.length} ` +
+        `compose_ms=${result.contextUsed.durationMs} ` +
+        `total_ms=${Date.now() - t0} ` +
+        `ledger=${result.contextUsed.ledgerSize} ` +
+        `via=${ephemeral ? 'patch' : 'webhook'}`,
+    );
+
+    // V0.7-A.4 (cycle-003): cold-budget telemetry. STAMETS DIG (spec §4.0)
+    // gates whether the cache is meaningful — operators measure post-deploy
+    // by triggering a cold + warm pair and reading these log lines. The
+    // `cache_hits=N` field separates fast-path attachments (Map lookup) from
+    // live-fetched ones (CDN cold). When all attachments hit cache and
+    // compose_ms is still high, the bottleneck is upstream (Bedrock cold
+    // OR codex MCP qmd); when cache_hits=0 and compose_ms is high, the
+    // cache isn't warm AND CDN matters — both substrates point at fixes
+    // beyond V0.7-A.4 scope.
+    //
+    // Sub-budgets (compose_ms is the wall-clock total composeReply spent):
+    //   - tool_uses=N · names=[...]         → MCP RTT visible in qmd indices
+    //   - tool_results=N attached=N         → composer attach effectiveness
+    //   - cache_hits=N                      → V0.7-A.4 cache effectiveness
+    //   - text_len=N                        → LLM output volume proxy
+    // Aggregated as a single log line so CloudWatch/Vector parsing stays
+    // line-oriented (no JSON envelope cost on the hot path).
+    const cacheHits = result.payload.cacheHits ?? 0;
+    console.log(
+      `[cold-budget] character=${character.id} ` +
+        `compose_ms=${result.contextUsed.durationMs} ` +
+        `total_ms=${Date.now() - t0} ` +
+        `tool_uses=${seenToolIds.size} ` +
+        `tool_results=${result.toolResults.length} ` +
+        `attached=${attachedFiles.length} ` +
+        `cache_hits=${cacheHits} ` +
+        `text_len=${result.content.length}`,
+    );
+  } catch (err) {
+    console.error(
+      `interactions: ${character.id}/chat dispatch failed · channel=${channelId}`,
+      err,
+    );
+    await deliverError(interaction, config, character, channelId, ephemeral, 'error');
+  }
+}
+
+/**
+ * V0.7-A.1 imagegen handler. Calls invokeStability directly (no LLM
+ * intermediation) — the slash arg `prompt:` IS the image prompt. The
+ * autoprompt-driven path (where the LLM decides to imagegen mid-reply)
+ * is V0.7-A.x persona-iteration territory and uses the imagegen MCP
+ * through the digest pipeline; this handler is the manual surface
+ * (Eileen: "manual /satoshi-image prompt:..." per kickoff §unblocks).
+ */
+async function doReplyImagegen(args: AsyncWorkerArgs): Promise<void> {
+  const { interaction, config, character, prompt, ephemeral, channelId, invoker } = args;
+  const t0 = Date.now();
+  // Hoisted once per dispatch · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip so substituted bodies
+  // and normal error bodies share identical treatment (codex C4 · 2026-05-11).
+  // IMP-006: This is a deliberate trade-off. The sanitizer substitutes
+  // with the 'error' kind template, even if the upstream failure was a
+  // 'timeout' or 'empty' class. The primary goal is preventing a raw
+  // API error leak; kind-attribution is secondary.
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
+
+  console.log(
+    `interactions: ${character.id}/imagegen dispatch · invoker=${invoker.username} ` +
+      `channel=${channelId} ephemeral=${ephemeral} prompt="${truncate(prompt, 80)}"`,
+  );
+
+  try {
+    const result = await Promise.race([
+      invokeStability(config, { prompt }),
+      timeoutAfter(TOKEN_LIFETIME_MS),
+    ]);
+
+    if (result === TIMEOUT_SENTINEL) {
+      console.error(
+        `interactions: ${character.id}/imagegen TIMEOUT after ${Date.now() - t0}ms · channel=${channelId}`,
+      );
+      await deliverError(interaction, config, character, channelId, ephemeral, 'timeout');
+      return;
+    }
+
+    const reply = formatImagegenReply(character, result);
+    const chunks = splitForDiscord(reply, DISCORD_CHAR_LIMIT);
+
+    // Ledger discipline (V0.7-A.1 imagegen): append a SINGLE character
+    // marker entry — no user-prompt entry (image prompts aren't chat
+    // utterances) and no URL in content (the URL is delivery metadata,
+    // not utterance text · letting it leak into chat-mode prompt context
+    // pollutes the LLM's view of the conversation). The marker keeps the
+    // prompt summary so subsequent chat invocations have continuity
+    // ("what scene did you generate?") without LLM-quoteable URLs.
+    const characterEntry: LedgerEntry = {
+      role: 'character',
+      content: `[generated an image · prompt: "${truncate(prompt, 80)}"]`,
+      characterId: character.id,
+      authorId: character.id,
+      authorUsername: character.displayName ?? character.id,
+      timestamp: new Date().toISOString(),
+    };
+    appendToLedger(channelId, characterEntry);
+
+    // V0.11.3 (issue #14): when Bedrock returns real image bytes, deliver
+    // them as an actual webhook attachment so Discord renders the image.
+    // Pre-fix: the "image" was just an `attachment://...` pseudo-URL in
+    // text content, which Discord can't resolve without a multipart file
+    // part. Now we attach the bytes via discord.js AttachmentBuilder.
+    //
+    // Placeholder mode (Eileen's PR not landed yet) keeps the legacy
+    // text-with-URL path because there are no bytes to attach.
+    const hasImageBytes = !result.placeholder && result.imageBase64 && result.filename;
+    if (ephemeral) {
+      // Ephemeral imagegen via interaction PATCH doesn't support file
+      // attachments today. Falls back to text-with-URL; image won't render
+      // for ephemeral=true in scaffold mode either. Out-of-scope follow-up.
+      await deliverViaInteraction(interaction, character, chunks, true);
+    } else if (hasImageBytes) {
+      try {
+        const client = await getBotClient(config);
+        if (!client) throw new Error('imagegen attachment path: bot client unavailable');
+        const webhook = await getOrCreateChannelWebhook(client, channelId);
+
+        // V0.11.3 (codex review): pre-decode size + base64 sanity check.
+        // If `Buffer.from(..., 'base64')` produces 0 bytes (malformed input),
+        // throw EARLY so the catch surfaces an in-character error rather
+        // than letting Discord reject and falling to the broken-URL path.
+        const imageBytes = Buffer.from(result.imageBase64!, 'base64');
+        if (imageBytes.byteLength === 0) {
+          throw new Error('image-decode-failed: base64 decoded to zero bytes');
+        }
+        // Discord webhook attachment limit: 8 MB on free tier (25 MB Nitro).
+        // We ship at 8 MB conservatively — Bedrock Stability ultra outputs
+        // are typically 1-3 MB, so this is a safety floor not a normal cap.
+        const DISCORD_WEBHOOK_ATTACHMENT_LIMIT = 8 * 1024 * 1024;
+        if (imageBytes.byteLength > DISCORD_WEBHOOK_ATTACHMENT_LIMIT) {
+          throw new Error(
+            `image-too-large: ${imageBytes.byteLength} bytes > ${DISCORD_WEBHOOK_ATTACHMENT_LIMIT}`,
+          );
+        }
+
+        const caption =
+          `${character.displayName ?? character.id} in Freeside\n\n` +
+          `${buildQuotePrefix(invoker.username, prompt).trimEnd()}`;
+
+        await sendImageReplyViaWebhook(webhook, character, {
+          content: sanitizeOutboundBody(caption, character.id, errorTemplate),
+          imageBytes,
+          filename: result.filename!,
+        });
+        // Clean up the deferred "thinking" placeholder (Pattern B convention).
+        void deleteOriginal(interaction).catch((err) => {
+          console.warn(
+            `interactions: ${character.id}/imagegen deleteOriginal best-effort failed:`,
+            err,
+          );
+        });
+      } catch (webhookErr) {
+        // V0.11.3 (codex review): the prior catch fell back to delivering
+        // `chunks` (which contains the `attachment://...` pseudo-URL as
+        // text) — that's the broken-looking message we're trying to fix.
+        // Surface an in-character error instead. The image bytes weren't
+        // delivered; Discord shouldn't see a fake URL.
+        const errMsg = String(webhookErr);
+        const errKind = errMsg.includes('image-too-large')
+          ? 'image-too-large'
+          : 'image-delivery-failed';
+        console.warn(
+          `interactions: ${character.id}/imagegen attachment delivery failed · kind=${errKind} ·`,
+          webhookErr,
+        );
+        invalidateWebhookCache(channelId);
+        await deliverError(interaction, config, character, channelId, ephemeral, errKind);
+      }
+    } else {
+      // Placeholder mode (no real bytes): fall back to text-only via the
+      // existing chat-reply webhook path. Operator sees the scaffold notice
+      // + synthetic placehold.co URL until Eileen's Stability invoke lands.
+      try {
+        await deliverViaWebhook(
+          interaction,
+          config,
+          character,
+          channelId,
+          chunks,
+          prompt,
+          invoker.username,
+        );
+      } catch (webhookErr) {
+        console.warn(
+          `interactions: ${character.id}/imagegen webhook delivery failed · falling back to PATCH:`,
+          webhookErr,
+        );
+        invalidateWebhookCache(channelId);
+        await deliverViaInteraction(interaction, character, chunks, false);
+      }
+    }
+
+    console.log(
+      `interactions: ${character.id}/imagegen delivered · ` +
+        `channel=${channelId} model=${result.model} seed=${result.seed} ` +
+        `placeholder=${result.placeholder} attached=${hasImageBytes} ` +
+        `total_ms=${Date.now() - t0} via=${ephemeral ? 'patch' : 'webhook'}`,
+    );
+  } catch (err) {
+    console.error(
+      `interactions: ${character.id}/imagegen dispatch failed · channel=${channelId}`,
+      err,
+    );
+    await deliverError(interaction, config, character, channelId, ephemeral, 'error');
+  }
+}
+
+/**
+ * Format the imagegen reply for Discord delivery. When the substrate is
+ * in scaffold mode (Eileen's Bedrock Stability invoke not yet landed),
+ * the result.placeholder flag is true and we annotate so collaborators
+ * see the URL is synthetic rather than burning time wondering why
+ * placehold.co looks broken.
+ */
+function formatImagegenReply(
+  character: CharacterConfig,
+  result: { url: string; model: string; seed: number; placeholder: boolean },
+): string {
+  const displayName = character.displayName ?? character.id;
+  if (result.placeholder) {
+    return (
+      `**${displayName}** · imagegen scaffold\n\n` +
+      `${result.url}\n` +
+      `_model=${result.model} · seed=${result.seed} · placeholder=true · awaiting Eileen's Stability invoke PR_`
+    );
+  }
+  return `${result.url}\n_${displayName} · model=${result.model} · seed=${result.seed}_`;
+}
+
+/**
+ * V0.11.3 (issue #14): caption shown above the attached image. Discord
+ * renders the file inline below the content; the caption carries
+ * metadata (model + seed) and the user's prompt as a quote so others
+ * in the channel see the request that produced the image.
+ *
+ * No URL in the caption — Discord shows the attachment natively, and
+ * leaking a substrate-side URL into the visible message would confuse
+ * the reader (the URL is now meaningless metadata, not a link).
+ */
+function formatImagegenCaption(
+  character: CharacterConfig,
+  result: { model: string; seed: number },
+  prompt: string,
+  authorUsername: string,
+): string {
+  const displayName = character.displayName ?? character.id;
+  const quote = `> @${authorUsername}: ${truncate(prompt, 200)}\n`;
+  return `${quote}_${displayName} · model=${result.model} · seed=${result.seed}_`;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Delivery paths — webhook (Pattern B) vs interaction PATCH (ephemeral)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Pattern B delivery via channel webhook. Slash reply renders with the
+ * character's avatar + username (per-message override on the shell
+ * webhook). The deferred "thinking" PATCH placeholder is DELETEd once
+ * the first chunk lands, leaving a clean Pattern B-shaped channel timeline.
+ *
+ * The user's prompt is quote-prepended to the first chunk so other channel
+ * members see what was asked (slash-command argument values aren't shown
+ * in Discord's invocation header). Bridge until V0.7-A.3 lands @-mention
+ * routing where the user's message is a regular Discord post everyone sees.
+ *
+ * Throws on any webhook failure so the caller can fall back to PATCH.
+ */
+async function deliverViaWebhook(
+  interaction: DiscordInteraction,
+  config: Config,
+  character: CharacterConfig,
+  channelId: string,
+  chunks: string[],
+  prompt: string,
+  authorUsername: string,
+  files?: EnrichedFile[],
+): Promise<void> {
+  const client = await getBotClient(config);
+  if (!client) {
+    throw new Error('webhook path: bot client unavailable');
+  }
+  const webhook = await getOrCreateChannelWebhook(client, channelId);
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip (codex C4 · 2026-05-11).
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
+
+  // Sanitize raw chunks BEFORE adding the quote prefix (codex C1 · 2026-05-11).
+  // The sanitizer patterns are anchored at `^`, so a raw-error-shaped chunk
+  // would NOT match `^API Error:` once a quote prefix is prepended. Sanitize
+  // first → prefix second → split → wire. This makes the defense-in-depth
+  // load-bearing on the success path (not just the error path).
+  const sanitizedChunks = chunks.map((c) =>
+    sanitizeOutboundBody(c, character.id, errorTemplate),
+  );
+
+  // Prepend the user's prompt as a Discord blockquote on the first chunk so
+  // others in the channel see context. allowedMentions:[] (set in
+  // sendChatReplyViaWebhook) prevents the @ from triggering a ping.
+  const quote = buildQuotePrefix(authorUsername, prompt);
+  const firstWithQuote = quote + sanitizedChunks[0]!;
+  const allChunks =
+    firstWithQuote.length <= DISCORD_CHAR_LIMIT
+      ? [firstWithQuote, ...sanitizedChunks.slice(1)]
+      : [...splitForDiscord(firstWithQuote, DISCORD_CHAR_LIMIT), ...sanitizedChunks.slice(1)];
+
+  // V0.7-A.3: attach env-aware grail image bytes to the FIRST chunk only —
+  // image follows voice text per ALEXANDER craft lens (spec §5). Subsequent
+  // chunks render bare so multi-chunk replies don't fragment attention.
+  for (let i = 0; i < allChunks.length; i++) {
+    if (i > 0) await sleep(FOLLOW_UP_THROTTLE_MS);
+    const attachOnThisChunk = i === 0 && files && files.length > 0 ? files : undefined;
+    await sendChatReplyViaWebhook(
+      webhook,
+      character,
+      allChunks[i]!,
+      attachOnThisChunk,
+    );
+    if (i === 0) {
+      // Delete the deferred "thinking..." placeholder once the first
+      // webhook chunk is up. Best-effort — if it fails (e.g., expired
+      // token, race), the placeholder lingers but delivery is unaffected.
+      void deleteOriginal(interaction).catch((err) => {
+        console.warn(
+          `interactions: deleteOriginal best-effort failed (placeholder may linger):`,
+          err,
+        );
+      });
+    }
+  }
+}
+
+const QUOTE_PROMPT_MAX_LEN = 240;
+
+/**
+ * Build a single-line Discord blockquote of the user's prompt. The `@` is
+ * decorative (no ping fires because allowedMentions is empty). Multi-line
+ * prompts collapse to one line so the blockquote renders as one visual
+ * unit · long prompts truncate with an ellipsis (full text remains in the
+ * conversation ledger for LLM context on subsequent invocations).
+ */
+function buildQuotePrefix(authorUsername: string, prompt: string): string {
+  let body = prompt.trim().replace(/\s+/g, ' ');
+  if (body.length > QUOTE_PROMPT_MAX_LEN) {
+    body = body.slice(0, QUOTE_PROMPT_MAX_LEN - 1) + '…';
+  }
+  return `> @${authorUsername} asked: ${body}\n\n`;
+}
+
+/**
+ * Interaction PATCH delivery — used for ephemeral replies and as a
+ * fallback when webhook delivery fails. Bold-prefix attribution because
+ * the shell-bot identity is the one Discord renders.
+ */
+async function deliverViaInteraction(
+  interaction: DiscordInteraction,
+  character: CharacterConfig,
+  rawChunks: string[],
+  ephemeral: boolean,
+): Promise<void> {
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip (codex C4 · 2026-05-11).
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
+  // Sanitize raw chunks BEFORE formatReply prepends `**DisplayName**\n\n`
+  // (codex C1 · 2026-05-11). The sanitizer's `^`-anchored patterns would
+  // not match a raw-error chunk once the name prefix is in place; sanitize
+  // first → format second → wire.
+  const sanitizedRaw = rawChunks.map((c) =>
+    sanitizeOutboundBody(c, character.id, errorTemplate),
+  );
+  const { chunks } = formatReply(character, sanitizedRaw);
+  await patchOriginal(interaction, ephemeral, chunks[0] ?? '');
+  for (let i = 1; i < chunks.length; i++) {
+    await sleep(FOLLOW_UP_THROTTLE_MS);
+    await postFollowUp(interaction, ephemeral, chunks[i]!);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Reply rendering — bold-prefix attribution
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Format the reply with character attribution prefix on the FIRST chunk
+ * only. Subsequent chunks render bare so the prefix doesn't repeat awkwardly.
+ *
+ * The bold-prefix exists because slash command responses come from the
+ * SHELL bot identity (no per-message webhook override is available on
+ * interaction patches per Gemini DR 2026-04-30). It's the unobtrusive
+ * disambiguation when multiple characters share one shell-bot identity.
+ */
+function formatReply(
+  character: CharacterConfig,
+  rawChunks: string[],
+): { chunks: string[] } {
+  if (rawChunks.length === 0) {
+    return { chunks: [`**${character.displayName ?? character.id}**\n\n(empty reply — try again?)`] };
+  }
+  const displayName = character.displayName ?? character.id;
+  const prefix = `**${displayName}**\n\n`;
+  const first = prefix + rawChunks[0]!;
+
+  // If prefix push first chunk over Discord's 2000-char limit, re-split.
+  const chunks: string[] = [];
+  if (first.length <= DISCORD_CHAR_LIMIT) {
+    chunks.push(first);
+    for (let i = 1; i < rawChunks.length; i++) {
+      chunks.push(rawChunks[i]!);
+    }
+  } else {
+    const reSplit = splitForDiscord(first, DISCORD_CHAR_LIMIT);
+    chunks.push(...reSplit);
+    for (let i = 1; i < rawChunks.length; i++) {
+      chunks.push(rawChunks[i]!);
+    }
+  }
+  return { chunks };
+}
+
+/**
+ * Format the error body without the bold-name prefix. Used for:
+ *   - Webhook delivery (Pattern B) — character avatar+username handle
+ *     attribution; bold-prefix would be redundant noise.
+ *   - Interaction PATCH fallback when the operator wants the bot to
+ *     speak as itself rather than puppeting the character name. The
+ *     Discord interaction header already shows "<user> used /<character>"
+ *     so context is preserved without the bold-prefix.
+ */
+function formatErrorBody(
+  character: CharacterConfig,
+  kind: ErrorClass,
+): string {
+  // Defense-in-depth voice-discipline strip (cmp-boundary §9) on shell-bot
+  // error output. Static templates are em-dash-clean today; this catches
+  // future regressions per architect lock A4 (universal · zero opt-out).
+  return stripVoiceDisciplineDrift(composeErrorBody(character.id, kind));
+}
+
+/**
+ * Pattern B error delivery via channel webhook — the character speaks
+ * the error itself (avatar + username override), matching the success-
+ * reply UX. The deferred "thinking" PATCH placeholder is DELETEd once
+ * the webhook message lands so the timeline shows a single character
+ * post (mirrors `deliverViaWebhook`'s convention).
+ *
+ * Throws on any webhook failure so the caller can fall back to PATCH
+ * with bare body (no name prefix).
+ */
+async function deliverErrorViaWebhook(
+  interaction: DiscordInteraction,
+  config: Config,
+  character: CharacterConfig,
+  channelId: string,
+  kind: ErrorClass,
+): Promise<void> {
+  const client = await getBotClient(config);
+  if (!client) {
+    throw new Error('error webhook path: bot client unavailable');
+  }
+  const webhook = await getOrCreateChannelWebhook(client, channelId);
+  const body = formatErrorBody(character, kind);
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip (codex C4 · 2026-05-11).
+  // Defense-in-depth: body already came from formatErrorBody but the
+  // wrap closes the invariant by construction at the wire.
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
+
+  await sendChatReplyViaWebhook(
+    webhook,
+    character,
+    sanitizeOutboundBody(body, character.id, errorTemplate),
+  );
+
+  // Clean up the deferred "thinking" placeholder (Pattern B convention).
+  void deleteOriginal(interaction).catch((err) => {
+    console.warn(
+      `interactions: ${character.id} error-webhook deleteOriginal best-effort failed:`,
+      err,
+    );
+  });
+}
+
+/**
+ * Unified error delivery — operator UX directive 2026-05-04:
+ *
+ *   1. Non-ephemeral: try Pattern B webhook (character avatar+username)
+ *      so the error reads as the character speaking, matching success
+ *      replies. Fall back to PATCH with bare body if webhook fails.
+ *   2. Ephemeral: PATCH only (webhooks aren't visible per-user). Bare
+ *      body — when loa speaks, drop the character-name prefix because
+ *      the Discord interaction header already shows which character
+ *      was invoked.
+ *
+ * Best-effort; logs + swallows PATCH failures (the circuit breaker
+ * inside patchOriginal records outcomes).
+ */
+async function deliverError(
+  interaction: DiscordInteraction,
+  config: Config,
+  character: CharacterConfig,
+  channelId: string,
+  ephemeral: boolean,
+  kind: ErrorClass,
+): Promise<void> {
+  // Hoisted once per delivery · sanitizer is pure (bridgebuilder F1).
+  // Match formatErrorBody's voice-discipline strip (codex C4 · 2026-05-11).
+  // Defense-in-depth: formatErrorBody already produces in-character text,
+  // but the sanitize wrap closes the invariant by construction at the wire
+  // (a future drift that bypasses deliverError gets caught here too).
+  const errorTemplate = stripVoiceDisciplineDrift(composeErrorBody(character.id, 'error'));
+
+  if (ephemeral) {
+    await patchOriginal(
+      interaction,
+      true,
+      sanitizeOutboundBody(formatErrorBody(character, kind), character.id, errorTemplate),
+    ).catch((patchErr) => {
+      console.error(
+        `interactions: ${character.id} error PATCH (ephemeral) failed:`,
+        patchErr,
+      );
+    });
+    return;
+  }
+  try {
+    await deliverErrorViaWebhook(interaction, config, character, channelId, kind);
+  } catch (webhookErr) {
+    console.warn(
+      `interactions: ${character.id} error-webhook delivery failed · falling back to PATCH:`,
+      webhookErr,
+    );
+    invalidateWebhookCache(channelId);
+    await patchOriginal(
+      interaction,
+      false,
+      sanitizeOutboundBody(formatErrorBody(character, kind), character.id, errorTemplate),
+    ).catch((patchErr) => {
+      console.error(
+        `interactions: ${character.id} error PATCH after webhook fallback also failed:`,
+        patchErr,
+      );
+    });
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Discord REST helpers — PATCH original + POST follow-up
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * PATCH the deferred response with the actual reply content.
+ * Endpoint: PATCH /webhooks/{application_id}/{interaction_token}/messages/@original
+ * Note: interaction token in URL · NO Authorization header needed.
+ */
+async function patchOriginal(
+  interaction: DiscordInteraction,
+  ephemeral: boolean,
+  content: string,
+): Promise<void> {
+  const url = `${DISCORD_API_BASE}/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`;
+  const body: { content: string; flags?: number } = { content };
+  if (ephemeral) body.flags = MessageFlags.EPHEMERAL;
+
+  const channelId = interaction.channel_id ?? `dm:${interactionInvoker(interaction)?.id ?? 'unknown'}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  recordPatchOutcome(channelId, response.status);
+
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '<unreadable body>');
+    throw new Error(
+      `interactions: PATCH @original failed status=${response.status} body=${txt.slice(0, 200)}`,
+    );
+  }
+}
+
+/**
+ * PATCH the deferred response with an arbitrary data payload (CV2 components OR
+ * content). `patchOriginal` only carries plain content; the role-sync `rendered`
+ * outcome is a Components-V2 payload (flags IS_COMPONENTS_V2 + components), so
+ * this sends the data object verbatim. Same endpoint + no-Authorization contract.
+ */
+async function patchOriginalData(
+  interaction: DiscordInteraction,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const url = `${DISCORD_API_BASE}/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`;
+  const channelId =
+    interaction.channel_id ?? `dm:${interactionInvoker(interaction)?.id ?? 'unknown'}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  recordPatchOutcome(channelId, response.status);
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '<unreadable body>');
+    throw new Error(
+      `interactions: PATCH @original (data) failed status=${response.status} body=${txt.slice(0, 200)}`,
+    );
+  }
+}
+
+/**
+ * DEFERRED background runner for `/role-sync`. After the dispatcher ACKs with a
+ * deferred ephemeral response, this computes the outcome (identity-api +
+ * score-api leaderboard network work — the reason we deferred past the 3s ACK
+ * window) and PATCHes @original: `rendered` → the structural CV2 payload;
+ * `refused`/`error` → a plain ephemeral status string. Never throws (it is void-ed).
+ */
+async function runRoleSyncDeferred(
+  interaction: DiscordInteraction,
+  auth: AuthContext | undefined,
+  deps: RoleSyncInteractionDeps,
+): Promise<void> {
+  try {
+    const outcome = await computeRoleSyncOutcome(interaction, auth, deps);
+    // BOTH CV2 render paths (leaderboard-centric `rendered` + member-centric
+    // `rendered-members`, bd-l08) PATCH @original with the structural payload.
+    if (outcome.kind === 'rendered' || outcome.kind === 'rendered-members') {
+      await patchOriginalData(interaction, {
+        ...(outcome.payload as unknown as Record<string, unknown>),
+        flags: (outcome.payload.flags as number) | MessageFlags.EPHEMERAL,
+      });
+    } else {
+      await patchOriginal(interaction, true, outcome.message);
+    }
+  } catch (err) {
+    console.error('role-sync: deferred run failed:', err);
+    await patchOriginal(interaction, true, 'role-sync failed — see logs.').catch(() => {});
+  }
+}
+
+/**
+ * POST a follow-up message (used for chunks 2..N when reply > 2000 chars).
+ * Endpoint: POST /webhooks/{application_id}/{interaction_token}
+ */
+async function postFollowUp(
+  interaction: DiscordInteraction,
+  ephemeral: boolean,
+  content: string,
+): Promise<void> {
+  const url = `${DISCORD_API_BASE}/webhooks/${interaction.application_id}/${interaction.token}`;
+  const body: { content: string; flags?: number } = { content };
+  if (ephemeral) body.flags = MessageFlags.EPHEMERAL;
+
+  const channelId = interaction.channel_id ?? `dm:${interactionInvoker(interaction)?.id ?? 'unknown'}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  recordPatchOutcome(channelId, response.status);
+
+  if (!response.ok) {
+    const txt = await response.text().catch(() => '<unreadable body>');
+    throw new Error(
+      `interactions: follow-up POST failed status=${response.status} body=${txt.slice(0, 200)}`,
+    );
+  }
+}
+
+/**
+ * DELETE the deferred response. Used after Pattern B webhook delivery to
+ * clean up the "Application is thinking..." placeholder. 404 is acceptable
+ * (already deleted or token expired).
+ * Endpoint: DELETE /webhooks/{application_id}/{interaction_token}/messages/@original
+ */
+async function deleteOriginal(interaction: DiscordInteraction): Promise<void> {
+  const url = `${DISCORD_API_BASE}/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`;
+  const response = await fetch(url, { method: 'DELETE' });
+  if (!response.ok && response.status !== 404) {
+    const txt = await response.text().catch(() => '<unreadable body>');
+    throw new Error(
+      `interactions: DELETE @original failed status=${response.status} body=${txt.slice(0, 200)}`,
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Util
+// ──────────────────────────────────────────────────────────────────────
+
+const TIMEOUT_SENTINEL = Symbol('timeout');
+type TimeoutSentinel = typeof TIMEOUT_SENTINEL;
+
+function timeoutAfter(ms: number): Promise<TimeoutSentinel> {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(TIMEOUT_SENTINEL), ms);
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function ephemeralReply(content: string): DiscordInteractionResponse {
+  return {
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data: { content, flags: MessageFlags.EPHEMERAL },
+  };
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n - 1) + '…';
+}

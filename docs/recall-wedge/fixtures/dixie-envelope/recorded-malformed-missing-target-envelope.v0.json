@@ -1,0 +1,34 @@
+{
+  "fixture_id": "recorded-malformed-missing-target-envelope-001",
+  "fixture_kind": "recorded_dixie_recall_envelope",
+  "fixture_version": "phase-36b.0",
+  "envelope_version": "recall_wedge.dixie_envelope.v0",
+  "input_envelope_kind": "recorded_dixie_recall_envelope",
+  "source_interface": "private_web_chat",
+  "source_surface_note": "carrier source is private web chat; this envelope is INTENTIONALLY missing target_projection so the adapter can prove its fail-closed missing_target_projection / unknown_target_projection path stays in force",
+  "synthetic": true,
+  "non_production_authorization_note": "This envelope is synthetic and reviewed. It is INTENTIONALLY malformed in one specific way: the target_projection field is omitted. The envelope_version, input_envelope_kind, and public_recall_payload remain valid so the adapter can reach the target-missing check. Authorized for non-production fixture use in Phase 36B only.",
+  "envelope_scope_note": "Negative fixture. Exists to drive the adapter's fail-closed missing_target_projection (or unknown_target_projection) path. The adapter must throw before producing any DTO. The validator must treat this fixture as an intentional negative and not require it to satisfy positive-envelope invariants beyond the shared metadata.",
+  "session_id": "session_PRIVATE_SENTINEL_DIXIE_SESSION_ID_MISSING_TARGET_001",
+  "message_id": "msg_PRIVATE_SENTINEL_DIXIE_MESSAGE_ID_MISSING_TARGET_001",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "public_recall_payload": {
+    "outcome": "ok",
+    "public_summary": "this payload is unreachable because target_projection is missing",
+    "included_count": 0,
+    "marked_count": 0,
+    "redacted_count": 0,
+    "excluded_count": 0,
+    "public_reason_counts": {},
+    "public_reason_labels": [],
+    "denied_or_refused": false
+  },
+  "raw_dixie_debug": {
+    "raw_reasons": [
+      "missing_target_negative_PRIVATE_SENTINEL_DIXIE_RAW"
+    ],
+    "raw_session_trace": "trace_PRIVATE_SENTINEL_DIXIE_RAW_MISSING_TARGET_TRACE",
+    "operator_private_note": "operator-only diagnostic context for the missing-target negative envelope PRIVATE_SENTINEL_DIXIE_RAW"
+  },
+  "source_material": "missing_target_envelope_source_blob_PRIVATE_SENTINEL_DIXIE_RAW"
+}

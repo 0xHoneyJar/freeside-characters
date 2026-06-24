@@ -1,0 +1,162 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 5,
+    "disputed_count": 2,
+    "low_value_count": 0,
+    "blocker_count": 4,
+    "model_agreement_percent": 80,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "High-value integration point. FR-6 depends on real OTEL export behavior, and leaving exporter choice open can block deployable implementation or cause a memory-only placeholder to ship. Cost is low if expressed as a default plus decision-record escape hatch.",
+      "gpt_score": 870,
+      "opus_score": 860,
+      "tertiary_score": 950,
+      "delta": 10,
+      "average_score": 865,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "Critical because it converts the staged rollout from subjective judgment into an observable gate. The telemetry-first approach needs explicit graduation criteria or the later silence/skip modes become either risky or indefinitely deferred. Implementation cost is mostly documentation and measurement definition.",
+      "gpt_score": 920,
+      "opus_score": 830,
+      "tertiary_score": 850,
+      "delta": 90,
+      "average_score": 875,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-003",
+      "description": "Valuable focused test-contract addition. The went-quiet rule appears semantically important and more regression-prone than a generic fallback path. Cost is low, though the blast radius is narrower than the top infrastructure and rollout criteria items.",
+      "gpt_score": 760,
+      "opus_score": 840,
+      "tertiary_score": 880,
+      "delta": 80,
+      "average_score": 800,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-004",
+      "description": "Strong integration candidate because the attribution algorithm is load-bearing and ambiguous matching rules can produce silently wrong telemetry. Clarifying case sensitivity, word boundaries, and overlap tie-breaking is cheap relative to the cost of debugging misattribution later.",
+      "gpt_score": 830,
+      "opus_score": 815,
+      "tertiary_score": 880,
+      "delta": 15,
+      "average_score": 822.5,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-007",
+      "description": "Important privacy and compliance guardrail. Trace payloads commonly drift toward convenience fields, and preventing wallet, Discord user ID, and raw prompt leakage should be explicit before exporting to third-party observability backends. Cost is low if added as an NFR plus tests or review checklist.",
+      "gpt_score": 885,
+      "opus_score": 735,
+      "tertiary_score": 780,
+      "delta": 150,
+      "average_score": 810,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-009",
+      "description": "Useful cleanup that improves sprint planning clarity. Moving stale-but-loud into an explicit deferred requirement reduces ambiguity between V1 scope and V1.5 intent. The benefit is mostly process hygiene, but the cost is very low.",
+      "gpt_score": 680,
+      "opus_score": 0,
+      "tertiary_score": 450,
+      "delta": 680,
+      "average_score": 680,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-010",
+      "description": "Valuable runtime-safety addition. Env overrides are escape hatches, and tests should prove they are actually wired and parsed correctly. The implementation and acceptance cost is small, though this is less strategically important than rollout criteria or telemetry privacy.",
+      "gpt_score": 780,
+      "opus_score": 0,
+      "tertiary_score": 650,
+      "delta": 780,
+      "average_score": 780,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-001",
+      "concern": "Hardcoded 19 factor limit may still exceed 1024 characters if factor display names or values are exceptionally long.",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "Discord API will reject embeds exceeding the 1024 character limit, causing complete message failure for that zone's broadcast.",
+      "location": "FR-1 \u00b7 Truncation policy",
+      "recommendation": "Implement dynamic string length calculation to truncate factors when the 1024 character limit is approached, rather than relying solely on a static item count.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "Kill-switch mode coverage gap: PROSE_GATE_ON_VIOLATION=silence is documented but Shape A re-routing on per-zone violations is not specified for the digest-orchestrator layer. The decision happens at gate-time on a per-zone draft, but the layout shape selector (FR-4) operates at compose-time across zones. The control flow between 'gate flagged this zone' and 'force this zone to Shape A' is undefined.",
+      "severity": "HIGH",
+      "severity_score": 740,
+      "why_matters": "Without specifying which component owns the silence-mode re-route (gate vs renderer vs orchestrator), the implementation will either duplicate logic, race on shape decisions, or silently fall back to log behavior. The operator escalates to silence as the safety valve after telemetry validation \u2014 if it doesn't actually route to Shape A, the escalation is a no-op.",
+      "location": "FR-2 kill-switch table + FR-4 layout shape selector",
+      "recommendation": "Add explicit control-flow spec: gate returns {text, validation, shape_override?} where silence mode sets shape_override='A'; composer threads this through to layout selector with precedence over the (permittedClaims, high-rank-zone) table. Add AC for silence-mode-overrides-Shape-C case.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Layout selection rules are internally overlapping and may produce inconsistent Shape B vs Shape C behavior.",
+      "severity": "HIGH",
+      "severity_score": 705,
+      "why_matters": "The table says `>=1 zone` maps to Shape B while `>=2 zones` maps to Shape C, creating an overlap. Implementers may encode different precedence and fail AC-8 even with tests.",
+      "location": "FR-4 \u00b7 layout shape selector; AC-8",
+      "recommendation": "Rewrite the decision table as ordered, mutually exclusive predicates, e.g. `permittedClaims == 0`, `permittedClaims == 1`, `permittedClaims >= 2`, with high-rank-zone count handled inside each branch.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "The default production behavior still posts known-bad prose unchanged when the gate detects HIGH-severity violations.",
+      "severity": "HIGH",
+      "severity_score": 760,
+      "why_matters": "The PRD explicitly names recurring user-visible failure modes, but V1 defaults to telemetry-only logging. If the gate works, the system will knowingly publish misleading claims until an operator manually escalates the env var.",
+      "location": "FR-2 \u00b7 Kill-switch behavior; AC-4; Open Questions #5",
+      "recommendation": "Ship production with `PROSE_GATE_ON_VIOLATION=silence` or define a concrete rollout gate: telemetry-only only in staging, with dated criteria and owner for promotion to silence/skip.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "prd",
+  "document": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/prd.md",
+  "domain": " cycle 005 ruggy as",
+  "tertiary_model_used": "gemini-3.1-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "interactive",
+    "mode_reason": "Default (no explicit mode specified)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-16T02:03:48Z",
+  "metrics": {
+    "total_latency_ms": 146000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

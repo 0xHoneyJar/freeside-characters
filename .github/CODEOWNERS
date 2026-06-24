@@ -1,0 +1,38 @@
+# GitHub CODEOWNERS · freeside-characters
+# Format: <path-glob> <@owner> [<@owner-2> ...]
+# Docs: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+#
+# cycle-007 S1/T1.6 · AC-RT-002 (Red Team Phase 4.5) · INV-17 enforcement.
+# Per Phase 6 Flatline SKP-001/CRITICAL (850 · 2026-05-17): CI signed-off-by trailer check
+# is forgeable. Authorization enforcement moves to GitHub branch protection + CODEOWNERS
+# required-reviews · CI keeps only the mechanical monotonic check (lint-manifest-monotonic.sh).
+#
+# Operator one-time action (BEFORE S1 close per sprint plan operator_actions_pending):
+#   1. Enable GitHub branch protection on main
+#   2. Require pull-request reviews from Code Owners for the files listed below
+#   3. Attest in COMPLETED.md at S8 with screenshot evidence
+#
+# Without this GitHub-side config, CODEOWNERS file is informational only — local CI
+# alone cannot enforce required-review semantics (the Phase 6 SKP-001/CRITICAL gap).
+
+# INV-12 lint manifest — narrowing this list = bypass attack vector (Red Team ATK-002)
+# BB round-3 INV17-PATH-MISMATCH closure (2026-05-17): canonical location is
+# .claude/overrides/ · the .claude/data/ paths shipped in the original S1/T1.6
+# patch did NOT exist on disk · INV-17 was inoperative until this fix.
+.claude/overrides/voice-prompt-paths.json        @zkSoju
+.claude/overrides/voice-prompt-paths.schema.json @zkSoju
+
+# INV-13 trace:explain output schema (frozen at v1 per Flatline IMP-003)
+.claude/overrides/trace-explain-output.schema.json @zkSoju
+
+# Forward-reference: schemas not yet authored (cycle-008 candidates).
+# Pre-protecting so when/if they land, branch protection takes effect immediately.
+.claude/overrides/trace-envelope.schema.json @zkSoju
+.claude/overrides/cycle-007-t02-decision.schema.json @zkSoju
+
+# Loa zone-IDs source (DELETE-ZONE_FLAVOR migration · changes here ripple through INV-12 + INV-17)
+packages/persona-engine/src/score/types.ts @zkSoju
+packages/persona-engine/src/domain/zone-registry.ts @zkSoju
+
+# INV-14 type-enforced JSONL append helper (BB HIGH-4 · S2 deliverable)
+packages/persona-engine/src/observability/trace-envelope.ts @zkSoju

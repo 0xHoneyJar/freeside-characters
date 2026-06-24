@@ -1,0 +1,23 @@
+{
+  "fixture_id": "character-boundary-referral-001",
+  "fixture_kind": "recall_wedge_dto_projection",
+  "fixture_version": "phase-33b.0",
+  "dto_scope_note": "a public-channel projection of the Dixie-safe Recall Wedge envelope, narrowed for a character-boundary referral on the public_discord render surface; not the full Straylight schema, not the full Dixie response, not the source of recall semantics, not a replacement for Hounfour/Straylight types",
+  "synthetic": true,
+  "source_seed_fixture": "shared-substrate-demo-001",
+  "outcome": "referral",
+  "recall_interface": "public_discord",
+  "render_surface": "discord_public_character",
+  "character_frame": "ruggy",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "public_summary": "this question lives closer to a different character frame",
+  "public_referral_message": "that lives closer to satoshi — try /satoshi for codex matters",
+  "safe_referral_target": "satoshi",
+  "included_count": 0,
+  "marked_count": 0,
+  "redacted_count": 0,
+  "excluded_count": 0,
+  "public_reason_counts": {},
+  "public_reason_labels": [],
+  "denied_or_refused": true
+}

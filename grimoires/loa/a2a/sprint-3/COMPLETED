@@ -1,0 +1,22 @@
+Sprint 3: Chat-Mode MCP Wiring (Phase D · MEDIUM-risk)
+Cycle: cycle-001 (V0.7-A.1 environment substrate)
+Implementation Commit: 1cc076d
+Reviewed: 2026-05-02 (engineer-feedback.md — All good with 5 documented concerns + 2 forward-carry items)
+Audited: 2026-05-02 (auditor-sprint-feedback.md — APPROVED, no findings; whitelist enforcement at SDK layer noted as security-positive)
+Completed: 2026-05-02T02:08:00Z
+
+ACs (8/8): 6 ✓ Met; 2 ⏸ ACCEPTED-DEFERRED to Sprint 4 E2E matrix
+  ✓ Met: AC-3.3 (per-character MCP isolation), AC-3.4 (digest path stays separate), AC-3.5 (CHAT_MODE=naive reverts), AC-3.6 (no digest regression), AC-3.7 (14m30s timeout), AC-3.8 (typecheck clean)
+  ⏸ Deferred: AC-3.1 (live /ruggy mcp__score__get_zone_digest), AC-3.2 (live /satoshi mcp__codex__lookup_grail) — require dev-guild deployment with real keys; structural prerequisites in place
+
+Beads: bd-9j5 epic + 6 task beads closed, security-approved label
+Spec Reference: grimoires/loa/specs/build-environment-substrate-v07a1.md (Phase D)
+
+Architectural deviations (logged to NOTES.md):
+  - CHAT_MODE defaults to `auto` (not spec-shown `orchestrator`) — anthropic-only orchestrator default would break bedrock/freeside deployments. NOTES.md entry 9.
+  - AC-3.1 + AC-3.2 deferred to Sprint 4 E2E matrix per spec verify gate. NOTES.md entry 8.
+  - No `conversationHistory` field on OrchestratorRequest — implicit via prompt pair (transcript pre-rendered by buildReplyPromptPair).
+
+Forward-carry to Sprint 4:
+  - Operator ratification of CHAT_MODE default during E2E validation
+  - Live tool invocation verification (AC-3.1 + AC-3.2)

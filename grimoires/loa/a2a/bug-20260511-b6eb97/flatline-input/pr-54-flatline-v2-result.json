@@ -1,0 +1,177 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 0,
+    "disputed_count": 5,
+    "low_value_count": 0,
+    "blocker_count": 8,
+    "model_agreement_percent": 0,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "single_model"
+  },
+  "high_consensus": [],
+  "disputed": [
+    {
+      "id": "IMP-001",
+      "description": "Normalization-before-match is a well-known bypass class for anchored sanitizers. NFKC + trimStart on a probe (while logging the original) is low-cost and closes leading-whitespace/Unicode-lookalike evasion against the exact invariant the patch protects. High ROI; standard defensive pattern.",
+      "gpt_score": 0,
+      "opus_score": 880,
+      "tertiary_score": 950,
+      "delta": 880,
+      "average_score": 880,
+      "source": "opus_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-002",
+      "description": "Tightening JSON-envelope detection to tolerate whitespace variants is cheap and directly addresses leak shapes that anchored literals miss (pretty-printed, spaced colons, prefixed 'Error:'). Pairs naturally with IMP-001's normalized probe. Some care needed to avoid over-matching legitimate in-character JSON-looking content, but at the chat-medium boundary the risk is low.",
+      "gpt_score": 0,
+      "opus_score": 820,
+      "tertiary_score": 920,
+      "delta": 820,
+      "average_score": 820,
+      "source": "opus_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-003",
+      "description": "Regression tests are the cheapest durable defense for a BLOCKER-class invariant. Without locked tests for whitespace/multiline/spaced-JSON/NFKC variants, IMP-001/002 can silently regress. Tight, mechanical, high-leverage.",
+      "gpt_score": 0,
+      "opus_score": 850,
+      "tertiary_score": 900,
+      "delta": 850,
+      "average_score": 850,
+      "source": "opus_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-004",
+      "description": "Boundary-level enforcement at outbound primitives is architecturally sound and prevents call-site drift as new write surfaces are added. Real value, but higher refactor cost than the regex/test fixes and requires care to avoid double-sanitization or breaking non-chat paths. Worth doing but not as urgent as closing the bypass itself.",
+      "gpt_score": 0,
+      "opus_score": 680,
+      "tertiary_score": 850,
+      "delta": 680,
+      "average_score": 680,
+      "source": "opus_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-005",
+      "description": "Scoped spies are better hygiene than global console monkey-patching and reduce flake risk under parallel test runs. Real but lower-priority quality improvement; doesn't address the core invariant. Reasonable to bundle with the test additions in IMP-003.",
+      "gpt_score": 0,
+      "opus_score": 520,
+      "tertiary_score": 780,
+      "delta": 520,
+      "average_score": 520,
+      "source": "opus_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-001",
+      "concern": "Anchor-bypass remains possible via zero-width/format control characters because matching only uses `trimStart().normalize('NFKC')` and does not strip Cf/Cc characters.",
+      "severity": "HIGH",
+      "severity_score": 760,
+      "why_matters": "A raw upstream error prefixed with invisible controls (for example zero-width characters) can evade `^`-anchored patterns and leak non-persona error text to Discord.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts (probe construction and anchored pattern matching, around lines 389-429 and 503)",
+      "recommendation": "Add a pre-match canonicalization step that removes leading and internal invisible format/control characters used for obfuscation (at least `\\u200B-\\u200D`, `\\u2060`, `\\uFEFF`, and related Cf/Cc classes where safe), then add regression tests for those bypass strings.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "Framing claims this PR adds `trimStart()` probe, NFKC normalization, and a widened `raw-json-error-envelope` regex (`\\{\\s*\"type\"\\s*:\\s*\"error\"`), but the diff shows NONE of these. The regex at sanitize.ts is still `/^(?:Error: )?\\{\"type\":\"error\"/` (unchanged), `sanitizeOutboundBody` body contains no `trimStart()` or `String.prototype.normalize('NFKC')` call, and there is no probe-vs-substitute split. Either the diff is incomplete or the cover-letter overstates what landed. As-is, BLOCKER #1 from the prior gemini-skeptic pass (leading-whitespace + spaced-JSON bypass) is NOT closed by this PR.",
+      "severity": "CRITICAL",
+      "severity_score": 920,
+      "why_matters": "Reviewers (and autonomous gates) read the cover letter to decide whether prior BLOCKERs are remediated. If HIGH_CONSENSUS auto-integrates on the framing alone, an unfixed BLOCKER ships to main with a misleading commit trail. This also poisons the audit chain for bug-20260511-b6eb97.",
+      "location": "PR cover letter vs `packages/persona-engine/src/deliver/sanitize.ts:354-489` (RAW_API_ERROR_PATTERNS + sanitizeOutboundBody body)",
+      "recommendation": "Either (a) regenerate the diff to include the claimed trimStart+NFKC+widened-regex changes before merging, or (b) edit the cover letter to remove false claims and re-run flatline against the actual delta. Do NOT proceed on the current PR contents while the cover letter is misaligned.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Leading-whitespace bypass remains open. All 9 patterns are anchored with `^` and a literal token sequence; none strips or tolerates leading `\\n`, `\\r\\n`, space, or tab. An LLM completion (or upstream rethrown error) that begins with a stray newline — e.g. `\\nAPI Error: 500 …` — does not match `^(?:Error: )?API Error: \\d+` and ships raw to Discord. The prior pass identified this exact class (gemini-skeptic 735); the diff contains no defense.",
+      "severity": "CRITICAL",
+      "severity_score": 860,
+      "why_matters": "This is the specific bypass class the previous flatline blocked on. Leaving it open means the in-character-only invariant is still circumventable at the wire, and the bug-20260511-b6eb97 closure narrative is technically false.",
+      "location": "`packages/persona-engine/src/deliver/sanitize.ts:475-489` (sanitizeOutboundBody — pattern loop with no leading-whitespace handling)",
+      "recommendation": "Add a probe-trim step before pattern matching: `const probe = content.replace(/^[\\s\\uFEFF]+/, '')` and run regex.test(probe) — or strip leading whitespace from `content` before the loop. Add tests for `'\\nAPI Error: 500'`, `'  API Error: 500'`, `'\\tInternal Server Error'`, `'\\r\\n{\"type\":\"error\"…}'`. None of these exist in the new tests.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "Spaced-JSON envelope bypass remains open. `raw-json-error-envelope` regex is `/^(?:Error: )?\\{\"type\":\"error\"/` — requires no whitespace between `{`, `\"type\"`, `:`, `\"error\"`. A pretty-printed or `JSON.stringify(obj, null, 2)` envelope (`'{\\n  \"type\": \"error\",\\n  …}'` or `'{ \"type\": \"error\" }'`) does not match. The framing claims this was widened to `\\{\\s*\"type\"\\s*:\\s*\"error\"` — but the diff disagrees.",
+      "severity": "HIGH",
+      "severity_score": 780,
+      "why_matters": "Any upstream code path that re-serializes the error body with non-zero indent (common in error-formatting middleware, stack-trace serializers, debugger output piped to user) bypasses the only pattern that targets the raw JSON shape.",
+      "location": "`packages/persona-engine/src/deliver/sanitize.ts:475` (raw-json-error-envelope regex)",
+      "recommendation": "Apply the widening the cover letter already promises: `/^(?:Error: )?\\{\\s*\"type\"\\s*:\\s*\"error\"/`. Add tests for pretty-printed envelope and `{ \"type\" : \"error\" }` spaced variants.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "The regex for matching a raw JSON error envelope does not account for whitespace, making it brittle.",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "The PR description states the JSON regex was widened to handle spaced JSON (e.g., `{\n  \"type\": \"error\"...`), but the implementation `regex: /^(?:Error: )?{\"type\":\"error\"/` does not allow any whitespace. Upstream services can and do format JSON with whitespace, which would bypass this pattern and leak the raw JSON error to the user.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts (`raw-json-error-envelope` in `RAW_API_ERROR_PATTERNS`)",
+      "recommendation": "Update the `raw-json-error-envelope` regex to be whitespace-tolerant, as described in the PR context. A more robust pattern would be `/^(?:Error: )?\\{\\s*\"type\"\\s*:\\s*\"error\"/`.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "The sanitizer implementation is vulnerable to anchor bypass via leading whitespace and lacks Unicode normalization, contradicting the stated fix.",
+      "severity": "CRITICAL",
+      "severity_score": 900,
+      "why_matters": "The PR description claims the fix involves `trimStart()` and `NFKC-normalize`, but these are absent in the `sanitizeOutboundBody` implementation. All regex patterns are anchored with `^`, so a simple leading space or newline will defeat the sanitizer, causing the raw error to leak. This completely undermines the primary defense and fails to fix the original blocker.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts (`sanitizeOutboundBody` function)",
+      "recommendation": "Modify `sanitizeOutboundBody` to apply `trimStart()` and `normalize('NFKC')` to the input `content` before testing the regex patterns. The start of the function should look like: `if (!content) return content; const probe = content.normalize('NFKC').trimStart(); ... for (const { name, regex } of RAW_API_ERROR_PATTERNS) { if (regex.test(probe)) { ... } }`.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-004",
+      "concern": "Unicode lookalike / homoglyph bypass open. No `String.prototype.normalize('NFKC')` is applied before pattern matching. A fullwidth-letter raw error (e.g. `'ＡＰＩ Error: 500 …'`, U+FF21 / U+FF30 / U+FF29) — which Discord still renders as visually-identical 'API Error' — does NOT match any anchored regex. Cover letter claims NFKC normalization landed; diff shows it did not. This is a real class because some logging middleware double-encodes or some characters arrive via copy-paste from upstream traces.",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "The L7 / soul-identity-doc work explicitly closed this same Unicode-normalization bypass class (cycle-098 sprint-7 cypherpunk HIGH-2 in CLAUDE.md). The same defense pattern is missing here. Cross-primitive consistency matters for the chat-medium presentation boundary as a doctrine.",
+      "location": "`packages/persona-engine/src/deliver/sanitize.ts:475-489` (sanitizeOutboundBody — no normalize step)",
+      "recommendation": "Probe through `content.normalize('NFKC')` and strip Cf-category zero-width chars before regex testing. Mirror the L7 closure: `const probe = content.normalize('NFKC').replace(/[\\u200B-\\u200F\\uFEFF\\u2060]/g, '').replace(/^\\s+/, '')`. Test fullwidth + zero-width-inserted variants.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "`discord-js-api-error` and `discord-js-http-error` patterns are too strict (`DiscordAPIError:` / `HTTPError:` only) and likely miss common bracketed forms.",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "If discord.js emits `DiscordAPIError[50013]: ...` or `HTTPError[403]: ...`, sanitizer will not substitute and raw operational errors can still leak.",
+      "location": "packages/persona-engine/src/deliver/sanitize.ts (patterns around lines 410-412)",
+      "recommendation": "Widen patterns to support bracketed variants (for example `DiscordAPIError(?:\\[[^\\]]+\\])?:` and `HTTPError(?:\\[[^\\]]+\\])?:`) and add explicit tests for both colon-only and bracketed signatures.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "single_model",
+  "phase": "pr",
+  "document": "grimoires/loa/a2a/bug-20260511-b6eb97/flatline-input/pr-54-diff-v2.md",
+  "domain": "software development",
+  "tertiary_model_used": "gemini-2.5-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "interactive",
+    "mode_reason": "Default (no explicit mode specified)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-11T21:00:47Z",
+  "metrics": {
+    "total_latency_ms": 208000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

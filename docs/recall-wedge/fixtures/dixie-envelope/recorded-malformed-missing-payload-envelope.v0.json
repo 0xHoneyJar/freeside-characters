@@ -1,0 +1,28 @@
+{
+  "fixture_id": "recorded-malformed-missing-payload-envelope-001",
+  "fixture_kind": "recorded_dixie_recall_envelope",
+  "fixture_version": "phase-36b.0",
+  "envelope_version": "recall_wedge.dixie_envelope.v0",
+  "input_envelope_kind": "recorded_dixie_recall_envelope",
+  "source_interface": "private_web_chat",
+  "source_surface_note": "carrier source is private web chat; the projection target inside this envelope is the public discord render surface, but the envelope is INTENTIONALLY missing public_recall_payload so the adapter can prove its fail-closed missing_public_recall_payload path stays in force",
+  "synthetic": true,
+  "non_production_authorization_note": "This envelope is synthetic and reviewed. It is INTENTIONALLY malformed in one specific way: the public_recall_payload field is omitted. The envelope_version, input_envelope_kind, and target_projection remain valid so the adapter can reach the payload-missing check. Authorized for non-production fixture use in Phase 36B only.",
+  "envelope_scope_note": "Negative fixture. Exists to drive the adapter's fail-closed missing_public_recall_payload path. The adapter must throw before producing any DTO. The validator must treat this fixture as an intentional negative and not require it to satisfy positive-envelope invariants beyond the shared metadata.",
+  "session_id": "session_PRIVATE_SENTINEL_DIXIE_SESSION_ID_MISSING_PAYLOAD_001",
+  "message_id": "msg_PRIVATE_SENTINEL_DIXIE_MESSAGE_ID_MISSING_PAYLOAD_001",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "target_projection": {
+    "recall_interface": "public_discord",
+    "render_surface": "discord_public_character",
+    "character_frame": "ruggy"
+  },
+  "raw_dixie_debug": {
+    "raw_reasons": [
+      "missing_payload_negative_PRIVATE_SENTINEL_DIXIE_RAW"
+    ],
+    "raw_session_trace": "trace_PRIVATE_SENTINEL_DIXIE_RAW_MISSING_PAYLOAD_TRACE",
+    "operator_private_note": "operator-only diagnostic context for the missing-payload negative envelope PRIVATE_SENTINEL_DIXIE_RAW"
+  },
+  "source_material": "missing_payload_envelope_source_blob_PRIVATE_SENTINEL_DIXIE_RAW"
+}

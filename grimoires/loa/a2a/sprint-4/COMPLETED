@@ -1,0 +1,37 @@
+Sprint 4: Persona Iteration + E2E Goal Validation (Phase E · FINAL SPRINT)
+Cycle: cycle-001 (V0.7-A.1 environment substrate)
+Implementation: persona.md edits (ruggy + satoshi) · smoke-persona-environment.ts (NEW)
+Reviewed: 2026-05-02 (engineer-feedback.md — All good with 5 coordination items + 1 Eileen async-review forward-carry)
+Audited: 2026-05-02 (auditor-sprint-feedback.md — APPROVED, no findings; cycle-close cross-sprint integrity verified)
+Completed: 2026-05-02T02:18:00Z
+
+ACs (6/6): 4 ✓ Met; AC-4.3 ⚠ Partial (3/6 stub digests documented; operator-bounded for voice fidelity); AC-4.4 ⏸ ACCEPTED-DEFERRED (live LLM round-trip)
+
+E2E Goals (5/5):
+  ✓ G-1 Met (structural): zone resolution flows end-to-end
+  ⏸ G-2 Deferred (live): chat-mode tool invocation needs dev-guild
+  ✓ G-3 Met: rosenzu place + moment lens
+  ✓ G-4 Met (structural): three orthogonal axes preserved
+  ⏸ G-5 Deferred (operator): voice fidelity gumi blind-judge
+
+Beads: bd-34e epic + 5 task beads closed, security-approved label
+Spec Reference: grimoires/loa/specs/build-environment-substrate-v07a1.md (Phase E)
+
+Architectural deviations (logged for cycle close):
+  - Affirmative-blueprint rewrite of spec lines 464-468 prose (CLAUDE.md voice rule + vault doctrine over spec literal text). Eileen async review forward-carry.
+  - {{ENVIRONMENT}} placeholder position differs across characters (each follows its own template structure)
+
+Coordination Items (post-cycle):
+  1. Eileen async review of persona prose (gumi-correct discipline)
+  2. Bonfire-sync canonical persona docs post-ratification
+  3. Operator dev-guild deployment for live tool-invocation validation
+  4. Operator ratification of CHAT_MODE=auto default
+  5. /voice workshop scheduling
+
+Cross-sprint smoke suite (~91 assertions): all green
+  · smoke-zone-map.ts (Sprint 1): 9 assertions
+  · smoke-environment.ts (Sprint 2): 41+ assertions
+  · smoke-chat-routing.ts (Sprint 3): 24+ assertions
+  · smoke-persona-environment.ts (Sprint 4): 17 assertions
+
+CYCLE STATUS: structurally complete · ready for operator dev-guild validation + PR review.

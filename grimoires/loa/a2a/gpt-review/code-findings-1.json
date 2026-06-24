@@ -1,0 +1,55 @@
+{
+  "verdict": "CHANGES_REQUIRED",
+  "summary": "The hexagonal split is solid, but there are blocking correctness issues in production rendering and Discord feedback capture that can silently corrupt RLHF data.",
+  "issues": [
+    {
+      "severity": "major",
+      "file": "adapters/discord/rich-render.ts",
+      "line": 157,
+      "description": "Production renderer hardcodes a 7-day window string instead of deriving the displayed window from digest data, which can fabricate incorrect time context when backend windows change.",
+      "current_code": "const blocks: unknown[] = [\n  { type: COMPONENT_TEXT_DISPLAY, content: stripEmDashes(`## ${r.emoji} ${r.displayName}\\n-# ${dimDisplay(r.dimension)}`) },\n  { type: COMPONENT_TEXT_DISPLAY, content: `# ${events}\\nevents · last 7 days` },\n];",
+      "fixed_code": "const rawWindowDays = (zd.raw_stats as { window_days?: unknown }).window_days;\nconst windowDays = typeof rawWindowDays === 'number' && Number.isFinite(rawWindowDays)\n  ? Math.max(1, Math.round(rawWindowDays))\n  : 7;\n\nconst blocks: unknown[] = [\n  { type: COMPONENT_TEXT_DISPLAY, content: stripEmDashes(`## ${r.emoji} ${r.displayName}\\n-# ${dimDisplay(r.dimension)}`) },\n  { type: COMPONENT_TEXT_DISPLAY, content: `# ${events}\\nevents · last ${windowDays} days` },\n];",
+      "explanation": "This keeps the UI truthful to the actual digest window while preserving a safe fallback when legacy payloads do not carry a window field."
+    },
+    {
+      "severity": "critical",
+      "file": "adapters/discord/capture.ts",
+      "line": 40,
+      "description": "Capture path has no 429 retry handling and treats non-OK responses as empty arrays, which silently drops scores/whys and can poison preference data.",
+      "current_code": "const botUserId =\n  config.botUserId ??\n  (await doFetch(`${DISCORD_API}/users/@me`, { headers: auth })\n    .then((r) => r.json())\n    .then((u: DiscordUser) => u.id)\n    .catch(() => undefined));\n\nconst recent: DiscordMessage[] = await doFetch(`${DISCORD_API}/channels/${channelId}/messages?limit=100`, {\n  headers: auth,\n})\n  .then((r) => (r.ok ? r.json() : []))\n  .catch(() => []);\n\nconst users: DiscordUser[] = await doFetch(\n  `${DISCORD_API}/channels/${channelId}/messages/${cand.handle}/reactions/${enc}?limit=100`,\n  { headers: auth },\n)\n  .then((r) => (r.ok ? r.json() : []))\n  .catch(() => []);",
+      "fixed_code": "async function apiGetJson<T>(\n  doFetch: typeof fetch,\n  url: string,\n  headers: Record<string, string>,\n  fallback: T,\n): Promise<T> {\n  for (let attempt = 0; attempt < 3; attempt++) {\n    const res = await doFetch(url, { headers });\n    if (res.status === 429) {\n      const retry = await res.json().then((j: { retry_after?: number }) => j.retry_after ?? 1).catch(() => 1);\n      await new Promise((r) => setTimeout(r, Math.ceil(retry * 1000) + 250));\n      continue;\n    }\n    if (!res.ok) return fallback;\n    return (await res.json()) as T;\n  }\n  return fallback;\n}\n\nconst botUserId =\n  config.botUserId ??\n  (await apiGetJson<DiscordUser | null>(doFetch, `${DISCORD_API}/users/@me`, auth, null))?.id;\n\nconst recent = await apiGetJson<DiscordMessage[]>(\n  doFetch,\n  `${DISCORD_API}/channels/${channelId}/messages?limit=100`,\n  auth,\n  [],\n);\n\nconst users = await apiGetJson<DiscordUser[]>(\n  doFetch,\n  `${DISCORD_API}/channels/${channelId}/messages/${cand.handle}/reactions/${enc}?limit=100`,\n  auth,\n  [],\n);",
+      "explanation": "Retrying 429 with retry_after preserves correctness under normal Discord throttling and prevents silent feedback loss from transient rate limits."
+    },
+    {
+      "severity": "major",
+      "file": "adapters/discord/capture.ts",
+      "line": 55,
+      "description": "Reply capture only scans one page (`limit=100`) of channel messages, so whys are missed in active channels once messages roll off the first page.",
+      "current_code": "// Pull recent channel messages once (for reply→why matching).\nconst recent: DiscordMessage[] = await doFetch(`${DISCORD_API}/channels/${channelId}/messages?limit=100`, {\n  headers: auth,\n})\n  .then((r) => (r.ok ? r.json() : []))\n  .catch(() => []);",
+      "fixed_code": "const targetMessageIds = new Set(\n  presented.presented.flatMap((c) => (c.messageIds && c.messageIds.length ? [...c.messageIds] : [c.handle])),\n);\n\nconst recent: DiscordMessage[] = [];\nlet before: string | undefined;\nfor (let page = 0; page < 10; page++) {\n  const qs = before ? `?limit=100&before=${before}` : '?limit=100';\n  const pageMessages = await apiGetJson<DiscordMessage[]>(\n    doFetch,\n    `${DISCORD_API}/channels/${channelId}/messages${qs}`,\n    auth,\n    [],\n  );\n  if (!pageMessages.length) break;\n  recent.push(...pageMessages);\n  before = pageMessages[pageMessages.length - 1]?.id;\n\n  const foundReplyToTarget = pageMessages.some(\n    (m) => m.message_reference?.message_id && targetMessageIds.has(m.message_reference.message_id),\n  );\n  if (foundReplyToTarget) break;\n}",
+      "explanation": "Paginating message history prevents false negatives for operator rationale capture and keeps attribution reliable when the channel has moderate traffic."
+    }
+  ],
+  "blocking_issues": [
+    {
+      "location": "adapters/discord/capture.ts",
+      "issue": "No robust 429 handling in feedback capture endpoints.",
+      "why_blocking": "Ratings and whys can be silently dropped, yielding incorrect RLHF records and bad breeding decisions.",
+      "fix": "Use a shared REST helper with bounded retries on 429 using `retry_after`, and route `/users/@me`, `/messages`, and `/reactions` reads through it."
+    },
+    {
+      "location": "adapters/discord/rich-render.ts",
+      "issue": "Hardcoded `last 7 days` in production renderer output.",
+      "why_blocking": "Displayed time window can diverge from real digest window, creating fabricated presentation data.",
+      "fix": "Derive `windowDays` from `ZoneDigest.raw_stats` (with validated fallback) and interpolate it in the hero text."
+    }
+  ],
+  "fabrication_check": {
+    "passed": false,
+    "concerns": [
+      "Production renderer hardcodes a time-window string (`last 7 days`) instead of always binding display text to incoming digest data."
+    ]
+  },
+  "iteration": 1,
+  "auto_approved": false
+}

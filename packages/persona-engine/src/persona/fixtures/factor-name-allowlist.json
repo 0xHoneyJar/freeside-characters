@@ -1,0 +1,8 @@
+{
+  "_meta": {
+    "schema_version": 1,
+    "cycle": "cycle-008-persona-substrate",
+    "purpose": "NFR-9 allowlist · factor names that bypass aggregate-stat-leakage regex check. Per Flatline-Sprint SKP-003 HIGH 720 + IMP-013 650 · seeded from score-mcp factor catalog at S2 fixture time. Operator reviews diff when refreshed via `bun run --cwd packages/persona-engine sync-factor-allowlist` (S2 task). Names that legitimately contain rank/window/threshold language go here (e.g., 'Top-100 Holder', '30 Day Streak') to prevent false-positive halts."
+  },
+  "allowlisted_names": []
+}

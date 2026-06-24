@@ -1,0 +1,230 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 5,
+    "disputed_count": 6,
+    "low_value_count": 0,
+    "blocker_count": 6,
+    "model_agreement_percent": 57,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "Strong measurable acceptance criterion for tracing overhead. It directly converts a likely regression risk into a testable budget with modest implementation cost.",
+      "gpt_score": 880,
+      "opus_score": 870,
+      "tertiary_score": 900,
+      "delta": 10,
+      "average_score": 875,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "High ROI because informal trigger phrases are not implementable with consistent behavior. Normalization and exact regex semantics are essential for bypass resistance and telemetry quality.",
+      "gpt_score": 910,
+      "opus_score": 885,
+      "tertiary_score": 880,
+      "delta": 25,
+      "average_score": 897.5,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-003",
+      "description": "Graduation from telemetry to enforcement needs a defined corpus and thresholds. Without retention, sample size, and decision ownership, the staged rollout cannot be evaluated objectively.",
+      "gpt_score": 865,
+      "opus_score": 780,
+      "tertiary_score": 850,
+      "delta": 85,
+      "average_score": 822.5,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-004",
+      "description": "Missing per-factor stats are a realistic compatibility case and can cause either false positives or runtime failures. The expected behavior should be explicit and tested.",
+      "gpt_score": 895,
+      "opus_score": 805,
+      "tertiary_score": 900,
+      "delta": 90,
+      "average_score": 850,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-005",
+      "description": "Deterministic precedence is valuable for reproducible rendering and regression tests. The implementation cost is low, though the blast radius is narrower than the highest-priority items.",
+      "gpt_score": 760,
+      "opus_score": 830,
+      "tertiary_score": 850,
+      "delta": 70,
+      "average_score": 795,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-009",
+      "description": "Trace topology matters for the stated proprioception goal. Defining root-span ownership and parent propagation is valuable, with moderate implementation and documentation cost.",
+      "gpt_score": 770,
+      "opus_score": 0,
+      "tertiary_score": 840,
+      "delta": 770,
+      "average_score": 770,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-010",
+      "description": "A feature-flag rollback path is important for telemetry-only changes that touch production delivery. Low implementation cost and strong operational benefit.",
+      "gpt_score": 840,
+      "opus_score": 0,
+      "tertiary_score": 860,
+      "delta": 840,
+      "average_score": 840,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-011",
+      "description": "Forward-compatible schema handling should be explicit to avoid accidental self-DoS. Valuable, though the exact policy is a design decision rather than an obvious bug fix.",
+      "gpt_score": 735,
+      "opus_score": 0,
+      "tertiary_score": 790,
+      "delta": 735,
+      "average_score": 735,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-012",
+      "description": "Capturing the V1.5 gap is worthwhile, but a full acceptance test for behavior with no V1 rule may be lower leverage than a tracked issue or explicit note.",
+      "gpt_score": 610,
+      "opus_score": 0,
+      "tertiary_score": 350,
+      "delta": 610,
+      "average_score": 610,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-013",
+      "description": "This identifies a real conflict with an existing invariant. Either an exception or MCP-backed path must be specified before implementation to avoid violating repo rules.",
+      "gpt_score": 850,
+      "opus_score": 0,
+      "tertiary_score": 950,
+      "delta": 850,
+      "average_score": 850,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-014",
+      "description": "Raw draft text in telemetry is a clear privacy and security risk. The exporter contract should explicitly require redaction or hashing, and the cost is low.",
+      "gpt_score": 825,
+      "opus_score": 0,
+      "tertiary_score": 980,
+      "delta": 825,
+      "average_score": 825,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-001",
+      "concern": "AC-2 mandates 'ALL active factors... (no truncation)' but also requires fitting 'within Discord 1024-char field cap'. If the generated text for active factors exceeds 1024 characters, the Discord API will reject the embed payload.",
+      "severity": "CRITICAL",
+      "severity_score": 850,
+      "why_matters": "Will cause silent or unhandled failures of weekly digests during periods of high activity, completely breaking the delivery pipeline.",
+      "location": "AC-2 / FR-1",
+      "recommendation": "Define explicit truncation, chunking, or pagination logic (e.g., capping at top N factors, or splitting across multiple embed fields) to guarantee the payload remains under the 1024-character limit.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Chat-mode gate scope is internally inconsistent.",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "Open Question 3 recommends not routing chat-mode through the gate this cycle, but AC-9 requires chat-mode spans to correlate with prose-gate events when fired. Implementers may either over-scope chat-mode gating or fail acceptance criteria.",
+      "location": "Open Questions #3, FR-6, AC-9",
+      "recommendation": "Resolve the contract: either remove chat-mode prose-gate expectations from AC-9 or explicitly require chat-mode gate invocation under defined conditions.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "FR-1 assumes the substrate API calls (`get_dimension_breakdown` and `get_community_counts`) will always succeed. There is no defined error handling for timeouts, 5xx errors, or network partitions.",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "Transient substrate downtime will crash the scheduled cron job, leading to missed weekly digests and potential unhandled promise rejections in the Effect pipeline.",
+      "location": "FR-1 Step 2",
+      "recommendation": "Add explicit fallback behavior: define whether the job should retry with exponential backoff, skip the broadcast entirely, or post a degraded 'no data available' shape.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "Telemetry-only V1 gate provides no user-facing protection \u2014 operator-witnessed drift (sequential-mint chain, forced 'structural shift', fake 'p99-rare') continues to ship to Discord unmodified for the 2-4 week telemetry validation window",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "The cycle's stated motivation is that ruggy keeps producing factually-misleading prose (sequential mint IDs framed as a 'coordinated cluster', 'structural shift' on quiet weeks). V1 logs these violations but ships the draft text unchanged. Every flagged digest during the 2-4 week validation window posts known-bad prose to THJ users. The persona-illusion-preservation argument (F4 grail-ref-guard precedent) is reasonable for soft signals, but here the gate is catching factual misrepresentation, not stylistic drift. A circuit-breaker (skip-post-on-CRITICAL-violation, or substitute shape-A silence-register) would bound the user-facing damage without breaking the telemetry-only contract.",
+      "location": "FR-2, FR-5, AC-4",
+      "recommendation": "Add an operator-controlled kill-switch env var (e.g., `PROSE_GATE_ON_VIOLATION=log|skip|silence`) that defaults to `log` (current V1 contract) but allows escalation to `skip` (drop the post) or `silence` (downgrade to shape-A) without waiting for V1.5. Document the kill-switch in NOTES.md and surface it in the runbook.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "The prose-gate does not define how matched phrases map to a specific factor_id when a draft contains multiple factors.",
+      "severity": "HIGH",
+      "severity_score": 705,
+      "why_matters": "Rules depend on factor-specific substrate checks, but regex matches are global spans in prose. Without a deterministic phrase-to-factor mapping, the gate can flag the wrong factor, miss real violations, or produce noisy telemetry that cannot train V1.5 safely.",
+      "location": "FR-2 ProseGateValidation, inspectProse(draft, factorStatsByFactorId)",
+      "recommendation": "Define the association algorithm: per-row inspection, line-scoped factor IDs, nearest preceding factor label, or explicit structured draft segments before text rendering.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "V1 is telemetry-only, so the specific public prose failures the cycle is meant to prevent can still ship to Discord unchanged.",
+      "severity": "HIGH",
+      "severity_score": 760,
+      "why_matters": "The PRD intent names recurring user-visible drift incidents as the motivating failure mode, but FR-2 explicitly logs violations without modifying, refusing, regenerating, or suppressing the post. This means the shipped cycle may only observe the problem rather than reduce production risk.",
+      "location": "Intent, FR-2, AC-4, V1 scope",
+      "recommendation": "Add an explicit go/no-go statement that V1 accepts continued public drift, or add a minimal runtime mitigation such as fallback to deterministic card-only output when a HIGH-confidence violation is detected.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "prd",
+  "document": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/prd.md",
+  "domain": " cycle 005 ruggy as",
+  "tertiary_model_used": "gemini-3.1-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "interactive",
+    "mode_reason": "Default (no explicit mode specified)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-16T01:45:45Z",
+  "metrics": {
+    "total_latency_ms": 158000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

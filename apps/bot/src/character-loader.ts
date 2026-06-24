@@ -16,7 +16,11 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { CharacterConfig, EmojiAffinityKind } from '@freeside-characters/persona-engine';
+import type {
+  CharacterConfig,
+  EmojiAffinityKind,
+  SlashCommandSpec,
+} from '@freeside-characters/persona-engine';
 
 interface CharacterJson {
   id: string;
@@ -33,6 +37,26 @@ interface CharacterJson {
   webhookUsername?: string;
   /** V0.6-D voice/v4: anchored cabal archetypes (1-2 per character). */
   anchoredArchetypes?: string[];
+  /** V0.7-A.1: per-character slash command set. Omit for default
+   *  `/<id> prompt:<text> ephemeral:<bool>` (V0.7-A.0 parity). */
+  slash_commands?: SlashCommandSpec[];
+  /** V0.7-A.1: per-character MCP scope (digest path only). Omit for
+   *  bot-wide MCP access (V0.6 parity). */
+  mcps?: string[];
+  /** V0.7-A.1: operator-authored tool-invocation guidance — affirmative
+   *  blueprints, no fences. Substituted into the environment-context
+   *  block at compose time. Optional; omit for no guidance line. */
+  tool_invocation_style?: string;
+  /** V0.7 (2026-05-12): per-character Discord guild IDs for slash command
+   *  registration. When set, slash commands route only to listed guilds;
+   *  when omitted (or empty array), falls back to publishCommands `guildId`
+   *  arg (env DISCORD_GUILD_ID in auto-publish). Eliminates cross-guild
+   *  bleed at the registration boundary.
+   *
+   *  ReadonlyArray<string> matches CharacterConfig.publishGuilds — JSON
+   *  spreads accept readonly so this is type-compatible with declared
+   *  arrays in character.json. */
+  publishGuilds?: ReadonlyArray<string>;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -60,6 +84,26 @@ export function loadCharacter(id: string): CharacterConfig {
       `character-loader: id mismatch — config says "${json.id}" but folder is "character-${id}"`,
     );
   }
+
+  // BB-59 F6: validate publishGuilds entries are Discord snowflake-shaped
+  // (17-20 digit strings). Catches operator typos (numbers vs strings,
+  // whitespace, truncated IDs) at load time with a clear character.json
+  // reference, instead of as a Discord 400 at publish time.
+  if (json.publishGuilds !== undefined) {
+    if (!Array.isArray(json.publishGuilds)) {
+      throw new Error(
+        `character-loader: ${configPath} · publishGuilds must be an array of strings, got ${typeof json.publishGuilds}`,
+      );
+    }
+    for (let i = 0; i < json.publishGuilds.length; i++) {
+      const v = json.publishGuilds[i];
+      if (typeof v !== 'string' || !/^\d{17,20}$/.test(v)) {
+        throw new Error(
+          `character-loader: ${configPath} · publishGuilds[${i}] is not a Discord snowflake (17-20 digit string): ${JSON.stringify(v)}`,
+        );
+      }
+    }
+  }
   return {
     id: json.id,
     displayName: json.displayName,
@@ -69,9 +113,56 @@ export function loadCharacter(id: string): CharacterConfig {
     webhookAvatarUrl: json.webhookAvatarUrl,
     webhookUsername: json.webhookUsername,
     anchoredArchetypes: json.anchoredArchetypes as CharacterConfig['anchoredArchetypes'],
+    slash_commands: json.slash_commands,
+    mcps: json.mcps,
+    tool_invocation_style: json.tool_invocation_style,
+    publishGuilds: json.publishGuilds,
   };
 }
 
 export function loadCharacters(): CharacterConfig[] {
   return selectedCharacterIds().map(loadCharacter);
+}
+
+/**
+ * Default slash command for a character that doesn't declare its own.
+ * Preserves the V0.7-A.0 shape (`/<id> prompt:<text> ephemeral:<bool>`)
+ * routed through the `chat` handler. Lookup-friendly so dispatch + publish
+ * both see the same fallback.
+ */
+export function defaultSlashCommands(c: CharacterConfig): SlashCommandSpec[] {
+  const lower = (c.displayName ?? c.id).toLowerCase();
+  return [
+    {
+      name: c.id,
+      description: `talk to ${lower}`,
+      handler: 'chat',
+      options: [
+        { name: 'prompt', description: `what to say to ${lower}`, type: 3, required: true },
+        { name: 'ephemeral', description: 'only you see the reply', type: 5, required: false },
+      ],
+    },
+  ];
+}
+
+/** Returns the character's declared slash commands or the V0.7-A.0 default. */
+export function resolveSlashCommands(c: CharacterConfig): SlashCommandSpec[] {
+  return c.slash_commands ?? defaultSlashCommands(c);
+}
+
+/**
+ * Resolve which character owns a given slash command name and what handler
+ * the command should route to. Returns null when no character claims the
+ * name. Single-pass lookup across all characters' declared (or defaulted)
+ * commands — preserves the kickoff spec's command-name → handler mapping.
+ */
+export function resolveSlashCommandTarget(
+  commandName: string,
+  characters: CharacterConfig[],
+): { character: CharacterConfig; spec: SlashCommandSpec } | null {
+  for (const c of characters) {
+    const match = resolveSlashCommands(c).find((s) => s.name === commandName);
+    if (match) return { character: c, spec: match };
+  }
+  return null;
 }

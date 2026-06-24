@@ -1,0 +1,36 @@
+schema_version: "1.0.0"
+character: ruggy
+post_type: digest
+zone: stonehenge
+canonical: true # deterministic surface — agent-canonical per sprint.md v0.6 / SDD §1.5
+captured_at: "2026-05-14T19:34:49.957Z"
+captured_by: agent
+capture_id: s0-20260514-193449-stonehenge-digest
+provenance:
+  bot_commit_sha: ca0034d
+  adapter: "stub-direct (LLM_PROVIDER=stub · STUB_MODE=true · delivery=DRY-RUN)"
+  trigger: "bun run digest:once (delivery env emptied → forced DRY-RUN)"
+input:
+  zone_digest_payload: synthetic # STUB_MODE — canned ZoneDigest
+  window_event_count: 131
+  window_wallet_count: 28
+output:
+  deterministic_surface:
+    content_populated: true
+    content: "🗿 Stonehenge"
+    embed_color: "0x808890"
+    embed_footer_pattern: "digest · computed at <ISO8601> · zone:stonehenge"
+    tool_call_trace: [] # stub mode — no live tool calls
+    no_leak_checks:
+      tool_markup_leak: false
+      raw_emoji_shortcode: false
+  rendered_prose: |
+    yo Stonehenge team, week check-in
+    > 131 events · 28 miberas · 4 factors moved
+    `og:sets` carried the week (38 events). steady run.
+    🟢 peep `0xaf13101b…` (synthetic stub wallet), climbed #84 → #41.
+    stay groovy 🐻
+environment:
+  LLM_PROVIDER: stub
+  STUB_MODE: true
+  delivery: DRY-RUN

@@ -16,13 +16,19 @@
  */
 
 // Public types
-export type { CharacterConfig, ZoneId, PostType, EmojiAffinityKind } from './types.ts';
+export type {
+  CharacterConfig,
+  ZoneId,
+  PostType,
+  EmojiAffinityKind,
+  SlashCommandSpec,
+  SlashCommandHandler,
+  SlashCommandOption,
+  DiscordApplicationCommandOptionType,
+} from './types.ts';
+
 export type { Config } from './config.ts';
 export type { FireRequest, SchedulerHandles, ScheduleArgs } from './cron/scheduler.ts';
-export type { PostComposeResult } from './compose/composer.ts';
-export type { DeliveryResult } from './deliver/post.ts';
-export type { DigestPayload, DiscordEmbed } from './deliver/embed.ts';
-export type { ZoneDigest, RawStats } from './score/types.ts';
 
 // Compose API — substrate's top-level entry for "make a post for character X in zone Y"
 export { composeZonePost as composeForCharacter, ALL_ZONES } from './compose/composer.ts';
@@ -33,7 +39,15 @@ export { schedule } from './cron/scheduler.ts';
 
 // Delivery API
 export { deliverZoneDigest, isDryRun } from './deliver/post.ts';
-export { getBotClient, shutdownClient } from './deliver/client.ts';
+export { getBotClient, shutdownClient, postToChannel } from './deliver/client.ts';
+
+// Webhook delivery primitives (V0.7-A.0 — slash replies use Pattern B too)
+export {
+  getOrCreateChannelWebhook,
+  sendChatReplyViaWebhook,
+  sendImageReplyViaWebhook,
+  invalidateWebhookCache,
+} from './deliver/webhook.ts';
 
 // Config API
 export { loadConfig, getZoneChannelId, selectedZones } from './config.ts';
@@ -42,6 +56,202 @@ export { loadConfig, getZoneChannelId, selectedZones } from './config.ts';
 export { loadSystemPrompt } from './persona/loader.ts';
 export { exemplarStats } from './persona/exemplar-loader.ts';
 
-// Score helpers — bot's CLI uses ZONE_FLAVOR for log emoji + counts
-export { ZONE_FLAVOR, getWindowEventCount, getWindowWalletCount } from './score/types.ts';
+// Reply API (V0.7-A.0 — chat-mode pipeline for slash command replies)
+export { composeReply, splitForDiscord } from './compose/reply.ts';
+export type { ReplyComposeArgs, ReplyComposeResult } from './compose/reply.ts';
+
+// V0.7-A.3 env-aware enrichment (additive sibling per spec §4.1 option C).
+// composeReply contract unchanged; new callers opt-in via this entry point.
+export { composeReplyWithEnrichment } from './compose/reply.ts';
+export type { EnrichedReplyResult } from './compose/reply.ts';
+export { composeWithImage } from './deliver/embed-with-image.ts';
+export type {
+  CodexGrailResult,
+  EnrichedFile,
+  EnrichedPayload,
+  ComposeWithImageOptions,
+} from './deliver/embed-with-image.ts';
+
+// V0.7-A.4 (cycle-003): grail bytes cache surface for boot-time prefetch +
+// kill-switch readout. apps/bot calls initGrailCache() early in main() so
+// the canonical-43 grails are warm before the first slash invocation; the
+// composer reads the cache via getGrailBytes (internal, not re-exported).
+export {
+  initGrailCache,
+  isCacheEnabled as isGrailCacheEnabled,
+} from './deliver/grail-cache.ts';
+export type {
+  InitOptions as GrailCacheInitOptions,
+  InitResult as GrailCacheInitResult,
+} from './deliver/grail-cache.ts';
+
+// V0.7-A.3 anti-hallucination guard (spec §11.2 — V1 telemetry-only post
+// bridgebuilder F4 2026-05-02; user-visible footer removed).
+export {
+  validateGrailRefs,
+  inspectGrailRefs,
+} from './deliver/grail-ref-guard.ts';
+export type { GrailRefValidation } from './deliver/grail-ref-guard.ts';
+
+// V0.7-A.3 HOTFIX B2a — composer-side strip of attached image URLs from
+// reply text. Defense-in-depth pair with persona instruction (B2b in
+// apps/character-{ruggy,satoshi}/persona.md). Discord automod still
+// deletes messages with inline `assets.0xhoneyjar.xyz` even when bytes
+// are attached → strip the URL from voice prose.
+export {
+  stripAttachedImageUrls,
+  extractAttachedUrls,
+} from './deliver/strip-image-urls.ts';
+
+// Cycle-R sprint-1 voice-discipline transforms (cmp-boundary §9 ·
+// 2026-05-04). Surfaces the runtime strip for chat-mode delivery paths
+// (slash-command replies via webhook · ephemeral PATCH fallback). The
+// digest path applies these via embed.ts internally; chat-mode callers
+// (apps/bot/src/discord-interactions/dispatch.ts) apply via this export.
+//
+// Refs: ~/vault/wiki/concepts/chat-medium-presentation-boundary.md §9 ·
+//       ~/vault/wiki/concepts/discord-native-register.md (2026-05-04 amend)
+export {
+  stripToolMarkup,
+  stripVoiceDisciplineDrift,
+  escapeDiscordMarkdown,
+  sanitizeOutboundBody,
+} from './deliver/sanitize.ts';
+export type { VoiceDisciplineOpts } from './deliver/sanitize.ts';
+
+// Chat-mode routing helpers (V0.7-A.4 surface-completeness test surface)
+export { shouldUseOrchestrator, resolveChatProvider } from './compose/reply.ts';
+export type { ChatProvider } from './compose/reply.ts';
+
+// Digest-path provider resolution (V0.12 · exported so the bedrock-first
+// auto-rule matrix can be unit-tested — see provider-resolution.test.ts).
+export { resolveProvider } from './compose/agent-gateway.ts';
+export type { ResolvedProvider } from './compose/agent-gateway.ts';
+
+// Orchestrator MCP-server registration (V0.7-A.4 surface-completeness)
+export { buildMcpServers, buildAllowedTools } from './orchestrator/index.ts';
+
+// Expression layer (V0.12 · session 04 — character voice during loading,
+// errors, and performed silence). Substrate routes; character expression
+// fills. Per multi-axis-daemon-architecture §axis-3 capability-equipping.
+export {
+  DEFAULT_TOOL_MOOD_MAP,
+  getMoodsForTool,
+  pickRandomMood,
+} from './expression/tool-mood-map.ts';
+export type { ToolMoodMapping } from './expression/tool-mood-map.ts';
+export { composeToolUseStatusForCharacter } from './expression/loading-status.ts';
+export {
+  DEFAULT_ERROR_REGISTRY,
+  getErrorTemplate,
+  composeErrorReply,
+  composeErrorBody,
+} from './expression/error-register.ts';
+export type {
+  ErrorClass,
+  ErrorRegistry,
+  CharacterErrorTemplates,
+} from './expression/error-register.ts';
+export {
+  DEFAULT_SILENCE_REGISTRY,
+  FLAT_WINDOW_EVENT_THRESHOLD,
+  isFlatWindow,
+  pickSilenceTemplate,
+} from './expression/silence-register.ts';
+export type { SilenceRegistry } from './expression/silence-register.ts';
+
+// Emoji registry primitives (V0.12 — surfaced for tests and direct
+// inspection; the loading-status composer wraps these for the dispatch
+// path's hot-path use).
+export {
+  pickByMoods as pickEmojiByMoods,
+  findByName as findEmojiByName,
+  renderEmoji,
+  ALL_MOODS as ALL_EMOJI_MOODS,
+} from './orchestrator/emojis/registry.ts';
+export type {
+  EmojiEntry,
+  EmojiKind,
+  EmojiMood,
+} from './orchestrator/emojis/registry.ts';
+
+// MCP server contracts (V0.7-A.4 — Effect.Schema source of truth · used
+// by surface-completeness + persona-tool-drift tests)
+export { emojisServerContract } from './orchestrator/emojis/schema.ts';
+export type { McpToolContract, McpServerContract } from './orchestrator/_schema/index.ts';
+
+// Unified compose entrypoint (V0.7-A.2 — single dispatcher for cron + chat)
+export { compose } from './compose/index.ts';
+export type {
+  ComposeArgs,
+  ComposeEnvironment,
+  ComposeResult,
+  Invocation,
+} from './compose/index.ts';
+
+// Orchestrator tool-use streaming (V0.7-A.1 · chat dispatcher uses this
+// to surface tool calls progressively in Discord — see ruggy-v2 pattern).
+// V0.7-A.3: tool-result streaming added for env-aware composer (codex
+// grail envelope → composeWithImage attachment payload).
+export type { ToolUseEvent, ToolResultEvent } from './orchestrator/index.ts';
+
+// Bedrock image generation
+export * from './compose/bedrock-image.ts';
+
+// Conversation ledger (V0.7-A.0 — in-process per-channel ring buffer)
+export {
+  appendToLedger,
+  getLedgerSnapshot,
+  ledgerChannelCount,
+} from './conversation/ledger.ts';
+export type { LedgerEntry } from './conversation/ledger.ts';
+
+// Score helpers — bot's CLI uses ZONE_REGISTRY for log emoji + display (cycle-007 S1/T1.3 canon rename).
+export { getWindowEventCount, getWindowWalletCount } from './score/index.ts';
+export { ZONE_REGISTRY, resolveZoneDisplayName, resolveZoneRichLabel, safeResolveZoneDisplayName, safeResolveZoneRichLabel, detectKebabZoneIds, UnknownZoneError, assertNeverZone } from './domain/zone-registry.ts';
+export type { ZoneDisplayRecord } from './domain/zone-registry.ts';
 export { getCodexLineCount } from './score/codex-context.ts';
+
+// Environment context (V0.7-A.1 Phase C — substrate awareness block)
+export {
+  buildEnvironmentContext,
+  summarizeRecent,
+  minutesSince,
+  uniq,
+} from './compose/environment.ts';
+export type { RecentMessage, BuildEnvironmentContextArgs } from './compose/environment.ts';
+
+// Rosenzu derivation helpers (V0.7-A.1 — temporal/social moment-half)
+export {
+  deriveTemperature,
+  deriveSocialDensity,
+  composeTonalWeight,
+} from './orchestrator/rosenzu/lynch-primitives.ts';
+export type {
+  RoomTemperature,
+  RoomSocialDensity,
+} from './orchestrator/rosenzu/lynch-primitives.ts';
+
+// cycle-008 S9 (g30) · standalone RLHF iteration surface — hexagonal (full API at @…/persona-engine/preview).
+export {
+  BILLBOARD_VARIANTS,
+  resolveVariants,
+  buildSnapshot,
+  CANONICAL_CASES,
+  caseById,
+  renderBatch,
+  buildRatedRecord,
+  appendPreferenceRecord,
+  promoteToEvals,
+  PREFERENCE_LOG_PATH,
+  EVALS_SNAPSHOTS_DIR,
+  createDiscordAdapter,
+  createTerminalAdapter,
+} from './preview/index.ts';
+export type {
+  BillboardVariant,
+  Candidate,
+  RenderBatch,
+  PreferenceRecord,
+  MediumAdapter,
+} from './preview/index.ts';

@@ -46,6 +46,27 @@ apps/character-<id>/
     "primary": "mibera",
     "fallback": "ruggy"
   },
+  "anchoredArchetypes": ["Veteran", "Chaos-Agent"],
+  "mcps": ["codex", "imagegen"],
+  "slash_commands": [
+    {
+      "name": "satoshi",
+      "description": "talk to satoshi",
+      "handler": "chat",
+      "options": [
+        { "name": "prompt", "description": "what to say to satoshi", "type": 3, "required": true },
+        { "name": "ephemeral", "description": "only you see the reply", "type": 5, "required": false }
+      ]
+    },
+    {
+      "name": "satoshi-image",
+      "description": "satoshi generates an image",
+      "handler": "imagegen",
+      "options": [
+        { "name": "prompt", "description": "image prompt — be explicit about subject + scene + light", "type": 3, "required": true }
+      ]
+    }
+  ],
   "doc": {
     "creativeDirection": "creative-direction.md"
   },
@@ -61,7 +82,83 @@ apps/character-<id>/
 | `personaFile` | yes | path relative to character dir (typically `persona.md`). |
 | `exemplarsDir` | no | path relative to character dir. Omit → no In-Context Exemplars (rule-based voice only). |
 | `emojiAffinity` | no | hint for emoji MCP. Currently informational; V0.6-D wires into MCP filtering. |
+| `anchoredArchetypes` | no | 1-2 cabal archetypes that genuinely map to who the character IS (not rotating filters). |
+| `slash_commands` | no | per-character slash commands (V0.7-A.1+). Omit for default `/<id> chat` shape. See §slash commands. |
+| `mcps` | no | per-character MCP scope on the digest path (V0.7-A.1+). Omit for bot-wide access. See §MCP scoping. |
 | `stage` | no | `character` (V0.6) or `daemon` (V0.7+ once mint machinery lands). |
+
+## Slash commands (V0.7-A.1+)
+
+Eileen's framing 2026-04-30: "commands are diff otherwise they'd be reporting
+the same shit." Each character can declare its own command set in
+`character.json`. When omitted, the substrate auto-generates the V0.7-A.0
+default `/<id> prompt:<text> ephemeral:<bool>` routed to the `chat` handler
+— so existing characters keep working without changes.
+
+```jsonc
+"slash_commands": [
+  {
+    "name": "satoshi",
+    "description": "talk to satoshi",
+    "handler": "chat",
+    "options": [
+      { "name": "prompt", "description": "what to say to satoshi", "type": 3, "required": true },
+      { "name": "ephemeral", "description": "only you see the reply", "type": 5, "required": false }
+    ]
+  },
+  {
+    "name": "satoshi-image",
+    "description": "satoshi generates an image",
+    "handler": "imagegen",
+    "options": [
+      { "name": "prompt", "description": "image prompt", "type": 3, "required": true }
+    ]
+  }
+]
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `name` | yes | Discord command name. Must match `^[-_\p{L}\p{N}]{1,32}$`. |
+| `description` | yes | 1-100 char description shown in Discord autocomplete. |
+| `handler` | yes | Substrate-side handler. `chat` (composeReply pipeline · V0.7-A.0) or `imagegen` (Bedrock Stability · V0.7-A.1). Future: `stats`, `lore`, etc. |
+| `options` | no | Discord application command options. `type` values: 3=STRING, 4=INTEGER, 5=BOOLEAN, 10=NUMBER. |
+
+The substrate flattens all characters' commands at publish time and rejects
+duplicate names loud. Run `bun run apps/bot/scripts/publish-commands.ts`
+after editing — Discord caches command schemas (1-hour TTL globally,
+instant in single-guild mode).
+
+## MCP scoping (V0.7-A.1+)
+
+Per-character MCP access on the digest path. Names listed in `mcps` are the
+servers the character is allowed to call from `runOrchestratorQuery`. Names
+not currently registered (env-gated MCPs like `codex` when `CODEX_MCP_URL`
+is unset) are silently dropped — the field expresses INTENT; what's actually
+available is the intersection with what the substrate has wired.
+
+```jsonc
+// ruggy — reporter · data-grounded · no imagegen (won't hallucinate-and-illustrate)
+"mcps": ["score", "codex", "emojis", "rosenzu", "freeside_auth"]
+
+// satoshi — mibera-agent · cross-realms · no score (stays gnomic, not zone-stat analyst)
+"mcps": ["codex", "imagegen"]
+```
+
+When `mcps` is omitted, the character has access to ALL registered MCPs
+(V0.6 parity). Affects ONLY the digest path. Chat-mode replies
+(`composeReply`) bypass MCPs entirely by design and are unaffected.
+
+Currently registered MCP names (substrate-side):
+
+| Name | Source | When registered |
+|---|---|---|
+| `rosenzu` | `orchestrator/rosenzu/` | always (in-process SDK MCP) |
+| `emojis` | `orchestrator/emojis/` | always (in-process SDK MCP) |
+| `freeside_auth` | `orchestrator/freeside_auth/` | always (warns + falls back to truncated wallet when DB unavailable) |
+| `score` | zerker's HTTP MCP | when `MCP_KEY` is set |
+| `codex` | gumi's mibera-codex HTTP MCP | when `CODEX_MCP_URL` is set |
+| `imagegen` | `orchestrator/imagegen/` | when `AWS_REGION` + `BEDROCK_STABILITY_MODEL_ID` set |
 
 ## `persona.md` conventions
 
@@ -153,9 +250,10 @@ CHARACTERS=satoshi           # only satoshi
 CHARACTERS=ruggy,satoshi     # both (V0.6-D routing decides who speaks per fire)
 ```
 
-Default is `ruggy` (V0.5-E parity). The first character in the list is the
-"primary" — until V0.6-D's routing layer ships, all fires dispatch through
-the primary.
+Default is `ruggy`. The first character in the list is the "primary" — for
+the digest path, all fires dispatch through the primary (V0.6-A behavior).
+V0.6-D will add per-fire affinity routing. V0.7-A.0 slash commands route
+explicitly to the invoked character regardless of primary.
 
 ## Smoke-test a new character
 

@@ -1,0 +1,242 @@
+{
+  "consensus_summary": {
+    "high_consensus_count": 4,
+    "disputed_count": 8,
+    "low_value_count": 0,
+    "blocker_count": 6,
+    "model_agreement_percent": 50,
+    "models": 3,
+    "tertiary_items": 0,
+    "confidence": "full"
+  },
+  "high_consensus": [
+    {
+      "id": "IMP-001",
+      "description": "High ROI and low specification cost. The map is a load-bearing bridge between fetched factor data and gate decisions, and dedup behavior directly affects correctness.",
+      "gpt_score": 910,
+      "opus_score": 880,
+      "tertiary_score": 900,
+      "delta": 30,
+      "average_score": 895,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-002",
+      "description": "Important outage-path behavior. The all-empty case can silently neutralize the gate or create noisy non-gating violations, so it needs an explicit decision.",
+      "gpt_score": 840,
+      "opus_score": 810,
+      "tertiary_score": 880,
+      "delta": 30,
+      "average_score": 825,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-003",
+      "description": "Clear integration ambiguity between two control-flow shapes. Precedence for silence mode must be pinned to avoid divergent implementations and regressions.",
+      "gpt_score": 875,
+      "opus_score": 820,
+      "tertiary_score": 880,
+      "delta": 55,
+      "average_score": 847.5,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    },
+    {
+      "id": "IMP-004",
+      "description": "Critical missing contracts for functions on the main digest path. Without signatures, ownership, and telemetry expectations, implementation cannot be completed reliably.",
+      "gpt_score": 925,
+      "opus_score": 800,
+      "tertiary_score": 840,
+      "delta": 125,
+      "average_score": 862.5,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "HIGH"
+    }
+  ],
+  "disputed": [
+    {
+      "id": "IMP-009",
+      "description": "Good telemetry hygiene. Bounded event volume prevents noisy drafts from distorting dashboards, and the implementation cost is modest.",
+      "gpt_score": 700,
+      "opus_score": 0,
+      "tertiary_score": 780,
+      "delta": 700,
+      "average_score": 700,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-010",
+      "description": "This resolves a real contract gap in layout selection. The no-claim Shape C behavior affects output semantics and needs an explicit representation.",
+      "gpt_score": 815,
+      "opus_score": 0,
+      "tertiary_score": 720,
+      "delta": 815,
+      "average_score": 815,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-011",
+      "description": "Valuable for multi-character correctness. The fallback and scoping semantics should be specified, though this is less central than the prose gate itself.",
+      "gpt_score": 675,
+      "opus_score": 0,
+      "tertiary_score": 680,
+      "delta": 675,
+      "average_score": 675,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-012",
+      "description": "Near-critical because API shape determines how telemetry is implemented. Sync versus Effect return type must be settled before reliable integration.",
+      "gpt_score": 790,
+      "opus_score": 0,
+      "tertiary_score": 760,
+      "delta": 790,
+      "average_score": 790,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-013",
+      "description": "Strong test addition for a control-flow path that closes a known blocker. It is targeted, cheap, and likely to catch meaningful regressions.",
+      "gpt_score": 735,
+      "opus_score": 0,
+      "tertiary_score": 640,
+      "delta": 735,
+      "average_score": 735,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-014",
+      "description": "Worth fixing for operational clarity. Span naming confusion can hurt dashboards and on-call interpretation, but it is less likely to break behavior.",
+      "gpt_score": 625,
+      "opus_score": 0,
+      "tertiary_score": 500,
+      "delta": 625,
+      "average_score": 625,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-015",
+      "description": "Useful deploy documentation with low implementation cost, but the precedence between these env vars appears operationally adjacent rather than deeply coupled.",
+      "gpt_score": 585,
+      "opus_score": 0,
+      "tertiary_score": 550,
+      "delta": 585,
+      "average_score": 585,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    },
+    {
+      "id": "IMP-016",
+      "description": "Critical behavioral ambiguity. If validation is aggregate but routing is per-zone, the system lacks the attribution needed to act on violations correctly.",
+      "gpt_score": 900,
+      "opus_score": 0,
+      "tertiary_score": 890,
+      "delta": 900,
+      "average_score": 900,
+      "source": "gpt_scored",
+      "would_integrate": true,
+      "agreement": "DISPUTED"
+    }
+  ],
+  "low_value": [],
+  "blockers": [
+    {
+      "id": "SKP-001",
+      "concern": "Brittle factor attribution based on exact string match of display_name",
+      "severity": "CRITICAL",
+      "severity_score": 850,
+      "why_matters": "LLMs frequently rephrase, pluralize, or abbreviate terms. If the draft contains a rephrased factor name, attributeFactor will fail to find it, resulting in a 'no-factor-context' violation. Since 'no-factor-context' violations always pass through, the gate will be completely bypassed for these claims.",
+      "location": "Component 1: packages/persona-engine/src/deliver/prose-gate.ts (attributeFactor)",
+      "recommendation": "Implement fuzzy matching (e.g., Levenshtein distance or stemming) for display_name attribution, or enforce strict exact-match constraints in the LLM's system prompt.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-002",
+      "concern": "Contradiction in layout routing for 'silence' mode and shape_override",
+      "severity": "HIGH",
+      "severity_score": 750,
+      "why_matters": "The spec states shape_override forces the layout selector, and the text claims selectLayoutShape({...forced: 'A-all-quiet'}) is used. However, Component 4's signature does not accept 'forced', and Component 5's pseudocode ignores the selector entirely by calling composeShapeA. This creates an architectural contradiction.",
+      "location": "Component 1 (ProseGateValidation) vs Component 4 (selectLayoutShape) vs Component 5 (Digest compose pseudocode)",
+      "recommendation": "Align the architecture: either update selectLayoutShape to accept and process the forced/shape_override flag, or remove shape_override from the interface and document the early-return composeShapeA fallback behavior.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-001",
+      "concern": "Dangerous prose with no nearby factor context is explicitly allowed to pass through in all modes, including skip and silence.",
+      "severity": "HIGH",
+      "severity_score": 780,
+      "why_matters": "The highest-risk hallucinations may be broad claims not adjacent to a factor display name. Treating no-factor-context as informational creates a bypass for the gate's core safety purpose.",
+      "location": "Component 1 \u00b7 Factor-attribution algorithm / Kill-switch handling",
+      "recommendation": "Add a separate policy for matched risky phrases with no attribution. At minimum log as high severity; preferably make skip/silence apply to no-factor-context when the matched pattern is from a high-risk rule.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "Factor attribution chooses only the nearest display name, so claims involving multiple nearby factors or a whole-zone assertion can be incorrectly validated against the wrong factor.",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "A risky claim could pass because the nearest factor is statistically safe while the actual referenced factor is not, or the reverse could cause false skips. Both outcomes undermine operator trust in the gate.",
+      "location": "Component 1 \u00b7 attributeFactor",
+      "recommendation": "Evaluate all proximity_factors against the rule and report all failing factor IDs. If multiple factors are found, avoid single-winner semantics unless the prose explicitly binds the claim to one factor.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-003",
+      "concern": "Missing stats fail open, allowing unverified claims",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "The Failure Modes section states that if factor_stats is absent, the gate skips the rule check and no violation is emitted. If the score API fails or returns an error (history.error === true), the gate will permit any hallucinated claim the LLM makes about that factor, violating safety goals.",
+      "location": "Failure Modes + Recovery (factor_stats absent)",
+      "recommendation": "If a matched pattern requires a check but the associated factor's stats are missing or have history.error === true, the gate should fail closed (emit a violation) rather than failing open.",
+      "source": "tertiary_skeptic"
+    },
+    {
+      "id": "SKP-009",
+      "concern": "`shape_override?: 'A'` field on ProseGateValidation is set by inspectProse but inspectProse cannot know the resolved mode at call time \u2014 the field's contract is unimplementable as specified",
+      "severity": "HIGH",
+      "severity_score": 720,
+      "why_matters": "The interface comment says 'when PROSE_GATE_ON_VIOLATION=silence AND violations.length>0, gate sets this to A'. But inspectProse signature takes (draft, factorStatsByFactorId, factors) \u2014 it does NOT receive the mode. Either (a) inspectProse must read env directly (violating the resolveProseGateMode separation), (b) the caller must set shape_override after calling inspectProse (making the field caller-populated, not gate-populated, contradicting the comment), or (c) the field is dead and the digest pseudocode's explicit `if mode==='silence' return composeShapeA(...)` is the actual mechanism \u2014 making `shape_override` pointless.",
+      "location": "\u00a7Component 1 \u00b7 ProseGateValidation interface + \u00a7Component 5 silence branch",
+      "recommendation": "Resolve the contradiction explicitly: either pass mode into inspectProse as a parameter and have it return shape_override, OR remove shape_override from the type and document that silence-mode fallback is caller responsibility (matches \u00a7Component 5 actual code). Closes flatline blocker PRD-SKP-001 [740] r2 properly instead of leaving the field as a vestigial half-implementation.",
+      "source": "tertiary_skeptic"
+    }
+  ],
+  "degraded": false,
+  "degraded_model": null,
+  "confidence": "full",
+  "phase": "sdd",
+  "document": "grimoires/loa/cycles/cycle-005-ruggy-leaderboard/sdd.md",
+  "domain": " public api for non",
+  "tertiary_model_used": "gemini-3.1-pro",
+  "tertiary_status": "active",
+  "execution": {
+    "mode": "interactive",
+    "mode_reason": "Default (no explicit mode specified)",
+    "run_id": null
+  },
+  "timestamp": "2026-05-16T02:12:55Z",
+  "metrics": {
+    "total_latency_ms": 210000,
+    "cost_cents": 0,
+    "cost_usd": 0
+  }
+}

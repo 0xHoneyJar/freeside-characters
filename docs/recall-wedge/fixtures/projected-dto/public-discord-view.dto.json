@@ -1,0 +1,27 @@
+{
+  "fixture_id": "public-discord-view-001",
+  "fixture_kind": "recall_wedge_dto_projection",
+  "fixture_version": "phase-33b.0",
+  "dto_scope_note": "a public-channel projection of the Dixie-safe Recall Wedge envelope, narrowed for the public_discord render surface; not the full Straylight schema, not the full Dixie response, not the source of recall semantics, not a replacement for Hounfour/Straylight types",
+  "synthetic": true,
+  "source_seed_fixture": "shared-substrate-demo-001",
+  "outcome": "ok",
+  "recall_interface": "public_discord",
+  "render_surface": "discord_public_character",
+  "character_frame": "ruggy",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "public_summary": "actor is rehearsing the cross-interface continuity demo; voice preferences and participation observed across the substrate's character frames",
+  "included_count": 3,
+  "marked_count": 0,
+  "redacted_count": 1,
+  "excluded_count": 1,
+  "public_reason_counts": {
+    "redacted_for_public_surface": 1,
+    "excluded_from_public_surface": 1
+  },
+  "public_reason_labels": [
+    "redacted_for_public_surface",
+    "excluded_from_public_surface"
+  ],
+  "denied_or_refused": false
+}

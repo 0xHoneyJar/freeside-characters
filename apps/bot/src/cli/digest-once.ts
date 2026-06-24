@@ -21,7 +21,7 @@ import {
   deliverZoneDigest,
   getBotClient,
   shutdownClient,
-  ZONE_FLAVOR,
+  ZONE_REGISTRY,
   getWindowEventCount,
   getWindowWalletCount,
   POST_TYPE_SPECS,
@@ -51,7 +51,14 @@ async function main(): Promise<void> {
   const zones = selectedZones(config);
   const typeMode = pickType(config);
 
-  const llmMode = config.ANTHROPIC_API_KEY
+  // bedrock-aware (mirrors describeLlmMode in apps/bot/src/index.ts and
+  // resolveProvider in agent-gateway.ts). Was previously bedrock-blind.
+  const hasBedrock = Boolean(config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY);
+  const llmMode = config.VOICE_DISABLED
+    ? 'VOICE_DISABLED (no LLM)'
+    : config.LLM_PROVIDER === 'bedrock' || (config.LLM_PROVIDER === 'auto' && hasBedrock)
+    ? `bedrock (${config.BEDROCK_TEXT_MODEL_ID ?? 'no-model-id'} @ ${config.BEDROCK_TEXT_REGION})`
+    : config.ANTHROPIC_API_KEY
     ? `anthropic-direct (${config.ANTHROPIC_MODEL})`
     : config.STUB_MODE
       ? 'STUB (canned)'
@@ -68,7 +75,7 @@ async function main(): Promise<void> {
   console.log(`${primary.id}: digest-once · firing immediately`);
   console.log(`data: ${config.STUB_MODE ? 'STUB' : 'LIVE'} · llm: ${llmMode} · delivery: ${deliveryMode}`);
   console.log(`mode: ${typeMode === 'mix' ? 'MIX (random non-digest per zone)' : typeMode}`);
-  console.log(`zones: ${zones.map((z) => `${ZONE_FLAVOR[z].emoji} ${z}`).join(' · ')}`);
+  console.log(`zones: ${zones.map((z) => `${ZONE_REGISTRY[z].emoji} ${z}`).join(' · ')}`);
   console.log();
 
   if (config.DISCORD_BOT_TOKEN) {

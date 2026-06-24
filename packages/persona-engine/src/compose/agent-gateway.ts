@@ -1,5 +1,6 @@
 /**
- * LLM gateway — explicit provider routing (V0.4 → V0.5-A).
+ * LLM gateway — explicit provider routing (V0.4 → V0.5-A · auto-rule
+ * flipped V0.12 to bedrock-first per operator 2026-05-01).
  *
  * Per codex-rescue F1: stub-vs-real selection should be EXPLICIT, not
  * inferred from key presence. LLM_PROVIDER env makes intent legible:
@@ -11,8 +12,15 @@
  *                              ANTHROPIC_API_KEY; throws if missing.
  *   LLM_PROVIDER=freeside    → freeside agent-gateway. Requires
  *                              FREESIDE_API_KEY; throws if missing.
- *   LLM_PROVIDER=auto        → V0.3 back-compat: anthropic key wins,
- *                              else stub if STUB_MODE, else freeside.
+ *   LLM_PROVIDER=bedrock     → AWS Bedrock direct (this digest path uses
+ *                              the converse REST API; chat path routes
+ *                              bedrock through the Agent SDK with full
+ *                              tool support). Requires AWS bearer token.
+ *   LLM_PROVIDER=auto        → bedrock-first when AWS env present
+ *                              (cost-bearing default · ES bedrock account)
+ *                              → anthropic (dev/local fallback)
+ *                              → stub (STUB_MODE=true)
+ *                              → freeside.
  *                              Logs the resolved provider on first call.
  *
  * V0.5-A migration: the `anthropic` path moved from a manual fetch to
@@ -20,14 +28,30 @@
  * single-turn query, no tool calls, with the digest JSON pre-fetched
  * into the user message. V0.5-B activates Arneson + Rosenzu via the
  * SDK's mcpServers + skills primitives.
+ *
+ * V0.12 auto-rule flip (operator-named 2026-05-01 · cost-bearing default):
+ * production removed ANTHROPIC_API_KEY so auto resolves to bedrock by
+ * elimination. This change codifies the order: when AWS Bedrock env is
+ * present (bearer token OR API key), bedrock wins regardless of whether
+ * ANTHROPIC_API_KEY is also set. ANTHROPIC_API_KEY remains an explicit
+ * opt-in for dev/local-testing — set LLM_PROVIDER=anthropic explicitly,
+ * or unset bedrock env in dev. The orchestrator path
+ * (resolveOrchestratorBackend) already used this preference order; this
+ * brings the digest path's auto-resolver in line.
  */
 
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
-import type { ZoneDigest, ZoneId } from '../score/types.ts';
-import { ZONE_FLAVOR } from '../score/types.ts';
+import { getTracer } from '../observability/otel-layer.ts';
+import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
+import { createRaindropBedrock } from '@raindrop-ai/bedrock';
+import { writeLlmTraceEntry } from '../observability/llm-trace.ts';
+import type { ZoneDigest, ZoneId } from '../score/index.ts';
+// cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry (FR-1 voice prompt surface).
+// flavor.name → safeResolveZoneDisplayName(zone, 'agent-gateway') · per SDD §2.1 SKP-003.
+import { safeResolveZoneDisplayName } from '../domain/zone-registry.ts';
 import { generateStubZoneDigest } from '../score/client.ts';
-import { getWindowEventCount, getWindowWalletCount } from '../score/types.ts';
+import { getWindowEventCount, getWindowWalletCount } from '../score/index.ts';
 import type { PostType } from './post-types.ts';
 import { runOrchestratorQuery } from '../orchestrator/index.ts';
 
@@ -45,11 +69,16 @@ export interface InvokeResponse {
   meta?: Record<string, unknown>;
 }
 
-export type ResolvedProvider = 'stub' | 'anthropic' | 'freeside';
+export type ResolvedProvider = 'stub' | 'anthropic' | 'freeside' | 'bedrock';
 
 let loggedAutoOnce = false;
 
-function resolveProvider(config: Config): ResolvedProvider {
+/**
+ * Resolve the digest-path provider. Exported (V0.12) so the auto-rule
+ * matrix can be unit-tested directly — see
+ * `apps/bot/src/tests/provider-resolution.test.ts`.
+ */
+export function resolveProvider(config: Config): ResolvedProvider {
   switch (config.LLM_PROVIDER) {
     case 'stub':
       return 'stub';
@@ -63,21 +92,37 @@ function resolveProvider(config: Config): ResolvedProvider {
         throw new Error('LLM_PROVIDER=freeside but FREESIDE_API_KEY is unset');
       }
       return 'freeside';
+    case 'bedrock':
+      if (!config.AWS_BEARER_TOKEN_BEDROCK && !config.BEDROCK_API_KEY) {
+throw new Error(
+  'LLM_PROVIDER=bedrock is configured, but this provider is not enabled in this runtime path. See docs/EILEEN-LOCAL-BEDROCK-SPLIT.md.',
+);
+      }
+      return 'bedrock';
     case 'auto': {
-      // V0.3 back-compat: anthropic > stub > freeside
-      const resolved: ResolvedProvider = config.ANTHROPIC_API_KEY
-        ? 'anthropic'
-        : config.STUB_MODE
-          ? 'stub'
-          : config.FREESIDE_API_KEY
-            ? 'freeside'
-            : (() => {
-                throw new Error(
-                  'LLM_PROVIDER=auto: no provider available — set STUB_MODE=true, ANTHROPIC_API_KEY, or FREESIDE_API_KEY',
-                );
-              })();
+      // V0.12: bedrock-first when AWS env present (cost-bearing default ·
+      // operator-named 2026-05-01) → anthropic (dev fallback) → stub →
+      // freeside. ANTHROPIC_API_KEY remains an explicit opt-in for dev:
+      // either set LLM_PROVIDER=anthropic, or unset AWS_BEARER_TOKEN_BEDROCK
+      // / BEDROCK_API_KEY in the dev env so the auto-resolver falls through.
+      const bedrockEnv = config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY;
+      const resolved: ResolvedProvider = bedrockEnv
+        ? 'bedrock'
+        : config.ANTHROPIC_API_KEY
+          ? 'anthropic'
+          : config.STUB_MODE
+            ? 'stub'
+            : config.FREESIDE_API_KEY
+              ? 'freeside'
+              : (() => {
+                  throw new Error(
+                    'LLM_PROVIDER=auto: no provider available — set bedrock (AWS_BEARER_TOKEN_BEDROCK), STUB_MODE=true, ANTHROPIC_API_KEY, or FREESIDE_API_KEY',
+                  );
+                })();
       if (!loggedAutoOnce) {
-        console.log(`llm: LLM_PROVIDER=auto resolved to '${resolved}' (set explicitly to silence this notice)`);
+        console.log(
+          `llm: ${resolved}-direct (LLM_PROVIDER=auto resolved · set explicitly to silence this notice)`,
+        );
         loggedAutoOnce = true;
       }
       return resolved;
@@ -94,6 +139,8 @@ export async function invoke(config: Config, req: InvokeRequest): Promise<Invoke
       return generateStubPost(req);
     case 'freeside':
       return invokeFreeside(config, req);
+    case 'bedrock':
+      return invokeBedrockPlaceholder(config, req);
   }
 }
 
@@ -137,6 +184,181 @@ async function invokeFreeside(config: Config, req: InvokeRequest): Promise<Invok
   return { text: data.text, meta: data.usage };
 }
 
+async function invokeBedrockPlaceholder(config: Config, req: InvokeRequest): Promise<InvokeResponse> {
+  const apiKey = config.AWS_BEARER_TOKEN_BEDROCK || config.BEDROCK_API_KEY;
+  if (!apiKey) {
+    throw new Error('Bedrock provider selected but AWS_BEARER_TOKEN_BEDROCK or BEDROCK_API_KEY is unset');
+  }
+
+  const region = config.BEDROCK_TEXT_REGION || config.AWS_REGION;
+  const modelId = config.BEDROCK_TEXT_MODEL_ID;
+  if (!modelId) {
+    throw new Error('Bedrock provider selected but BEDROCK_TEXT_MODEL_ID is unset');
+  }
+
+  const tracer = getTracer();
+  const startedAt = Date.now();
+  return tracer.startActiveSpan('bedrock.converse', async (span) => {
+    try {
+      span.setAttribute('llm.provider', 'bedrock');
+      span.setAttribute('llm.model_id', modelId);
+      span.setAttribute('llm.region', region);
+      span.setAttribute('llm.system_prompt_preview', req.systemPrompt.slice(0, 500));
+      span.setAttribute('llm.user_message_preview', req.userMessage.slice(0, 500));
+      if (req.zoneHint) span.setAttribute('zone.id', req.zoneHint);
+      if (req.postTypeHint) span.setAttribute('post.type', req.postTypeHint);
+      if (req.character?.id) span.setAttribute('character.id', req.character.id);
+
+      // Feature flag: BEDROCK_USE_SDK=1 opts into @aws-sdk/client-bedrock-runtime
+      // wrapped with @raindrop-ai/bedrock for live trace capture. Default
+      // (legacy fetch) preserves the current production call shape so we can
+      // roll the SDK path forward without forcing the cutover. Both paths
+      // share the same OTEL span + same auth (AWS_BEARER_TOKEN_BEDROCK).
+      const useSdk = process.env.BEDROCK_USE_SDK === '1';
+
+      let text: string | undefined;
+      let usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
+
+      if (useSdk) {
+        // SDK path · auto-picks up AWS_BEARER_TOKEN_BEDROCK from process.env.
+        // The @aws-sdk/client-bedrock-runtime v3.700+ credential provider
+        // chain reads this env var natively (no programmatic config needed).
+        const baseClient = new BedrockRuntimeClient({ region });
+
+        // Raindrop wrap · LOCAL-FIRST mode. The @raindrop-ai/bedrock package
+        // gates its EventShipper (conversation payload) behind a truthy
+        // writeKey. Without one, Workshop UI shows the trace span but
+        // "Waiting for events" because the input/output never ships.
+        //
+        // Workaround: when no cloud writeKey is configured AND a local
+        // Workshop daemon is reachable, supply a dummy writeKey + point
+        // the endpoint at the local daemon. Workshop's /v1/events/track_partial
+        // handler doesn't validate Authorization, so a dummy key works.
+        // No cloud egress: events go to localhost:5899, not api.raindrop.ai.
+        const cloudKey = process.env.RAINDROP_WRITE_KEY;
+        const localDebugger = process.env.RAINDROP_LOCAL_DEBUGGER;
+        const useLocal = !cloudKey && localDebugger;
+        const raindrop = createRaindropBedrock({
+          writeKey: cloudKey ?? (useLocal ? 'rk_workshop_local' : undefined),
+          endpoint: useLocal ? localDebugger : undefined,
+          userId: req.character?.id ?? 'freeside',
+          convoId: req.zoneHint ?? 'default',
+          debug: process.env.RAINDROP_DEBUG === '1',
+        });
+        const client = raindrop.wrap(baseClient);
+
+        const response = await client.send(
+          new ConverseCommand({
+            modelId,
+            system: [{ text: req.systemPrompt }],
+            messages: [{ role: 'user', content: [{ text: req.userMessage }] }],
+            inferenceConfig: { maxTokens: 1024 },
+          }),
+        );
+
+        text = response.output?.message?.content
+          ?.map((part) => part.text)
+          .filter((t): t is string => Boolean(t))
+          .join('\n')
+          .trim();
+        usage = response.usage;
+        span.setAttribute('llm.path', 'sdk');
+      } else {
+        // Legacy REST · path used by production until SDK flag opt-in.
+        const encodedModelId = encodeURIComponent(modelId);
+        const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodedModelId}/converse`;
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            system: [{ text: req.systemPrompt }],
+            messages: [
+              { role: 'user', content: [{ text: req.userMessage }] },
+            ],
+            inferenceConfig: { maxTokens: 1024 },
+          }),
+        });
+
+        if (!response.ok) {
+          const errBody = await response.text();
+          span.setAttribute('error.status_code', response.status);
+          span.setAttribute('error.body_preview', errBody.slice(0, 500));
+          throw new Error(`bedrock converse error: ${response.status} ${errBody}`);
+        }
+
+        const data = (await response.json()) as {
+          output?: { message?: { content?: Array<{ text?: string }> } };
+          usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+        };
+
+        text = data.output?.message?.content
+          ?.map((part) => part.text)
+          .filter((t): t is string => Boolean(t))
+          .join('\n')
+          .trim();
+        usage = data.usage;
+        span.setAttribute('llm.path', 'fetch');
+      }
+
+      if (!text) {
+        throw new Error('bedrock converse returned no text');
+      }
+
+      span.setAttribute('llm.output_preview', text.slice(0, 500));
+      span.setAttribute('llm.input_tokens', usage?.inputTokens ?? 0);
+      span.setAttribute('llm.output_tokens', usage?.outputTokens ?? 0);
+      span.setAttribute('llm.total_tokens', usage?.totalTokens ?? 0);
+
+      // Substrate-native LLM trace · feeds the local dashboard.
+      void writeLlmTraceEntry({
+        at: new Date(startedAt).toISOString(),
+        duration_ms: Date.now() - startedAt,
+        model_id: modelId,
+        region,
+        path: useSdk ? 'sdk' : 'fetch',
+        zone: req.zoneHint,
+        post_type: req.postTypeHint,
+        character_id: req.character?.id,
+        system_prompt: req.systemPrompt,
+        user_message: req.userMessage,
+        output: text,
+        input_tokens: usage?.inputTokens,
+        output_tokens: usage?.outputTokens,
+        total_tokens: usage?.totalTokens,
+      });
+
+      return {
+        text,
+        meta: { provider: 'bedrock', modelId, region, usage },
+      };
+    } catch (err) {
+      span.recordException(err as Error);
+      // Also record errored calls in the trace log.
+      void writeLlmTraceEntry({
+        at: new Date(startedAt).toISOString(),
+        duration_ms: Date.now() - startedAt,
+        model_id: modelId,
+        region,
+        path: process.env.BEDROCK_USE_SDK === '1' ? 'sdk' : 'fetch',
+        zone: req.zoneHint,
+        post_type: req.postTypeHint,
+        character_id: req.character?.id,
+        system_prompt: req.systemPrompt,
+        user_message: req.userMessage,
+        output: '',
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    } finally {
+      span.end();
+    }
+  });
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // Stub generators per post-type
 // ──────────────────────────────────────────────────────────────────────
@@ -168,7 +390,7 @@ function generateStubPost(req: InvokeRequest): InvokeResponse {
 }
 
 function stubDigest(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const stats = digest.raw_stats;
   const total = getWindowEventCount(stats);
   const wallets = getWindowWalletCount(stats);
@@ -177,12 +399,12 @@ function stubDigest(digest: ZoneDigest): string {
   const climbed = stats.rank_changes.climbed[0];
 
   if (!digest.narrative) {
-    return `hey ${flavor.name} team — partial snapshot this window. ${total} events confirmed, more pending. ruggy'll repost when the analyst pipeline completes.`;
+    return `hey ${zoneName} team — partial snapshot this window. ${total} events confirmed, more pending. ruggy'll repost when the analyst pipeline completes.`;
   }
 
   if (total < 100) {
     return [
-      `henlo ${flavor.name}, week check-in`,
+      `henlo ${zoneName}, week check-in`,
       ``,
       `> ${total} events · ${wallets} miberas · ${factors.length} factors moved`,
       ``,
@@ -195,7 +417,7 @@ function stubDigest(digest: ZoneDigest): string {
   const isSpike = (factors[0]?.multiplier ?? 1) > 3 || stats.spotlight !== null;
   if (isSpike) {
     return [
-      `ooga booga ${flavor.name} team, big week`,
+      `ooga booga ${zoneName} team, big week`,
       ``,
       `> ${total.toLocaleString()} events · ${wallets} miberas · ${factors.length} factors moved`,
       ``,
@@ -212,7 +434,7 @@ function stubDigest(digest: ZoneDigest): string {
   }
 
   return [
-    `yo ${flavor.name} team, week check-in`,
+    `yo ${zoneName} team, week check-in`,
     ``,
     `> ${total} events · ${wallets} miberas · ${factors.length} factors moved`,
     ``,
@@ -225,53 +447,53 @@ function stubDigest(digest: ZoneDigest): string {
 }
 
 function stubMicro(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const lead = digest.raw_stats.factor_trends[0];
   const climbed = digest.raw_stats.rank_changes.climbed[0];
 
   const opts = [
-    `yo, just peeped ${flavor.name} — ${lead ? `\`${lead.factor_id}\` is steady (${lead.current_count} events). ` : ''}${climbed ? `\`${climbed.wallet}\` quietly climbing.` : 'nothing wild but the og crew is moving.'}`,
-    `${flavor.name}'s been ${lead && lead.multiplier > 2 ? 'buzzin' : 'kinda chill'} today. ${lead ? `\`${lead.factor_id}\` carrying the load.` : 'holding pattern.'}`,
-    `quick peep at ${flavor.name} — ${getWindowEventCount(digest.raw_stats)} events, ${getWindowWalletCount(digest.raw_stats)} miberas active. ${climbed ? `solid stack from \`${climbed.wallet}\`.` : 'steady.'}`,
+    `yo, just peeped ${zoneName} — ${lead ? `\`${lead.factor_id}\` is steady (${lead.current_count} events). ` : ''}${climbed ? `\`${climbed.wallet}\` quietly climbing.` : 'nothing wild but the og crew is moving.'}`,
+    `${zoneName}'s been ${lead && lead.multiplier > 2 ? 'buzzin' : 'kinda chill'} today. ${lead ? `\`${lead.factor_id}\` carrying the load.` : 'holding pattern.'}`,
+    `quick peep at ${zoneName} — ${getWindowEventCount(digest.raw_stats)} events, ${getWindowWalletCount(digest.raw_stats)} miberas active. ${climbed ? `solid stack from \`${climbed.wallet}\`.` : 'steady.'}`,
   ];
   return opts[Math.floor(Math.random() * opts.length)] ?? opts[0]!;
 }
 
 function stubWeaver(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
-  return `noticed something across the festival this week — ${flavor.name} is buzzin (${getWindowEventCount(digest.raw_stats)} events) but the same miberas keep showing up across multiple zones. that's the og pattern: stack everywhere, not just one zone. keep a peep on the cross-zone movers.`;
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
+  return `noticed something across the festival this week — ${zoneName} is buzzin (${getWindowEventCount(digest.raw_stats)} events) but the same miberas keep showing up across multiple zones. that's the og pattern: stack everywhere, not just one zone. keep a peep on the cross-zone movers.`;
 }
 
 function stubLoreDrop(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const archetypes = ['Freetekno', 'Milady', 'Chicago Detroit', 'Acidhouse'];
   const arc = archetypes[Math.floor(Math.random() * archetypes.length)];
-  return `this week's ${flavor.name} energy feels real ${arc} — ${digest.raw_stats.factor_trends.length > 2 ? 'distributed and kinetic' : 'narrow and focused'}. the codex remembers.`;
+  return `this week's ${zoneName} energy feels real ${arc} — ${digest.raw_stats.factor_trends.length > 2 ? 'distributed and kinetic' : 'narrow and focused'}. the codex remembers.`;
 }
 
 function stubQuestion(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const opts = [
-    `ngl, ${flavor.name}'s been weirdly ${getWindowEventCount(digest.raw_stats) < 200 ? 'chill' : 'lively'} this week. anyone else see it?`,
-    `serious question — what's everyone's read on ${flavor.name} right now?`,
-    `${flavor.name} regulars: y'all noticing the same patterns ruggy is?`,
+    `ngl, ${zoneName}'s been weirdly ${getWindowEventCount(digest.raw_stats) < 200 ? 'chill' : 'lively'} this week. anyone else see it?`,
+    `serious question — what's everyone's read on ${zoneName} right now?`,
+    `${zoneName} regulars: y'all noticing the same patterns ruggy is?`,
   ];
   return opts[Math.floor(Math.random() * opts.length)] ?? opts[0]!;
 }
 
 function stubCallout(digest: ZoneDigest): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const zoneName = safeResolveZoneDisplayName(digest.zone, 'agent-gateway');
   const stats = digest.raw_stats;
   if (stats.spotlight) {
-    return `🚨 ${flavor.name} — \`${stats.spotlight.wallet}\` flagged for ${stats.spotlight.reason.replace('_', ' ')}. that's the heaviest move ruggy's logged this cycle. someone's making moves.`;
+    return `🚨 ${zoneName} — \`${stats.spotlight.wallet}\` flagged for ${stats.spotlight.reason.replace('_', ' ')}. that's the heaviest move ruggy's logged this cycle. someone's making moves.`;
   }
   const climbed = stats.rank_changes.climbed[0];
   if (climbed) {
-    return `🚨 ${flavor.name} — \`${climbed.wallet}\` jumped from #${climbed.prior_rank} → #${climbed.current_rank}. that's a ${climbed.rank_delta}-place delta in one window. worth a peek.`;
+    return `🚨 ${zoneName} — \`${climbed.wallet}\` jumped from #${climbed.prior_rank} → #${climbed.current_rank}. that's a ${climbed.rank_delta}-place delta in one window. worth a peek.`;
   }
   const factor = stats.factor_trends.find((t) => t.multiplier >= 5);
   if (factor) {
-    return `🚨 ${flavor.name} — \`${factor.factor_id}\` running at ${factor.multiplier.toFixed(1)}× baseline this window. that's well above pattern.`;
+    return `🚨 ${zoneName} — \`${factor.factor_id}\` running at ${factor.multiplier.toFixed(1)}× baseline this window. that's well above pattern.`;
   }
-  return `🚨 ${flavor.name} — anomaly check tripped but pattern is unclear. ruggy'll dig into this.`;
+  return `🚨 ${zoneName} — anomaly check tripped but pattern is unclear. ruggy'll dig into this.`;
 }

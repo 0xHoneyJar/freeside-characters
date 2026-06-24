@@ -1,0 +1,32 @@
+{
+  "fixture_id": "recorded-unknown-version-envelope-001",
+  "fixture_kind": "recorded_dixie_recall_envelope",
+  "fixture_version": "phase-35d.0",
+  "envelope_version": "recall_wedge.dixie_envelope.v999_unknown",
+  "input_envelope_kind": "recorded_dixie_recall_envelope",
+  "source_interface": "private_web_chat",
+  "synthetic": true,
+  "non_production_authorization_note": "This envelope is synthetic and reviewed. It is intentionally tagged with an unknown envelope_version so the adapter must fail closed. Authorized for non-production fixture use in Phase 35D only.",
+  "envelope_scope_note": "This represents a Dixie-shaped envelope whose version is not known to the adapter. The adapter must reject it with unsupported_dixie_envelope_version and produce no projected DTO and no rendered output.",
+  "session_id": "session_PRIVATE_SENTINEL_DIXIE_SESSION_ID_003",
+  "message_id": "msg_PRIVATE_SENTINEL_DIXIE_MESSAGE_ID_003",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "target_projection": {
+    "recall_interface": "public_discord",
+    "render_surface": "discord_public_character",
+    "character_frame": "ruggy"
+  },
+  "public_recall_payload": {
+    "outcome": "ok",
+    "public_summary": "this payload is unreachable because envelope_version is unsupported",
+    "included_count": 0
+  },
+  "raw_dixie_debug": {
+    "raw_reasons": [
+      "unknown_version_envelope_PRIVATE_SENTINEL_DIXIE_RAW"
+    ],
+    "raw_session_trace": "trace_PRIVATE_SENTINEL_DIXIE_RAW_UNKNOWN_VERSION_TRACE",
+    "operator_private_note": "operator-only diagnostic context for this unknown-version envelope PRIVATE_SENTINEL_DIXIE_RAW"
+  },
+  "source_material": "unknown_version_envelope_source_blob_PRIVATE_SENTINEL_DIXIE_RAW"
+}

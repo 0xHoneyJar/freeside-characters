@@ -1,0 +1,47 @@
+{
+  "fixture_id": "recorded-public-discord-recall-envelope-001",
+  "fixture_kind": "recorded_dixie_recall_envelope",
+  "fixture_version": "phase-35d.0",
+  "envelope_version": "recall_wedge.dixie_envelope.v0",
+  "input_envelope_kind": "recorded_dixie_recall_envelope",
+  "source_interface": "private_web_chat",
+  "source_surface_note": "carrier source is private web chat; the projection target inside this envelope is the public discord render surface — same envelope can be projected to other surfaces by the adapter when authorized",
+  "synthetic": true,
+  "non_production_authorization_note": "This envelope is synthetic and reviewed. It contains no real user data, no live Dixie response, no live Finn output, and no governed Straylight memory. Authorized for non-production fixture use in Phase 35D only.",
+  "envelope_scope_note": "This represents a recorded Dixie-shaped recall response / projected recall payload. It is NOT raw chat log memory. It does NOT constitute admission of any chat content into governed Straylight memory. Memory authority remains with Straylight; live admission is post-MVP and out of scope.",
+  "session_id": "session_PRIVATE_SENTINEL_DIXIE_SESSION_ID_001",
+  "message_id": "msg_PRIVATE_SENTINEL_DIXIE_MESSAGE_ID_001",
+  "continuity_actor_id": "freeside-characters:shared-substrate",
+  "target_projection": {
+    "recall_interface": "public_discord",
+    "render_surface": "discord_public_character",
+    "character_frame": "ruggy"
+  },
+  "public_recall_payload": {
+    "outcome": "ok",
+    "public_summary": "actor is rehearsing the cross-interface continuity demo; voice preferences and participation observed across the substrate's character frames",
+    "included_count": 3,
+    "marked_count": 0,
+    "redacted_count": 1,
+    "excluded_count": 1,
+    "public_reason_counts": {
+      "redacted_for_public_surface": 1,
+      "excluded_from_public_surface": 1
+    },
+    "public_reason_labels": [
+      "redacted_for_public_surface",
+      "excluded_from_public_surface"
+    ],
+    "denied_or_refused": false
+  },
+  "raw_dixie_debug": {
+    "raw_reasons": [
+      "seed_authored_by_operator_PRIVATE_SENTINEL_DIXIE_RAW",
+      "voice_doctrine_seed_PRIVATE_SENTINEL_DIXIE_RAW",
+      "fixture_seed_context_PRIVATE_SENTINEL_DIXIE_RAW"
+    ],
+    "raw_session_trace": "trace_PRIVATE_SENTINEL_DIXIE_RAW_SESSION_TRACE",
+    "operator_private_note": "operator-only diagnostic context for this envelope PRIVATE_SENTINEL_DIXIE_RAW"
+  },
+  "source_material": "synthetic_envelope_source_blob_PRIVATE_SENTINEL_DIXIE_RAW"
+}

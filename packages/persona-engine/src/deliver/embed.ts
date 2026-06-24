@@ -6,12 +6,39 @@
  *
  * For embedded types: ALWAYS populate `message.content` as graceful
  * fallback for users with embeds disabled.
+ *
+ * Cycle R Sprint 3: opts.medium threads through @0xhoneyjar/medium-registry
+ * descriptors. Default is DISCORD_WEBHOOK_DESCRIPTOR (Pattern B shell-bot
+ * delivery) per architect lock A4 + the SKP-001 ctx-split. Future
+ * non-Discord consumers (cli-renderer, telegram-renderer cycles) pass
+ * their own descriptor.
  */
 
-import type { ZoneDigest, ZoneId } from '../score/types.ts';
-import { ZONE_FLAVOR, DIMENSION_NAME } from '../score/types.ts';
+import {
+  DISCORD_WEBHOOK_DESCRIPTOR,
+  hasCapability,
+  mediumIdOf,
+  type MediumCapability,
+} from '@0xhoneyjar/medium-registry';
+import type {
+  FactorStats,
+  PulseDimensionBreakdown,
+  PulseDimensionFactor,
+  ZoneDigest,
+  ZoneId,
+} from '../score/index.ts';
+import { DIMENSION_NAME } from '../score/index.ts';
+// cycle-007 S1/T1.3 · ZONE_FLAVOR migration to canonical zone-registry.
+// Note: embed.ts uses .name → migrate to .displayName via ZONE_REGISTRY.
+import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
+import type { ProseGateValidation } from './prose-gate.ts';
 import { POST_TYPE_SPECS, type PostType } from '../compose/post-types.ts';
-import { escapeDiscordMarkdown } from './sanitize.ts';
+import {
+  escapeDiscordMarkdown,
+  stripToolMarkup,
+  stripVoiceDisciplineDrift,
+  type VoiceMediumId,
+} from './sanitize.ts';
 
 const DIRECTION_COLORS = {
   green: 0x2ecc71,
@@ -30,25 +57,82 @@ const ZONE_COLORS: Record<ZoneId, number> = {
 export interface DigestPayload {
   content: string;
   embeds: DiscordEmbed[];
+  /**
+   * cycle-008 S9 · Components V2 (the enriched digest surface · DIGEST_SURFACE=enriched-v2).
+   * When `components` is set, delivery sends `{ flags, components }` via raw REST (+
+   * `?with_components=true`) instead of `content`/`embeds` — Discord ignores content/embeds
+   * once the IS_COMPONENTS_V2 flag is set. Absent on the legacy content/embed payloads.
+   */
+  flags?: number;
+  components?: unknown[];
+  /**
+   * cycle-008 T3.9 · optional follow-up message — the "two-beat" delivery:
+   * beat 1 = the agent voice in `content`, beat 2 = the bold data billboard
+   * here. When present, delivery sends `content`/`embeds` first, then this as a
+   * SEPARATE Discord message so voice and substrate read as distinct surfaces
+   * (not the muddy middle that "reads too bot"). Absent on single-message
+   * payloads — fully backwards-compatible. May itself carry Components V2.
+   */
+  secondary?: { content: string; embeds: DiscordEmbed[]; flags?: number; components?: unknown[] };
 }
 
 export interface DiscordEmbed {
   color?: number;
+  /**
+   * Optional embed title · bold, ~24px, single line, max 256 chars.
+   * cycle-007 S8 r4: added for dimension-pulse mirror (score-dashboard format).
+   * Existing voiced-digest renderers do not set this · backwards compatible.
+   */
+  title?: string;
   description?: string;
   fields?: Array<{ name: string; value: string; inline?: boolean }>;
   footer?: { text: string };
+}
+
+export interface BuildPostPayloadOpts {
+  /**
+   * Active medium descriptor. Cycle R Sprint 3 — defaults to
+   * DISCORD_WEBHOOK_DESCRIPTOR (Pattern B shell-bot · the persona-bot
+   * default). Pass DISCORD_INTERACTION_DESCRIPTOR for slash-command
+   * responses or CLI_DESCRIPTOR for cli-renderer pre-formatting.
+   */
+  readonly medium?: MediumCapability;
 }
 
 export function buildPostPayload(
   digest: ZoneDigest,
   voice: string,
   postType: PostType,
+  opts: BuildPostPayloadOpts = {},
 ): DigestPayload {
   const spec = POST_TYPE_SPECS[postType];
-  const sanitized = escapeDiscordMarkdown(voice);
+  const medium = opts.medium ?? DISCORD_WEBHOOK_DESCRIPTOR;
+  const mediumId = mediumIdOf(medium) as VoiceMediumId;
 
-  if (!spec.useEmbed) {
-    // Plain content for micro / lore_drop / question — lightweight
+  // Strip tool-call markup FIRST — defense in depth for the production
+  // digest leak (2026-05-13). Primary defense lives in orchestrator/
+  // index.ts (skip text from tool-using assistant turns), but this
+  // catches any stringified tool-call that slips through (LLM emitting
+  // tool-call as text in a synthesis turn). No-op when the orchestrator
+  // produced clean output.
+  const toolMarkupStripped = stripToolMarkup(voice);
+  // Voice discipline runs BEFORE markdown escape: strip em-dashes,
+  // asterisk roleplay, and (non-digest) closing signoffs. Digest is the
+  // only post-type that retains "stay groovy 🐻"-style closings per
+  // discord-native-register doctrine. Per cmp-boundary §9 voice-discipline
+  // drift class · cycle R cmp-boundary-architecture S1. Sprint 3 threads
+  // mediumId for CLI ANSI-strip + future medium-specific register tunes.
+  const voiceCleaned = stripVoiceDisciplineDrift(toolMarkupStripped, { postType, mediumId });
+  const sanitized = escapeDiscordMarkdown(voiceCleaned);
+
+  // Cycle R Sprint 3 — gate embed shape on registry capability. Most
+  // calls land DISCORD_WEBHOOK_DESCRIPTOR which has embed=true; the
+  // gate is a safety net for future non-Discord callers.
+  const useEmbed = spec.useEmbed && hasCapability(medium, 'embed');
+
+  if (!useEmbed) {
+    // Plain content for micro / lore_drop / question OR for any medium
+    // that doesn't render embeds (CLI · future Telegram).
     return {
       content: sanitized,
       embeds: [],
@@ -56,7 +140,7 @@ export function buildPostPayload(
   }
 
   // Embedded types: digest / weaver / callout
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const flavor = ZONE_REGISTRY[digest.zone];
   const stats = digest.raw_stats;
 
   const hasSpike = stats.spotlight !== null || stats.factor_trends.some((t) => t.multiplier > 2);
@@ -75,7 +159,25 @@ export function buildPostPayload(
             : ZONE_COLORS[digest.zone];
 
   const fallback = buildFallback(digest, postType);
-  const footerText = `${postType} · computed at ${digest.computed_at} · zone:${digest.zone}`;
+  // Staleness-aware footer (V0.12.0 fix, 2026-05-13): per operator's
+  // producer/consumer/middle-zone framing, the middle zone (us, persona-
+  // engine) is responsible for surfacing data validity. Two signals
+  // combined: substrate-emitted `stale: boolean` (score-mibera's own
+  // freshness flag) OR `computed_at` older than 8 days (weekly digest
+  // should refresh within 7 days; 8-day buffer accounts for slack between
+  // cron fires).
+  //
+  // Surface staleness in the footer so the operator can see freshness
+  // at a glance; never hide upstream cache misalignment by displaying
+  // a stale digest as if it were fresh. Substrate fix tracked separately.
+  const computedMs = Date.parse(digest.computed_at);
+  const ageMs = Number.isFinite(computedMs) ? Date.now() - computedMs : 0;
+  const STALE_THRESHOLD_MS = 8 * 24 * 60 * 60 * 1000;
+  const isStale = digest.stale === true || ageMs > STALE_THRESHOLD_MS;
+  const staleMarker = isStale
+    ? ` · STALE (${Math.round(ageMs / (24 * 60 * 60 * 1000))}d old)`
+    : '';
+  const footerText = `${postType} · computed at ${digest.computed_at}${staleMarker} · zone:${digest.zone}`;
 
   return {
     content: fallback,
@@ -90,7 +192,7 @@ export function buildPostPayload(
 }
 
 function buildFallback(digest: ZoneDigest, postType: PostType): string {
-  const flavor = ZONE_FLAVOR[digest.zone];
+  const flavor = ZONE_REGISTRY[digest.zone];
   const dimensionName = DIMENSION_NAME[flavor.dimension];
 
   // V0.6-D voice/v5 (operator 2026-04-30): fallback content is the line
@@ -108,10 +210,10 @@ function buildFallback(digest: ZoneDigest, postType: PostType): string {
   switch (postType) {
     case 'digest':
     case 'weaver':
-      return `${flavor.emoji} ${flavor.name}${dimensionParen}`;
+      return `${flavor.emoji} ${flavor.displayName}${dimensionParen}`;
     case 'callout':
-      return `🚨 ${flavor.name}${dimensionParen}`;
+      return `🚨 ${flavor.displayName}${dimensionParen}`;
     default:
-      return `${flavor.emoji} ${flavor.name}${dimensionParen}`;
+      return `${flavor.emoji} ${flavor.displayName}${dimensionParen}`;
   }
 }
