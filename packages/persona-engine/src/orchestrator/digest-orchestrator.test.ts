@@ -8,7 +8,9 @@
 //   - this file (orchestrator integration: stub port → DigestPostResult shape)
 
 import { describe, expect, test } from 'bun:test';
-import { composeDigestPost, pickSpotlightDisplay, httpsImageUrl, enrichSpotlightPfp, resolveInventoryPfps } from './digest-orchestrator.ts';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { composeDigestPost, pickSpotlightDisplay, httpsImageUrl, resolveInventoryPfps } from './digest-orchestrator.ts';
 import type { Config } from '../config.ts';
 import type { CharacterConfig } from '../types.ts';
 import type { ScoreFetchPort } from '../ports/score-fetch.port.ts';
@@ -729,54 +731,27 @@ describe('httpsImageUrl · pfp thumbnail guard', () => {
   });
 });
 
-describe('enrichSpotlightPfp · inventory-api NFT pfp enrichment (Issue #87)', () => {
-  test('keeps the DB pfp when present (DB wins)', async () => {
-    const id = await enrichSpotlightPfp(
-      { handle: 'nomadbera', pfp_url: 'https://db/pfp.png' },
-      '0xabc',
-      async () => 'https://nft/art.png',
-    );
-    expect(id.pfp_url).toBe('https://db/pfp.png');
-  });
-
-  test('falls back to inventory NFT artwork when DB pfp is null', async () => {
-    const id = await enrichSpotlightPfp(
-      { handle: 'nomadbera', pfp_url: null },
-      '0xabc',
-      async () => 'https://nft/art.png',
-    );
-    expect(id.pfp_url).toBe('https://nft/art.png');
-    expect(id.handle).toBe('nomadbera');
-  });
-
-  test('https-filters the inventory url (non-https dropped → unchanged)', async () => {
-    const id = await enrichSpotlightPfp(
-      { handle: 'nomadbera', pfp_url: null },
-      '0xabc',
-      async () => 'ipfs://Qm/art.png',
-    );
-    expect(id.pfp_url).toBeNull();
-  });
-
-  test('fail-soft: null from inventory leaves the identity unchanged (never anon from a stall)', async () => {
-    const id = await enrichSpotlightPfp(
-      { handle: 'nomadbera', pfp_url: null },
-      '0xabc',
-      async () => null,
-    );
-    expect(id.pfp_url).toBeNull();
-    expect(id.handle).toBe('nomadbera');
-  });
-
-  test('fail-soft: a THROWING resolver preserves the identity — handle intact, never bubbles to anon (FAGAN)', async () => {
-    const id = await enrichSpotlightPfp(
-      { handle: 'nomadbera', pfp_url: null },
-      '0xabc',
-      async () => {
-        throw new Error('inventory building exploded');
-      },
-    );
-    expect(id.handle).toBe('nomadbera'); // the resolved handle survives a thrown resolver
-    expect(id.pfp_url).toBeNull();
+// bd-deg (#87) · the in-process `resolveNftPfp` dynamic-imported `@0xhoneyjar/inventory` — a
+// package present NOWHERE (not a dep, not in node_modules; the Dockerfile injects only
+// `@0xhoneyjar/events`), so it threw on every call → null, every time. It was dead AND redundant:
+// `resolveInventoryPfps` (PR #178) already supplies the real PRIMARY pfp over HTTP, and the
+// renderer precedence `inventoryPfp ?? identities.pfp_url ?? null` shadows it. Option A retired it.
+// This guard keeps the phantom import from creeping back into the digest path. It matches the
+// dynamic-import CALL (not bare prose mentions), so historical comments in sibling files don't trip it.
+describe('no phantom @0xhoneyjar/inventory import in the digest path (bd-deg · #87)', () => {
+  test('the orchestrator source tree contains no live `import("@0xhoneyjar/inventory")` call', () => {
+    const PHANTOM_IMPORT_CALL = /import\s*\(\s*['"]@0xhoneyjar\/inventory/;
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (name.endsWith('.ts') && !name.endsWith('.test.ts')) {
+          if (PHANTOM_IMPORT_CALL.test(readFileSync(p, 'utf8'))) offenders.push(p);
+        }
+      }
+    };
+    walk(import.meta.dir); // packages/persona-engine/src/orchestrator
+    expect(offenders).toEqual([]);
   });
 });
