@@ -25,7 +25,8 @@
     "trace:layer": "bun run scripts/trace.ts layer",
     "trace:voice": "bun run scripts/trace.ts voice",
     "trace:explain": "bun run scripts/trace.ts explain",
-    "digest:once": "bun run --cwd apps/bot digest:once"
+    "digest:once": "bun run --cwd apps/bot digest:once",
+    "discord:invite": "bun run scripts/print-invite-link.ts"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
