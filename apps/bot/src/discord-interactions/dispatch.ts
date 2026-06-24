@@ -85,7 +85,9 @@ import {
 } from './recall-wedge-demo.ts';
 import {
   RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME,
+  RECALL_WEDGE_LIVE_DEMO_GENERIC_REFUSAL,
   handleRecallWedgeLiveDemoInteraction,
+  type RecallWedgeLiveDemoDeps,
 } from './recall-wedge-live-demo.ts';
 import { ROLE_SYNC_COMMAND_NAME } from '../shadow/role-sync-trigger.ts';
 import {
@@ -315,7 +317,18 @@ export async function dispatchSlashCommand(
     !isQuest &&
     interaction.data?.name === RECALL_WEDGE_LIVE_DEMO_COMMAND_NAME
   ) {
-    return await handleRecallWedgeLiveDemoInteraction(interaction);
+    // bd-uia: the gated handler lazily loads the Phase 37C live Dixie client and
+    // awaits a network round-trip (POST /api/recall/intake) that can exceed
+    // Discord's 3s interaction-ACK window — returning it synchronously timed the
+    // interaction out ("application did not respond"). DEFER (ephemeral) first,
+    // then run the gated handler in the background and PATCH @original with its
+    // content. Mirrors the /role-sync deferral. The handler module is UNCHANGED
+    // (still returns the type-4 ephemeral shape); the deferral lives only here.
+    void runRecallWedgeLiveDemoDeferred(interaction);
+    return {
+      type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+      data: { flags: MessageFlags.EPHEMERAL },
+    };
   }
 
   // ─── Circuit breaker pre-check ─────────────────────────────────────
@@ -1385,6 +1398,43 @@ async function runRoleSyncDeferred(
   } catch (err) {
     console.error('role-sync: deferred run failed:', err);
     await patchOriginal(interaction, true, 'role-sync failed — see logs.').catch(() => {});
+  }
+}
+
+/**
+ * DEFERRED background runner for `/recall-wedge-live-demo` (bd-uia). After the
+ * dispatcher ACKs with a deferred ephemeral response, this runs the gated
+ * handler — whose lazy live-Dixie client load + network round-trip is the
+ * reason we deferred past the 3s ACK window — and PATCHes @original with the
+ * handler's ephemeral content. Never throws (it is void-ed); on any failure it
+ * falls back to the SAME generic ephemeral refusal the handler uses, so no raw
+ * error / id / secret reaches Discord (Phase 37B §K posture). `env` / `deps`
+ * default to production values and are parameters ONLY so the deferral can be
+ * driven with an injected (slow) live client in tests.
+ */
+export async function runRecallWedgeLiveDemoDeferred(
+  interaction: DiscordInteraction,
+  env: Record<string, string | undefined> = process.env,
+  deps: RecallWedgeLiveDemoDeps = {},
+): Promise<void> {
+  try {
+    const resp = await handleRecallWedgeLiveDemoInteraction(
+      interaction,
+      env,
+      deps,
+    );
+    const content =
+      typeof resp.data?.content === 'string' && resp.data.content.length > 0
+        ? resp.data.content
+        : RECALL_WEDGE_LIVE_DEMO_GENERIC_REFUSAL;
+    await patchOriginal(interaction, true, content);
+  } catch (err) {
+    console.error('recall-wedge-live-demo: deferred run failed:', err);
+    await patchOriginal(
+      interaction,
+      true,
+      RECALL_WEDGE_LIVE_DEMO_GENERIC_REFUSAL,
+    ).catch(() => {});
   }
 }
 
