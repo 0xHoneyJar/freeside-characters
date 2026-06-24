@@ -17,7 +17,6 @@ import { fetchZoneDigest, fetchRecentBadges } from '../score/client.ts';
 import { buildEnrichedDigestComponentsV2, IS_COMPONENTS_V2, prettyFactorName, deriveSpotlights } from '../deliver/enriched-render.ts';
 import { ZONE_REGISTRY } from '../domain/zone-registry.ts';
 import { resolveWallet, type ResolvedWallet } from './freeside_auth/server.ts';
-import { resolveNftPfp, type NftPfpResolver } from './inventory/resolve-nft-pfp.ts';
 import { fetchProfilePictureHttp } from './inventory/inventory-http-client.ts';
 import type { MintEventSubscriberLogger } from '../events/mint-event-subscriber.ts';
 
@@ -284,34 +283,6 @@ export function pickSpotlightDisplay(r: ResolvedWallet): SpotlightIdentity {
 }
 
 /**
- * Enrich a spotlight identity with the inventory-api building's NFT artwork when
- * freeside_auth has no https pfp on file (Issue #87 · consume-pattern two-organ
- * brief). The DB pfp WINS (operator-curated); inventory supplies real NFT
- * artwork for holders resolvable today (fixtures; auto-upgrades to live-for-all
- * when the sonar owner-token index lands — inventory-api/docs/sonar-ownership-gap.md).
- * Fail-soft: a null/slow building leaves the identity unchanged — the handle is
- * still resolved, so the spotlight is never "an anonymous mibera" from a stall.
- * `nftResolver` is injectable for tests.
- */
-export async function enrichSpotlightPfp(
-  identity: SpotlightIdentity,
-  wallet: string,
-  nftResolver: NftPfpResolver = resolveNftPfp,
-): Promise<SpotlightIdentity> {
-  if (identity.pfp_url) return identity; // DB pfp wins
-  // The default resolveNftPfp is already bounded (3s) + returns null on error, but an injected or
-  // future resolver that THROWS must not bubble up — that would drop the already-resolved handle
-  // to ANON in resolveSpotlightIdentity's catch, breaking this function's fail-soft contract
-  // (FAGAN review 2026-05-24). Catch → return the identity with its handle intact.
-  try {
-    const nft = httpsImageUrl(await nftResolver(wallet));
-    return nft ? { ...identity, pfp_url: nft } : identity;
-  } catch {
-    return identity;
-  }
-}
-
-/**
  * Default spotlight resolver — IN-PROCESS (cycle-008 capability-wiring slice 1). Calls
  * freeside_auth's `resolve_wallet` directly: no HTTP hop. The in-bot auth is an SDK MCP (not an
  * endpoint), and the federated `auth` tenant is a V2 arc (decision #2) — the prior HTTP default
@@ -336,8 +307,8 @@ const SPOTLIGHT_RESOLVE_TIMEOUT_MS = 5_000;
 // the digest — badges are fail-soft enrichment, so a timeout just drops to rank-lines.
 const BADGE_FETCH_TIMEOUT_MS = 3_000;
 
-// Bound the per-wallet inventory-api pfp fetch (#87 GAP-2). Matches resolveNftPfp's 3s posture —
-// a slow building must not wedge a digest zone. The HTTP client's AbortController honors this; on
+// Bound the per-wallet inventory-api pfp fetch (#87 GAP-2). 3s posture — a slow building must
+// not wedge a digest zone. The HTTP client's AbortController honors this; on
 // timeout the wallet's pfp fail-softs to null → the DB pfp fallback (or no image) applies.
 const INVENTORY_PFP_TIMEOUT_MS = 3_000;
 
@@ -362,7 +333,10 @@ async function resolveSpotlightIdentity(wallet: string): Promise<SpotlightIdenti
         );
       }),
     ]);
-    return enrichSpotlightPfp(pickSpotlightDisplay(resolved), wallet);
+    // pfp here is the freeside_auth DB pfp (the FALLBACK). The PRIMARY inventory-api pfp is
+    // resolved separately in resolveInventoryPfps + applied via resolvePfp's precedence
+    // (inventoryPfp ?? identities.pfp_url ?? null) — so identity resolution stays handle+DB only.
+    return pickSpotlightDisplay(resolved);
   } catch {
     return anon; // NFR-29: never a raw 0x… reaches prose, even on timeout
   } finally {
