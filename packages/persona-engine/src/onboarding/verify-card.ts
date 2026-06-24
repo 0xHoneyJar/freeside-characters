@@ -39,6 +39,9 @@ export interface VerifyCardOpts {
   buttonLabel?: string;
 }
 
+/** The CM-overridable keys of VerifyCardOpts. Keep in sync with the interface above. */
+const VERIFY_CARD_COPY_KEYS: readonly string[] = ['title', 'body', 'buttonLabel'];
+
 /**
  * Build the verify card as a Components V2 container (send with IS_COMPONENTS_V2 flag).
  * Pure — no network, no identity. The identity binding happens at click time (C2).
@@ -86,7 +89,33 @@ export function buildVerifyCard(opts: VerifyCardOpts = {}): unknown[] {
  * @param worldId world slug. The caller MUST supply this; there is no world default here so
  *        the per-world contract is explicit at the call site.
  */
-export async function buildVerifyCardForWorld(worldId: string): Promise<unknown[]> {
-  const cfg = await getSurfaceConfig(worldId, 'onboarding:verify');
-  return buildVerifyCard(cfg?.enabled ? cfg.copy : {});
+export async function buildVerifyCardForWorld(
+  worldId: string,
+  resolveConfig: typeof getSurfaceConfig = getSurfaceConfig,
+): Promise<unknown[]> {
+  const cfg = await resolveConfig(worldId, 'onboarding:verify');
+  if (!cfg?.enabled) return buildVerifyCard({});
+
+  // Narrow the CM-supplied copy to the keys VerifyCardOpts actually renders, and warn on any
+  // unknown keys. Without this, an enabled row with a wrong key name (e.g. {"header":...}
+  // instead of {"title":...}) is accepted structurally but silently ignored — the row is
+  // "enabled" yet the card renders defaults, with no signal. Surfacing it makes the
+  // misconfiguration visible at read time (BB #180 MEDIUM).
+  const opts: VerifyCardOpts = {};
+  const unknown: string[] = [];
+  for (const [k, v] of Object.entries(cfg.copy)) {
+    if (VERIFY_CARD_COPY_KEYS.includes(k)) {
+      (opts as Record<string, string>)[k] = v;
+    } else {
+      unknown.push(k);
+    }
+  }
+  if (unknown.length > 0) {
+    console.warn(
+      `[verify-card] world=${worldId} surface=onboarding:verify — surface_config row has keys not in VerifyCardOpts (ignored): ${unknown.join(
+        ', ',
+      )} · valid keys: ${VERIFY_CARD_COPY_KEYS.join(', ')}`,
+    );
+  }
+  return buildVerifyCard(opts);
 }
