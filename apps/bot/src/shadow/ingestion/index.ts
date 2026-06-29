@@ -34,3 +34,14 @@ export {
   type SonarHolder,
   type SonarHoldersClientConfig,
 } from "./sonar-holders-client.ts";
+export {
+  makeIdentityLinkProducer,
+  type IdentityLink,
+  type IdentityLinkReader,
+  type IdentityLinkProducerDeps,
+} from "./identity-link-producer.ts";
+export {
+  ConflictQuarantine,
+  detectConflict,
+  type ConflictQuarantineEntry,
+} from "./quarantine.ts";

@@ -19,6 +19,7 @@
  */
 import type { ShadowLedger } from "./ledger-host.ts";
 import type { ShadowEvent, SourceKind } from "./shadow-mode-contract.ts";
+import { ConflictQuarantine, detectConflict } from "./quarantine.ts";
 import { ProducerError, type SourceProducer, type WorldRef } from "./source-producer.ts";
 
 export interface SourceOutcome {
@@ -35,6 +36,8 @@ export interface IngestionRunSummary {
   readonly timed_out: boolean;
   readonly ingested: number;
   readonly duplicates: number;
+  /** identity stitches refused by the conflict pre-check (S2.3 / R4). */
+  readonly quarantined: number;
   readonly sources: ReadonlyArray<SourceOutcome>;
   /** per-source freshness, for the render banner (SKP-002/780 + S3.2). */
   readonly source_freshness: Readonly<Record<string, "ok" | "stale">>;
@@ -69,6 +72,8 @@ export class IngestionOrchestrator {
     private readonly ledger: ShadowLedger,
     private readonly producers: ReadonlyArray<SourceProducer>,
     private readonly opts: OrchestratorOptions = {},
+    /** optional durable conflict quarantine (S2.3/S2.4); omitted in unit tests. */
+    private readonly quarantine?: ConflictQuarantine,
   ) {}
 
   async run(world: WorldRef): Promise<IngestionRunSummary> {
@@ -79,9 +84,35 @@ export class IngestionOrchestrator {
     const outcomes: SourceOutcome[] = [];
     let ingested = 0;
     let duplicates = 0;
+    let quarantined = 0;
 
-    const ingestAll = (events: ReadonlyArray<ShadowEvent>) => {
+    const ingestPlain = (events: ReadonlyArray<ShadowEvent>) => {
       for (const e of events) {
+        const r = this.ledger.ingest(e);
+        if (r.status === "ingested") ingested++;
+        else duplicates++;
+      }
+    };
+
+    // Phase-B ingest runs the conflict pre-check as ONE synchronous critical
+    // section per event (SKP-003/820): detect → (quarantine | ingest), no await
+    // between the read and the write.
+    const ingestGuarded = (events: ReadonlyArray<ShadowEvent>, observedAt: string) => {
+      const store = this.ledger.ledgerStore;
+      for (const e of events) {
+        const conflict = detectConflict(store, e);
+        if (conflict) {
+          quarantined++;
+          this.quarantine?.record({
+            community_id: world.community_id,
+            alias: conflict.alias,
+            owned_by_identity: conflict.ownedBy,
+            attempted_by_identity: conflict.attemptedBy,
+            event_id: e.event_id,
+            observed_at: observedAt,
+          });
+          continue; // REFUSE the stitch — never re-point the alias (R4)
+        }
         const r = this.ledger.ingest(e);
         if (r.status === "ingested") ingested++;
         else duplicates++;
@@ -94,14 +125,15 @@ export class IngestionOrchestrator {
     );
     for (const { outcome, events } of aResults) {
       outcomes.push(outcome);
-      ingestAll(events); // commit BEFORE phase B starts (the ordering invariant)
+      ingestPlain(events); // commit BEFORE phase B starts (the ordering invariant)
     }
 
-    // ── Phase B: serial — runs only after every Phase-A subject is committed ───
+    // ── Phase B: serial — conflict-checked, after every Phase-A commit ─────────
+    const observedAt = this.opts.now ? new Date(this.opts.now()).toISOString() : new Date(0).toISOString();
     for (const p of phaseB) {
       const { outcome, events } = await this.runProducer(p, world, perMs);
       outcomes.push(outcome);
-      ingestAll(events);
+      ingestGuarded(events, observedAt);
     }
 
     const degraded = outcomes.some(
@@ -117,6 +149,7 @@ export class IngestionOrchestrator {
       timed_out,
       ingested,
       duplicates,
+      quarantined,
       sources: outcomes,
       source_freshness,
     };
