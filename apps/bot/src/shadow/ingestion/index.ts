@@ -1,0 +1,27 @@
+/**
+ * @freeside-characters/member-ingestion (barrel) — cycle-010 S1.1 (SDD §4.1, BR-3).
+ *
+ * The single import surface for the multi-angle member-graph ingestion layer.
+ * Physically in apps/bot/src/shadow/ingestion/ for now; extraction to the future
+ * `freeside-onboarding` building is a package move, not an N-caller refactor
+ * (it imports NO persona-engine voice — lint-enforced). VOICELESS.
+ */
+export * from "./shadow-mode-contract.ts";
+export * from "./source-producer.ts";
+export { canonicalJSON, computeEventId, makeEvent, type MakeEventMeta } from "./event.ts";
+export {
+  InMemoryLedgerStore,
+  ShadowLedger,
+  ProjectionReader,
+} from "./ledger-host.ts";
+export {
+  IngestionOrchestrator,
+  type IngestionRunSummary,
+  type SourceOutcome,
+  type OrchestratorOptions,
+} from "./orchestrator.ts";
+export {
+  makeDiscordRosterProducer,
+  type DiscordRosterProducerDeps,
+  type RosterReader,
+} from "./discord-roster-producer.ts";
