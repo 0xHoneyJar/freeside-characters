@@ -67,9 +67,9 @@ Producers are **plain async functions** returning `Effect.Effect<ShadowEvent[], 
 ```
 export interface WorldRef {                        // IMP-005: define the port's input
   readonly community_id: string;                   // the ledger community key
-  readonly world_slug: string;                     // e.g. 'phytian'
+  readonly world_slug: string;                     // e.g. 'pythenian'
   readonly guild_id: string;
-  readonly namespace_prefix: string;               // e.g. 'phytian:'
+  readonly namespace_prefix: string;               // e.g. 'pythenian:'
   readonly watched_contracts: ReadonlyArray<string>;
   readonly score_community_slug: string;
 }
@@ -112,7 +112,7 @@ This is a **typed Effect pipeline, not a prose "defensive" note** — the barrie
 - **Enforcement invariant:** the ingestion + projection + render code paths import **only** `RosterSource`/`MemberSource`/`ProjectionReader` — never `RoleWriter`. The `GateCheckedRoleWriter` stays reachable only via `go-live-orchestrator` under a LIVE `WorldLock`. Enforced by the existing cross-repo import-boundary lint + a new **mandatory test asserting zero `RoleWriter` invocations** across ingestion/discrepancy/render.
 
 ### 4.5 Community registration (FR-1)
-`registerCommunity(payload)` validates the minimal payload (PRD FR-1) fail-closed (no partial registration), persists world wiring to the existing world-config seam (`world-config.ts` / `purupuru.yaml`-style manifest), and emits `community.config.updated.v1` (`watched_contracts`, `incumbent_bot_ids`, `role_rank`). Phytians (FR-7) is a config entry, not code.
+`registerCommunity(payload)` validates the minimal payload (PRD FR-1) fail-closed (no partial registration), persists world wiring to the existing world-config seam (`world-config.ts` / `purupuru.yaml`-style manifest), and emits `community.config.updated.v1` (`watched_contracts`, `incumbent_bot_ids`, `role_rank`). Pythenians (FR-7) is a config entry, not code.
 
 ### 4.6 Medium binding (FR-9, scoped)
 `IMediumBinding.resolve(world) → MediumDescriptor`. MVP returns the Discord **interaction** descriptor from `@0xhoneyjar/medium-registry` (modals/buttons available — the `/role-sync` CV2 surfaces). Render adapters assert capability before using modal/ephemeral. True multi-medium (Telegram/CLI) is deferred; the port exists so #72's contract is satisfied without the full extraction.
@@ -145,7 +145,7 @@ This is a **typed Effect pipeline, not a prose "defensive" note** — the barrie
 - **R-1 (NEW, design) — on-chain holder source. ⛔ SPRINT-1 GATE (BR-2), not a task. PARTIALLY SPIKED 2026-06-29:** inventory-api **cannot** serve "holders of contract X" — it exposes only `GET /nfts/{contract}/{tokenId}` (single token) and `GET /profile/{wallet}` (one wallet pfp); there is **no reverse holder-index**. The holder-list candidate is **sonar's `Token` ownership entity via belt-hasura GraphQL** — which per memory exists in PROD Envio but is **not yet ported to the Ponder successor** (`token-entity-gap`, green-belt). **Sprint-1 gate:** confirm a `holders(contract)` GraphQL query against the live belt-hasura endpoint. **If unavailable → G3 degrades to identity-linked-wallets-only** (holders who linked via `/verify` appear as `identity_user`; pure on-chain-only holders do not) and a sonar Token-entity-port issue is filed — never worked around in-consumer.
 - **R-2 — substrate alias last-writer ceiling.** Handled consumer-side by §4.4 conflict pre-check; do not depend on a substrate fix this cycle.
 - **R-3 — package availability** (D-1 above).
-- **R-4 — projection pagination** absent; bound to demo/Purupuru/Phytians-scale communities; large communities are a fast-follow.
+- **R-4 — projection pagination** absent; bound to demo/Purupuru/Pythenians-scale communities; large communities are a fast-follow.
 - **R-5 — rate limits** on roster + on-chain reads; batch + reuse opcode-8 cache.
 
 ## 9. Open items for Bridgebuilder + Flatline SDD review

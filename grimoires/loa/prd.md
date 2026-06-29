@@ -8,7 +8,7 @@
 
 ## 0. The one-sentence frame
 
-Let a **new community** (Phytians and beyond) onboard the Freeside bot and watch its **canonical member graph fill bottom-up from whatever angle members actually arrive** — Discord roster, on-chain holdings, identity links — **without every member manually verifying and without the team being asked to do setup work** — staying voiceless and shadow-first (compute, never mutate, before go-live).
+Let a **new community** (Pythenians and beyond) onboard the Freeside bot and watch its **canonical member graph fill bottom-up from whatever angle members actually arrive** — Discord roster, on-chain holdings, identity links — **without every member manually verifying and without the team being asked to do setup work** — staying voiceless and shadow-first (compute, never mutate, before go-live).
 
 ## 1. Problem
 
@@ -39,7 +39,7 @@ Meanwhile the substrate half is **built, merged, and explicitly unconsumed**: th
 | G2 — Fill from **≥3 angles** | The graph for a world contains subjects of kind `discord_member`, `wallet_only`, **and** `identity_user` (reconciled) — i.e. produced from Discord roster, sonar attribution, and identity links. |
 | G3 — Bottom-up, no-ask | A wallet that holds the collection appears as a `wallet_only` subject **before** it joins Discord or runs `/verify`, **within one ingestion cycle of on-chain detection** (cadence per OQ2). Measured by a test that seeds a holder absent from the roster and asserts a `wallet_only` subject in the projection. |
 | G4 — Prove the substrate by consuming it | The consumer produces events into and reads projections from the `shadow-mode-api` ledger — closing the PR #316 deployed-but-unconsumed fast-follow. |
-| G5 — Phytians onboards | Phytians (no config in this repo today) reaches a shadow-mode discrepancy report end-to-end. **Gate (per IMP-003):** if Phytians on-chain/score data is unavailable (D1), G5 **demotes to a fixture-backed demo bring-up** — the registration→ingest→discrepancy *path* is the deliverable, not live Phytians data. |
+| G5 — Pythenians onboards | Pythenians (no config in this repo today) reaches a shadow-mode discrepancy report end-to-end. **Gate (per IMP-003):** if Pythenians on-chain/score data is unavailable (D1), G5 **demotes to a fixture-backed demo bring-up** — the registration→ingest→discrepancy *path* is the deliverable, not live Pythenians data. |
 
 ## 4. Non-goals & guardrails (load-bearing)
 
@@ -61,7 +61,7 @@ Meanwhile the substrate half is **built, merged, and explicitly unconsumed**: th
 
 **FR-1 — Community/medium bring-up (absorb a guild).** A typed registration path that introduces a new `community_id` + its Discord guild + source config, emitting `CommunityConfigUpdated`. This is the "absorb a guild" primitive. **Note:** this is *registration*, distinct from mediums-api (FR-9).
 
-*Minimal registration payload (per SKP-004, enumerated so "zero hand-edited app code" is real, not aspirational):* `community_id` · `world_slug` · `discord_guild_id` · `namespace_prefix` (e.g. `phytian:`) · `collection_contracts[]` (the on-chain holder source) · `score_community_slug` (the tier source) · `identity_authority` (which identity-api tenant is authoritative for stitching) · required Discord permissions/intents (GuildMembers). Registration **validates prerequisites** and emits an in-character-neutral failure listing any missing field — it does not partially register.
+*Minimal registration payload (per SKP-004, enumerated so "zero hand-edited app code" is real, not aspirational):* `community_id` · `world_slug` · `discord_guild_id` · `namespace_prefix` (e.g. `pythenian:`) · `collection_contracts[]` (the on-chain holder source) · `score_community_slug` (the tier source) · `identity_authority` (which identity-api tenant is authoritative for stitching) · required Discord permissions/intents (GuildMembers). Registration **validates prerequisites** and emits an in-character-neutral failure listing any missing field — it does not partially register.
 
 **FR-2 — Hexagonal multi-source producers.** A `SourceProducer` port family, each adapter producing the substrate's already-defined events:
 - **FR-2a — Discord roster producer** → `DiscordMemberSnapshot` (wraps existing `member-source.live.ts`).
@@ -76,7 +76,7 @@ Meanwhile the substrate half is **built, merged, and explicitly unconsumed**: th
 
 **FR-6 — Shadow-first + go-live unchanged.** Ingestion feeds the existing go-live orchestrator; no role mutation before operator go-live; rollback always available.
 
-**FR-7 — Phytians bring-up.** Config-only path: register (FR-1) → produce (FR-2) → discrepancy report (FR-5), no app-code changes.
+**FR-7 — Pythenians bring-up.** Config-only path: register (FR-1) → produce (FR-2) → discrepancy report (FR-5), no app-code changes.
 
 **FR-8 (stretch) — Real-time fill via NATS.** Consume guild + member lifecycle events (loa-freeside #292) so the graph updates on join/leave/mint vs pull-only. MVP pull-first; this is the push follow. **Cut condition (per IMP-005):** FR-8 is OUT of the MVP sprint unless pull-first (FR-2) lands with ≥1 sprint of budget remaining; sprint planning schedules it as a separately-acceptance-criteria'd sprint, never bundled into the MVP definition-of-done.
 
@@ -122,13 +122,13 @@ From the `shadow-mode-api` README "Operational ceilings" — these gate going LI
 - **R3 — Scope creep into substrate.** R1/R2 are loa-freeside work the operator wants to avoid. The **in-process-reducer (Z)** path sidesteps both for a shadow-compute MVP (recompute-from-sources each cycle; no durable ledger needed). Surface, don't silently build a parallel graph (the trap we're avoiding).
 - **R4 — Identity reconciliation / takeover.** README flags identity-vs-identity conflict is recorded but not surfaced + alias re-points to last writer. Our identity producer (FR-2c) must fail-closed (the account-takeover-shaped bug FAGAN caught in PR #316).
 - **R5 — Rate limits + pagination.** `getMemberGraph`/`getUnresolved` have no pagination; on-chain + `guild.members.fetch` are rate-limited (opcode-8 cache exists). Batch + cache; bound community size.
-- **D1 — score-api world data** for Phytians tiers gates G5 (cf. score-api#221 for Purupuru).
+- **D1 — score-api world data** for Pythenians tiers gates G5 (cf. score-api#221 for Purupuru).
 
 ## 9. Open questions (for Flatline + operator)
 
 - **OQ1 — Consume strategy. ✅ RATIFIED 2026-06-29: Z — in-process reducer.** freeside-characters imports `@freeside/shadow-mode-service` (`ShadowLedger` + `InMemoryLedgerStore`) and runs the reducer in-process over real producers; renders projections from the in-process ledger. No deploy/PG/svc-JWT this cycle. **Accepted ceiling:** no persisted append-only history — divergence-over-time / durable audit-trail is a named follow-cycle (Y), not this MVP. R1/R2 substrate work deferred accordingly.
 - **OQ2 — Pull-first vs event-first** ingestion for MVP (FR-2 vs FR-8 ordering). Bias: pull-first.
-- **OQ3 — Phytians: real near-term target with on-chain presence, or stand-in for "Nth community"?** Affects whether G5 is a live bring-up or a demo.
+- **OQ3 — Pythenians: real near-term target with on-chain presence, or stand-in for "Nth community"?** Affects whether G5 is a live bring-up or a demo.
 - **OQ4 — mediums naming.** You named "mediums API" as the core onboarding feature, but the existing `mediums-api` is a *presentation-capability* registry, not a guild/graph pipeline. Is "mediums" your term for (a) the per-medium render binding (FR-9), (b) the community/guild absorb primitive (FR-1), or (c) both braided? This reconciliation shapes FR-1/FR-9 framing.
 
 ## 10. Flatline PRD review — reconciliation log

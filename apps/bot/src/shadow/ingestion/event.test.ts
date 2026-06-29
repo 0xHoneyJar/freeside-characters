@@ -9,7 +9,7 @@ import { canonicalJSON, computeEventId, makeEvent } from "./event.ts";
 import type { ShadowEvent } from "./shadow-mode-contract.ts";
 
 const meta = {
-  community_id: "phytian",
+  community_id: "pythenian",
   source: "discord" as const,
   truth_status: "observed_only" as const,
   observed_at: "2026-06-29T00:00:00.000Z",
@@ -18,25 +18,25 @@ const meta = {
 
 describe("computeEventId", () => {
   test("golden: identical inputs → identical id (idempotency across re-runs)", () => {
-    const a = computeEventId("discord.member.snapshot.v1", "phytian", "discord", {
+    const a = computeEventId("discord.member.snapshot.v1", "pythenian", "discord", {
       discord_user_id: "111",
-      role_ids: ["phytian:elder"],
+      role_ids: ["pythenian:elder"],
     });
-    const b = computeEventId("discord.member.snapshot.v1", "phytian", "discord", {
-      role_ids: ["phytian:elder"],
+    const b = computeEventId("discord.member.snapshot.v1", "pythenian", "discord", {
+      role_ids: ["pythenian:elder"],
       discord_user_id: "111", // key order differs → must still match (canonical)
     });
     expect(a).toBe(b);
   });
 
   test("counter: a genuine state change (payload differs) → distinct id", () => {
-    const before = computeEventId("discord.member.snapshot.v1", "phytian", "discord", {
+    const before = computeEventId("discord.member.snapshot.v1", "pythenian", "discord", {
       discord_user_id: "111",
       role_ids: [],
     });
-    const after = computeEventId("discord.member.snapshot.v1", "phytian", "discord", {
+    const after = computeEventId("discord.member.snapshot.v1", "pythenian", "discord", {
       discord_user_id: "111",
-      role_ids: ["phytian:elder"], // role added
+      role_ids: ["pythenian:elder"], // role added
     });
     expect(before).not.toBe(after);
   });

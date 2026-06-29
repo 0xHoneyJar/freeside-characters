@@ -10,12 +10,12 @@ import { makeOnChainHolderProducer } from "./onchain-holder-producer.ts";
 import type { WorldRef } from "./source-producer.ts";
 
 const WORLD: WorldRef = {
-  community_id: "phytian",
-  world_slug: "phytian",
+  community_id: "pythenian",
+  world_slug: "pythenian",
   guild_id: "g1",
-  namespace_prefix: "phytian:",
+  namespace_prefix: "pythenian:",
   watched_contracts: ["0xABCdef0000000000000000000000000000000001"],
-  score_community_slug: "phytian",
+  score_community_slug: "pythenian",
 };
 
 function stubFetch(holders: Array<{ address: string; contract: string; tokenCount: number }>): typeof fetch {
@@ -43,7 +43,7 @@ describe("OnChainHolderProducer", () => {
     const summary = await new IngestionOrchestrator(ledger, [producer]).run(WORLD);
     expect(summary.degraded).toBe(false);
 
-    const subjects = ledger.getMemberGraph("phytian").subjects;
+    const subjects = ledger.getMemberGraph("pythenian").subjects;
     const walletOnly = subjects.find((s) => s.kind === "wallet_only");
     expect(walletOnly).toBeDefined();
     expect(walletOnly!.wallets[0].address).toBe("0xWALLET1");
@@ -57,6 +57,6 @@ describe("OnChainHolderProducer", () => {
     });
     const summary = await new IngestionOrchestrator(ledger, [producer]).run(WORLD);
     expect(summary.degraded).toBe(false); // sonar is optional
-    expect(ledger.getMemberGraph("phytian").subjects.length).toBe(0);
+    expect(ledger.getMemberGraph("pythenian").subjects.length).toBe(0);
   });
 });

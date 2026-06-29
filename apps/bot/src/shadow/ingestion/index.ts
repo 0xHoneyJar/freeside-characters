@@ -66,8 +66,10 @@ export {
 export {
   registerCommunity,
   missingFields,
+  parseShadowOnboarding,
+  manifestPathForWorld,
   RegistrationError,
-  type RegistrationPayload,
+  type ShadowOnboardingConfig,
   type RegisterOptions,
   type RegistrationResult,
 } from "./registration.ts";

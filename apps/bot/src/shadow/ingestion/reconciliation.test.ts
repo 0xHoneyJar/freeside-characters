@@ -15,12 +15,12 @@ import { walletAlias, type ShadowEvent } from "./shadow-mode-contract.ts";
 import type { SourceProducer, WorldRef } from "./source-producer.ts";
 
 const WORLD: WorldRef = {
-  community_id: "phytian",
-  world_slug: "phytian",
+  community_id: "pythenian",
+  world_slug: "pythenian",
   guild_id: "g1",
-  namespace_prefix: "phytian:",
+  namespace_prefix: "pythenian:",
   watched_contracts: ["0xCAFE"],
-  score_community_slug: "phytian",
+  score_community_slug: "pythenian",
 };
 const at = () => "2026-06-29T00:00:00.000Z";
 
@@ -34,7 +34,7 @@ function discordProducer(discordId: string): SourceProducer {
         makeEvent<Extract<ShadowEvent, { name: "discord.member.snapshot.v1" }>>(
           "discord.member.snapshot.v1",
           { discord_user_id: discordId, display_name: "ada", role_ids: [] },
-          { community_id: "phytian", source: "discord", truth_status: "observed_only", observed_at: at(), emitted_at: at() },
+          { community_id: "pythenian", source: "discord", truth_status: "observed_only", observed_at: at(), emitted_at: at() },
         ),
       ];
     },
@@ -59,7 +59,7 @@ describe("multi-angle reconciliation", () => {
     const summary = await new IngestionOrchestrator(ledger, [discordProducer("111"), onchain, identity]).run(WORLD);
     expect(summary.degraded).toBe(false);
 
-    const subjects = ledger.getMemberGraph("phytian").subjects;
+    const subjects = ledger.getMemberGraph("pythenian").subjects;
     const identitySubject = subjects.find((s) => s.kind === "identity_user");
     expect(identitySubject).toBeDefined();
     // the identity absorbed both the wallet and the discord id
@@ -74,7 +74,7 @@ describe("multi-angle reconciliation", () => {
     // A already owns wallet 0xW (seed an identity_user subject bound to it)
     store.upsertSubject({
       subject_id: "subA",
-      community_id: "phytian",
+      community_id: "pythenian",
       kind: "identity_user",
       identity_user_id: "A",
       wallets: [{ address: "0xW" }],
@@ -93,10 +93,10 @@ describe("multi-angle reconciliation", () => {
 
     expect(summary.quarantined).toBe(1); // the stitch was REFUSED
     // wallet still owned by A — not re-pointed to B
-    const owner = store.findSubjectByAlias("phytian", walletAlias({ address: "0xW" }));
+    const owner = store.findSubjectByAlias("pythenian", walletAlias({ address: "0xW" }));
     expect(owner!.identity_user_id).toBe("A");
     // B did not gain a subject that owns the contested wallet
-    const bSubject = store.findSubjectByAlias("phytian", "identity:B");
+    const bSubject = store.findSubjectByAlias("pythenian", "identity:B");
     expect(bSubject?.wallets?.some((w) => w.address === "0xW") ?? false).toBe(false);
   });
 });

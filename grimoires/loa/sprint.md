@@ -51,14 +51,14 @@ Goal: the CM/member-facing surfaces render the multi-source graph; FR-9.
 | S3.2 | Degraded-run banner + source-freshness surface (from S2.5 summary). |
 | S3.3 | `IMediumBinding.resolve(world)` → Discord interaction descriptor via `@0xhoneyjar/medium-registry` (FR-9 / #72); render asserts capability before modal/ephemeral. |
 
-## Sprint 4: Community registration + Phytians bring-up (config-only proof)
+## Sprint 4: Community registration + Pythenians bring-up (config-only proof)
 
 Goal: a new community onboards by config, reaching a discrepancy report (G1, G5, G7).
 
 | Task | AC |
 |---|---|
 | S4.1 | `registerCommunity(payload)` — minimal payload (PRD FR-1), fail-closed validation (no partial), emits `community.config.updated.v1`. **Persistence = a runtime `world-config.json` (or `.run/` keyed config) loaded at startup — NOT runtime mutation of a `.ts` source (Flatline SKP-002/860).** **Authz (SKP-005/710): registration is privileged** — permitted caller surface only (admin CLI / operator-signed payload / sietch auth gate); AC exercises the rejection path for an unpermitted caller. |
-| S4.2 | **Phytians bring-up = config entry only** (FR-7). AC: register → ingest → discrepancy report end-to-end. **G5 gate:** if Phytians on-chain/score data unavailable → fixture-backed demo (the path is the deliverable). |
+| S4.2 | **Pythenians bring-up = config entry only** (FR-7). AC: register → ingest → discrepancy report end-to-end. **G5 gate:** if Pythenians on-chain/score data unavailable → fixture-backed demo (the path is the deliverable). |
 
 ## Out of this cycle (cut conditions honored)
 
@@ -72,7 +72,7 @@ Goal: a new community onboards by config, reaching a discrepancy report (G1, G5,
 - Sprint 2 depends on Sprint 1 (port + orchestrator + ledger host).
 - Sprint 3 depends on Sprint 2 (the enriched projection to render).
 - Sprint 4 depends on Sprint 1 (registration emits into the same ledger host); can parallelize with Sprint 3.
-- D-2 (score-api Phytians world data) gates S4.2 live-vs-demo only.
+- D-2 (score-api Pythenians world data) gates S4.2 live-vs-demo only.
 
 ## Flatline Sprint review — reconciliation
 

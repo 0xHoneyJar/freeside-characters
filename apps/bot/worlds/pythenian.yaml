@@ -1,9 +1,9 @@
-# ─── VENDORED WORLD MANIFEST — Phytians (cycle-010 S4.2 config-only bring-up) ──
+# ─── VENDORED WORLD MANIFEST — Pythenians (cycle-010 S4.2 config-only bring-up) ──
 # A NEW community onboarded purely by config (FR-7): no app-code change. The
 # multi-angle ingestion (Discord roster + on-chain holders + identity links)
 # fills the member graph for this world from `shadow_onboarding` below.
 #
-# Resolved by world slug: manifestPath("phytian") → apps/bot/worlds/phytian.yaml.
+# Resolved by world slug: manifestPath("pythenian") → apps/bot/worlds/pythenian.yaml.
 # The LIVE AdminAllowlistSource reads `shadow_onboarding.admin_principals`
 # (FR-10 / SKP-005) — EMPTY is deny-all (fail-safe); registration + go-live are
 # refused until the operator populates it.
@@ -12,26 +12,26 @@
 #   substrate fails CLOSED until they are real.
 # ──────────────────────────────────────────────────────────────────────────────
 schema_version: "1.3"
-slug: phytian
-name: "Phytians"
+slug: pythenian
+name: "Pythenians"
 repo: "0xHoneyJar/freeside-worlds"
-description: "Phytians — the Nth community proving the multi-angle ingestion onboards a new world by config alone (cycle-010). Member graph fills bottom-up from Discord roster + on-chain holders (sonar TrackedHolder) + identity links. Shadow-first: computes a discrepancy report, mutates no roles before operator go-live."
+description: "Pythenians — the Nth community proving the multi-angle ingestion onboards a new world by config alone (cycle-010). Member graph fills bottom-up from Discord roster + on-chain holders (sonar TrackedHolder) + identity links. Shadow-first: computes a discrepancy report, mutates no roles before operator go-live."
 
 shadow_onboarding:
-  # TODO(operator): the Phytians Discord guild snowflake (17-20 digits).
-  guild_id: "TODO_PHYTIAN_GUILD_SNOWFLAKE"
+  # TODO(operator): the Pythenians Discord guild snowflake (17-20 digits).
+  guild_id: "826115122799837205"
 
   # Freeside-managed role-name prefix (FR-9 coexistence — incumbent roles untouched).
-  namespace_prefix: "phytian:"
+  namespace_prefix: "pythenian:"
 
-  # TODO(operator): the NFT contract(s) Phytians members hold. Feeds the
+  # TODO(operator): the NFT contract(s) Pythenians members hold. Feeds the
   # OnChainHolderProducer (sonar TrackedHolder by contract). The contract must be
   # in sonar's tracked set (a per-community onboarding step) for the on-chain
   # angle to be non-empty; otherwise G3 degrades to identity-linked wallets only.
   watched_contracts: []
 
   # The score-api community slug supplying tier data (D2 — gates live vs demo).
-  score_community_slug: "phytian"
+  score_community_slug: "pythenian"
 
   # The identity-api tenant authoritative for wallet↔discord stitching.
   identity_authority: "freeside"

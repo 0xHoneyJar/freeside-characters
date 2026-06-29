@@ -14,12 +14,12 @@ import type { ShadowEvent } from "./shadow-mode-contract.ts";
 import type { SourceProducer, WorldRef } from "./source-producer.ts";
 
 const WORLD: WorldRef = {
-  community_id: "phytian",
-  world_slug: "phytian",
+  community_id: "pythenian",
+  world_slug: "pythenian",
   guild_id: "g1",
-  namespace_prefix: "phytian:",
+  namespace_prefix: "pythenian:",
   watched_contracts: ["0xabc"],
-  score_community_slug: "phytian",
+  score_community_slug: "pythenian",
 };
 const ts = { observed_at: "2026-06-29T00:00:00.000Z", emitted_at: "2026-06-29T00:00:00.000Z" };
 
@@ -33,7 +33,7 @@ function discordProducer(): SourceProducer {
         makeEvent<Extract<ShadowEvent, { name: "discord.member.snapshot.v1" }>>(
           "discord.member.snapshot.v1",
           { discord_user_id: "111", display_name: "ada", role_ids: [] },
-          { community_id: "phytian", source: "discord", truth_status: "observed_only", ...ts },
+          { community_id: "pythenian", source: "discord", truth_status: "observed_only", ...ts },
         ),
       ];
     },
@@ -49,7 +49,7 @@ function sonarProducer(): SourceProducer {
         makeEvent<Extract<ShadowEvent, { name: "sonar.wallet.attributed.v1" }>>(
           "sonar.wallet.attributed.v1",
           { wallet: { address: "0xWALLET" }, contract_address: "0xabc", edge_kind: "held_at_snapshot" },
-          { community_id: "phytian", source: "sonar", truth_status: "observed_only", ...ts },
+          { community_id: "pythenian", source: "sonar", truth_status: "observed_only", ...ts },
         ),
       ];
     },
@@ -68,14 +68,14 @@ describe("IngestionOrchestrator two-phase", () => {
       async produce() {
         // capture what the ledger already holds at Phase-B produce-time
         kindsSeenWhenIdentityRan = ledger
-          .getMemberGraph("phytian")
+          .getMemberGraph("pythenian")
           .subjects.map((s) => s.kind)
           .sort();
         return [
           makeEvent<Extract<ShadowEvent, { name: "identity.wallet.linked.v1" }>>(
             "identity.wallet.linked.v1",
             { user_id: "u1", wallet: { address: "0xWALLET" } },
-            { community_id: "phytian", source: "identity", truth_status: "verified", ...ts },
+            { community_id: "pythenian", source: "identity", truth_status: "verified", ...ts },
           ),
         ];
       },
@@ -94,7 +94,7 @@ describe("IngestionOrchestrator two-phase", () => {
     expect(summary.degraded).toBe(false);
 
     // and the stitch produced an identity_user that absorbed the wallet
-    const subjects = ledger.getMemberGraph("phytian").subjects;
+    const subjects = ledger.getMemberGraph("pythenian").subjects;
     const identity = subjects.find((s) => s.kind === "identity_user");
     expect(identity).toBeDefined();
     expect(identity!.wallets.some((w) => w.address === "0xWALLET")).toBe(true);

@@ -13,12 +13,12 @@ import {
 import type { WorldRef } from "./source-producer.ts";
 
 const WORLD: WorldRef = {
-  community_id: "phytian",
-  world_slug: "phytian",
+  community_id: "pythenian",
+  world_slug: "pythenian",
   guild_id: "g1",
-  namespace_prefix: "phytian:",
+  namespace_prefix: "pythenian:",
   watched_contracts: [],
-  score_community_slug: "phytian",
+  score_community_slug: "pythenian",
 };
 
 describe("IMediumBinding", () => {

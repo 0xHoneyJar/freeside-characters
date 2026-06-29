@@ -557,5 +557,5 @@ Operator steer ("you have access to sonar, it's on railway"). Discovered via Rai
 
 ### cycle-010 build status (2026-06-29) — engine done, PR open
 - **Draft PR #186** (cycle/multi-angle-member-ingestion → main). Sprints 1+2 (the full ingestion engine) built, 16/16 green, tsc-clean, on-chain LIVE-proven (97 holders).
-- **Remaining (resumable via beads bd-c10-s3-*, bd-c10-s4-*):** S3 render the multi-source graph in discrepancy/board/dashboard CV2 + degraded banner + IMediumBinding; S4 registerCommunity (world-config.json, authz) + Phytians config bring-up.
+- **Remaining (resumable via beads bd-c10-s3-*, bd-c10-s4-*):** S3 render the multi-source graph in discrepancy/board/dashboard CV2 + degraded banner + IMediumBinding; S4 registerCommunity (world-config.json, authz) + Pythenians config bring-up.
 - Resume: `/run sprint-plan --from 3` (or continue interactively).

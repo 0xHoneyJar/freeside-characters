@@ -17,7 +17,7 @@ import type { MemberGraphProjection, ShadowSubject } from "./shadow-mode-contrac
 function subj(kind: ShadowSubject["kind"], over: Partial<ShadowSubject> = {}): ShadowSubject {
   return {
     subject_id: `s_${kind}_${over.subject_id ?? "1"}`,
-    community_id: "phytian",
+    community_id: "pythenian",
     kind,
     wallets: [],
     aliases: [],
@@ -29,17 +29,17 @@ function subj(kind: ShadowSubject["kind"], over: Partial<ShadowSubject> = {}): S
 }
 
 const PROJECTION: MemberGraphProjection = {
-  community_id: "phytian",
+  community_id: "pythenian",
   subjects: [
     subj("wallet_only", { wallets: [{ address: "0xWALLET" }] }),
     subj("discord_member", { discord_user_id: "111", display_name: "ada" }),
-    subj("identity_user", { identity_user_id: "u1", discord_user_id: "111", freeside_roles: ["phytian:elder"] }),
+    subj("identity_user", { identity_user_id: "u1", discord_user_id: "111", freeside_roles: ["pythenian:elder"] }),
     subj("unresolved", { subject_id: "x" }),
   ],
 };
 
 const cleanSummary: IngestionRunSummary = {
-  community_id: "phytian",
+  community_id: "pythenian",
   degraded: false,
   timed_out: false,
   ingested: 4,
@@ -62,7 +62,7 @@ describe("member graph view", () => {
     expect(blob).toContain("On-chain holders");
     expect(blob).toContain("0xWALLET");
     expect(blob).toContain("Needs CM resolution"); // unresolved section present
-    expect(blob).toContain("phytian:elder"); // freeside role on the linked member
+    expect(blob).toContain("pythenian:elder"); // freeside role on the linked member
   });
 
   test("kind→display map is the single source of truth (IMP-008)", () => {

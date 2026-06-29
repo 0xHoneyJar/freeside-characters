@@ -1,41 +1,41 @@
 /**
  * ingestion/registration.ts — community/medium bring-up (cycle-010 S4.1; SDD §4.5,
- * FR-1). The "absorb a guild" primitive: register a new community → derive its
- * `WorldRef` → emit `community.config.updated.v1`. A community then onboards by
- * CONFIG only (FR-7) — no app-code change.
+ * FR-1). The "absorb a guild" primitive: activate a community from its world
+ * manifest → derive its `WorldRef` → emit `community.config.updated.v1`.
  *
- * Fail-closed (Flatline): partial/invalid payloads are REFUSED with the missing
- * fields listed (no partial registration). PRIVILEGED (SKP-005/710): only a
- * caller in the world's `admin_principals` may register — reuses the existing
- * shadow admin-allowlist pattern. Persistence is a RUNTIME JSON registry
- * (`.run/shadow/communities/<id>.json`, SKP-002/860) — never a `.ts` mutation.
+ * SINGLE SOURCE OF TRUTH (operator feedback 2026-06-29 "configs in too many
+ * places"): the config IS the vendored world manifest `apps/bot/worlds/<slug>.yaml`
+ * — the SAME file admin-allowlist.live.ts + role-sync read. Registration READS it;
+ * it does NOT persist a parallel `.run/*.json` (that redundancy was removed).
+ * "Registering" = validate the manifest is complete + authz + emit the event;
+ * the operator authors the manifest (yaml), the bot activates it.
  *
- * VOICELESS: config I/O + an event. No persona, no role mutation.
+ * Fail-closed: incomplete manifest → REFUSED (missing fields listed). PRIVILEGED
+ * (SKP-005): only a caller in the manifest's `shadow_onboarding.admin_principals`
+ * may activate (empty = deny-all, fail-safe). VOICELESS.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve as pathResolve } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { makeEvent } from "./event.ts";
 import type { ShadowEvent } from "./shadow-mode-contract.ts";
 import type { WorldRef } from "./source-producer.ts";
 
-/** The minimal registration payload (PRD FR-1 enumeration). */
-export interface RegistrationPayload {
-  readonly community_id: string;
-  readonly world_slug: string;
-  readonly discord_guild_id: string;
-  readonly namespace_prefix: string;
-  readonly collection_contracts: ReadonlyArray<string>;
-  readonly score_community_slug: string;
-  readonly identity_authority: string;
+/** The `shadow_onboarding` block of a world manifest — the canonical config. */
+export interface ShadowOnboardingConfig {
+  readonly guild_id?: string;
+  readonly namespace_prefix?: string;
+  readonly watched_contracts?: ReadonlyArray<string>;
+  readonly score_community_slug?: string;
+  readonly identity_authority?: string;
   readonly incumbent_bot_ids?: ReadonlyArray<string>;
+  readonly admin_principals?: ReadonlyArray<string>;
 }
 
-const REQUIRED: ReadonlyArray<keyof RegistrationPayload> = [
-  "community_id",
-  "world_slug",
-  "discord_guild_id",
+const REQUIRED: ReadonlyArray<keyof ShadowOnboardingConfig> = [
+  "guild_id",
   "namespace_prefix",
-  "collection_contracts",
+  "watched_contracts",
   "score_community_slug",
   "identity_authority",
 ];
@@ -43,7 +43,7 @@ const REQUIRED: ReadonlyArray<keyof RegistrationPayload> = [
 export class RegistrationError extends Error {
   readonly _tag = "RegistrationError";
   constructor(
-    readonly reason: "missing_fields" | "unauthorized",
+    readonly reason: "missing_fields" | "unauthorized" | "manifest_unreadable",
     message: string,
     readonly missing?: ReadonlyArray<string>,
   ) {
@@ -52,78 +52,92 @@ export class RegistrationError extends Error {
   }
 }
 
+/** Vendored world-manifest directory — the SAME convention role-sync uses. */
+export const WORLDS_DIR = pathResolve(
+  new URL("../../../worlds", import.meta.url).pathname,
+);
+export const manifestPathForWorld = (slug: string): string =>
+  pathResolve(WORLDS_DIR, `${slug}.yaml`);
+
+/** Parse the `shadow_onboarding` block out of a manifest's YAML text. */
+export function parseShadowOnboarding(yamlText: string): ShadowOnboardingConfig {
+  const doc = parseYaml(yamlText) as { shadow_onboarding?: ShadowOnboardingConfig } | undefined;
+  return doc?.shadow_onboarding ?? {};
+}
+
+/** Fields still missing / placeholder in the manifest (empty = complete). */
+export function missingFields(cfg: ShadowOnboardingConfig): string[] {
+  const missing: string[] = [];
+  for (const key of REQUIRED) {
+    const v = cfg[key];
+    if (v === undefined || v === null || v === "") missing.push(key);
+    else if (Array.isArray(v) && v.length === 0) missing.push(key);
+    else if (typeof v === "string" && /^TODO/i.test(v)) missing.push(key); // placeholder
+  }
+  return missing;
+}
+
 export interface RegisterOptions {
-  /** the principal attempting registration (privileged op). */
+  /** the principal attempting activation (privileged op). */
   readonly caller: string;
-  /** the world's admin allowlist (reuses shadow admin_principals; SKP-005). */
-  readonly admin_principals: ReadonlyArray<string>;
-  /** where the runtime registry lives (default `.run/shadow/communities`). */
-  readonly registryDir?: string;
+  /** injectable manifest reader (tests); defaults to reading the vendored yaml. */
+  readonly readManifest?: (slug: string) => string;
   readonly observedAt?: () => string;
 }
 
 export interface RegistrationResult {
   readonly world: WorldRef;
   readonly event: ShadowEvent;
-  readonly config_path: string;
-}
-
-/** Validate fail-closed: returns the list of missing required fields (empty = ok). */
-export function missingFields(payload: Partial<RegistrationPayload>): string[] {
-  const missing: string[] = [];
-  for (const key of REQUIRED) {
-    const v = payload[key];
-    if (v === undefined || v === null || v === "") missing.push(key);
-    else if (Array.isArray(v) && v.length === 0) missing.push(key);
-  }
-  return missing;
+  readonly admin_principals: ReadonlyArray<string>;
 }
 
 /**
- * Register a community. Fail-closed + privileged + persisted to runtime JSON +
- * emits `community.config.updated.v1`. Returns the derived `WorldRef`.
+ * Activate a community from its world manifest. Fail-closed + privileged + emits
+ * `community.config.updated.v1`. The manifest is the SINGLE config source — no
+ * parallel persistence. Returns the derived `WorldRef`.
  */
-export function registerCommunity(
-  payload: Partial<RegistrationPayload>,
-  opts: RegisterOptions,
-): RegistrationResult {
-  // 1. authz (SKP-005) — fail-closed unless caller is an admin principal.
-  if (!opts.admin_principals.includes(opts.caller)) {
-    throw new RegistrationError("unauthorized", `caller '${opts.caller}' is not an admin principal`);
+export function registerCommunity(slug: string, opts: RegisterOptions): RegistrationResult {
+  // 1. load the canonical manifest (the one config place).
+  let cfg: ShadowOnboardingConfig;
+  try {
+    const read = opts.readManifest ?? ((s: string) => readFileSync(manifestPathForWorld(s), "utf8"));
+    cfg = parseShadowOnboarding(read(slug));
+  } catch (err) {
+    throw new RegistrationError("manifest_unreadable", `cannot read world manifest for '${slug}': ${String(err)}`);
   }
-  // 2. validate — no partial registration.
-  const missing = missingFields(payload);
+
+  // 2. authz (SKP-005) — fail-closed; empty admin_principals = deny-all.
+  const admin_principals = cfg.admin_principals ?? [];
+  if (!admin_principals.includes(opts.caller)) {
+    throw new RegistrationError("unauthorized", `caller '${opts.caller}' is not an admin principal for '${slug}'`);
+  }
+
+  // 3. validate the manifest is complete — no partial activation.
+  const missing = missingFields(cfg);
   if (missing.length) {
-    throw new RegistrationError("missing_fields", `registration missing required fields: ${missing.join(", ")}`, missing);
+    throw new RegistrationError("missing_fields", `manifest '${slug}' incomplete: ${missing.join(", ")}`, missing);
   }
-  const p = payload as RegistrationPayload;
 
-  // 3. derive the WorldRef the producers consume.
+  // 4. derive the WorldRef the producers consume (from the manifest, not a copy).
   const world: WorldRef = {
-    community_id: p.community_id,
-    world_slug: p.world_slug,
-    guild_id: p.discord_guild_id,
-    namespace_prefix: p.namespace_prefix,
-    watched_contracts: [...p.collection_contracts],
-    score_community_slug: p.score_community_slug,
+    community_id: slug,
+    world_slug: slug,
+    guild_id: cfg.guild_id!,
+    namespace_prefix: cfg.namespace_prefix!,
+    watched_contracts: [...cfg.watched_contracts!],
+    score_community_slug: cfg.score_community_slug!,
   };
-
-  // 4. persist to the runtime registry (NOT a .ts source mutation).
-  const dir = opts.registryDir ?? join(".run", "shadow", "communities");
-  const config_path = join(dir, `${p.community_id}.json`);
-  mkdirSync(dirname(config_path), { recursive: true });
-  writeFileSync(config_path, JSON.stringify({ ...p, registered_by: opts.caller }, null, 2));
 
   // 5. emit community.config.updated.v1.
   const at = (opts.observedAt ?? (() => new Date(0).toISOString()))();
   const event = makeEvent<Extract<ShadowEvent, { name: "community.config.updated.v1" }>>(
     "community.config.updated.v1",
     {
-      watched_contracts: [...p.collection_contracts],
-      ...(p.incumbent_bot_ids ? { incumbent_bot_ids: [...p.incumbent_bot_ids] } : {}),
+      watched_contracts: [...cfg.watched_contracts!],
+      ...(cfg.incumbent_bot_ids ? { incumbent_bot_ids: [...cfg.incumbent_bot_ids] } : {}),
     } as Extract<ShadowEvent, { name: "community.config.updated.v1" }>["payload"],
-    { community_id: p.community_id, source: "config", truth_status: "verified", observed_at: at, emitted_at: at },
+    { community_id: slug, source: "config", truth_status: "verified", observed_at: at, emitted_at: at },
   );
 
-  return { world, event, config_path };
+  return { world, event, admin_principals };
 }
