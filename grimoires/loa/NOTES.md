@@ -554,3 +554,8 @@ Operator steer ("you have access to sonar, it's on railway"). Discovered via Rai
 - The `token-entity-gap` memory is STALE — Token + Holder + TrackedHolder are all queryable on the live belt.
 - Per-contract caveat: a community's contract must be in sonar's tracked set (e.g. Mibera Shadows 0x048327… returns 0 here). That's a community-onboarding config step (add the contract to sonar tracking), NOT a missing capability. OnChainHolderProducer is `optional` criticality so an untracked/absent contract degrades gracefully.
 - Config: `SONAR_GRAPHQL_ENDPOINT` + `SONAR_GRAPHQL_ADMIN_SECRET` (added to .env.example).
+
+### cycle-010 build status (2026-06-29) — engine done, PR open
+- **Draft PR #186** (cycle/multi-angle-member-ingestion → main). Sprints 1+2 (the full ingestion engine) built, 16/16 green, tsc-clean, on-chain LIVE-proven (97 holders).
+- **Remaining (resumable via beads bd-c10-s3-*, bd-c10-s4-*):** S3 render the multi-source graph in discrepancy/board/dashboard CV2 + degraded banner + IMediumBinding; S4 registerCommunity (world-config.json, authz) + Phytians config bring-up.
+- Resume: `/run sprint-plan --from 3` (or continue interactively).
