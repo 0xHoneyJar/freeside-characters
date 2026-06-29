@@ -14,7 +14,7 @@ Both gates are **investigation, not build** — first work of Sprint 1, **time-b
 - **GATE-PKG fail** → stub the substrate import behind a local interface matching the grounded `ShadowLedger`/`ILedgerStore` symbols (§2 SDD); cycle proceeds against the stub, real wiring becomes a follow once the consume mechanism is decided. **Exit criteria:** exact package source · expected exported symbols · schema-hash verify command · recorded fallback.
 - **GATE-HOLDER fail** → S2.1 is **skipped** and **degraded G2/G3 (identity-linked-wallets-only) becomes the sprint definition, not a side condition**; sonar Token-port issue filed.
 
-## Sprint 1 — Ingestion core + Discord angle (the spine)
+## Sprint 1: Ingestion core + Discord angle (the spine)
 
 Goal: the in-process ledger fed by the Discord producer, with the locked invariants tested. Proves the loop end-to-end on the one source that already works.
 
@@ -28,7 +28,7 @@ Goal: the in-process ledger fed by the Discord producer, with the locked invaria
 | S1.5 | `DiscordRosterProducer` wrapping `member-source.live.ts` → `discord.member.snapshot.v1` + `incumbent.role.observed.v1`; per-producer `Effect.timeout(30s)`. |
 | S1.6 | **Enforcement test (load-bearing):** zero `RoleWriter` calls across ingest/projection/render (SDD §4.4/§6). Idempotency re-run test → all `status: 'duplicate'`. |
 
-## Sprint 2 — On-chain + identity angles + reconciliation (gated on GATE-HOLDER)
+## Sprint 2: On-chain + identity angles + reconciliation (gated on GATE-HOLDER)
 
 Goal: the multi-angle graph — `wallet_only` subjects from chain, `identity_user` from links, conflict-safe.
 
@@ -41,7 +41,7 @@ Goal: the multi-angle graph — `wallet_only` subjects from chain, `identity_use
 | S2.5 | **Degraded posture** (SDD §4.3): required-producer failure → `degraded` run; enforcement-facing output + go-live suppressed; `IngestionRunSummary` emits `degraded`/`timed_out`/`source_freshness`. AC: required-producer-fails test asserts no eligibility. |
 | S2.6 | Multi-source projection test (G2): seed roster + holders + links → assert `discord_member` + `wallet_only` + reconciled `identity_user`. Bottom-up test (G3): holder absent from roster → `wallet_only` present. |
 
-## Sprint 3 — Render over the enriched graph + medium binding (the "UI" strand)
+## Sprint 3: Render over the enriched graph + medium binding (the "UI" strand)
 
 Goal: the CM/member-facing surfaces render the multi-source graph; FR-9.
 
@@ -51,7 +51,7 @@ Goal: the CM/member-facing surfaces render the multi-source graph; FR-9.
 | S3.2 | Degraded-run banner + source-freshness surface (from S2.5 summary). |
 | S3.3 | `IMediumBinding.resolve(world)` → Discord interaction descriptor via `@0xhoneyjar/medium-registry` (FR-9 / #72); render asserts capability before modal/ephemeral. |
 
-## Sprint 4 — Community registration + Phytians bring-up (config-only proof)
+## Sprint 4: Community registration + Phytians bring-up (config-only proof)
 
 Goal: a new community onboards by config, reaching a discrepancy report (G1, G5, G7).
 
