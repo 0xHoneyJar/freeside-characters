@@ -82,13 +82,19 @@ export interface IdentityAccountLinkedPayload {
   readonly external_id: string;
   readonly proof_ref?: string;
 }
+export interface CommunityConfigUpdatedPayload {
+  readonly role_rank?: Record<string, number>;
+  readonly watched_contracts?: ReadonlyArray<string>;
+  readonly incumbent_bot_ids?: ReadonlyArray<string>;
+}
 
 export type ShadowEvent =
   | EventEnvelope<"discord.member.snapshot.v1", DiscordMemberSnapshotPayload>
   | EventEnvelope<"incumbent.role.observed.v1", IncumbentRoleObservedPayload>
   | EventEnvelope<"sonar.wallet.attributed.v1", SonarWalletAttributedPayload>
   | EventEnvelope<"identity.wallet.linked.v1", IdentityWalletLinkedPayload>
-  | EventEnvelope<"identity.account.linked.v1", IdentityAccountLinkedPayload>;
+  | EventEnvelope<"identity.account.linked.v1", IdentityAccountLinkedPayload>
+  | EventEnvelope<"community.config.updated.v1", CommunityConfigUpdatedPayload>;
 
 // ── Canonical member node (mirrors ShadowSubject, SDD §2) ──────────────────────
 export type SubjectKind =

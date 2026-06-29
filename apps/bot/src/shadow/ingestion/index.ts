@@ -63,3 +63,11 @@ export {
   type MediumDescriptor,
   type MediumKind,
 } from "./medium-binding.ts";
+export {
+  registerCommunity,
+  missingFields,
+  RegistrationError,
+  type RegistrationPayload,
+  type RegisterOptions,
+  type RegistrationResult,
+} from "./registration.ts";
