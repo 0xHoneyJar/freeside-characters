@@ -1,186 +1,180 @@
-# cycle-009 · onboarding-character (freeside verify bot) · SDD
+# Software Design Document — Multi-Angle Member-Graph Ingestion (freeside-characters consumer)
 
-> **Software Design Document**
-> **Cycle**: cycle-009-onboarding-character
-> **Date**: 2026-05-29 (/simstim Phase 3 Architecture output)
-> **Status**: DRAFT · derives from `grimoires/loa/prd.md` (FR-1..14 + §9) · ready for Phase 3.5/4 review
-> **Mode**: ARCH (Ostrom) + craft (Alexander)
-> **Grounding**: verified seams — `apps/bot/src/discord-interactions/dispatch.ts:193` · `quest-dispatch.ts` (type-3/5) · identity-api (`identity-api-production-317b.up.railway.app`) · sietch `verify.routes.ts` + `identity-api-link.ts` (fork sources) · CV2 palette (discord.js 14.26.4)
+> **cycle-010 candidate** · `/simstim` `simstim-20260629-22e34aa2` · 2026-06-29
+> Implements `grimoires/loa/prd.md`. Consume strategy **Z (in-process reducer)** ratified 2026-06-29.
+> All substrate references grounded against loa-freeside `origin/main` (PR #316 merged).
 
----
+## 1. Overview & the Z decision
 
-## 1. Architecture overview
+freeside-characters becomes the **first consumer** of the merged `shadow-mode-api` member-graph ledger by importing it as a **library** and running its reducer **in-process** — no deployed service, no Postgres, no svc-JWT. The cycle adds three things in this repo:
 
-A **CollabLand-style verify bot** that lives inside freeside-characters as an **interaction-context** surface (distinct from the Pattern-B webhook narrators). One persistent CV2 verify card → `custom_id` interaction → secure signed handoff to a co-located Bun verify page → SIWE against the freeside auth API → freeside `user_id` linked → verified role granted.
+1. **Producers** — adapters that read real sources (Discord roster, on-chain holders, identity links) and emit the substrate's already-defined `ShadowEvent`s.
+2. **An in-process ledger host** — `new ShadowLedger(new InMemoryLedgerStore())`, fed by the producers, read for projections.
+3. **Projection readers + render** — the existing discrepancy/role-board CV2 surfaces render over the multi-source canonical graph.
 
-```
-                 THJ verify channel
-                 ┌───────────────────────────┐
-                 │  [Verify Wallet]  (CV2)    │  custom_id=onboard:verify
-                 └─────────────┬─────────────┘
-                               │ type-3 MESSAGE_COMPONENT
-        ┌──────────────────────▼───────────────────────────┐  apps/bot
-        │ interactions endpoint (Bun.serve :3001, Ed25519)  │
-        │  dispatch.ts:193  → isOnboarding → onboarding-dispatch
-        └──────┬───────────────────────────────────┬────────┘
-               │ pre-check (resolveByDiscord)       │ issue HMAC state token
-               │                                    │ → ephemeral reply w/ verify URL (FR-9)
-        ┌──────▼──────┐                      ┌──────▼─────────────────────────┐
-        │ freeside-   │                      │ Bun verify surface (co-located │
-        │ auth client │◄─────────────────────│  on bot Bun.serve · /verify/*) │
-        │ (Effect-TS, │  challenge/verify/   │  forked from sietch verify.rts │
-        │  svc-token) │  link/resolve        │  validate token → SIWE → link  │
-        └──────┬──────┘                      └──────┬─────────────────────────┘
-               │ POST /v1/link (worldSlug=mibera)   │ on success (same process)
-               ▼                                    ▼
-        identity-api spine                   role-grant service
-        (user_id · wallet↔discord)           (discord.js REST · @verified)
-```
+Why Z works: shadow-mode is **compute-only and recomputed each cycle**; the in-memory ledger is rebuilt from sources per ingestion run, so the lack of durable append-only history is acceptable (it's the ratified, named fast-follow Y). Nothing is mutated upstream; nothing is persisted that needs a DB.
 
-**Layer placement** (per `[[multi-axis-daemon-architecture]]`): the bot is axis-1/L2 participation surface but **interaction-context** + **user-auth** — the third shape. Substrate (token + auth client + role-grant) lives in `packages/persona-engine/src/onboarding/`; the Discord wiring extends `apps/bot/src/discord-interactions/`; the functional persona (light flavor) at `apps/character-onboarding/`.
+**Framing (BR-1, operator-conscious):** Z makes the member graph a *flow* (a recomputed snapshot each run), not a *stock* (an accumulating, history-bearing ledger). The discrepancy report is identical either way, so the MVP is unaffected — **but a "watch the graph fill as holders arrive over time" demo cannot be shown from a recomputed snapshot.** If visible accumulation is the selling artifact, that needs Y (persisted history). This cycle ships *a snapshot of coexistence*, deliberately.
 
-## 2. Components
+## 2. Bound substrate contract (grounded)
 
-| # | Component | Path (new/extend) | Responsibility | FRs |
-|---|---|---|---|---|
-| C1 | **Verify-card renderer** | `persona-engine/src/onboarding/verify-card.ts` (new) | CV2 Container + `custom_id` "Verify Wallet" button (NOT a URL button) | FR-1, FR-9 |
-| C2 | **Onboarding dispatch** | `apps/bot/src/discord-interactions/onboarding-dispatch.ts` (new) + `dispatch.ts:193` `isOnboarding` hook | route `onboard:verify` custom_id; pre-check; issue token; ephemeral reply | FR-2, FR-7, FR-9, FR-13 |
-| C3 | **State-token service** | `persona-engine/src/onboarding/state-token.ts` (new) | mint + verify one-time HMAC-signed handoff tokens | FR-9 |
-| C4 | **Bun verify surface** | `apps/bot/src/verify/` (new route group on the existing Bun.serve) — forked from sietch `verify.routes.ts` | validate token → **Discord OAuth2 (confirm opener == token.discord_id, RT-8)** → wallet connect + SIWE → call auth client; public page holds no secret, server-only `/complete` | FR-3, FR-10, RT-8 |
-| C5 | **freeside-auth client** | `persona-engine/src/onboarding/freeside-auth-client.ts` (new, Effect-TS) | typed wrapper: resolveByDiscord / challenge / verify / link / resolveByWallet; holds svc-token (server-only). **Clean standalone module — promotable to a shared `@freeside/*` package later** if more verify consumers appear (Bridgebuilder REFRAME-2: no premature shared pkg while sietch retires) | FR-4, FR-5, FR-11, FR-14 |
-| C6 | **Role-grant service** | `persona-engine/src/onboarding/role-grant.ts` (new) | assign @verified via discord.js REST; conflict gate; reconciliation | FR-6, FR-12, FR-13 |
-| C7 | **Persona (light)** | `apps/character-onboarding/persona.md` (new · name TBD) | functional CollabLand register; in-character error copy | FR-8, FR-14 |
+**Library imports** (`@freeside/shadow-mode-service` + `@freeside/shadow-mode-protocol`):
+- `ShadowLedger`: `constructor(store: ILedgerStore)` · `ingest(event: ShadowEvent): IngestResult` (idempotent/atomic) · `getMemberGraph(communityId): MemberGraphProjection` · `getUnresolved(communityId): ShadowSubject[]` · `getDivergences(communityId): ShadowDivergence[]` · `getConfig(communityId)`.
+- `InMemoryLedgerStore` implements `ILedgerStore`.
+- `buildAccessAuditReport`.
 
-## 3. Data flow — the verify sequence
+**`ShadowEvent` envelope** (`schema_version: 'shadow.event.v1'`): `{ event_id, schema_version, community_id, name, source, truth_status, observed_at, emitted_at, evidence_ref?, payload }` — Zod `.strict()`, discriminated on `name`.
 
-```
-1. member clicks [Verify Wallet] (custom_id=onboard:verify)
-2. → interactions endpoint (Ed25519-verified) → dispatch.ts isOnboarding → C2
-3. C2 anti-spam guard (drop bot-authored) → pre-check via C5.resolveByDiscord(discord_id):
-     a. linked + has @verified  → ephemeral "verified ✓", stop                  (FR-2)
-     b. linked + no @verified    → C6 re-grant → ephemeral "restored ✓", stop    (FR-13)
-     c. not linked               → C3 mint token {discord_id,nonce,exp,iid,guild}
-                                    → ephemeral reply: "verify here ⟶ <one-time URL>" (FR-9)
-4. member opens URL → C4 validates token (HMAC + expiry + one-time)             (FR-9)
-5. C4: connect wallet (wagmi/Dynamic) → C5.challenge(wallet) → SIWE sign → C5.verify(nonce,sig) (FR-10)
-6. C4 → C5.link({worldSlug:'mibera', discordId, walletAddress}) → {user_id, conflict_resolved} (FR-4)
-7. conflict gate (FR-12): null → continue · wallet_rebound|discord_rebound → BLOCK + operator-review
-8. (same process) → C6 grant @verified → audit-log the link (FR-11) → confirm to member (FR-6)
-```
-
-**Callback model:** C4 (verify surface) is **co-located on the bot's Bun.serve process** → on link success it invokes C6 directly (no cross-process webhook). Resolves the §8 hosting-topology item (IMP-002). **Hardened internal boundary (Bridgebuilder REFRAME-1, accept-minor):** the public `GET /verify/:token` page handler holds **NO secret** (serves the connect/sign client only); the service-token + `/v1/link` write + role-grant execute **only** in the server-side `POST /verify/:token/complete` handler; **strict CORS**; the service-token never appears in any client bundle. (Full process isolation — a separate verify service + signed callback — was weighed and deferred to v2.)
-
-## 4. Data models / schemas
-
-**State-token (C3) — the secure handoff (FR-9):**
-```
-payload = base64url(JSON{ v:1, did:discord_id, nonce:uuid, iid:interaction_id,
-                          gid:guild_id, exp:unix+300 })
-token   = payload + "." + base64url(HMAC_SHA256(payload, ONBOARDING_STATE_SECRET))
-```
-- One-time: `nonce` recorded in `.run/onboarding-nonces.jsonl` (consumed-set; repo has no DB by design); expiry 5 min.
-- Validated server-side in C4 before any auth call. `did` is signed, not client-supplied.
-
-**freeside-auth (C5) — identity-api contracts (production Phase-1):**
-```
-POST /v1/auth/challenge  { walletAddress, scheme:"siwe" } → { nonce, message }
-POST /v1/auth/verify     { nonce, signature, walletAddress, scheme } → { user_id, primary_wallet, session{token,expires_at} }
-POST /v1/link/verified-wallet { worldSlug:"mibera", discordId, walletAddress } → { ok, user_id, idempotent, conflict_resolved }   [X-Service-Token]
-GET  /v1/resolve/wallet/{addr} → { user_id, ... } | 404
-GET  /v1/resolve/account/discord/{id} → { user_id, ... }   ⚠ PHASE-2 (dependency, FR-2)
-```
-
-**Role-map config (C6):** `{ guildId, verifiedRoleId }` (v1 single role; env or a small config). `user_id → roles[]` mapping is the v2 seam.
-
-## 5. API contracts
-
-- **Consumed:** identity-api (§4). Bearer/`X-Service-Token` only on the link write; resolve/challenge/verify need no service token.
-- **Bot interaction endpoint:** existing `Bun.serve` (`index.ts:492`, `DISCORD_PUBLIC_KEY`-gated, Ed25519). New: `custom_id` `onboard:verify` handled in C2 via the `isOnboarding` early-detect at `dispatch.ts:193` (mirrors `isQuest`); reuses `quest-dispatch.ts` type-3 handling. Ephemeral responses (flag `1<<6`).
-- **Bun verify routes (C4, forked):** `GET /verify/:token` (validate → render connect/sign page), `POST /verify/:token/complete` (server-side SIWE verify + link + role-grant trigger). All server-side; the page's client JS never sees the service token.
-
-## 6. Security design (FR-9..14 → mechanisms)
-
-| FR | Threat | Mechanism |
+**Event names + payloads the producers emit:**
+| Event `name` | Producer | Key payload fields |
 |---|---|---|
-| FR-9 | wrong-user wallet binding / takeover | `custom_id` interaction (server knows the clicker) → HMAC-signed one-time state token (signed `discord_id`, not client-supplied); server-side validation in C4 |
-| FR-10 | SIWE replay / cross-user | EIP-4361: single-use nonce (identity-api-issued), expiry, domain(origin) + chain-id binding. **Pre-fork audit** of sietch `verify.routes.ts` for these. |
-| FR-11 | svc-token leak (mints arbitrary links) | token in secret manager/env; held only by C5 server-side; never in C4's client bundle; audit-log every link (caller + result); separate read/write clients |
-| FR-12 | rebind = takeover | C5.link `conflict_resolved` gate in C6: block grant on `wallet_rebound`/`discord_rebound` → operator-review queue |
-| FR-13 | linked-but-unroled drift | C2 pre-check re-grants if `user_id` resolves but role absent |
-| FR-14 | identity-api outage | C5 retry (bounded) + in-character failure copy + structured logs |
+| `community.config.updated.v1` | Registration (FR-1) | `role_rank?`, `watched_contracts?`, `incumbent_bot_ids?` |
+| `discord.member.snapshot.v1` | Discord producer (FR-2a) | `discord_user_id`, `display_name?`, `role_ids[]`, `joined_at?` |
+| `sonar.wallet.attributed.v1` | On-chain producer (FR-2b) | `wallet`, `contract_address`, `edge_kind` (`minted`/`held_at_snapshot`/…), `token_id?`, `tx_hash?`, `block_number?` |
+| `identity.wallet.linked.v1` | Identity producer (FR-2c) | `user_id`, `wallet`, `proof_ref?` |
+| `identity.account.linked.v1` | Identity producer (FR-2c) | `user_id`, `account_kind` (`discord`…), `external_id`, `proof_ref?` |
+| `incumbent.role.observed.v1` | Discord producer (coexistence) | `discord_user_id`, `incumbent`, `role_ids[]` |
 
-Anti-spam invariant (load-bearing): C2 drops bot-authored interactions (defense-in-depth on `bot:true` + webhook-author signature); the bot acts ONLY on `onboard:*` custom_ids — never unsolicited.
+**Reconciliation is in the reducer.** `ShadowLedger.ingest` resolves subjects by alias (`identityAlias(user_id)`, `discordAlias(external_id)`, `walletAlias(wallet)`) and stitches automatically. **The consumer does not re-implement stitching** — it emits well-formed events and reads the reduced graph.
 
-## 6a. Flatline-SDD hardening (Phase-4 · 3-voice, 50% agreement [opus flagged over-spec], full confidence, $0)
+## 3. Architecture — layering
 
-The gemini skeptic deepened the security model; integrated, refining §2/§4/§6:
+```
+                    ┌─────────────────────── apps/bot/src/shadow/ (extended) ──────────────────────┐
+   Discord roster ──▶ DiscordRosterProducer ─┐
+   sonar/inventory ─▶ OnChainHolderProducer ─┼─▶ IngestionOrchestrator ─▶ ShadowLedger.ingest()
+   identity-api    ─▶ IdentityLinkProducer ──┘        (fan-in, fail-closed)        │ (in-process,
+                                                                                   │  InMemoryLedgerStore)
+   CommunityConfig ─▶ RegistrationProducer ──────────────────────────────────────▶│
+                                                                                   ▼
+                          ProjectionReader ◀── getMemberGraph / getUnresolved / getDivergences
+                                   │
+                                   ▼
+        discrepancy-cv2 / public-role-board-cv2 / member-dashboard-cv2  (render, voiceless)
+                                   │
+                                   ▼  (conditioned by)  IMediumBinding (FR-9, Discord-interaction descriptor MVP)
+                                   ▼
+   go-live-orchestrator ─▶ GateCheckedRoleWriter (LIVE only, unchanged — NOT on ingestion path)
+                          └──────────────────────────────────────────────────────────────────────┘
+```
 
-**H-1 · Opaque handoff token, NOT signed-identity-in-URL (CRITICAL · SKP-001, 910).** Revise FR-9/C3: the verify URL carries ONLY an **opaque random id** (≥16 bytes CSPRNG); the `{discord_id, nonce, exp, interaction_id, guild_id}` lives **server-side**, keyed by that id. The URL is a bearer *reference*, not a signed-identity payload — mitigates URL leak (history/logs/referrer/screenshot/forward) binding a wallet to the signed discord_id. Add `Referrer-Policy: no-referrer`; never log full URLs; consume at first use.
+The ingestion layer is **new**; the render + go-live layers **already exist** and are reused. The hexagonal seam is the `SourceProducer` port (new) mirroring the existing `RosterSource`/`ScoreSource`/`RoleWriter` Effect-Layer pattern in `substrate.ts` + `composition-root.ts`.
 
-**H-2 · Atomic nonce consume (CRITICAL · SKP-001/002, 860).** Revise C3 store: append-only `.run/*.jsonl` has no atomic consume (concurrent/restart unsafe). Use an **`O_EXCL`/`mkdir` per-token-id claim file** (single-writer, fsync — honors the no-DB rule) as the atomic consume gate; the state record sits beside it. (bun:sqlite or identity-api-backed are alternatives if multi-instance lands.)
+## 4. Component design
 
-**H-3 · Unconditional `deferReply` (CRITICAL · SKP-001 + IMP-006, 850).** Revise C2: `deferReply({ephemeral:true})` IMMEDIATELY on `onboard:verify` (before any network call), then `editReply` with the URL — never risk the 3-second interaction ACK window.
+### 4.1 `SourceProducer` port + adapters (FR-2)
+Producers are **plain async functions** returning `Effect.Effect<ShadowEvent[], ProducerError>`, composed at the orchestrator (BR-5: reserve full Effect `Context.Tag` Layers for the I/O *clients* already Layered in `composition-root.ts`; the testability win is the function boundary, not the Layer — lower ceremony, same isolation):
+```
+export interface WorldRef {                        // IMP-005: define the port's input
+  readonly community_id: string;                   // the ledger community key
+  readonly world_slug: string;                     // e.g. 'phytian'
+  readonly guild_id: string;
+  readonly namespace_prefix: string;               // e.g. 'phytian:'
+  readonly watched_contracts: ReadonlyArray<string>;
+  readonly score_community_slug: string;
+}
+export type Criticality = 'required' | 'optional'; // SKP-002/780: degraded-run posture
+export interface SourceProducer {
+  readonly kind: SourceKind;                        // 'discord' | 'sonar' | 'identity'
+  readonly criticality: Criticality;                // discord+identity required; on-chain optional iff R-1 degrades
+  readonly produce: (world: WorldRef) => Effect.Effect<ReadonlyArray<ShadowEvent>, ProducerError>;
+}
+```
+**Per-producer timeout (SKP-005/730):** every external call (`guild.members.fetch`, identity-api, sonar GraphQL) is wrapped in `Effect.timeout` (default 30s, configurable). On timeout the producer yields a `ProducerError` and is fail-isolated per §4.3 — a hung upstream never blocks the run.
+**Packaging (BR-3):** the ingestion layer (this port + §4.2 envelope builder + §4.3 orchestrator) sits behind a single barrel `@freeside-characters/member-ingestion` from Sprint 1, even while physically in `apps/bot/src/shadow/`. Extraction to the future `freeside-onboarding` building is then a package move, not an N-caller refactor. **Isolation debt (BR-4, tracked):** on extraction, `member-ingestion` + the three producers + the registration path (§4.5) move out; they import no `persona-engine` voice (lint-enforced), so the cut is clean.
+- **DiscordRosterProducer** (4.1a) — wraps existing `member-source.live.ts` (`guild.members.fetch`, opcode-8 cached); maps each member → `discord.member.snapshot.v1` (+ `incumbent.role.observed.v1` for Collab.Land roles). Read-only.
+- **OnChainHolderProducer** (4.1b, NEW) — reads holders-of-contract for `watched_contracts` via the on-chain source (see R-1: inventory-api holders endpoint vs sonar Token entity — resolve in implementation); maps each holder → `sonar.wallet.attributed.v1` (`edge_kind: 'held_at_snapshot'`). Produces `wallet_only` subjects for holders absent from Discord (G3).
+- **IdentityLinkProducer** (4.1c, NEW) — reads wallet↔account links from identity-api (`freeside-auth-client.ts`); maps → `identity.wallet.linked.v1` / `identity.account.linked.v1`. **Conflict pre-check (4.4).**
 
-**H-4 · SIWE pre-fork audit = a GATE, not an open item (CRITICAL · SKP-002, 820).** Promote FR-10's audit to a hard gate before forking sietch `verify.routes.ts`. Acceptance criteria: server-side single-use nonce · `domain` == verify origin · `chainId` pinned · `expirationTime` ≤ 5m · URI/authority bound (EIP-4361).
+### 4.2 Envelope builder
+A pure helper `makeEvent(name, payload, {community_id, source, truth_status, observed_at})` constructs the `.strict()` envelope with a deterministic `event_id`. **`event_id` scheme — LOCKED (resolves OI-3; SKP-002/850 + IMP-001/910 — was a deferred load-bearing gap):**
+```
+event_id = sha256( name + '|' + community_id + '|' + source + '|' + canonicalJSON(payload) )
+```
+**Explicitly excludes `observed_at` / `emitted_at`.** Rationale for *our* semantics: Z recomputes each cycle, so "the same holder still holds" must hash identically across runs → `status: 'duplicate'` (idempotency). A genuine state change (a role added, a wallet linked) changes `payload` → a distinct hash, so it is NOT collided away. Enforced by **golden tests**: (a) identical ingestion inputs → identical `event_id`; (b) semantically-different events → distinct `event_id`. `truth_status`: `verified` for identity-api links, `observed_only` for roster/on-chain snapshots.
 
-**H-5 · Conflict-review surface (HIGH · IMP-002/SKP-003).** Revise FR-12/C6: C5.link commits the spine row; the gate decides the ROLE grant only. Blocked rebind grants → `.run/onboarding-review.jsonl` + an audit-log kind; user gets "needs review" ephemeral. Operator-review surface = the jsonl (v1) → dashboard later.
+### 4.3 `IngestionOrchestrator`
+**Execution model — mechanically two-phase (resolves the SKP-001/870 + IMP-003/917 parallel-vs-ordering contradiction; the §4.4 conflict pre-check is load-bearing on this):**
+```
+Phase A (parallel): Effect.all([discordProducer, onChainProducer], { concurrency: 'unbounded' })
+                    → ingest ALL phase-A events → AWAIT every ledger commit.
+Phase B (serial):   THEN run identityProducer — its §4.4 pre-check now sees the committed
+                    discord + on-chain subjects, so a stitch collision cannot be silently missed.
+```
+This is a **typed Effect pipeline, not a prose "defensive" note** — the barrier between A and B is real. **Test (mechanical, not observational):** assert the ledger contains discord + on-chain subjects *before* any `identity.*.linked` event is ingested.
 
-**H-6 · Secret provisioning + rotation (HIGH · IMP-005/SKP-004).** `ONBOARDING_STATE_SECRET` ≥32 bytes CSPRNG, env/secret-manager (not committed), `kid` in the server-side state record for overlapping-secret rotation. (H-1's opaque token shrinks this surface — the MAC now protects server-side state, not a URL payload.)
+**Fail-isolation + degraded posture (SKP-002/780 + IMP-006):** a producer's error drops *its* events and is captured (mirrors L5 per-source capture), but the run is marked **`degraded`** if any `criticality: 'required'` producer failed/timed-out. A degraded projection **suppresses all enforcement-facing output** (no go-live eligibility, no role-board "apply") and renders a prominent source-freshness/error banner — an incomplete graph must never look authoritative. **Orchestrator-level max-run timeout** aborts the whole run and emits `IngestionRunSummary { per_source_counts, errors, idempotency_hits, degraded, timed_out, source_freshness }`.
 
-**H-7 · CSRF/origin on `POST /verify/:token/complete` (HIGH · IMP-009/SKP-004).** Validate `Origin`+`Host`, reject simple-form content-types, deliberate `SameSite`; CSRF tied to the server session.
+### 4.4 Reconciliation, merge & enforcement (PRD §6.5 → design)
+- **Source authority:** identity-api authoritative for stitching; roster for role state; on-chain for holding/eligibility (encoded as `truth_status` + which producer emits which edge).
+- **Conflict pre-check (closes R4 + the substrate last-writer ceiling under Z):** before emitting an `identity.*.linked` event, the orchestrator (which holds the `InMemoryLedgerStore` instance) calls the **grounded** store API `store.findSubjectByAlias(community_id, walletAlias(wallet))` / `discordAlias(external_id)` (both confirmed on `ILedgerStore` + the `*Alias` builders exported from `@freeside/shadow-mode-protocol`). If the alias already resolves to a *different* `identity_user_id`, it **does not emit the stitch**; it records a `ConflictQuarantine` entry. This runs in Phase B (§4.3), so the discord + on-chain subjects are already committed and a collision cannot be missed. We refuse to feed the reducer the conflicting stitch rather than depend on a substrate fix (R3/Z boundary).
+- **Durable quarantine (SKP-004/760 + IMP-002/887):** `ConflictQuarantine` entries are **append-only-persisted** to `.run/shadow/<community_id>-quarantine.jsonl` (the repo's sanctioned `.run/` JSONL state pattern; survives process restart). On each ingestion cycle, unresolved quarantine entries are **re-surfaced** without re-detection. Test asserts an entry written in cycle N is still surfaced in cycle N+1.
+- **Enforcement invariant:** the ingestion + projection + render code paths import **only** `RosterSource`/`MemberSource`/`ProjectionReader` — never `RoleWriter`. The `GateCheckedRoleWriter` stays reachable only via `go-live-orchestrator` under a LIVE `WorldLock`. Enforced by the existing cross-repo import-boundary lint + a new **mandatory test asserting zero `RoleWriter` invocations** across ingestion/discrepancy/render.
 
-**H-8 · Retry idempotency (IMP-013).** Bounded retries (FR-14) carry idempotency keys so a successful-but-retried link isn't read as a conflict/duplicate.
+### 4.5 Community registration (FR-1)
+`registerCommunity(payload)` validates the minimal payload (PRD FR-1) fail-closed (no partial registration), persists world wiring to the existing world-config seam (`world-config.ts` / `purupuru.yaml`-style manifest), and emits `community.config.updated.v1` (`watched_contracts`, `incumbent_bot_ids`, `role_rank`). Phytians (FR-7) is a config entry, not code.
 
-**Deferred (opus-aligned · scope vs v1):** periodic role-drift reconciliation (IMP-014 — synchronous FR-13 recovery suffices); persona-identity formalization (IMP-016 — naming gated). **IMP-012 RESOLVED:** self-rendered wagmi page (see §9).
+### 4.6 Medium binding (FR-9, scoped)
+`IMediumBinding.resolve(world) → MediumDescriptor`. MVP returns the Discord **interaction** descriptor from `@0xhoneyjar/medium-registry` (modals/buttons available — the `/role-sync` CV2 surfaces). Render adapters assert capability before using modal/ephemeral. True multi-medium (Telegram/CLI) is deferred; the port exists so #72's contract is satisfied without the full extraction.
 
-## 6b. Red-Team residual hardening (Phase-4.5 · 10 on-target attacks; #582 tooling note: domain-extractor failed → opus grounding scored 0, attacks valid)
+## 5. Tech stack & dependencies
 
-**RT-1 · Static origin/domain pinning (ATK-006/010).** Bun.serve MUST derive the SIWE `domain` AND the CSRF Origin/Host check from a **static `VERIFY_ORIGIN` config**, never from the request (Host header / `request.url`) — closes the forked-host / Host-substitution bypass of H-4/H-7.
+- **Runtime:** Bun; **Language:** TS strict; **Effect-TS** for the new producer/orchestrator error surfaces (whole-module, per repo convention).
+- **New deps:** `@freeside/shadow-mode-service`, `@freeside/shadow-mode-protocol` (from loa-freeside `origin/main`). **D-1 ⛔ PRE-SPRINT-1 GATE (SKP-003/820):** resolve availability before Sprint 1. Preferred: a **workspace-protocol reference** against the loa-freeside monorepo (NOT a manual type mirror — that creates permanent silent drift). If a temporary mirror is truly unavoidable, wire a **schema-hash pin into CI** so any substrate divergence fails the build immediately.
+- **Reused:** `member-source.live.ts`, `freeside-auth-client.ts`, `inventory-http-client.ts` / sonar GraphQL, `score/community-client.ts`, `discrepancy-cv2.ts`, `go-live-orchestrator.ts`, `composition-root.ts`, `world-lock.ts`.
 
-**RT-2 · JSONL write-injection guard (ATK-007).** Every field written to `.run/onboarding-*.jsonl` is JSON-encoded per-field (no raw interpolation); wallet validated `^0x[0-9a-fA-F]{40}$` before write — prevents newline/JSONL injection forging consume/review records.
+## 6. Security & invariants
 
-**RT-3 · Error-serialization redaction (ATK-003).** The Effect-TS error layer (C5/C6) allowlist-serializes; `X-Service-Token`/Bearer NEVER enter a TaggedError trace or log.
+- **Voiceless (NG1):** no `persona-engine` voice import in any ingestion/registration/render module (lint-enforced by existing import-boundary check).
+- **Shadow-first (NG2 / §4.4):** zero `RoleWriter` on ingestion path; mutation only via LIVE-gated go-live. Test-asserted.
+- **Fail-closed reconciliation (R4):** conflict → quarantine/unresolved, never silent absorb; no role eligibility from conflicted nodes.
+- **Anti-spam (NG3):** ingestion is background pull; emits no Discord messages; not a character surface.
+- **No upstream mutation:** producers are read-only against Discord/identity/sonar; the ledger mutates nothing upstream (inherited substrate guarantee).
 
-**RT-4 · Rebound atomicity (ATK-008 · refines H-5).** `C5.link` commits the spine row even on `conflict_resolved!=null` — so the identity REBIND already happened when C6 blocks only the role. Treat a rebind link as **provisional**: spine row committed (idempotent), but bot records to the review queue + grants NO role + surfaces "pending review"; operator-review decides keep/revert (revert = an identity-api dependency). Document: the gate is on the role + review-flag, not the spine write.
+## 7. Testing strategy
 
-**RT-5 · Claim→link TOCTOU (ATK-002).** Single transaction per token: validate-token → SIWE-verify → link → **consume-claim** → grant; the H-2 atomic claim is consumed only AFTER a successful link for that token+wallet (not at page-open); failure rolls back the claim.
+- **Multi-source fixture (G2):** seed roster + on-chain holders + identity links → assert projection contains `discord_member`, `wallet_only`, and reconciled `identity_user` subjects.
+- **Bottom-up (G3):** holder absent from roster → assert `wallet_only` subject present.
+- **Conflict quarantine (R4):** wallet already bound to identity A, link attempt to identity B → assert no stitch emitted, `unresolved` row surfaced, no eligibility.
+- **Enforcement (§4.4):** spy/mock `RoleWriter`; assert **zero** calls across ingestion/discrepancy/render.
+- **Idempotency:** re-run ingestion → assert `status: 'duplicate'`, projection unchanged.
+- **Registration (FR-1):** missing payload field → fail-closed with field-listing error; no partial state.
 
-**RT-6 · custom_id ownership (ATK-004).** `isOnboarding` matches an exact reserved `onboard:` prefix owned solely by C2; dispatch validates the component originated from the bot's own verify card before acting — no future-character collision misroute.
+## 8. Risks (carried from PRD + design-surfaced)
 
-**RT-7 · Supply-chain posture (ATK-009).** wagmi/Dynamic version-pinned + lockfile-audited; the page bundle holds NO secret (H-1/H-7), bounding a compromised client to its own session (no service-token exfil).
+- **R-1 (NEW, design) — on-chain holder source. ⛔ SPRINT-1 GATE (BR-2), not a task. PARTIALLY SPIKED 2026-06-29:** inventory-api **cannot** serve "holders of contract X" — it exposes only `GET /nfts/{contract}/{tokenId}` (single token) and `GET /profile/{wallet}` (one wallet pfp); there is **no reverse holder-index**. The holder-list candidate is **sonar's `Token` ownership entity via belt-hasura GraphQL** — which per memory exists in PROD Envio but is **not yet ported to the Ponder successor** (`token-entity-gap`, green-belt). **Sprint-1 gate:** confirm a `holders(contract)` GraphQL query against the live belt-hasura endpoint. **If unavailable → G3 degrades to identity-linked-wallets-only** (holders who linked via `/verify` appear as `identity_user`; pure on-chain-only holders do not) and a sonar Token-entity-port issue is filed — never worked around in-consumer.
+- **R-2 — substrate alias last-writer ceiling.** Handled consumer-side by §4.4 conflict pre-check; do not depend on a substrate fix this cycle.
+- **R-3 — package availability** (D-1 above).
+- **R-4 — projection pagination** absent; bound to demo/Purupuru/Phytians-scale communities; large communities are a fast-follow.
+- **R-5 — rate limits** on roster + on-chain reads; batch + reuse opcode-8 cache.
 
-**RT-8 · Ephemeral-URL leak → wallet-binding hijack (ATK-001 · CRITICAL residual).** A leaked verify URL (screen-share/OBS/push-preview/forward) lets an attacker race `/complete` with THEIR wallet → binds the **target's discord_id to the attacker's wallet** (identity-binding hijack — not mere annoyance: the target's freeside account now points at an attacker wallet). Base mitigations (short TTL ≤5m, one-time, `Referrer-Policy:no-referrer`) reduce but don't close it. **Robust fix — DECIDED (operator 2026-05-29): Discord OAuth2 on the verify page.** The page MUST complete a Discord OAuth2 login and require `oauth.discord_id == token.discord_id` BEFORE any wallet-connect/SIWE/link — a URL thief cannot authenticate as the target, fully closing ATK-001. Adds `DISCORD_OAUTH_CLIENT_ID` + `DISCORD_OAUTH_SECRET` + a `redirect_uri` on the Bun verify surface; the OAuth gate precedes wallet connect in the C4 flow.
+## 9. Open items for Bridgebuilder + Flatline SDD review
 
-**ATK-005 (discord-id enumeration oracle): LOW** — Discord guarantees `interaction.user` is the clicker, so an attacker can only probe their own state, not enumerate others. No change.
+- OI-1 — Is the Effect-Layer `SourceProducer` port the right seam, or should producers be plain async fns wrapped at the orchestrator (lower ceremony)? (Architecture taste call.)
+- OI-2 — Conflict quarantine: render as `unresolved` row vs a distinct CM "conflicts" surface? (UX vs reuse.)
+- OI-3 — `event_id` content-hash scheme for idempotency across re-runs (must be stable; exclude timestamps).
+- OI-4 — On-chain holder source decision pending R-1 spike — does it gate Sprint 1 sequencing?
 
-**RT-9 · Phishing / typo-squat residual (ATK-003, re-run).** A look-alike verify page on an attacker domain can phish a SIWE signature — but RT-1's server-side domain pinning makes a signature for the fake domain useless at the REAL endpoint, and RT-8's Discord OAuth on the real page is the trust anchor. Residual = general phishing (CollabLand-class); mitigate via the canonical verify-card link + user education. No new mechanism.
 
-**RT-10 · Bot-token compromise → card spoofing (ATK-010, re-run).** A leaked `DISCORD_BOT_TOKEN` lets an attacker post fake verify cards — standard bot-token risk, not verify-specific. Mitigate via existing token hygiene (secret manager, rotation, least-priv); deny-rules already block agent access to credential stores.
+## 10. Bridgebuilder design review — reconciliation
 
-**Tooling note (#582):** the red-team orchestrator failed twice (exit 3) — its opus-grounding gate scored all attacks 0 regardless of `--domain`, a known bug. Both runs' attacks were on-target and MANUALLY triaged (RT-1..10 above). Phase 4.5 closed via manual triage; the tool's auto-classification is unusable until #582 is fixed.
+7 findings (1 REFRAME, 1 HIGH, 1 SPECULATION, 3 MEDIUM, 1 PRAISE):
+- **BR-1 REFRAME** (snapshot vs accumulation) → §1 framing note. Accepted-minor; does not change MVP build (discrepancy report identical). **Surface to operator** at planning.
+- **BR-2 HIGH** (on-chain holder source SPOF) → R-1 elevated to a **Sprint-1 gate**; G3 marked contingent with identity-linked-wallets-only degradation pre-written.
+- **BR-3 SPECULATION** (name the package now) → §4.1 `@freeside-characters/member-ingestion` barrel from Sprint 1.
+- **BR-4 MEDIUM** (extraction debt) → §4.1 isolation-debt note.
+- **BR-5 MEDIUM** (Effect-Layer ceremony) → §4.1 producers are plain async fns; Layers reserved for I/O clients.
+- **BR-6 PRAISE** (conflict pre-check) → no action; keep.
+- **BR-7 MEDIUM** (event_id timestamp-free) → §4.2 content-hash scheme + idempotency re-run test.
 
-## 7. Tech stack
+## 11. Flatline SDD review — reconciliation
 
-Bun (≥1.1) · TypeScript strict · discord.js 14.26.4 (CV2 components + interactions) · `node:crypto` (HMAC-SHA256 state token) · **Effect-TS** for C5/C6 error surfaces (`Effect.Effect<R, TaggedError>` per `[[feedback_effect_ts_new_surfaces]]`) · wagmi + Dynamic (C4 wallet connect) · identity-api (SIWE auth spine) · Zod (request validation). No new database (state in `.run/` jsonl + identity-api spine).
-
-## 8. Scalability / performance / anti-spam
-
-- The verify card is ONE persistent message; verify load is human-paced (no rate-limit pressure like the digest webhook path).
-- State-token nonce set in `.run/onboarding-nonces.jsonl` — pruned on expiry; bounded.
-- Discord interaction 3-second ack window: C2 must `deferReply` (ephemeral) if the pre-check (resolveByDiscord network call) risks >3s.
-- mTLS / TLS to identity-api per the Bearer-pattern doctrine.
-
-## 9. Dependencies + open architectural questions
-
-- **HARD DEP** — identity-api `GET /v1/resolve/account/discord/{id}` (FR-2). Deployment-gated; slip-fallback = `resolveByWallet`-after-connect (degraded idempotency). File the identity-api issue.
-- **Fork audit** — sietch `verify.routes.ts` must be audited for EIP-4361 nonce/expiry/domain/chain binding (FR-10) before fork; document "partially working" gaps.
-- **Resolved (operator 2026-05-29):** (a) C4 = **self-rendered wagmi/Dynamic page** calling identity-api `/v1/auth/challenge→verify→link` directly (own origin/domain control for H-4 SIWE binding + the H-1 opaque-token handoff; no hosted modal). (b) secret provisioning → H-6. (c) operator-review queue → H-5 (`.run/onboarding-review.jsonl`). (d) cutover → PRD §9.
-- **Disputed-accepted (IMP-012):** centralize the `mibera` world-slug as one constant (cross-world-contamination guard).
-
-## 10. Component → FR traceability
-
-C1→FR-1,9 · C2→FR-2,7,9,13 · C3→FR-9 · C4→FR-3,10 · C5→FR-4,5,11,14 · C6→FR-6,12,13 · C7→FR-8,14 · §9-cutover→PRD§9. Every FR has an owning component; every component traces to ≥1 FR.
-
----
-
-*Phase 3 Architecture output. Design is grounded in the production identity-api Phase-1 endpoints + the verified bot interaction seams; §9 names the dependency + open items. Next: Phase 3.5/4 SDD review (Bridgebuilder + Flatline).*
+3-model (opus + gpt-5.5 + gemini-3.1-pro · $0 cli-headless · **100% agreement** · confidence full): 8 blockers, 7 high-consensus, 0 disputed. All integrated (technical refinements, no operator fork):
+- **SKP-001/870 + IMP-003/917** (parallel-vs-ordering contradiction — the top finding, a real bug) → §4.3 mechanical two-phase execution model + ordering test.
+- **SKP-001/860** (`findSubjectByAlias` ungrounded) → §4.4 grounded against `ILedgerStore` (consumer holds the store instance).
+- **SKP-002/850 + IMP-001/910** (event_id deferred but load-bearing) → §4.2 LOCKED hash scheme `sha256(name|community_id|source|canonicalJSON(payload))`, timestamp-free, golden+counter tests.
+- **SKP-004/760 + IMP-002/887** (quarantine non-persistent) → §4.4 `.run/shadow/<community>-quarantine.jsonl`, replay on next cycle.
+- **SKP-005/730** (no timeouts) → §4.1 per-producer `Effect.timeout`(30s) + §4.3 orchestrator max-run timeout.
+- **SKP-002/780 + IMP-006** (degraded projection looks authoritative) → §4.3 `degraded` posture suppresses enforcement-facing output + go-live.
+- **SKP-003/820** (package availability) → §5 pre-Sprint-1 gate, workspace-protocol ref / CI schema-hash pin.
+- **IMP-005/845** (`WorldRef` undefined) → §4.1 typed. **IMP-007/752** (community manifest) → FR-1 payload (PRD) + §4.5.
