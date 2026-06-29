@@ -43,8 +43,8 @@ export function makeOnChainHolderProducer(
               makeEvent<Extract<ShadowEvent, { name: "sonar.wallet.attributed.v1" }>>(
                 "sonar.wallet.attributed.v1",
                 {
-                  wallet: { address: h.address },
-                  contract_address: h.contract,
+                  wallet: { address: h.address, ...(h.chain ? { chain: h.chain } : {}) },
+                  contract_address: h.collection,
                   edge_kind: "held_at_snapshot",
                 },
                 {

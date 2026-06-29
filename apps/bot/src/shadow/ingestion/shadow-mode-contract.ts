@@ -120,8 +120,16 @@ export interface ShadowSubject {
 // ── Alias builders (mirror protocol exports) ───────────────────────────────────
 export const identityAlias = (userId: string): string => `identity:${userId}`;
 export const discordAlias = (discordId: string): string => `discord:${discordId}`;
+/**
+ * Chain-aware: EVM addresses are checksum-insensitive → lowercase; Solana
+ * base58 addresses are CASE-SENSITIVE → preserve (lowercasing would corrupt the
+ * key and collide distinct wallets). Namespaced by chain so an EVM `0xabc` and a
+ * coincidental Solana string never alias-collide.
+ */
 export const walletAlias = (w: WalletRef): string =>
-  `wallet:${w.address.toLowerCase()}`;
+  w.chain === "solana"
+    ? `wallet:sol:${w.address}`
+    : `wallet:${w.address.toLowerCase()}`;
 
 // ── Ledger store port (mirrors ILedgerStore, SDD §2) ───────────────────────────
 export interface ILedgerStore {

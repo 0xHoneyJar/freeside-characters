@@ -59,4 +59,31 @@ describe("OnChainHolderProducer", () => {
     expect(summary.degraded).toBe(false); // sonar is optional
     expect(ledger.getMemberGraph("pythenian").subjects.length).toBe(0);
   });
+
+  test("Solana: a collection_key routes to svm view; address case is PRESERVED", async () => {
+    const SOL = "HwnrJ3nCKexyFVjW4vEtgpRneArw5ruScpN9AxS2ia8L"; // base58, case-sensitive
+    const solWorld: WorldRef = { ...WORLD, watched_contracts: ["pythians"] };
+    const svmFetch = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      // routed to the SVM query (collection_key var), NOT the EVM contract var
+      expect(body.variables.key).toBe("pythians");
+      expect(body.variables.contract).toBeUndefined();
+      return new Response(
+        JSON.stringify({ data: { svm_collection_owner_derived: [{ owner: SOL, collection_key: "pythians" }] } }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+
+    const ledger = new ShadowLedger(new InMemoryLedgerStore());
+    const producer = makeOnChainHolderProducer({
+      sonar: { endpoint: "https://sonar.example/v1/graphql", adminSecret: "x", doFetch: svmFetch },
+      observedAt: () => "2026-06-29T00:00:00.000Z",
+    });
+    await new IngestionOrchestrator(ledger, [producer]).run(solWorld);
+
+    const walletOnly = ledger.getMemberGraph("pythenian").subjects.find((s) => s.kind === "wallet_only");
+    expect(walletOnly).toBeDefined();
+    expect(walletOnly!.wallets[0].address).toBe(SOL); // NOT lowercased
+    expect(walletOnly!.wallets[0].chain).toBe("solana");
+  });
 });

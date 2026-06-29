@@ -24,11 +24,12 @@ shadow_onboarding:
   # Freeside-managed role-name prefix (FR-9 coexistence — incumbent roles untouched).
   namespace_prefix: "pythenian:"
 
-  # TODO(operator): the NFT contract(s) Pythenians members hold. Feeds the
-  # OnChainHolderProducer (sonar TrackedHolder by contract). The contract must be
-  # in sonar's tracked set (a per-community onboarding step) for the on-chain
-  # angle to be non-empty; otherwise G3 degrades to identity-linked wallets only.
-  watched_contracts: []
+  # Watched collection identifiers feeding the OnChainHolderProducer. Each is
+  # EITHER an EVM contract (`0x…`, queried via sonar TrackedHolder) OR a Solana
+  # collection_key (queried via sonar svm_collection_owner_derived). Pythenians is
+  # a SOLANA collection (key `pythians`, mint pyTh2UtBKfuDW6KCdT3swospYeoLmmKaGujWA91Moru,
+  # ~3003 holders live in sonar). The `0x`-prefix discriminates the chain.
+  watched_contracts: ["pythians"]
 
   # The score-api community slug supplying tier data (D2 — gates live vs demo).
   score_community_slug: "pythenian"
