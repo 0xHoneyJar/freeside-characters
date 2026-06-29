@@ -545,3 +545,12 @@ Sprint total deltas: +3 new tasks (T1.7, T1.8, T6.10) · +6 sub-bullet hardening
 - **Reviews:** PRD flatline (13) + SDD Bridgebuilder (7) + SDD flatline (15) + Sprint flatline (15) = 43 findings integrated, $0 cli-headless, 90–100% agreement. Real bugs caught: mediums mis-assumption, parallel-vs-ordering contradiction, event_id pipe-collision.
 - **Branch:** `cycle/multi-angle-member-ingestion` cut from main (independent of unmerged feat/spotlight-pfp).
 - **Folded issues:** fc#72 (IMediumBinding→FR-9), loa-freeside#292 (NATS→FR-8 stretch), loa-freeside#283 (D1 contract→conform), fc#185/#182 (Eileen research→guardrails NG1-3).
+
+### cycle-010 GATE-HOLDER — RESOLVED (2026-06-29, not degraded)
+
+Operator steer ("you have access to sonar, it's on railway"). Discovered via Railway CLI:
+- sonar GraphQL: **`https://sonar.0xhoneyjar.xyz/v1/graphql`** (belt-gateway → belt-hasura-selfhost, project sonar-api / e240cdf0).
+- Holders query EXISTS: `TrackedHolder(where:{contract:{_eq:<lowercase>}}){ address contract tokenCount }` (also `Holder{collection,address,balance}`, `Token{collection,owner,tokenId}`). Auth: `x-hasura-admin-secret` header.
+- The `token-entity-gap` memory is STALE — Token + Holder + TrackedHolder are all queryable on the live belt.
+- Per-contract caveat: a community's contract must be in sonar's tracked set (e.g. Mibera Shadows 0x048327… returns 0 here). That's a community-onboarding config step (add the contract to sonar tracking), NOT a missing capability. OnChainHolderProducer is `optional` criticality so an untracked/absent contract degrades gracefully.
+- Config: `SONAR_GRAPHQL_ENDPOINT` + `SONAR_GRAPHQL_ADMIN_SECRET` (added to .env.example).

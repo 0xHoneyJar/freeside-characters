@@ -25,3 +25,12 @@ export {
   type DiscordRosterProducerDeps,
   type RosterReader,
 } from "./discord-roster-producer.ts";
+export {
+  makeOnChainHolderProducer,
+  type OnChainHolderProducerDeps,
+} from "./onchain-holder-producer.ts";
+export {
+  fetchSonarHolders,
+  type SonarHolder,
+  type SonarHoldersClientConfig,
+} from "./sonar-holders-client.ts";
