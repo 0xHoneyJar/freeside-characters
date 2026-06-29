@@ -45,3 +45,21 @@ export {
   detectConflict,
   type ConflictQuarantineEntry,
 } from "./quarantine.ts";
+export {
+  renderMemberGraphCV2,
+  memberGraphCV2Payload,
+  summarizeGraph,
+  degradedBanner,
+  KIND_DISPLAY,
+  type ContainerComponent,
+  type MemberGraphSummaryCounts,
+} from "./member-graph-view.ts";
+export {
+  interactionMediumBinding,
+  assertCapability,
+  DISCORD_INTERACTION_DESCRIPTOR,
+  DISCORD_WEBHOOK_DESCRIPTOR,
+  type IMediumBinding,
+  type MediumDescriptor,
+  type MediumKind,
+} from "./medium-binding.ts";
