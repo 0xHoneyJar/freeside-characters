@@ -81,11 +81,36 @@ export interface MemberGraphRenderOptions {
 
 function subjectLabel(s: ShadowSubject): string {
   const wallet = s.wallets[0]?.address;
-  const who = s.discord_user_id ? `<@${s.discord_user_id}>` : wallet ? `\`${shortAddr(wallet)}\`` : s.subject_id;
+  // prefer the identity-api display name (username); fall back to a truncated wallet.
+  const who = s.display_name
+    ? `**${escapeRoleName(s.display_name)}**`
+    : wallet
+      ? `\`${shortAddr(wallet)}\``
+      : escapeRoleName(s.subject_id);
   const roles = s.freeside_roles.length
     ? ` → ${s.freeside_roles.map((r) => `\`${escapeRoleName(r)}\``).join(", ")}`
     : "";
   return `${who}${roles}`;
+}
+
+/**
+ * Enrich a projection's subjects with identity display names (presentation-layer
+ * only — names are a chat-medium presentation concern, NOT ledger truth). Keyed
+ * by lowercased wallet address. Returns a shallow-copied projection.
+ */
+export function enrichDisplayNames(
+  projection: MemberGraphProjection,
+  nameByWallet: ReadonlyMap<string, string>,
+): MemberGraphProjection {
+  const subjects = projection.subjects.map((s) => {
+    if (s.display_name) return s;
+    for (const w of s.wallets) {
+      const name = nameByWallet.get(w.address.toLowerCase());
+      if (name) return { ...s, display_name: name };
+    }
+    return s;
+  });
+  return { community_id: projection.community_id, subjects };
 }
 
 /**
@@ -123,11 +148,16 @@ export function renderMemberGraphCV2(
     components.push(text(linked.slice(0, sampleSize).map((s) => `• ${subjectLabel(s)}`).join("\n")));
   }
 
-  // On-chain holders — a BOUNDED sample (truncated), not the full wall.
-  const holders = projection.subjects.filter((s) => s.kind === "wallet_only");
+  // On-chain holders — a BOUNDED sample, NAMED holders first (more legible than
+  // a wall of addresses), then truncated-wallet fallbacks.
+  const holders = projection.subjects
+    .filter((s) => s.kind === "wallet_only")
+    .sort((a, b) => Number(Boolean(b.display_name)) - Number(Boolean(a.display_name)));
   if (holders.length) {
-    components.push(sep, text(`## ⛓️ On-chain holders — showing ${Math.min(sampleSize, holders.length)} of ${nf(holders.length)}`));
-    components.push(text(holders.slice(0, sampleSize).map((s) => `• \`${shortAddr(s.wallets[0]?.address ?? s.subject_id)}\``).join("\n")));
+    const named = holders.filter((s) => s.display_name).length;
+    const namedNote = named ? ` · ${nf(named)} named` : "";
+    components.push(sep, text(`## ⛓️ On-chain holders — showing ${Math.min(sampleSize, holders.length)} of ${nf(holders.length)}${namedNote}`));
+    components.push(text(holders.slice(0, sampleSize).map((s) => `• ${subjectLabel(s)}`).join("\n")));
   }
 
   // Resolve-CTA — the path for unlinked holders (re-verify), + the dashboard link.

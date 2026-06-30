@@ -13,6 +13,7 @@
  * VOICELESS: reads sources, renders structural CV2; mutates no roles. Read-only.
  */
 import { readFileSync } from "node:fs";
+import { SQL } from "bun";
 import { Client, GatewayIntentBits, type Client as DiscordClient } from "discord.js";
 import type { GuildMemberRef } from "../shadow/member-roster.ts";
 import { makeMemberSourceLive } from "../shadow/member-source.live.ts";
@@ -21,6 +22,7 @@ import {
   IngestionOrchestrator,
   InMemoryLedgerStore,
   ShadowLedger,
+  enrichDisplayNames,
   makeDiscordRosterProducer,
   makeIdentityLinkProducer,
   makeIdentityLinkReaderLive,
@@ -76,6 +78,33 @@ function renderToText(container: ReturnType<typeof renderMemberGraphCV2>): strin
       return "──────────";
     })
     .join("\n");
+}
+
+/**
+ * Resolve wallet → identity display name (one bulk query, NOT per-wallet). Fail-soft:
+ * missing DB / error → empty map (the card falls back to truncated wallets). The
+ * mibera identity DB (midi_profiles.display_name) is keyed by wallet_address.
+ * Productionization follow: route through an identity-api profile endpoint.
+ */
+async function resolveDisplayNames(wallets: ReadonlyArray<string>): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const url = process.env.RAILWAY_MIBERA_DATABASE_URL;
+  if (!url || wallets.length === 0) return names;
+  try {
+    const sql = new SQL(url);
+    const csv = wallets.map((w) => w.toLowerCase()).join(",");
+    const rows = (await sql`
+      select lower(wallet_address) as w, display_name
+      from midi_profiles
+      where display_name is not null
+        and lower(wallet_address) = any(string_to_array(${csv}, ','))
+    `) as Array<{ w: string; display_name: string }>;
+    for (const r of rows) names.set(r.w, r.display_name);
+    await sql.end();
+  } catch {
+    /* fail-soft: no names → truncated-wallet fallback */
+  }
+  return names;
 }
 
 async function main(): Promise<void> {
@@ -165,13 +194,17 @@ async function main(): Promise<void> {
     perProducerTimeoutMs: 120_000,
     maxRunMs: 240_000,
   }).run(world);
-  const projection = ledger.getMemberGraph(world.community_id);
+  const rawProjection = ledger.getMemberGraph(world.community_id);
+  // enrich with identity display names (presentation-layer; one bulk query).
+  const allWallets = [...new Set(rawProjection.subjects.flatMap((s) => s.wallets.map((w) => w.address.toLowerCase())))];
+  const nameMap = await resolveDisplayNames(allWallets);
+  const projection = enrichDisplayNames(rawProjection, nameMap);
   const counts = summarizeGraph(projection);
 
   console.error(
     `▸ ingested ${summary.ingested} (dup ${summary.duplicates}, quarantined ${summary.quarantined}) · degraded=${summary.degraded}`,
   );
-  console.error(`  sources: ${JSON.stringify(summary.source_freshness)}\n`);
+  console.error(`  sources: ${JSON.stringify(summary.source_freshness)} · names resolved: ${nameMap.size}\n`);
 
   // render to stdout (the operator-visible graph).
   const renderOpts = { dashboardUrl: process.env.FREESIDE_DASHBOARD_URL, rosterFetched };

@@ -56,6 +56,7 @@ export {
   memberGraphCV2Payload,
   summarizeGraph,
   degradedBanner,
+  enrichDisplayNames,
   KIND_DISPLAY,
   type ContainerComponent,
   type MemberGraphSummaryCounts,

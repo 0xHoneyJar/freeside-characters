@@ -10,6 +10,7 @@ import {
   memberGraphCV2Payload,
   renderMemberGraphCV2,
   summarizeGraph,
+  enrichDisplayNames,
 } from "./member-graph-view.ts";
 import type { IngestionRunSummary } from "./orchestrator.ts";
 import type { MemberGraphProjection, ShadowSubject } from "./shadow-mode-contract.ts";
@@ -86,6 +87,30 @@ describe("member graph view", () => {
   test("no dashboard URL → no link button (no broken buttons)", () => {
     const container = renderMemberGraphCV2(PROJECTION, cleanSummary, {});
     expect(container.components.some((c) => c.type === 1)).toBe(false);
+  });
+
+  test("enrichDisplayNames: a wallet's username renders instead of its address", () => {
+    const proj: MemberGraphProjection = {
+      community_id: "mibera",
+      subjects: [subj("wallet_only", { wallets: [{ address: "0xDEADBEEF00000000000000000000000000000001" }] })],
+    };
+    const enriched = enrichDisplayNames(proj, new Map([["0xdeadbeef00000000000000000000000000000001", "dexdax"]]));
+    const blob = JSON.stringify(renderMemberGraphCV2(enriched, cleanSummary));
+    expect(enriched.subjects[0].display_name).toBe("dexdax");
+    expect(blob).toContain("dexdax"); // username shown
+    expect(blob).not.toContain("0xDEAD"); // address NOT shown when a name exists
+  });
+
+  test("named holders sort before un-named in the sample", () => {
+    const proj: MemberGraphProjection = {
+      community_id: "mibera",
+      subjects: [
+        subj("wallet_only", { subject_id: "a", wallets: [{ address: "0xa" }] }),
+        subj("wallet_only", { subject_id: "b", wallets: [{ address: "0xb" }], display_name: "named" }),
+      ],
+    };
+    const blob = JSON.stringify(renderMemberGraphCV2(proj, cleanSummary));
+    expect(blob).toContain("1 named");
   });
 
   test("kind→display map is the single source of truth (IMP-008)", () => {
