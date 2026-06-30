@@ -1,0 +1,70 @@
+{
+  "binding": [
+    [
+      "mibera",
+      425
+    ],
+    [
+      "apdao_seat",
+      358
+    ],
+    [
+      "puru_elemental_jani",
+      347
+    ],
+    [
+      "puru_boarding_passes",
+      327
+    ],
+    [
+      "puru_introducing_kizuna",
+      321
+    ],
+    [
+      "lore_1_introducing_mibera",
+      292
+    ],
+    [
+      "mibera_tarot",
+      282
+    ],
+    [
+      "lore_3_bera_kali_acc",
+      279
+    ]
+  ],
+  "bonds": [
+    [
+      "puru_boarding_passes ✦ puru_elemental_jani",
+      286
+    ],
+    [
+      "puru_elemental_jani ✦ puru_introducing_kizuna",
+      280
+    ],
+    [
+      "apdao_seat ✦ mibera",
+      275
+    ],
+    [
+      "lore_1_introducing_mibera ✦ lore_2_honey_online_offline",
+      268
+    ],
+    [
+      "lore_1_introducing_mibera ✦ lore_3_bera_kali_acc",
+      268
+    ],
+    [
+      "lore_2_honey_online_offline ✦ lore_3_bera_kali_acc",
+      266
+    ],
+    [
+      "puru_boarding_passes ✦ puru_introducing_kizuna",
+      263
+    ],
+    [
+      "lore_3_bera_kali_acc ✦ lore_4_bgt_network_spirituality",
+      262
+    ]
+  ]
+}

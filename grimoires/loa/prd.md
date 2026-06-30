@@ -1,136 +1,151 @@
-# cycle-009 · onboarding-character (freeside verify bot) · PRD
+# Product Requirements Document — Multi-Angle Member-Graph Ingestion (freeside-characters consumer)
 
-> **Product Requirements Document**
-> **Cycle**: cycle-009-onboarding-character
-> **Working title**: onboarding character — the freeside verify bot
-> **Date**: 2026-05-29 (drafted · /simstim Phase 1 Discovery output)
-> **Status**: DRAFT · iterating (operator: "still thinking through the onboarding; iterate before prod") · ready for Phase 2 Flatline PRD review
-> **Branch target**: `cycle-009-onboarding-character` (cut from latest main)
-> **Owner**: operator (zksoju) drives product + auth decisions · Loa drives execution
-> **Mode**: ARCH (Ostrom) + craft (Alexander) · the-arcade (BARTH scope) + artisan
-> **Depends on**: cycle-008-persona-substrate (archived 2026-05-29) · the freeside auth cluster spine (identity-api, deployed)
-> **Grounding**: `[[project_cv2-onboarding-direction]]` (resolved direction) + the freeside-auth-API recon 2026-05-29 + `[[themes-vs-personas-clean-separation]]`
+> **cycle-010 candidate** · freeside-characters (consumer) · drafted via `/simstim` `simstim-20260629-22e34aa2` · 2026-06-29
+> Altitude (operator-ratified 2026-06-29): **consumer-side, prove the substrate by consuming it.** Build the ingestion + onboarding UX in this repo, binding to the merged `shadow-mode-api` member-graph ledger (loa-freeside PR #316) rather than forking a second graph.
+> Spine (operator-ratified): **the multi-angle ingestion pipeline.**
+>
+> **Grounding note (2026-06-29):** the substrate contract was read directly from loa-freeside `origin/main`. Two v1-draft assumptions were corrected: (1) **mediums-api is a *presentation-capability* registry** ("what can this medium render?"), **not** a guild/onboarding registry; (2) the **canonical member node already exists** in `@freeside/shadow-mode-protocol` (`ShadowSubject`) — we don't design it, we *produce events into it*. Scope shrank accordingly: the gap is the **producers + projection readers**, not the schema.
 
----
+## 0. The one-sentence frame
 
-## 1. Problem & Goal
+Let a **new community** (Pythenians and beyond) onboard the Freeside bot and watch its **canonical member graph fill bottom-up from whatever angle members actually arrive** — Discord roster, on-chain holdings, identity links — **without every member manually verifying and without the team being asked to do setup work** — staying voiceless and shadow-first (compute, never mutate, before go-live).
 
-THJ has no first-class, voice-coherent onboarding surface. sietch's Dune/BGT wizard is theme-coupled and (per recon) its `/onboard` isn't even wired in prod. New members landing in the THJ guild have no clean "verify → join" path tied to the **freeside identity spine**.
+## 1. Problem
 
-**Goal:** ship a **CollabLand-style verify bot** — a dedicated onboarding character that lives in the THJ verify channel, runs a *very simple* verify-to-join flow, and is the single owner of THJ onboarding (replacing sietch's verify/onboard for THJ). It authenticates the user against the **freeside auth API**, creates/links a **freeside account (user_id)**, verifies their wallet, and grants access — **idempotently** (already-verified users are recognized, not re-prompted).
+Today the member graph fills from **one angle only**: `member-source.live.ts` reads `guild.members.fetch()`, producing `GuildMemberRef` (Discord-keyed). So:
 
-This is the **third bot shape** named in `[[project_cv2-onboarding-direction]]`: not a Pattern-B webhook narrator (ruggy/satoshi), but an **interaction-context** bot — user-auth + buttons + ephemeral + stateful.
+- A holder who owns the collection but **hasn't joined Discord** is invisible.
+- A Discord member who **hasn't run `/verify`** has no wallet, no tier, no on-chain truth.
+- A **new** community is a manual, team-driven bring-up; the infra cannot absorb a guild and proactively build its graph.
 
-## 2. Users & Stakeholders
+Meanwhile the substrate half is **built, merged, and explicitly unconsumed**: the `shadow-mode-api` ledger (loa-freeside PR #316, merged 2026-06-26) is a read-only/append-only service that reduces upstream events into a canonical member graph + divergences + access-audit — but its README names the gap directly: *"the spine is itself deployed-but-unconsumed."* Eileen's ratified MVP frame (loa-freeside #283): **D1** (canonical member graph / holder-quality) + **D4** (Shadow-Mode coexistence). **D4 built; D1 is the consumer-side gap.** This cycle fills it.
 
-| Who | Need |
+## 2. The substrate contract we bind to (grounded from `origin/main`)
+
+**Canonical member node — already defined** (`@freeside/shadow-mode-protocol`, `ShadowSubject`):
+`kind: 'identity_user' | 'discord_member' | 'wallet_only' | 'unresolved'` · `identity_user_id?` · `discord_user_id?` · `wallets[]` · `current_roles` / `incumbent_roles` / `freeside_roles` (coexistence) · `attribution_quality: 'verified' | 'observed_only' | 'unresolved'` (the D1 holder-quality bands) · `merge_provenance[]` (takeover-safe link history) · `pending_resplit`. **The `wallet_only` kind is exactly the "holder not in Discord yet" member.**
+
+**The ingestion event taxonomy — already defined** (`ShadowEvent`): `DiscordMemberSnapshot` · `SonarWalletAttributed` · `IdentityWalletLinked` / `IdentityAccountLinked` / `IdentityLinkRevoked` · `IncumbentRoleObserved` · `FreesideRoleComputed` · `CommunityConfigUpdated`. **Each is one ingestion angle.**
+
+**Produce API:** `POST /events` → fail-closed `IProducerPolicy` → `ShadowLedger.ingest`.
+**Consume API:** `GET /communities/:id/member-graph` · `/unresolved` · `/shadow/divergences` · `POST /communities/:id/reports/access-audit`.
+**Library form:** `@freeside/shadow-mode-service` exports `ShadowLedger`, `ILedgerStore`, `InMemoryLedgerStore`, `buildAccessAuditReport`, `createShadowRouter` — i.e. the reducer can run **in-process** in the consumer, not only behind HTTP.
+
+## 3. Goals & success metrics
+
+| Goal | Success metric |
 |---|---|
-| **New THJ member** | A dead-simple "click → connect wallet → you're in" flow; never asked to re-verify if already linked. |
-| **Returning/already-verified member** | Recognized instantly; no friction. |
-| **Operator (zksoju)** | Owns the freeside identity spine; wants onboarding tied to the freeside account/ID + profile-linking, not a siloed Discord role check. |
-| **The cluster (freeside auth)** | Every verify produces a canonical `user_id` + linked (wallet, discord) row in the identity spine. |
+| G1 — Absorb a community | A new community is brought up via a `CommunityConfigUpdated` registration + source wiring with **zero hand-edited app code** — only config. |
+| G2 — Fill from **≥3 angles** | The graph for a world contains subjects of kind `discord_member`, `wallet_only`, **and** `identity_user` (reconciled) — i.e. produced from Discord roster, sonar attribution, and identity links. |
+| G3 — Bottom-up, no-ask | A wallet that holds the collection appears as a `wallet_only` subject **before** it joins Discord or runs `/verify`, **within one ingestion cycle of on-chain detection** (cadence per OQ2). Measured by a test that seeds a holder absent from the roster and asserts a `wallet_only` subject in the projection. |
+| G4 — Prove the substrate by consuming it | The consumer produces events into and reads projections from the `shadow-mode-api` ledger — closing the PR #316 deployed-but-unconsumed fast-follow. |
+| G5 — Pythenians onboards | Pythenians (no config in this repo today) reaches a shadow-mode discrepancy report end-to-end. **Gate (per IMP-003):** if Pythenians on-chain/score data is unavailable (D1), G5 **demotes to a fixture-backed demo bring-up** — the registration→ingest→discrepancy *path* is the deliverable, not live Pythenians data. |
 
-## 3. Success Metrics
+## 4. Non-goals & guardrails (load-bearing)
 
-- A new member completes verify (button → connected wallet → role granted) in **≤ 3 interactions**, ending with a freeside `user_id` linked to their (wallet, discord).
-- An already-linked member clicking verify gets an immediate "you're already verified" (idempotent), **zero** redundant wallet prompts.
-- Every successful verify writes a spine row via `POST /v1/link/verified-wallet` (auditable; `idempotent`/`conflict_resolved` recorded).
-- Zero unsolicited messages (anti-spam invariant holds — the bot only acts on the verify button / `/verify`-class interactions).
+- **NG1 — Voiceless.** No persona inference in the ingestion/onboarding path (`onboarding-as-voiceless-building` doctrine). CM-configured CV2 surfaces only.
+- **NG2 — Shadow-first.** Compute graph + discrepancy; **never mutate Discord roles** before operator go-live (D4 invariant). Mirrors the substrate's read-only/mutates-nothing-upstream guarantee.
+- **NG3 — No ambient autonomy / anti-spam preserved** (Eileen #185/#182): no new auto-respond surface; ingestion is background pull/event work, not a character surface.
+- **NG4 — Don't fatten one API.** Composition at the consumer (freeside-api-topology doctrine). Sonar/score/inventory stay sealed; the consumer fans them into events.
+- **NG5 — No new DB in this repo.** Graph truth lives in the ledger + source APIs + existing `.run/` caches.
+- **NG6 — Don't silently fork the schema.** We produce/consume `@freeside/shadow-mode-protocol`. If a field is missing, that's a flagged substrate change (R3), not a local divergence.
 
-## 4. Functional Requirements
+## 5. Users & stakeholders
 
-**FR-1 · Verify message in the verify channel.** The bot posts (and can refresh) a persistent CollabLand-style verify card in the THJ verify channel — a Components-V2 Container (`type 17`) with a **"Verify Wallet" button** (`ActionRow`+`Button`). Copy is functional + warm (CollabLand register), not a chatty persona.
+- **CM** — brings up a community, reviews the discrepancy report, flips go-live; owns messaging/components.
+- **Operator** — ratifies go-live; only principal who can authorize a LIVE role write (admin allowlist).
+- **Members / holders** — onboarded passively (appear from on-chain as `wallet_only`) and actively (`/verify` → `identity_user`). Never spammed.
+- **Substrate (loa-freeside) maintainer** — owns the ledger contract + the ceilings (R-series).
 
-**FR-2 · Idempotent pre-check (via identity-api `resolveByDiscord`).** On click, before any wallet prompt, the bot calls `GET /v1/resolve/account/discord/{discord_id}` (canonical identity-spine lookup). If a `user_id` returns → ephemeral "you're already verified ✓", ensure the verified role is present, stop. **DEPENDENCY (operator decision 2026-05-29):** chose the canonical resolve over a bot-side cache — this endpoint is identity-api **Phase-2 (unbuilt today)**, so v1's clean idempotent check is gated on it shipping (see §7). No `.run/` cache fallback per this decision.
+## 6. Functional requirements
 
-**FR-3 · Wallet connect + SIWE sign (forked Bun web surface).** For a new member, the button opens a **bot-hosted verify page** (a Bun web app, session keyed to `discord_id`), **forked from sietch's `verify.routes.ts`** (SIWE challenge + signature validation — proven + partially working) so the onboarding bot owns it cleanly rather than depending on the sietch it replaces. The page: connect wallet (wagmi/Dynamic) → `POST /v1/auth/challenge` (nonce) → user signs (SIWE) → `POST /v1/auth/verify` → `user_id` + session. *(A wallet can't sign inside a Discord modal — the connect/sign step is a web handoff, the CollabLand pattern; the seed of the future Blink/rendering-layer direction, a plain Bun page for v1.)*
+**FR-1 — Community/medium bring-up (absorb a guild).** A typed registration path that introduces a new `community_id` + its Discord guild + source config, emitting `CommunityConfigUpdated`. This is the "absorb a guild" primitive. **Note:** this is *registration*, distinct from mediums-api (FR-9).
 
-**FR-4 · Create + link the freeside account.** On verified signature, call `POST /v1/link/verified-wallet { worldSlug: 'mibera', discordId, walletAddress }` → creates the spine row (freeside `user_id`) if new, updates if existing. **`worldSlug='mibera'`** (operator decision — consistent with existing identity-api world usage: shadow-mint + `freeside_auth`). Idempotent; surfaces `conflict_resolved` (`wallet_rebound`/`discord_rebound`) for audit.
+*Minimal registration payload (per SKP-004, enumerated so "zero hand-edited app code" is real, not aspirational):* `community_id` · `world_slug` · `discord_guild_id` · `namespace_prefix` (e.g. `pythenian:`) · `collection_contracts[]` (the on-chain holder source) · `score_community_slug` (the tier source) · `identity_authority` (which identity-api tenant is authoritative for stitching) · required Discord permissions/intents (GuildMembers). Registration **validates prerequisites** and emits an in-character-neutral failure listing any missing field — it does not partially register.
 
-**FR-5 · Profile linking.** The link binds **wallet ↔ discord** under one `user_id`. (Display-name/nym/pfp linking is Phase-2 `/v1/profile`, out of v1 scope — see Non-Goals.)
+**FR-2 — Hexagonal multi-source producers.** A `SourceProducer` port family, each adapter producing the substrate's already-defined events:
+- **FR-2a — Discord roster producer** → `DiscordMemberSnapshot` (wraps existing `member-source.live.ts`).
+- **FR-2b — On-chain holder producer (NEW)** → `SonarWalletAttributed`: holders of the community's collection via sonar/inventory become `wallet_only` subjects even if absent from Discord.
+- **FR-2c — Identity-link producer (NEW)** → `IdentityWalletLinked` / `IdentityAccountLinked`: identity-api links stitch wallet-keyed and discord-keyed subjects (the ledger reconciles into `identity_user`).
 
-**FR-6 · Role grant + reveal.** After `user_id` returns, assign the THJ "verified" role (Discord `guild.members.edit`) and confirm via ephemeral reply. v1 grants a single verified role; tier/badge ladders are out of scope.
+**FR-3 — Produce into the canonical node.** Producers emit events; the ledger reduces them into `ShadowSubject`. We **do not** define the node — we conform to it. (Corrects v1-draft FR-3.)
 
-**FR-7 · Interaction wiring.** The bot extends the existing HTTP interaction endpoint via `apps/bot/src/discord-interactions/dispatch.ts:193` (an `isOnboarding` early-detect mirroring `isQuest`), reusing the proven type-3 (button) / type-5 (modal-submit) handling in `quest-dispatch.ts`. No gateway change (verified safe: gateway client is `Guilds`-intent only).
+**FR-4 — Bind to the substrate ledger.** Read `member-graph` / `unresolved` / `divergences` projections instead of holding a private graph. **Consume strategy is an open architecture fork** (OQ1): in-process library reducer (Z) vs HTTP against a deployed service (X) vs substrate-hardening-then-live (Y). Closes the PR #316 fast-follow (G4).
 
-**FR-8 · In-character error register.** Failures speak in the bot's functional register ("couldn't reach the verifier, try again in a moment"), never raw errors — consistent with the repo's voice rules.
+**FR-5 — Discrepancy over the enriched graph.** The existing discrepancy / role-board CV2 surfaces render over the multi-source canonical graph, including the new states: `wallet_only` (holder, not in Discord), `discord_member` with no holding, `unresolved`, and `attribution_quality` bands. (The "improve the UI" strand lands here.)
 
-## 4a. Flatline-integrated hardening (Phase-2 · 3-voice review, 83% agreement, full confidence)
+**FR-6 — Shadow-first + go-live unchanged.** Ingestion feeds the existing go-live orchestrator; no role mutation before operator go-live; rollback always available.
 
-The adversarial pass (gemini tertiary skeptic + opus/gpt consensus) surfaced a security class the v1 draft under-specified. Integrated as binding requirements:
+**FR-7 — Pythenians bring-up.** Config-only path: register (FR-1) → produce (FR-2) → discrepancy report (FR-5), no app-code changes.
 
-**FR-9 · Secure interaction→web handoff (CRITICAL · SKP-001/002, 880-910).** The verify button MUST be a **custom_id interaction** — NOT a URL button (a URL button fires no interaction event and cannot identify the clicker). On click, the bot's interaction handler runs the FR-2 pre-check, then returns an **ephemeral** reply carrying a **one-time, short-lived, HMAC-signed state token** encoding `{discord_id, nonce, expiry, interaction_id, guild_id}` — never a raw/guessable `discord_id`. The Bun verify page MUST validate that token server-side before `/v1/auth/challenge`. Prevents binding the wrong Discord user to a wallet (account-takeover) — the load-bearing correctness fix.
+**FR-8 (stretch) — Real-time fill via NATS.** Consume guild + member lifecycle events (loa-freeside #292) so the graph updates on join/leave/mint vs pull-only. MVP pull-first; this is the push follow. **Cut condition (per IMP-005):** FR-8 is OUT of the MVP sprint unless pull-first (FR-2) lands with ≥1 sprint of budget remaining; sprint planning schedules it as a separately-acceptance-criteria'd sprint, never bundled into the MVP definition-of-done.
 
-**FR-10 · SIWE replay protection (CRITICAL · IMP-003/SKP-004, 910).** Challenge/sign/verify MUST enforce **single-use nonce + expiry + domain(origin) binding + chain-id binding** per EIP-4361. Before forking sietch's `verify.routes.ts`, audit it for these + document what "partially working" means / what's broken.
+**FR-9 — Medium-capability binding (`IMediumBinding`).** The onboarding/discrepancy/role surfaces (FR-5) render conditioned on the delivering medium's capabilities via `mediums-api` (`@0xhoneyjar/medium-registry`) — e.g. modals are interaction-only, not webhook (the Pattern-B-shell vs interaction split). This is GitHub **#72**'s formal-port ask applied to delivery. **Scope decision pending** (OQ4): MVP may hardcode the Discord-interaction descriptor and defer true multi-medium binding.
 
-**FR-11 · Service-token security (CRITICAL · IMP-008/SKP-002/003/005).** The `X-Service-Token`/Bearer for `/v1/link/verified-wallet` (privileged — mints spine rows binding arbitrary discord↔wallet) MUST be **server-side only, never in the browser bundle**, held only by the link-issuing handler, scoped, in a secret manager (not committed), rotatable, with an **audit log on every `/v1/link` call**. Separate read(resolve) and write(link) clients.
+## 6.5 Reconciliation, merge & enforcement protocol (Flatline-mandated, lock before Architecture)
 
-**FR-12 · Conflict-resolution policy (HIGH · IMP-006/SKP-003).** Define role-grant behavior per `conflict_resolved`: `null` (fresh) → grant; `wallet_rebound`/`discord_rebound` → **block the role grant pending operator review** (a rebind is security-sensitive — possible takeover). Specify the operator-review + revocation path.
+Flatline scored "fail-closed is a claim, not a spec" at **920** (SKP-001) — the highest finding. The PRD locks the rules; Architecture *implements*, never *invents*, policy.
 
-**FR-13 · State reconciliation (IMP-005/SKP-003).** On the FR-2 idempotent pre-check: if the member resolves to a `user_id` but LACKS the verified role, **re-attempt the role grant** before confirming — don't just stop (the earlier link succeeded but the role grant may have failed).
+**Source authority (the merge priority when sources disagree):**
+- **identity-api link** is authoritative for **wallet ↔ discord stitching** (who is whom).
+- **Discord roster** is authoritative for **current role state** (`current_roles` / `incumbent_roles`).
+- **on-chain (sonar/inventory)** is authoritative for **holding & tier-eligibility**.
+- A subject present in only one source is valid (`wallet_only` / `discord_member`); it is *not* an error, it is the bottom-up graph working.
 
-**FR-14 · identity-api outage UX (IMP-010).** Specify retry policy + an in-character "verifier's unreachable, try again shortly" message + structured logs when the freeside auth API is down — onboarding's first impression must fail gracefully.
+**Collision detection (before any stitch):** the lookup key is `(community_id, wallet)` and `(community_id, discord_user_id)`. A stitch is a collision iff the wallet is already bound to a *different* `identity_user_id`, or the discord_id is already bound to a *different* one.
 
-## 5. Non-Goals (v1 boundaries)
+**Conflict resolution — fail-closed, no silent absorb (closes the FAGAN account-takeover shape, R2):**
+- On collision, **quarantine** — the subject stays `unresolved` / `pending_resplit`; **no `freeside_roles` eligibility flows from a conflicted node** and the contested alias is **frozen**, not re-pointed to the last writer (this is exactly the substrate's flagged ceiling — we must *surface* it, not inherit the re-point).
+- The conflict is surfaced to the CM as an `unresolved` projection entry for human resolution; it is **never** auto-merged.
+- Explicit `IdentityLinkRevoked` triggers re-split (`pending_resplit`); relink re-runs collision detection from scratch.
 
-- **No chatty persona.** Functional CollabLand-register bot, not a ruggy/satoshi-style narrator (per "design like CollabLand").
-- **No email/OAuth/phone auth.** SIWE only (Phase-2+ multi-method is deferred).
-- **No nym/display-name/pfp.** `/v1/profile` is Phase-2 (400 today); v1 shows wallet short-form or `user_id`.
-- **No tier/badge ladder, no channel scaffolding.** That's theme (sietch) work; v1 grants one verified role.
-- **No Telegram, no Blink client.** CV2-spine scope only; the verify page is a plain hosted web page (Blink is a future cycle).
-- **No multi-wallet management UI** in v1 (links one wallet; identity-api website handles more later).
-- **Not a sietch feature.** This is a standalone interaction-context character that *replaces* sietch onboarding for THJ.
+**Shadow-first enforcement invariant (per SKP-003/760 — a hard code boundary, not just a claim):**
+- Ingestion + discrepancy paths produce **read-only projections only**. The `RoleWriter` port stays disabled unless an explicit operator-approved **LIVE `WorldLock`** exists (leverages the existing `GateCheckedRoleWriter` + `world-lock.ts` + the cross-repo import-boundary lint).
+- **Acceptance test (mandatory):** assert **zero `RoleWriter` calls** on every ingestion/discrepancy/render path. This is the load-bearing test that makes NG2 mechanical.
 
-## 6. Technical Constraints
+## 7. Folded GitHub issues (operator asked to classify + tackle)
 
-- **Interaction-context, not webhook.** Modals/buttons/ephemeral require the bot's HTTP interactions endpoint (`DISCORD_PUBLIC_KEY`-gated, `index.ts:492`). Seam = `dispatch.ts:193` + `quest-dispatch.ts` type-3/5.
-- **freeside auth API (production endpoints):** `POST /v1/auth/challenge`, `POST /v1/auth/verify`, `POST /v1/link/verified-wallet`, `GET /v1/resolve/wallet/{addr}`, `GET /.well-known/jwks.json` at `identity-api-production-317b.up.railway.app`. Bearer / `X-Service-Token` for the link write.
-- **Anti-spam invariant (load-bearing):** the character never responds unsolicited; only the verify button + explicit verify interactions trigger it; drop bot-authored interactions.
-- **CV2 palette:** Container/TextDisplay/Section/Button/ActionRow (+ Separator), `IS_COMPONENTS_V2 = 1<<15` (no content/embeds when set). discord.js 14.26.4 (full palette available).
-- **Reuse, don't reinvent:** sietch's `verify.routes.ts` (SIWE + signature validation) + `identity-api-link.ts` are the reference for the web surface + the link client.
+| Issue | Repo | Classification | Disposition |
+|---|---|---|---|
+| **#72** medium-binding seam not a zone contract (`IMediumBinding`…) | freeside-characters | **IN SCOPE (FR-9)** | Render surfaces against the medium-capability registry. MVP may scope to Discord-interaction descriptor. |
+| **#292** NATS consumers for guild + member lifecycle | loa-freeside | **IN SCOPE (stretch, FR-8)** | Real-time bottom-up fill; consumer side can live here. MVP pull-first. |
+| **#283** D1 Holder-Quality Signal Engine contract | loa-freeside | **CONTRACT (design, not code)** | Our producers populate `attribution_quality`; conforms to D1. Issue is operator-review, not impl. |
+| **#185 / #182** Eileen daily repo research | freeside-characters | **GUARDRAIL** | Source of NG1–NG3. Not tasks. |
+| #349–#364 prod-readiness / payment / registry / auditor series | loa-freeside | **OUT OF SCOPE** | Different domain. |
 
-## 7. Risks & Dependencies
+## 8. Risks & dependencies (the substrate ceilings are real cross-repo deps)
 
-| Risk / Dependency | Impact | Mitigation |
-|---|---|---|
-| **`resolveByDiscord` is the chosen idempotent path but Phase-2/unbuilt** | v1's idempotent pre-check (FR-2) GATED on identity-api `GET /v1/resolve/account/discord/{id}` | **TRACKED BLOCKING DEPENDENCY** (IMP-001/SKP-004) — file identity-api issue w/ owner + target date + contract (response schema · error states · acceptance tests). **Deployment gate:** dev proceeds, but no live THJ deploy until it ships. **Slip-fallback (tripwire):** if the date slips, fall back to `resolveByWallet`-after-connect (degraded idempotency — re-prompts connect once) so v1 stays shippable. |
-| **`/v1/profile` returns 400** (Phase-2 unbuilt) | No nym/pfp in welcome | v1 shows wallet short-form; nym is a fast-follow |
-| **Web verify surface must exist** | SIWE needs a hosted connect/sign page | Reuse/adapt sietch's `verify.routes.ts`; minimal hosted page for v1 |
-| **"Replaces sietch" = reimplement mechanics** | Role-grant + verify logic must move | Port from sietch `onboarding.ts` (role assignment) + `identity-api-link.ts` (link); keep THJ-scoped |
-| **identity-api maturity** (deployed 2026-05-25, Phase-1) | Some flows Phase-2 | v1 uses only the production Phase-1 endpoints (challenge/verify/link/resolve-wallet) |
-| **Operator still iterating the flow** | Requirements may shift | PRD marked DRAFT/iterating; lock the flow before Phase-7 implementation |
-| **Naming/persona authorship** | New character identity | Functional bot (light flavor); name TBD; respects persona-authorship gate |
+From the `shadow-mode-api` README "Operational ceilings" — these gate going LIVE (vs a demo):
 
-## 8. Decisions (2026-05-29 discovery) + what's still open
+- **R1 — Producer-auth (`source` self-asserted).** `StaticProducerPolicy` is a structural gate only; the README says *the first live emitter must wire producer-auth via identity-api svc-JWT (`SvcJwtPolicy`)*. **Our producer is that first live emitter** → triggers this requirement (substrate-side).
+- **R2 — Persistence.** `InMemoryLedgerStore` is single-process/unbounded; `PostgresLedgerStore` has **no adapter and no PG test**. README: *"Do NOT back a live producer with the in-memory adapter."* → durable live consume needs the PG adapter built first (substrate-side).
+- **R3 — Scope creep into substrate.** R1/R2 are loa-freeside work the operator wants to avoid. The **in-process-reducer (Z)** path sidesteps both for a shadow-compute MVP (recompute-from-sources each cycle; no durable ledger needed). Surface, don't silently build a parallel graph (the trap we're avoiding).
+- **R4 — Identity reconciliation / takeover.** README flags identity-vs-identity conflict is recorded but not surfaced + alias re-points to last writer. Our identity producer (FR-2c) must fail-closed (the account-takeover-shaped bug FAGAN caught in PR #316).
+- **R5 — Rate limits + pagination.** `getMemberGraph`/`getUnresolved` have no pagination; on-chain + `guild.members.fetch` are rate-limited (opcode-8 cache exists). Batch + cache; bound community size.
+- **D1 — score-api world data** for Pythenians tiers gates G5 (cf. score-api#221 for Purupuru).
 
-**Resolved via AskUserQuestion:**
-1. **World slug** = `mibera` (consistent with existing identity-api world usage).
-2. **Web verify surface** = **fork** sietch's `verify.routes.ts` into the bot's own **Bun web app** (it's partially working; own it since sietch is retired for THJ).
-3. **Role grant** = v1 owns a **single "verified" role** grant; tier/mibera mapping = v2.
-4. **Idempotent** = canonical `GET /v1/resolve/account/discord/{id}` (identity-api Phase-2). Correctness over a bot-side cache → **hard dependency** (§7).
+## 9. Open questions (for Flatline + operator)
 
-**Defaulted (revisit if needed):**
-- **Bot name/face** — placeholder app dir `apps/character-onboarding`; name + face TBD (persona-authorship gate).
-- **Dynamic coexistence** — v1 = always fresh SIWE connect (no existing-session detection); revisit when Dynamic is wired to identity-api.
-- **Sietch retirement** — a v1 implementation step: turn sietch verify off for THJ as the new bot goes on (same guild, avoid double-verify).
+- **OQ1 — Consume strategy. ✅ RATIFIED 2026-06-29: Z — in-process reducer.** freeside-characters imports `@freeside/shadow-mode-service` (`ShadowLedger` + `InMemoryLedgerStore`) and runs the reducer in-process over real producers; renders projections from the in-process ledger. No deploy/PG/svc-JWT this cycle. **Accepted ceiling:** no persisted append-only history — divergence-over-time / durable audit-trail is a named follow-cycle (Y), not this MVP. R1/R2 substrate work deferred accordingly.
+- **OQ2 — Pull-first vs event-first** ingestion for MVP (FR-2 vs FR-8 ordering). Bias: pull-first.
+- **OQ3 — Pythenians: real near-term target with on-chain presence, or stand-in for "Nth community"?** Affects whether G5 is a live bring-up or a demo.
+- **OQ4 — mediums naming.** You named "mediums API" as the core onboarding feature, but the existing `mediums-api` is a *presentation-capability* registry, not a guild/graph pipeline. Is "mediums" your term for (a) the per-medium render binding (FR-9), (b) the community/guild absorb primitive (FR-1), or (c) both braided? This reconciliation shapes FR-1/FR-9 framing.
 
-**Still genuinely open (firm before Phase-7 build):**
-- Where the forked Bun verify page is **hosted** (the bot's existing `Bun.serve` interactions process vs a separate web service).
-- The **cutover sequencing** for sietch→new-bot in the live THJ guild.
-- The **`resolveByDiscord` dependency**: does identity-api ship it on a timeline that fits v1, or do we re-open the cache fallback?
+## 10. Flatline PRD review — reconciliation log
 
-## 9. Cutover runbook (sietch → onboarding bot · IMP-004/SKP-005)
+3-model review (opus + gpt-5.5 + gemini-3.1-pro · $0 cli-headless · 90% agreement · confidence full): 8 blockers, 6 high-consensus, 1 disputed.
 
-Live-guild auth cutover with rollback — avoid the double-verify race + stranded mid-flow users:
-1. **Dry-run** the full flow in a test guild.
-2. Deploy the new bot to THJ with its **verify card hidden** (not posted).
-3. **Hide sietch's** verify card / disable its verify path for THJ.
-4. **Reveal** the new bot's verify card.
-5. **Monitor** `/v1/link/verified-wallet` for N days (operator-set) — success rate + `conflict_resolved` events.
-6. **Decommission** sietch's `onboarding.ts` verify for THJ.
+**Pre-resolved by the grounding rewrite (v1→v2), before this review landed:**
+- SKP-004/720 (mediums-api guild-registration unverified) — corrected: mediums-api is a *presentation-capability* registry; FR-1 is community registration, mediums is FR-9.
+- SKP-002/860 + SKP-001/880 (FR-4 projection API deferred / design downstream of unknown surface) — the contract was read from `origin/main` and is documented in §2; §2 IS the demanded handshake artifact.
 
-Rollback at any step: re-hide the new card + re-enable sietch's. Trigger: link success < threshold OR any account-misbinding.
+**Integrated this pass:**
+- SKP-001/920 + SKP-002/850 + SKP-003/760(merge) + IMP-002/890 → **§6.5** reconciliation/merge/enforcement protocol.
+- SKP-004/720 (registration payload) → **FR-1** minimal payload enumeration.
+- SKP-003/760 (shadow-first enforcement) → **§6.5** enforcement invariant + mandatory zero-RoleWriter test.
+- IMP-003/842 (G5 external-dep gate) → **G5** demote-to-demo gate.
+- IMP-005/745 (FR-8 cut condition) → **FR-8** cut condition.
+- IMP-008/752 (G3 measurable) → **G3** bound + test.
+- IMP-004/810 (min projection surface + gap-handling) → satisfied by §2 + NG6.
 
----
-
-*Phase 1 Discovery + Phase 2 Flatline-integrated (3-voice, 83% agreement, full confidence, $0 headless). FR-1..8 = v1 spine; FR-9..14 + §9 = security/correctness hardening from the adversarial pass. Open: §8 + the 2 disputed items (IMP-011 persona-name governance · IMP-012 central slug validation). Next: Phase 3 Architecture (SDD).*
+**Deferred to the operator decision (IMP-001/900 + disputed IMP-011):** OQ1 consume strategy (X/Y/Z) — Flatline insists this is ratified before Architecture. IMP-011 (ledger-write rollback semantics) is contingent on OQ1 and rides with it.
