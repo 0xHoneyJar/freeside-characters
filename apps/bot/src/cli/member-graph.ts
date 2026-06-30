@@ -82,6 +82,9 @@ async function main(): Promise<void> {
   }
   const postIdx = process.argv.indexOf("--post");
   const postChannel = postIdx >= 0 ? process.argv[postIdx + 1] : undefined;
+  // --no-roster: keep the bot token (for --post) but SKIP the full guild.members
+  // fetch (a large guild's roster is heavy/rate-limited — a capped run).
+  const noRoster = process.argv.includes("--no-roster");
 
   const world = worldRefFromManifest(slug);
   console.error(`▸ world '${slug}' (guild ${world.guild_id}) · watched: ${world.watched_contracts.join(", ")}`);
@@ -106,8 +109,8 @@ async function main(): Promise<void> {
     console.error("  · on-chain angle SKIPPED (SONAR_GRAPHQL_ENDPOINT unset)");
   }
 
-  // discord roster — live if a bot token is present.
-  if (process.env.DISCORD_BOT_TOKEN) {
+  // discord roster — live if a bot token is present (unless --no-roster).
+  if (process.env.DISCORD_BOT_TOKEN && !noRoster) {
     const memberSource = makeMemberSourceLive(getBotClient, {
       resolve: (w) =>
         w === slug ? { guild_id: world.guild_id, namespace_prefix: world.namespace_prefix } : undefined,
@@ -115,7 +118,8 @@ async function main(): Promise<void> {
     const readRoster = (w: WorldRef): Promise<ReadonlyArray<GuildMemberRef>> => memberSource(w.world_slug);
     producers.push(makeDiscordRosterProducer({ readRoster, observedAt: () => new Date().toISOString() }));
   } else {
-    console.error("  · discord roster angle SKIPPED (DISCORD_BOT_TOKEN unset)");
+    const why = noRoster ? "--no-roster (capped run)" : "DISCORD_BOT_TOKEN unset";
+    console.error(`  · discord roster angle SKIPPED (${why})`);
   }
 
   // identity links — resolve Phase-A candidate wallets via the blessed
@@ -161,8 +165,14 @@ async function main(): Promise<void> {
     } else {
       const ch = await client.channels.fetch(postChannel);
       if (ch && "send" in ch) {
-        await (ch as { send: (p: unknown) => Promise<unknown> }).send(memberGraphCV2Payload(projection, summary));
+        const payload = memberGraphCV2Payload(projection, summary);
+        await (ch as { send: (p: unknown) => Promise<unknown> }).send({
+          ...payload,
+          allowed_mentions: { parse: [] }, // never ping (defensive — addresses aren't mentions)
+        });
         console.error(`  · posted member graph to channel ${postChannel}`);
+      } else {
+        console.error(`  · channel ${postChannel} not sendable (not found / no perms)`);
       }
     }
   }
