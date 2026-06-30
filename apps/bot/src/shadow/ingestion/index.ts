@@ -59,6 +59,7 @@ export {
   KIND_DISPLAY,
   type ContainerComponent,
   type MemberGraphSummaryCounts,
+  type MemberGraphRenderOptions,
 } from "./member-graph-view.ts";
 export {
   interactionMediumBinding,

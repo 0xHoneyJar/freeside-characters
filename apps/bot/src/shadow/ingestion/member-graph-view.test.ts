@@ -55,14 +55,37 @@ describe("member graph view", () => {
     expect(c).toEqual({ total: 4, identity_user: 1, discord_member: 1, wallet_only: 1, unresolved: 1 });
   });
 
-  test("renders the new states (wallet_only on-chain-only + unresolved)", () => {
+  test("renders a tight summary: holders, linked, sampled + truncated", () => {
     const container = renderMemberGraphCV2(PROJECTION, cleanSummary);
     const blob = JSON.stringify(container);
     expect(container.type).toBe(17);
     expect(blob).toContain("On-chain holders");
-    expect(blob).toContain("0xWALLET");
-    expect(blob).toContain("Needs CM resolution"); // unresolved section present
+    expect(blob).toContain("0xWALLET"); // ≤14 chars → not truncated
+    expect(blob).toContain("not yet linked"); // resolve framing
+    expect(blob).toContain("Verify your wallet"); // resolve CTA
     expect(blob).toContain("pythenian:elder"); // freeside role on the linked member
+  });
+
+  test("truncates long wallets + links the dashboard when a URL is given", () => {
+    const longWallet = "0x45f8415a15f5ce5988b60319ed2331650a6e3da3";
+    const proj: MemberGraphProjection = {
+      community_id: "mibera",
+      subjects: [subj("wallet_only", { wallets: [{ address: longWallet }] })],
+    };
+    const container = renderMemberGraphCV2(proj, cleanSummary, { dashboardUrl: "https://freeside.0xhoneyjar.xyz/" });
+    const blob = JSON.stringify(container);
+    expect(blob).toContain("0x45f8…3da3"); // truncated
+    expect(blob).not.toContain(longWallet); // full address NOT shown
+    // a Link button (style 5) to the community dashboard page
+    const row = container.components.find((c) => c.type === 1) as { components: Array<{ style: number; url: string }> };
+    expect(row).toBeDefined();
+    expect(row.components[0].style).toBe(5);
+    expect(row.components[0].url).toBe("https://freeside.0xhoneyjar.xyz/mibera");
+  });
+
+  test("no dashboard URL → no link button (no broken buttons)", () => {
+    const container = renderMemberGraphCV2(PROJECTION, cleanSummary, {});
+    expect(container.components.some((c) => c.type === 1)).toBe(false);
   });
 
   test("kind→display map is the single source of truth (IMP-008)", () => {

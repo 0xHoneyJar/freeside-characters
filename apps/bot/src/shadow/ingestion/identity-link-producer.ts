@@ -30,6 +30,13 @@ export type IdentityLinkReader = (world: WorldRef) => Promise<ReadonlyArray<Iden
 export interface IdentityLinkProducerDeps {
   readonly readLinks: IdentityLinkReader;
   readonly observedAt: () => string;
+  /**
+   * `required` (default): an identity failure degrades the run + suppresses
+   * enforcement (the go-live path — you must not assign roles on a half-resolved
+   * graph). `optional`: identity is enrichment (a read-only member-graph VIEW —
+   * a transient resolve blip shouldn't degrade the whole card).
+   */
+  readonly criticality?: "required" | "optional";
 }
 
 export function makeIdentityLinkProducer(
@@ -37,7 +44,7 @@ export function makeIdentityLinkProducer(
 ): SourceProducer {
   return {
     kind: "identity",
-    criticality: "required",
+    criticality: deps.criticality ?? "required",
     phase: "B",
     async produce(world: WorldRef): Promise<ReadonlyArray<ShadowEvent>> {
       let links: ReadonlyArray<IdentityLink>;

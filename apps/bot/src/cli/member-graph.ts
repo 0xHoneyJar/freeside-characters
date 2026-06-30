@@ -67,10 +67,14 @@ function makeGetBotClient(): () => Promise<DiscordClient | null> {
   };
 }
 
-/** Flatten the CV2 container's text components into plain text for stdout. */
+/** Flatten the CV2 container into plain text for stdout (incl. button labels). */
 function renderToText(container: ReturnType<typeof renderMemberGraphCV2>): string {
   return container.components
-    .map((c) => ("content" in c ? c.content : "──────────"))
+    .map((c) => {
+      if ("content" in c) return c.content;
+      if (c.type === 1) return `[ ${c.components.map((b) => `${b.label} → ${b.url}`).join(" ] [ ")} ]`;
+      return "──────────";
+    })
     .join("\n");
 }
 
@@ -110,7 +114,9 @@ async function main(): Promise<void> {
   }
 
   // discord roster — live if a bot token is present (unless --no-roster).
+  let rosterFetched = false;
   if (process.env.DISCORD_BOT_TOKEN && !noRoster) {
+    rosterFetched = true;
     const memberSource = makeMemberSourceLive(getBotClient, {
       resolve: (w) =>
         w === slug ? { guild_id: world.guild_id, namespace_prefix: world.namespace_prefix } : undefined,
@@ -125,13 +131,23 @@ async function main(): Promise<void> {
   // identity links — resolve Phase-A candidate wallets via the blessed
   // freeside_auth / midi_profiles resolver (fail-soft: no DB → 0 links).
   const link = makeWalletDiscordLinkLive();
-  const resolveWallets = async (wallets: ReadonlyArray<string>): Promise<ResolvedWalletLink[]> =>
-    Promise.all(
-      wallets.map(async (w) => ({
-        wallet: w,
-        discord_id: await link.resolve(w).catch(() => null),
-      })),
-    );
+  // NEVER-THROW: resolve what we can; a transient blip on one wallet (the
+  // resolver is fail-closed → throws) must not lose the whole batch's links.
+  const resolveWallets = async (wallets: ReadonlyArray<string>): Promise<ResolvedWalletLink[]> => {
+    try {
+      return await Promise.all(
+        wallets.map(async (w) => {
+          try {
+            return { wallet: w, discord_id: await link.resolve(w) };
+          } catch {
+            return { wallet: w, discord_id: null };
+          }
+        }),
+      );
+    } catch {
+      return wallets.map((w) => ({ wallet: w, discord_id: null }));
+    }
+  };
   producers.push(
     makeIdentityLinkProducer({
       readLinks: makeIdentityLinkReaderLive({
@@ -139,10 +155,16 @@ async function main(): Promise<void> {
         getCandidates: () => ledger.ledgerStore.subjects(world.community_id),
       }),
       observedAt: () => new Date().toISOString(),
+      criticality: "optional", // a read-only VIEW: identity is enrichment, not a gate
     }),
   );
 
-  const summary = await new IngestionOrchestrator(ledger, producers).run(world);
+  // generous timeouts — the identity resolve coalesces 1000s of wallets into
+  // batched DB lookups; the 30s default is too tight for a large holder set.
+  const summary = await new IngestionOrchestrator(ledger, producers, {
+    perProducerTimeoutMs: 120_000,
+    maxRunMs: 240_000,
+  }).run(world);
   const projection = ledger.getMemberGraph(world.community_id);
   const counts = summarizeGraph(projection);
 
@@ -152,7 +174,8 @@ async function main(): Promise<void> {
   console.error(`  sources: ${JSON.stringify(summary.source_freshness)}\n`);
 
   // render to stdout (the operator-visible graph).
-  console.log(renderToText(renderMemberGraphCV2(projection, summary)));
+  const renderOpts = { dashboardUrl: process.env.FREESIDE_DASHBOARD_URL, rosterFetched };
+  console.log(renderToText(renderMemberGraphCV2(projection, summary, renderOpts)));
   console.error(
     `\n▸ ${counts.total} members · 🔗 ${counts.identity_user} · 💬 ${counts.discord_member} · ⛓️ ${counts.wallet_only} · ⚠️ ${counts.unresolved}`,
   );
@@ -165,7 +188,7 @@ async function main(): Promise<void> {
     } else {
       const ch = await client.channels.fetch(postChannel);
       if (ch && "send" in ch) {
-        const payload = memberGraphCV2Payload(projection, summary);
+        const payload = memberGraphCV2Payload(projection, summary, renderOpts);
         await (ch as { send: (p: unknown) => Promise<unknown> }).send({
           ...payload,
           allowed_mentions: { parse: [] }, // never ping (defensive — addresses aren't mentions)
