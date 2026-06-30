@@ -41,6 +41,12 @@ export {
   type IdentityLinkProducerDeps,
 } from "./identity-link-producer.ts";
 export {
+  makeIdentityLinkReaderLive,
+  type WalletLinkResolver,
+  type ResolvedWalletLink,
+  type IdentityLinkReaderLiveDeps,
+} from "./identity-link.live.ts";
+export {
   ConflictQuarantine,
   detectConflict,
   type ConflictQuarantineEntry,

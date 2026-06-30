@@ -16,11 +16,14 @@ import { readFileSync } from "node:fs";
 import { Client, GatewayIntentBits, type Client as DiscordClient } from "discord.js";
 import type { GuildMemberRef } from "../shadow/member-roster.ts";
 import { makeMemberSourceLive } from "../shadow/member-source.live.ts";
+import { makeWalletDiscordLinkLive } from "../shadow/wallet-discord-link.live.ts";
 import {
   IngestionOrchestrator,
   InMemoryLedgerStore,
   ShadowLedger,
   makeDiscordRosterProducer,
+  makeIdentityLinkProducer,
+  makeIdentityLinkReaderLive,
   makeOnChainHolderProducer,
   manifestPathForWorld,
   memberGraphCV2Payload,
@@ -28,6 +31,7 @@ import {
   parseShadowOnboarding,
   renderMemberGraphCV2,
   summarizeGraph,
+  type ResolvedWalletLink,
   type SourceProducer,
   type WorldRef,
 } from "../shadow/ingestion/index.ts";
@@ -83,6 +87,7 @@ async function main(): Promise<void> {
   console.error(`▸ world '${slug}' (guild ${world.guild_id}) · watched: ${world.watched_contracts.join(", ")}`);
 
   const getBotClient = makeGetBotClient();
+  const ledger = new ShadowLedger(new InMemoryLedgerStore());
   const producers: SourceProducer[] = [];
 
   // on-chain (sonar) — the angle that works standalone.
@@ -113,9 +118,26 @@ async function main(): Promise<void> {
     console.error("  · discord roster angle SKIPPED (DISCORD_BOT_TOKEN unset)");
   }
 
-  console.error("  · identity-link angle SKIPPED (live adapter not yet wired)\n");
+  // identity links — resolve Phase-A candidate wallets via the blessed
+  // freeside_auth / midi_profiles resolver (fail-soft: no DB → 0 links).
+  const link = makeWalletDiscordLinkLive();
+  const resolveWallets = async (wallets: ReadonlyArray<string>): Promise<ResolvedWalletLink[]> =>
+    Promise.all(
+      wallets.map(async (w) => ({
+        wallet: w,
+        discord_id: await link.resolve(w).catch(() => null),
+      })),
+    );
+  producers.push(
+    makeIdentityLinkProducer({
+      readLinks: makeIdentityLinkReaderLive({
+        resolveWallets,
+        getCandidates: () => ledger.ledgerStore.subjects(world.community_id),
+      }),
+      observedAt: () => new Date().toISOString(),
+    }),
+  );
 
-  const ledger = new ShadowLedger(new InMemoryLedgerStore());
   const summary = await new IngestionOrchestrator(ledger, producers).run(world);
   const projection = ledger.getMemberGraph(world.community_id);
   const counts = summarizeGraph(projection);
