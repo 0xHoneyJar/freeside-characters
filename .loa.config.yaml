@@ -282,3 +282,17 @@ run_bridge:
     max_body_bytes: 65536
   pipeline_self_review:
     enabled: false  # opt-in per cycle
+
+# /spiral — autopoietic meta-orchestrator (enabled 2026-07-05 for the
+# member-graph real+queryable cycle; seed at grimoires/loa/context/
+# spiral-seed-member-graph-real-2026-07-05.md)
+spiral:
+  enabled: true
+  default_max_cycles: 3
+  budget_cents: 2000
+  flatline:
+    min_new_findings_per_cycle: 3
+    consecutive_low_cycles: 2
+  seed:
+    mode: degraded
+  halt_sentinel: ".run/spiral-halt"
