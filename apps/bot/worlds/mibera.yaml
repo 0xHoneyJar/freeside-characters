@@ -1,0 +1,35 @@
+# ─── VENDORED WORLD MANIFEST — Mibera (cycle-010 shadow-onboarding block) ─────
+# A vendored copy of the canonical freeside-worlds mibera manifest, EXTENDED with
+# the v1.3 `shadow_onboarding` block the multi-angle ingestion + admin-allowlist
+# read (the registry copy is still 1.2, pre-shadow-onboarding — keep in sync).
+#
+# Mibera is the OWNED Discord-side community (The Honey Jar guild): on-chain
+# holders are EVM (Berachain), AND their wallet↔discord links live in
+# midi_profiles (RAILWAY_MIBERA_DATABASE_URL), so all three ingestion angles
+# genuinely light up here.
+# ──────────────────────────────────────────────────────────────────────────────
+schema_version: "1.3"
+slug: mibera
+name: "Mibera"
+repo: "0xHoneyJar/mibera-honeyroad"
+description: "Mibera — the owned Discord-side community for the multi-angle ingestion. EVM holders (sonar TrackedHolder, Berachain 0x6666…420) reconcile against midi_profiles identity links + the Honey Jar guild roster. Shadow-first: computes the coexistence graph, mutates no roles before operator go-live."
+
+shadow_onboarding:
+  # The Honey Jar Discord guild (bot is a member; ~34918 members).
+  guild_id: "1135545260538339420"
+
+  # Freeside-managed role-name prefix (FR-9 coexistence — incumbent roles untouched).
+  namespace_prefix: "mibera:"
+
+  # Mibera NFT contract on Berachain (sonar collection_key `mibera`).
+  watched_contracts: ["0x6666397dfe9a8c469bf65dc744cb1c733416c420"]
+
+  # The score-api community slug supplying tier data.
+  score_community_slug: "mibera"
+
+  # The identity-api / midi_profiles tenant authoritative for wallet↔discord stitching.
+  identity_authority: "mibera"
+
+  # FR-10 / SKP-005 admin allowlist. EMPTY = deny-all (registration/go-live refused
+  # until populated); the read-only member-graph CLI view does not require it.
+  admin_principals: []
