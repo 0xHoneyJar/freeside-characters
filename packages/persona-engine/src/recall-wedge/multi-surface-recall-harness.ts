@@ -1,6 +1,6 @@
 // Phase 38A · multi-surface Recall Wedge projection harness.
 //
-// Authority: docs/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md (Phase 37D
+// Authority: docs/recall-wedge/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md (Phase 37D
 // gate). Phase 37D accepted Phase 37C as the operator/dev-only live Dixie
 // seam and redirected the next MVP proof toward this fixture/injected-result
 // multi-surface boundary harness.
@@ -53,7 +53,7 @@
 //     boundary harness, not a public/private surface integration.
 //
 // If a future phase reaches for any disallowed item above, re-open the
-// Phase 37D gate (docs/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md) before
+// Phase 37D gate (docs/recall-wedge/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md) before
 // expanding scope.
 
 // -- surface frame taxonomy -----------------------------------------------

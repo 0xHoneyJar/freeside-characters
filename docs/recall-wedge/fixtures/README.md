@@ -1,6 +1,6 @@
 # Recall Wedge fixtures — Phase 33B
 
-Deterministic fixtures attached to `docs/RECALL-WEDGE-MEMORY-MVP.md`
+Deterministic fixtures attached to `docs/recall-wedge/RECALL-WEDGE-MEMORY-MVP.md`
 (Phase 33A boundary doc). These exist so Phase 33C can build a
 public-safe renderer + no-leak validator and Phase 33D can stage the
 cross-interface continuity demo, without having to re-author the shape
@@ -55,7 +55,7 @@ scope.
 > cross-repo decision. Adding more recorded fixtures, version bumps,
 > or adapter dispatch entries does not promote any of those shapes to
 > "the live contract" — see
-> `docs/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md` §7a (recorded fixtures
+> `docs/recall-wedge/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md` §7a (recorded fixtures
 > are examples, not schema authority).
 
 #### Phase 37A addendum — reconciliation against Dixie Phase 32E / 32F
@@ -72,7 +72,7 @@ The Dixie-side contract evidence requested by Phase 36E now exists:
   contract reconciliation only**, not live integration.
 
 Phase 37A reconciles the recorded fixtures here against that evidence
-(see `docs/RECALL-WEDGE-DIXIE-CONTRACT-RECONCILIATION.md`). The
+(see `docs/recall-wedge/RECALL-WEDGE-DIXIE-CONTRACT-RECONCILIATION.md`). The
 reconciliation verdict for these fixtures:
 
 - The recorded fixtures are reconciled as **local fixture / probe
@@ -121,7 +121,7 @@ specific adapter error codes).
   fail-closed paths and **do not** authorize a positive
   `authorized_private_session` projection, an `authorized_private_session`
   renderer, or a `public_telegram` renderer. Those gates remain
-  unsatisfied — see `docs/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md` §8
+  unsatisfied — see `docs/recall-wedge/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md` §8
   (authorized-private remains blocked) and §9 (public surfaces remain
   blocked).
 - **No live integration is introduced by Phase 36B.** No live Dixie
@@ -338,7 +338,7 @@ demo can show that the MVP keeps these categories distinct.
 - 35B — operator demo runner
 - 35C — multi-surface contract spec
 - 35D — recorded Dixie envelope fixtures + adapter tests (`dixie-envelope/`)
-- 36A — live-boundary decision (`docs/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md`)
+- 36A — live-boundary decision (`docs/recall-wedge/RECALL-WEDGE-LIVE-BOUNDARY-DECISION.md`)
 - 36B — expanded recorded Dixie envelope corpus + adapter/validator tests (refusal/unauthorized, session-bearing, authorized-private-target negative, public-telegram-target negative, malformed-missing-payload, malformed-missing-target)
 - **36C — dev/operator runner over the recorded Dixie envelope corpus** (`packages/persona-engine/src/recall-wedge/run-dixie-envelope-demo.ts`). Side-effect-free by default; exports `buildDixieEnvelopeDemoReport`, `formatDixieEnvelopeDemoReport`, `runDixieEnvelopeDemo`. Public sections render only positive fixtures through `renderPublicRecallProjection`; negative fixtures appear under the INTERNAL / operator-only proof section as fail-closed summaries with stable error codes. No live Dixie / Discord / Telegram / storage / admission / voice.
 

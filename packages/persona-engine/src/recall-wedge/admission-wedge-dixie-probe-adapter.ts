@@ -1,8 +1,8 @@
 // Phase 45F → 45I · Admission Wedge — Dixie probe no-op adapter / validator.
 //
-// Authority: docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md (Phase 45E
+// Authority: docs/admission-wedge/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md (Phase 45E
 // §6 probe-to-local mapping, §10 selected lane, §11 boundaries) and
-// docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md (Phase 45H decision /
+// docs/admission-wedge/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md (Phase 45H decision /
 // Phase 45I refresh), over the Dixie contract probes — MIRRORED locally for
 // tests at docs/admission-wedge/dixie-probes/ — and the Freeside-local
 // Admission Wedge proof stack (Phase 43C fixtures · Phase 44A reducer · Phase

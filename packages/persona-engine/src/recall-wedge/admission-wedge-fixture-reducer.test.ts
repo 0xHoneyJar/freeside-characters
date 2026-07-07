@@ -1,6 +1,6 @@
 // Phase 44A · Admission Wedge fixture-bound reducer regression gate.
 //
-// Authority: docs/ADMISSION-WEDGE-MVP-DESIGN.md (Phase 43B design) and the
+// Authority: docs/admission-wedge/ADMISSION-WEDGE-MVP-DESIGN.md (Phase 43B design) and the
 // Phase 43C fixture/operator-contract under docs/admission-wedge/fixtures/.
 //
 // These tests drive the pure reducer in ./admission-wedge-fixture-reducer.ts

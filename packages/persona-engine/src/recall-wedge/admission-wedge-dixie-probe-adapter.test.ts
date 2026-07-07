@@ -1,8 +1,8 @@
 // Phase 45F → 45I · Admission Wedge — Dixie probe no-op adapter / validator
 // regression gate.
 //
-// Authority: docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md (Phase 45E
-// §6 / §10 / §11) and docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md
+// Authority: docs/admission-wedge/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md (Phase 45E
+// §6 / §10 / §11) and docs/admission-wedge/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md
 // (Phase 45H decision / Phase 45I refresh), over the locally MIRRORED Dixie
 // Phase 33E draft v1 probes (docs/admission-wedge/dixie-probes/), the Phase 44A
 // reducer, and the Phase 44C runner.

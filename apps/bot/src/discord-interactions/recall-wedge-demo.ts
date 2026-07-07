@@ -1,7 +1,7 @@
 /**
  * Phase 39B · dev-only Recall Wedge demo command (`/recall-wedge-demo`).
  *
- * Authority: docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md (Phase 39A).
+ * Authority: docs/recall-wedge/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md (Phase 39A).
  * Phase 39A authorized ONLY a tightly gated, dev-only, guild-scoped,
  * operator-invoked, ephemeral, harness-backed Discord slash command that
  * renders Phase 38A multi-surface harness output. Every constraint below is

@@ -1,5 +1,5 @@
 // Phase 38A · multi-surface Recall Wedge projection harness regression
-// gate. Authority: docs/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md (Phase
+// gate. Authority: docs/recall-wedge/RECALL-WEDGE-MULTI-SURFACE-BOUNDARY-GATE.md (Phase
 // 37D §F, §G, §H, §I).
 //
 // Phase 38A scope reminder (per Phase 37D):

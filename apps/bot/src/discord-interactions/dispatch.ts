@@ -284,7 +284,7 @@ export async function dispatchSlashCommand(
   }
 
   // ─── Phase 39B · dev-only Recall Wedge demo command ────────────────
-  // Authority: docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md (Phase
+  // Authority: docs/recall-wedge/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md (Phase
   // 39A). The handler is self-contained (pure Phase 38A harness, no LLM, no
   // live Dixie, no webhook, no deferred PATCH). It is async only because it
   // lazily imports the harness AFTER its gates pass (Phase 39B patch · no
@@ -302,7 +302,7 @@ export async function dispatchSlashCommand(
   }
 
   // ─── Phase 41B · dev/operator-only LIVE Dixie Recall Wedge demo ────
-  // Authority: docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md (Phase
+  // Authority: docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md (Phase
   // 41A). SEPARATE command from `/recall-wedge-demo` — it never mutates or
   // aliases the harness command. The handler evaluates its own enable / guild
   // / operator gates FIRST and only then lazily imports the Phase 37C live

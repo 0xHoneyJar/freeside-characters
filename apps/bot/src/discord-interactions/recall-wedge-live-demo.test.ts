@@ -1,7 +1,7 @@
 // Phase 41B · dev/operator-only LIVE Dixie Recall Wedge demo command
 // (`/recall-wedge-live-demo`) regression + static-guard gate.
-// Authority: docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md (Phase 41A
-// §F–§M) under docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md (Phase 37B).
+// Authority: docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md (Phase 41A
+// §F–§M) under docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md (Phase 37B).
 //
 // What these tests prove:
 //   A. env gate exactness — ENABLED exact "true" only; near-truthy fail;
@@ -497,7 +497,7 @@ describe('Phase 41B · refused paths never load or call the live Dixie client', 
 // =====================================================================
 // B2. Phase 42B · pre-Dixie gate diagnostics (safe booleans + reason code)
 //
-// Authority: docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md §K — "safe
+// Authority: docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md §K — "safe
 // operator diagnostics only if they contain no IDs / secrets / private fields
 // — stable reason codes are fine." Phase 42B adds a booleans-only operator log
 // line on the pre-Dixie refusal path WITHOUT changing the generic refusal or

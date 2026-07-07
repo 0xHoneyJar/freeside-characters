@@ -1,5 +1,5 @@
 // Phase 39B · dev-only Recall Wedge demo command regression + static-guard
-// gate. Authority: docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md
+// gate. Authority: docs/recall-wedge/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md
 // (Phase 39A §D–§N).
 //
 // What these tests prove (Phase 39A §L · plus the Phase 39B Codex PATCH):

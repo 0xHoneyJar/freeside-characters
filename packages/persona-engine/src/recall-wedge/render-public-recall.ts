@@ -4,7 +4,7 @@
 // voiceless / public-safe billboard text. Consumes the projected-DTO shape
 // shipped in Phase 33B (docs/recall-wedge/fixtures/projected-dto/*.dto.json).
 //
-// Boundary (per docs/RECALL-WEDGE-MEMORY-MVP.md §9, §11, §12):
+// Boundary (per docs/recall-wedge/RECALL-WEDGE-MEMORY-MVP.md §9, §11, §12):
 //   - accepts only recall_interface=public_discord +
 //     render_surface=discord_public_character;
 //   - rejects operator_private / operator_debug and any unknown frame;

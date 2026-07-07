@@ -1,6 +1,6 @@
 // Phase 37C · operator/dev-only runner over the live Dixie recall client.
 //
-// Authority: docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md §F.
+// Authority: docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md §F.
 //
 // This runner is the explicit operator/dev entry point that exercises the
 // isolated live client (`./live-dixie-client.ts`). It is NOT wired to:

@@ -11,7 +11,7 @@
 //      substrings (PRIVATE_SENTINEL, raw_reasons, debug, assertion_id, etc);
 //   6. rendered public output never carries a continuity actor identifier —
 //      `actor:` line and the `freeside-characters:shared-substrate` id stay
-//      off the public surface per docs/RECALL-WEDGE-MEMORY-MVP.md §9.
+//      off the public surface per docs/recall-wedge/RECALL-WEDGE-MEMORY-MVP.md §9.
 //
 // Fixture files are read directly so the renderer is exercised on the
 // canonical Phase 33B DTOs, not on hand-crafted inlined JSON.

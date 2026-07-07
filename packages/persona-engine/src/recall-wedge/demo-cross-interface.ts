@@ -1,7 +1,7 @@
 // Phase 33D · fixture-bound cross-interface Recall Wedge continuity demo.
 //
 // Pure deterministic demo proving the Phase 33A boundary
-// (docs/RECALL-WEDGE-MEMORY-MVP.md §1):
+// (docs/recall-wedge/RECALL-WEDGE-MEMORY-MVP.md §1):
 //   1. one shared seed memory fixture underlies multiple projected views;
 //   2. one internal continuity actor is referenced across operator/private,
 //      public-discord, and character-boundary referral projections;

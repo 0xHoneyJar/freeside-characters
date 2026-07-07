@@ -242,7 +242,7 @@ export async function publishCommands(
 // Phase 39C · dev-only Recall Wedge demo registration (guild-scoped ONLY)
 // =====================================================================
 //
-// Authority: docs/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md §C / §D / §L.
+// Authority: docs/recall-wedge/RECALL-WEDGE-DISCORD-SURFACE-DECISION-GATE.md §C / §D / §L.
 //
 // This is a SEPARATE registration path, deliberately NOT routed through
 // `publishCommands` / `buildCommandSet`. Those build ONE command array that
@@ -351,7 +351,7 @@ export async function registerRecallWedgeDemoCommand(
 // Phase 41B · dev/operator-only LIVE Dixie demo registration (guild-scoped ONLY)
 // =====================================================================
 //
-// Authority: docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md §G / §M.
+// Authority: docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md §G / §M.
 //
 // SEPARATE registration path for `/recall-wedge-live-demo`, posture-identical
 // to the Phase 39C `registerRecallWedgeDemoCommand` helper above but using the

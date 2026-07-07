@@ -1,5 +1,5 @@
 // Phase 37C · regression gate for the operator/dev-only live Dixie recall
-// client. Authority: docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md §K.
+// client. Authority: docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md §K.
 //
 // Proves:
 //   1. config / env loader fails closed on missing or invalid env, no

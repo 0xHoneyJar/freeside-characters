@@ -2,7 +2,7 @@
 // local Recall Wedge projected DTO consumed by the Phase 33C public-safe
 // renderer.
 //
-// Boundary (per docs/RECALL-WEDGE-MULTI-SURFACE-CONTRACT.md §9, §9a, and the
+// Boundary (per docs/recall-wedge/RECALL-WEDGE-MULTI-SURFACE-CONTRACT.md §9, §9a, and the
 // Phase 35D brief):
 //   - the adapter is the ONLY narrowing boundary from a Dixie-shaped envelope
 //     to a local projected DTO; renderers, runners, and surface frames never

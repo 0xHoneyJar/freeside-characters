@@ -1,6 +1,6 @@
 // Phase 37C · isolated operator/dev-only live Dixie recall-intake client.
 //
-// Authority: docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md (Phase 37B gate).
+// Authority: docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md (Phase 37B gate).
 //
 // Scope (per Phase 37B §C):
 //   - this module is the ONLY place in freeside-characters that may issue a
@@ -24,8 +24,8 @@
 //   - no admission of operator-provided text as Straylight memory.
 //
 // Dixie contract evidence consulted while implementing this module:
-//   - docs/RECALL-WEDGE-DIXIE-CONTRACT-RECONCILIATION.md (Phase 37A);
-//   - docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md (Phase 37B);
+//   - docs/recall-wedge/RECALL-WEDGE-DIXIE-CONTRACT-RECONCILIATION.md (Phase 37A);
+//   - docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md (Phase 37B);
 //   - ../loa-dixie/docs/integration/phase-32e-recall-wedge-route-contract.md;
 //   - ../loa-dixie/docs/integration/phase-32f-recall-wedge-readiness-checkpoint.md;
 //   - ../loa-dixie/app/src/routes/recall-intake.ts (route, ingress schema,

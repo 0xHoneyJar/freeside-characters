@@ -266,7 +266,7 @@ describe("buildRecallWedgeCrossInterfaceDemo · no-leak proof on public surface"
 });
 
 describe("buildRecallWedgeCrossInterfaceDemo · voiceless billboard posture", () => {
-  // Per docs/RECALL-WEDGE-MEMORY-MVP.md §12 the recall surface is a
+  // Per docs/recall-wedge/RECALL-WEDGE-MEMORY-MVP.md §12 the recall surface is a
   // voiceless / data-billboard. These spot-checks lock in that the
   // demo's rendered text comes structurally from the renderer (counts,
   // labels, generic referral text) and not from any LLM rewrite.

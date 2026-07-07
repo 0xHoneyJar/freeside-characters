@@ -2,9 +2,9 @@
  * Phase 41B · dev/operator-only LIVE Dixie Recall Wedge demo command
  * (`/recall-wedge-live-demo`).
  *
- * Authority: docs/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md (Phase 41A)
+ * Authority: docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-DISCORD-DECISION-GATE.md (Phase 41A)
  * under the Phase 37B live Dixie client gate
- * (docs/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md). Phase 41A locked the SHAPE of
+ * (docs/recall-wedge/RECALL-WEDGE-LIVE-DIXIE-CLIENT-GATE.md). Phase 41A locked the SHAPE of
  * this work; Phase 41B implements that locked shape and nothing past it. Every
  * constraint below is binding; partial compliance does not satisfy the gate.
  *

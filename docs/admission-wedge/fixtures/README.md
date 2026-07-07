@@ -1,6 +1,6 @@
 # Admission Wedge fixtures — Phase 43C
 
-Deterministic fixtures attached to `docs/ADMISSION-WEDGE-MVP-DESIGN.md`
+Deterministic fixtures attached to `docs/admission-wedge/ADMISSION-WEDGE-MVP-DESIGN.md`
 (Phase 43B design). They follow Phase 43B and make its core invariant
 **provable** against a small, fixture-bound graph — without implementing
 production admission.
@@ -239,16 +239,16 @@ it (decision-map §7) — Phase 43C authorizes none of them.
 
 ## Cross-references
 
-- `docs/ADMISSION-WEDGE-MVP-DESIGN.md` — Phase 43B design (the §F packet
+- `docs/admission-wedge/ADMISSION-WEDGE-MVP-DESIGN.md` — Phase 43B design (the §F packet
   shapes, §D invariant, and §H / §I / §J proof obligations these fixtures
   make concrete).
-- `docs/RECALL-WEDGE-POST-MVP-DECISION-MAP.md` — Phase 35A option matrix;
+- `docs/recall-wedge/RECALL-WEDGE-POST-MVP-DECISION-MAP.md` — Phase 35A option matrix;
   §7 (live memory admission gates) and §8 (prohibitions) govern any
   admission work and stay in force.
 - `docs/recall-wedge/fixtures/` — the accepted Recall Wedge fixture
   pattern this directory mirrors (deterministic fixtures + a
   dependency-free no-leak validator).
-- `docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md` — **Phase 44B**
+- `docs/admission-wedge/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md` — **Phase 44B**
   reducer acceptance / next-lane decision gate (docs / decision only). It
   accepts the Phase 44A reducer over these fixtures as the fixture-bound
   local reducer proof and selects **Phase 44C — a fixture-bound
@@ -267,14 +267,14 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   wired into no runtime path — and it authorizes no live admission, storage,
   command, Dixie route, network call, package export, LLM / voice, or Finn
   production wiring.
-- `docs/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md` — **Phase 44D** runner
+- `docs/admission-wedge/ADMISSION-WEDGE-RUNNER-ACCEPTANCE-GATE.md` — **Phase 44D** runner
   acceptance / next-lane decision gate (docs / decision only). It accepts
   the Phase 44C runner over these fixtures as the fixture-bound local runner
   proof and selects **Phase 45A — a docs / cross-repo Dixie-side admission
   contract request / handoff** as the next lane. It mutates nothing here and
   authorizes no live admission, a Dixie-owned admission contract, storage,
   command, Dixie route, or package export.
-- `docs/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md` — **Phase 45A** Dixie-side
+- `docs/admission-wedge/ADMISSION-WEDGE-DIXIE-CONTRACT-REQUEST.md` — **Phase 45A** Dixie-side
   admission contract request / handoff (docs / cross-repo request only). It
   hands off this fixture / operator-contract (alongside the Phase 44A reducer
   and Phase 44C runner) to the Dixie / Straylight owners and asks them to
@@ -283,7 +283,7 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   evidence of the local proof, implements nothing in any repo, changes no
   Dixie code, accepts no contract, and does **not** claim a Dixie admission
   contract already exists.
-- `docs/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md` — **Phase 45C**
+- `docs/admission-wedge/ADMISSION-WEDGE-DIXIE-RESPONSE-RECONCILIATION.md` — **Phase 45C**
   Dixie response reconciliation (docs / reconciliation only). It reconciles
   the Dixie **Phase 33A / PR #118** contract response against the Phase 45A
   request and the local proof stack, including a vocabulary table mapping
@@ -296,7 +296,7 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   them. Dixie froze no production schema and implemented no live route; this
   reconciliation authorizes no live admission, storage, command, Dixie
   route, package export, or Finn production wiring.
-- `docs/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md` — **Phase 45D**
+- `docs/admission-wedge/ADMISSION-WEDGE-CONTRACT-RECONCILIATION-MATRIX.md` — **Phase 45D**
   contract reconciliation matrix / fixture-probe alignment gate (docs /
   decision · docs-planning only). It converts the Phase 45C reconciliation
   into explicit per-label, per-field, and A–J contract-area tables — mapping
@@ -310,7 +310,7 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   **Phase 45E — a fixture-probe alignment decision / Dixie-first handoff** as
   the next lane; live admission, storage, command, Dixie route, package
   export, and Finn production wiring stay blocked.
-- `docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md` — **Phase 45E**
+- `docs/admission-wedge/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md` — **Phase 45E**
   Dixie probe reconciliation / local alignment decision (docs / decision
   only). It reconciles these fixtures (the local proof stack) against Dixie
   **Phase 33C / PR #120**'s canonical **draft v0** contract probes
@@ -341,7 +341,7 @@ it (decision-map §7) — Phase 43C authorizes none of them.
   calls no live Dixie, wires no runtime path, and is not exported from the
   package surface; live admission, storage, command, Dixie route, package
   export, and Finn production wiring stay blocked.
-- `docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md` — **Phase 45G**
+- `docs/admission-wedge/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md` — **Phase 45G**
   Dixie probe adapter acceptance / next-lane decision gate (docs / decision
   only). It accepts the Phase 45F adapter as a **test-only / docs-fixture-bound
   semantic bridge** (and nothing more), mutates no fixture JSON and renames no

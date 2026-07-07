@@ -1,12 +1,12 @@
 // Phase 44A · Admission Wedge fixture-bound reducer / adapter.
 //
-// Authority: docs/ADMISSION-WEDGE-MVP-DESIGN.md (Phase 43B design) and the
+// Authority: docs/admission-wedge/ADMISSION-WEDGE-MVP-DESIGN.md (Phase 43B design) and the
 // Phase 43C fixture / operator-contract under docs/admission-wedge/fixtures/
 // (PR #155). Phase 44A turns that fixture contract into a pure, local,
 // dependency-free reducer that proves the §D invariant *in code* — over
 // already-loaded fixture-like objects.
 //
-// What this reducer proves (docs/ADMISSION-WEDGE-MVP-DESIGN.md §D):
+// What this reducer proves (docs/admission-wedge/ADMISSION-WEDGE-MVP-DESIGN.md §D):
 //   1. candidate memory is not admitted memory;
 //   2. candidate memory is not recallable as governed continuity before
 //      admission;

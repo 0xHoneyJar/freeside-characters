@@ -1,6 +1,6 @@
 // Phase 44C · Admission Wedge fixture-bound dev/operator reducer runner.
 //
-// Authority: docs/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md (Phase 44B gate,
+// Authority: docs/admission-wedge/ADMISSION-WEDGE-REDUCER-ACCEPTANCE-GATE.md (Phase 44B gate,
 // §7 selects this lane, §8 bounds it), over the Phase 43C fixtures
 // (docs/admission-wedge/fixtures/) and the Phase 44A reducer
 // (./admission-wedge-fixture-reducer.ts). It is the analogue of the accepted

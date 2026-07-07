@@ -1,7 +1,7 @@
 // Phase 35B · explicit dev/operator Recall Wedge demo runner.
 //
 // Operator ergonomics over the accepted Phase 33D fixture-bound proof
-// (docs/RECALL-WEDGE-MVP-ACCEPTANCE.md, docs/RECALL-WEDGE-POST-MVP-DECISION-MAP.md
+// (docs/recall-wedge/RECALL-WEDGE-MVP-ACCEPTANCE.md, docs/recall-wedge/RECALL-WEDGE-POST-MVP-DECISION-MAP.md
 // §9). This module:
 //
 //   1. invokes the existing fixture-bound cross-interface demo

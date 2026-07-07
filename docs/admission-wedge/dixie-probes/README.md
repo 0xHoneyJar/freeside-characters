@@ -106,7 +106,7 @@ here. This directory carries **no live Dixie calls, no storage, no auth, no
 `remember-this`, no Discord ingestion, and no production behavior.**
 
 > **Phase 45I status note.** Phase 45I
-> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`) refreshed these five
+> (`docs/admission-wedge/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`) refreshed these five
 > mirrors from **draft v0** to **draft v1** to track Dixie **Phase 33E / PR #122**,
 > and updated the adapter / test to expect `dixie_admission_wedge_probe_v1`
 > (v0 is now an unsupported / historical version that fails closed with
@@ -118,12 +118,12 @@ here. This directory carries **no live Dixie calls, no storage, no auth, no
 >
 > **Phase 45H historical note.** Dixie's v1 hardening landed as Phase 33E /
 > PR #122; Phase 45H
-> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`, docs / decision only)
+> (`docs/admission-wedge/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md`, docs / decision only)
 > recorded the Dixie v1 / Freeside v0 state and **deferred** the refresh to a
 > gated Phase 45I — which has since performed it (see the Phase 45I note above).
 >
 > **Phase 45J status note.** Phase 45J
-> (`docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-ACCEPTANCE-GATE.md`, docs /
+> (`docs/admission-wedge/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-ACCEPTANCE-GATE.md`, docs /
 > decision only) **accepts** the Phase 45I refresh: these refreshed v1 mirrors are
 > accepted as test-only / docs-fixture-bound mirrors only — still **not** canonical
 > upstream truth (the Dixie Phase 33E copy wins on any disagreement), still no
@@ -137,9 +137,9 @@ here. This directory carries **no live Dixie calls, no storage, no auth, no
 - `../loa-dixie/docs/admission-wedge/fixtures/README.md` — Dixie Phase 33C → 33E
   draft v0 → draft v1 probe set + validator (canonical source). Read only; not
   edited from this repo.
-- `docs/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md` — the Phase 45H decision
+- `docs/admission-wedge/ADMISSION-WEDGE-DIXIE-V1-MIRROR-REFRESH-GATE.md` — the Phase 45H decision
   gate (and its Phase 45I status note) governing this v0 → v1 mirror refresh.
-- `docs/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md` — Phase 45E
+- `docs/admission-wedge/ADMISSION-WEDGE-DIXIE-PROBE-RECONCILIATION-GATE.md` — Phase 45E
   reconciliation / next-lane decision; its §10–§11 authorize this narrow,
   test-only Phase 45F no-op adapter / validator lane.
 - `docs/admission-wedge/fixtures/README.md` — the Phase 43C local fixture /
@@ -148,7 +148,7 @@ here. This directory carries **no live Dixie calls, no storage, no auth, no
 - `packages/persona-engine/src/recall-wedge/admission-wedge-dixie-probe-adapter.ts`
   (+ `.test.ts`) — the Phase 45F (v0) → Phase 45I (v1) pure, local, no-op
   adapter / validator and its test that consume these mirrors.
-- `docs/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md` — Phase 45G
+- `docs/admission-wedge/ADMISSION-WEDGE-DIXIE-PROBE-ADAPTER-ACCEPTANCE-GATE.md` — Phase 45G
   acceptance / next-lane gate. Accepts the Phase 45F adapter that consumes these
   mirrors as a **test-only / docs-fixture-bound semantic bridge** (these mirrors
   stay local mirrors, not canonical upstream truth) and recommended Dixie probe
