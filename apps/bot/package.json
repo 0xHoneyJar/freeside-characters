@@ -14,7 +14,8 @@
     "test": "bun test",
     "conformance:check": "bun run scripts/check-substrate-conformance.ts",
     "lint:shadow-import-boundary": "bash ../../scripts/lint-shadow-import-boundary.sh",
-    "member-graph": "bun run src/cli/member-graph.ts"
+    "member-graph": "bun run src/cli/member-graph.ts",
+    "role-snapshot:export": "bun run src/cli/role-snapshot-export.ts"
   },
   "dependencies": {
     "@0xhoneyjar/events": "github:0xHoneyJar/loa-freeside#68f5a89cb02c6b3ddf5ab14a1d65753bc02bd9fe",
