@@ -85,6 +85,10 @@ Flags
   --owner <id>           REQUIRED. Provenance stamp (conventionally the community owner wallet).
                          The audit does not consume it.
   --community <name>     default: thj   (must be an OPERATED community, else the service 403s)
+  --collection <c/0x..>  default: 80094/0x886d...  the GATED COLLECTION (numeric chain / contract).
+                         thj gates 7 collections, each behind its own role — the snapshot is keyed by
+                         (community, collection), so exporting HJG1 under Honeycomb's key would make the
+                         Honeycomb audit compute drift against HoneyJar1's role-holders.
   --guild <id>           default: ${THJ_GUILD_ID} (THJ)
   --freshness <seconds>  default: ${DEFAULT_FRESHNESS_THRESHOLD_SECONDS}
   --endpoint <url>       default: ${DEFAULT_INGEST_ENDPOINT}
@@ -184,6 +188,19 @@ async function main(): Promise<void> {
   }
 
   const community = flag("community") ?? "thj";
+
+  // The GATED COLLECTION this role-set is for (S5-T1). Default: Honeycomb on berachain — the ONE
+  // operator-CONFIRMED gate edge (HC -> Honeycomb). Any deployment of a collection addresses it; the
+  // service canonicalizes across the union, so berachain and ethereum Honeycomb are the same key.
+  const collectionRaw = flag("collection") ?? "80094/0x886d2176d899796cd1affa07eff07b9b2b80f1be";
+  const [colChain, colContract] = collectionRaw.split("/");
+  if (!colChain || !/^[0-9]+$/.test(colChain) || !colContract || !/^0x[0-9a-fA-F]{40}$/.test(colContract)) {
+    log(`\u2717 --collection must be <numeric-chain-id>/<0x-contract>, e.g. 80094/0x886d...  (got '${collectionRaw}')`);
+    log("  A chain SLUG is rejected: it would be stored under a key the registry can never match, and the");
+    log("  snapshot would ingest happily and then be invisible to every audit.");
+    process.exit(2);
+  }
+  const collection = { chain: colChain, contract: colContract };
   const dryRun = has("dry-run");
   const endpoint = flag("endpoint") ?? DEFAULT_INGEST_ENDPOINT;
   const freshness = Number(flag("freshness") ?? DEFAULT_FRESHNESS_THRESHOLD_SECONDS);
@@ -208,6 +225,7 @@ async function main(): Promise<void> {
     built = await buildRoleSnapshot({
       guildId,
       community,
+      collection,
       owner,
       gatedRoleIds,
       members,

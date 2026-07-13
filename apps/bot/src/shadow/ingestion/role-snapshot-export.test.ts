@@ -43,6 +43,7 @@ const resolveWallet = async (id: string): Promise<string | undefined> =>
 const BASE = {
   guildId: GUILD,
   community: "thj",
+    collection: { chain: '80094', contract: '0x886d2176d899796cd1affa07eff07b9b2b80f1be' },
   owner: "0x886d2176d899796cd1affa07eff07b9b2b80f1be",
   gatedRoleIds: [GATED],
   members: MEMBERS,

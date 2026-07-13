@@ -38,6 +38,11 @@ describe("/v1/role-snapshot cross-repo contract (S3 exporter side)", () => {
     expect(Object.keys(golden as object).sort()).toEqual(
       [
         "captured_at",
+        // The gated collection (S5-T1 upstream): thj gates SEVEN collections, each behind its own Discord
+        // role, and the store keys snapshots by (community, collection). Without it, exporting HJG1 would
+        // OVERWRITE Honeycomb's snapshot and the Honeycomb audit would compute drift against HoneyJar1's
+        // role-holders — silently. This pin is the DRIFT ALARM; it fired when upstream added the field.
+        "collection",
         "community",
         "entries",
         "export_method",

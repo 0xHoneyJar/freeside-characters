@@ -77,6 +77,15 @@ export interface BuildRoleSnapshotInput {
   readonly guildId: string;
   /** MUST be an operated community (`thj`), else the live service answers 403. */
   readonly community: string;
+  /**
+   * The GATED COLLECTION this export is for — `{chain, contract}`, chain = NUMERIC EVM chain id.
+   *
+   * REQUIRED upstream (S5-T1). thj gates SEVEN collections, each behind its own Discord role; the store
+   * keys snapshots by (community, collection). Without it the HJG1 export would OVERWRITE the Honeycomb
+   * one and the Honeycomb audit would compute drift against HoneyJar1's role-holders — silently.
+   * ANY deployment of the collection addresses it (the service canonicalizes across the union).
+   */
+  readonly collection: { readonly chain: string; readonly contract: string };
   /** Provenance only — the audit does not consume it. Conventionally the community owner wallet. */
   readonly owner: string;
   /** The token-gated role snowflake(s). REQUIRED — see the header. */
@@ -209,6 +218,7 @@ export async function buildRoleSnapshot(input: BuildRoleSnapshotInput): Promise<
   const snapshot = parseRoleSnapshot({
     source: `discord:guild:${input.guildId}`,
     community: input.community,
+    collection: input.collection,
     captured_at: input.capturedAt,
     export_method: input.exportMethod ?? EXPORT_METHOD,
     owner: input.owner,

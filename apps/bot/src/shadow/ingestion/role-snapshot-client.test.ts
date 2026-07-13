@@ -20,6 +20,7 @@ import { parseRoleSnapshot, type RoleSnapshot } from "./role-snapshot.contract.t
 const SNAPSHOT: RoleSnapshot = parseRoleSnapshot({
   source: "discord:guild:1135545260538339420",
   community: "thj",
+    collection: { chain: '80094', contract: '0x886d2176d899796cd1affa07eff07b9b2b80f1be' },
   captured_at: "2026-07-12T12:00:00.000Z",
   export_method: "freeside-characters:role-snapshot-exporter@1",
   owner: "0x886d2176d899796cd1affa07eff07b9b2b80f1be",
@@ -58,6 +59,7 @@ const RECEIPT = (stored: boolean) => ({
   ok: true,
   stored,
   community: "thj",
+    collection: { chain: '80094', contract: '0x886d2176d899796cd1affa07eff07b9b2b80f1be' },
   captured_at: "2026-07-12T12:00:00.000Z",
   entries: 2,
 });

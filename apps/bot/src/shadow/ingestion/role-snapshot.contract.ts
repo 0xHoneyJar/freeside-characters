@@ -71,9 +71,16 @@ export interface RoleSnapshotEntry {
   readonly role_ids: ReadonlyArray<string>;
 }
 
+/** The gated collection this export is FOR. `chain` is the NUMERIC EVM chain id. */
+export interface SnapshotCollection {
+  readonly chain: string;
+  readonly contract: string;
+}
+
 export interface RoleSnapshot {
   readonly source: string;
   readonly community: string;
+  readonly collection: SnapshotCollection;
   readonly captured_at: string;
   readonly export_method: string;
   readonly owner: string;
@@ -85,12 +92,28 @@ const ENTRY_KEYS = ["discord_user_id", "wallet", "role_ids"] as const;
 const SNAPSHOT_KEYS = [
   "source",
   "community",
+  /**
+   * The GATED COLLECTION this export is for (added upstream by S5-T1, loa-freeside).
+   *
+   * REQUIRED. A community gates SEVERAL collections (thj gates Honeycomb + HoneyJar1-6, each behind its
+   * own Discord role) and this exporter exports ONE gated role-set at a time. Without it the service can
+   * only key role data by community — so ingesting the HJG1 export would OVERWRITE the Honeycomb one, and
+   * the Honeycomb audit would then compute stale-access against HoneyJar1's role-holders. A
+   * confidently-wrong audit, and a silent one.
+   */
+  "collection",
   "captured_at",
   "export_method",
   "owner",
   "freshness_threshold_seconds",
   "entries",
 ] as const;
+
+/** Numeric EVM chain id — the service's ChainSchema is `^[0-9]+$`. A slug ("ethereum") is REJECTED: it
+ *  would be stored under a key the collection registry can never match, and the snapshot would ingest
+ *  happily and then be invisible to every audit. */
+const CHAIN_RE = /^[0-9]+$/;
+const COLLECTION_KEYS = ["chain", "contract"] as const;
 
 function asObject(v: unknown, path: string): Record<string, unknown> {
   if (v === null || typeof v !== "object" || Array.isArray(v)) {
@@ -163,6 +186,26 @@ export function parseRoleSnapshotEntry(input: unknown, path = "entry"): RoleSnap
   return { discord_user_id, wallet, role_ids };
 }
 
+/** The gated collection — `{chain, contract}`. `chain` is the NUMERIC EVM chain id. */
+function parseCollection(v: unknown, path: string): SnapshotCollection {
+  const o = asObject(v, path);
+  rejectUnknownKeys(o, COLLECTION_KEYS, path);
+  const chain = nonEmptyString(o.chain, `${path}.chain`);
+  if (!CHAIN_RE.test(chain)) {
+    throw new RoleSnapshotContractError(
+      `${path}.chain`,
+      `expected a NUMERIC EVM chain id (e.g. "1" or "80094"), got '${chain}'. A slug is rejected: it would ` +
+        "be stored under a key the collection registry can never match, and the snapshot would be invisible " +
+        "to every audit.",
+    );
+  }
+  const contract = nonEmptyString(o.contract, `${path}.contract`);
+  if (!WALLET_RE.test(contract)) {
+    throw new RoleSnapshotContractError(`${path}.contract`, "expected 0x + 40 hex characters");
+  }
+  return { chain, contract };
+}
+
 /** RoleSnapshotSchema — the full wire shape. Throws {@link RoleSnapshotContractError} on any violation. */
 export function parseRoleSnapshot(input: unknown, path = "snapshot"): RoleSnapshot {
   const o = asObject(input, path);
@@ -176,6 +219,7 @@ export function parseRoleSnapshot(input: unknown, path = "snapshot"): RoleSnapsh
   return {
     source: nonEmptyString(o.source, `${path}.source`),
     community: nonEmptyString(o.community, `${path}.community`),
+    collection: parseCollection(o.collection, `${path}.collection`),
     captured_at: isoUtcDatetime(o.captured_at, `${path}.captured_at`),
     export_method: nonEmptyString(o.export_method, `${path}.export_method`),
     owner: nonEmptyString(o.owner, `${path}.owner`),
