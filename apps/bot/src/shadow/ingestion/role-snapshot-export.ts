@@ -122,6 +122,25 @@ export class RoleSnapshotExportError extends Error {
   }
 }
 
+/**
+ * Refuse a live write that would replace useful held state with an empty signal.
+ * Dry-runs deliberately skip this gate so operators can diagnose identity coverage.
+ */
+export function assertLiveSnapshotHasSignal(stats: RoleSnapshotStats): void {
+  if (stats.gated_members === 0) {
+    throw new RoleSnapshotExportError(
+      "no gated-role holders were found — refusing the live POST. Check the guild and gated role ids; " +
+        "use --dry-run for diagnostics.",
+    );
+  }
+  if (stats.resolved === 0) {
+    throw new RoleSnapshotExportError(
+      "zero gated-role holders resolved to wallets — refusing the live POST. Check IDENTITY_API_URL / " +
+        "IDENTITY_WORLD; use --dry-run for diagnostics.",
+    );
+  }
+}
+
 /** first4…last4 — the PII floor for a discord snowflake. NEVER log the raw id. */
 export function redactDiscordId(id: string): string {
   return id.length <= 8 ? "…" : `${id.slice(0, 4)}…${id.slice(-4)}`;

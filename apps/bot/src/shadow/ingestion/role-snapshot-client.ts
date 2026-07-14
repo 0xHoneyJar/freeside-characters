@@ -67,6 +67,8 @@ export interface IngestReceipt {
 
 export type PostRoleSnapshotResult =
   | { readonly kind: "accepted"; readonly status: 200; readonly receipt: IngestReceipt }
+  /** HTTP 200, but the receipt could not be verified. The snapshot may already be stored. */
+  | { readonly kind: "accepted_unverified"; readonly status: 200; readonly reason: string }
   /** A typed refusal from the service (401/403/413/422/400) — READ it, do not retry blindly. */
   | { readonly kind: "refused"; readonly status: number; readonly reason: string }
   /** Transport error / deadline — the one case where a retry is sensible. */
@@ -110,6 +112,22 @@ function refusalReason(status: number, detail: string): string {
   return detail ? `${base} — ${detail}` : base;
 }
 
+function isIngestReceipt(value: unknown): value is IngestReceipt {
+  if (value === null || typeof value !== "object") return false;
+  const receipt = value as Record<string, unknown>;
+  return (
+    receipt.ok === true &&
+    typeof receipt.stored === "boolean" &&
+    typeof receipt.community === "string" &&
+    receipt.community.length > 0 &&
+    typeof receipt.captured_at === "string" &&
+    receipt.captured_at.length > 0 &&
+    typeof receipt.entries === "number" &&
+    Number.isInteger(receipt.entries) &&
+    receipt.entries >= 0
+  );
+}
+
 /** POST the snapshot. Never throws; every outcome is a typed result. */
 export async function postRoleSnapshot(
   snapshot: RoleSnapshot,
@@ -121,9 +139,8 @@ export async function postRoleSnapshot(
   const controller = new AbortController();
   const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
 
-  let res: Response;
   try {
-    res = await doFetch(prepared.url, {
+    const res = await doFetch(prepared.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -134,25 +151,36 @@ export async function postRoleSnapshot(
       body: prepared.body,
       signal: timeoutMs > 0 ? controller.signal : undefined,
     });
+
+    if (res.status === 200) {
+      let receipt: unknown = null;
+      try {
+        receipt = await res.json();
+      } catch (e) {
+        if (controller.signal.aborted) throw e;
+      }
+      if (!isIngestReceipt(receipt)) {
+        return {
+          kind: "accepted_unverified",
+          status: 200,
+          reason: "HTTP 200 returned a malformed receipt; the snapshot may already be stored — do not retry blindly",
+        };
+      }
+      return { kind: "accepted", status: 200, receipt };
+    }
+
+    // 401 is an intentionally empty body; the others carry {error}. Read it best-effort for the
+    // operator, but never assume a shape.
+    let detail = "";
+    try {
+      detail = (await res.text()).trim().slice(0, 200);
+    } catch (e) {
+      if (controller.signal.aborted) throw e;
+    }
+    return { kind: "refused", status: res.status, reason: refusalReason(res.status, detail) };
   } catch (e) {
     return { kind: "transport_error", reason: e instanceof Error ? e.message : String(e) };
   } finally {
     if (timer) clearTimeout(timer);
   }
-
-  if (res.status === 200) {
-    const receipt = (await res.json().catch(() => null)) as IngestReceipt | null;
-    if (!receipt || typeof receipt.stored !== "boolean") {
-      return { kind: "refused", status: 200, reason: "malformed 200 receipt (expected {ok, stored, ...})" };
-    }
-    return { kind: "accepted", status: 200, receipt };
-  }
-
-  // 401 is an intentionally empty body; the others carry {error}. Read it best-effort for the
-  // operator, but never assume a shape.
-  const detail = await res
-    .text()
-    .then((t) => t.trim().slice(0, 200))
-    .catch(() => "");
-  return { kind: "refused", status: res.status, reason: refusalReason(res.status, detail) };
 }

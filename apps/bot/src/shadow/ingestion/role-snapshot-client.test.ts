@@ -151,9 +151,39 @@ describe("postRoleSnapshot — response mapping", () => {
     if (r.kind === "transport_error") expect(r.reason).toContain("ECONNREFUSED");
   });
 
-  test("a malformed 200 receipt is refused, not silently treated as accepted", async () => {
+  test("a malformed 200 receipt is accepted-but-unverified, never a refusal", async () => {
     const { fetchImpl } = captureFetch(200, { unexpected: true });
     const r = await postRoleSnapshot(SNAPSHOT, { token: TOKEN, fetchImpl, timeoutMs: 0 });
-    expect(r.kind).toBe("refused");
+    expect(r.kind).toBe("accepted_unverified");
+    if (r.kind === "accepted_unverified") expect(r.reason).toContain("may already be stored");
+  });
+
+  test.each([
+    { ...RECEIPT(true), ok: false },
+    { ...RECEIPT(true), community: "" },
+    { ...RECEIPT(true), captured_at: null },
+    { ...RECEIPT(true), entries: -1 },
+  ])("a partial or invalid 200 receipt is accepted_unverified", async (receipt) => {
+    const { fetchImpl } = captureFetch(200, receipt);
+    const r = await postRoleSnapshot(SNAPSHOT, { token: TOKEN, fetchImpl, timeoutMs: 0 });
+    expect(r.kind).toBe("accepted_unverified");
+  });
+
+  test("the request deadline covers a stalled response body", async () => {
+    const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const signal = init?.signal;
+      return {
+        status: 200,
+        json: () =>
+          new Promise((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(new Error("response body aborted")), {
+              once: true,
+            });
+          }),
+      } as Response;
+    }) as unknown as typeof fetch;
+    const r = await postRoleSnapshot(SNAPSHOT, { token: TOKEN, fetchImpl, timeoutMs: 10 });
+    expect(r.kind).toBe("transport_error");
+    if (r.kind === "transport_error") expect(r.reason).toContain("response body aborted");
   });
 });

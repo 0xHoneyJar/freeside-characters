@@ -19,11 +19,11 @@
  * the HTTP POST of the snapshot to the audit service.
  *
  * ── PII FLOOR (S3-T3) ────────────────────────────────────────────────────────
- * No raw wallet and no raw discord snowflake ever reaches stdout/stderr — every identifier in a log
- * line goes through redactDiscordId / redactWallet. `--dry-run` prints the snapshot BODY (which of
- * course contains the real identifiers — that IS the payload) to STDOUT only, so it can be piped to
- * a file; the human-readable log stream on STDERR stays redacted. `--out` writes it to a file.
- * The ingest token is read from the environment and NEVER logged.
+ * No raw wallet and no raw discord snowflake ever reaches the human log on STDERR — every identifier
+ * there goes through redactDiscordId / redactWallet. Deliberate machine-readable payload channels are
+ * the exceptions: `--list-roles` prints role ids to STDOUT for operator discovery, `--dry-run` prints
+ * the snapshot BODY to STDOUT, and `--out` writes that body to a file. The ingest token is read from
+ * the environment and NEVER logged.
  *
  * ── WHY --role-ids IS REQUIRED (do not add an "export everyone" default) ─────
  * The audit reads EVERY entry in the snapshot as a holder of the token-gated role and reports the
@@ -31,7 +31,7 @@
  * report the entire server as stale access — a confidently-wrong audit. See the long-form note in
  * `shadow/ingestion/role-snapshot-export.ts`.
  */
-import { writeFileSync } from "node:fs";
+import { closeSync, fchmodSync, openSync, writeFileSync } from "node:fs";
 import { Client, GatewayIntentBits, type Client as DiscordClient } from "discord.js";
 import { MemberIdentityClient } from "../shadow/member-identity-client.ts";
 import {
@@ -40,6 +40,7 @@ import {
 } from "../shadow/ingestion/guild-role-source.live.ts";
 import {
   buildRoleSnapshot,
+  assertLiveSnapshotHasSignal,
   redactDiscordId,
   redactWallet,
   RoleSnapshotExportError,
@@ -63,9 +64,17 @@ const DEFAULT_IDENTITY_WORLD = "mibera";
 /** stderr = the human log (REDACTED). stdout = the payload. Never cross them. */
 const log = (msg: string): void => console.error(msg);
 
+let activeClient: DiscordClient | null = null;
+
 function flag(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const value = process.argv[i + 1];
+  if (!value || value.startsWith("--")) {
+    log(`✗ --${name} requires a value.`);
+    usage();
+  }
+  return value;
 }
 const has = (name: string): boolean => process.argv.includes(`--${name}`);
 
@@ -77,8 +86,8 @@ thj RoleSnapshot exporter — enumerate the guild, resolve wallets, feed the sha
   bun run role-snapshot:export --role-ids <id>[,<id>] --owner <id> [--dry-run]
 
 Flags
-  --list-roles           print the guild's roles (id · name · members) and exit. Use this to find
-                         the TOKEN-GATED role snowflake, then pass it to --role-ids.
+  --list-roles           print the guild's roles (id · name · members) to STDOUT and exit. This is
+                         a deliberate sensitive discovery channel; redirect it to a restricted file.
   --role-ids <a,b>       REQUIRED. The token-gated role snowflake(s). Only members holding one of
                          these are exported — the audit reads every entry as a role-holder, so
                          exporting the whole guild would report the server as stale access.
@@ -113,11 +122,33 @@ function makeGetBotClient(): () => Promise<DiscordClient | null> {
     if (!token) return null;
     if (client) return client;
     const c = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
+    activeClient = c;
+    const ready = new Promise<void>((resolve) => {
+      c.once("clientReady", () => resolve()).once("ready", () => resolve());
+    });
     await c.login(token);
-    await new Promise<void>((res) => c.once("clientReady", () => res()).once("ready", () => res()));
+    if (!c.isReady()) await ready;
     client = c;
     return client;
   };
+}
+
+async function destroyBotClient(): Promise<void> {
+  if (!activeClient) return;
+  const client = activeClient;
+  activeClient = null;
+  await client.destroy();
+}
+
+/** Snapshot files contain raw identity links. Restrict an existing or new file before writing. */
+function writePrivateSnapshot(path: string, body: string): void {
+  const fd = openSync(path, "w", 0o600);
+  try {
+    fchmodSync(fd, 0o600);
+    writeFileSync(fd, body, "utf8");
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
@@ -158,12 +189,11 @@ async function main(): Promise<void> {
   // ── --list-roles: the discovery path for --role-ids ───────────────────────
   if (has("list-roles")) {
     const roles = await listGuildRoles(getBotClient, guildId);
-    log(`▸ guild ${guildId} · ${roles.length} roles (most-held first)\n`);
+    log(`▸ guild ${redactDiscordId(guildId)} · ${roles.length} roles (most-held first)\n`);
     console.log(["role_id", "members", "name"].join("\t"));
     for (const r of roles) console.log([r.id, r.members, r.name].join("\t"));
     log("\n▸ pick the TOKEN-GATED role and pass its id to --role-ids.");
-    const client = await getBotClient();
-    if (client) await client.destroy();
+    await destroyBotClient();
     process.exit(0);
   }
 
@@ -203,7 +233,13 @@ async function main(): Promise<void> {
   const collection = { chain: colChain, contract: colContract };
   const dryRun = has("dry-run");
   const endpoint = flag("endpoint") ?? DEFAULT_INGEST_ENDPOINT;
-  const freshness = Number(flag("freshness") ?? DEFAULT_FRESHNESS_THRESHOLD_SECONDS);
+  const freshnessRaw = flag("freshness") ?? String(DEFAULT_FRESHNESS_THRESHOLD_SECONDS);
+  const freshness = Number(freshnessRaw);
+  if (!Number.isInteger(freshness) || freshness <= 0) {
+    log(`✗ --freshness must be a positive integer number of seconds (got '${freshnessRaw}').`);
+    process.exit(2);
+  }
+  const outPath = flag("out");
 
   const ingestToken = process.env.ROLE_SNAPSHOT_INGEST_TOKEN;
   if (!dryRun && !ingestToken) {
@@ -211,13 +247,17 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
+  const resolveWallet = makeWalletResolver();
+
   // ── read the guild ────────────────────────────────────────────────────────
-  log(`▸ guild ${guildId} · community '${community}' · gated roles: ${gatedRoleIds.join(", ")}`);
+  log(
+    `▸ guild ${redactDiscordId(guildId)} · community '${community}' · gated roles: ` +
+      gatedRoleIds.map(redactDiscordId).join(", "),
+  );
   const members = await makeGuildRoleMemberSourceLive(getBotClient)(guildId);
   log(`▸ read ${members.length} guild members`);
 
   // ── resolve + build ───────────────────────────────────────────────────────
-  const resolveWallet = makeWalletResolver();
   log("▸ resolving discord → wallet via identity-api …");
 
   let built;
@@ -236,6 +276,7 @@ async function main(): Promise<void> {
   } catch (e) {
     if (e instanceof RoleSnapshotExportError) {
       log(`✗ refusing to export: ${e.message}`);
+      await destroyBotClient();
       process.exit(1);
     }
     throw e;
@@ -260,9 +301,9 @@ async function main(): Promise<void> {
   }
 
   const prepared = prepareRoleSnapshotRequest(snapshot, endpoint);
-  if (flag("out")) {
-    writeFileSync(flag("out")!, prepared.body, "utf8");
-    log(`▸ wrote ${prepared.bytes} bytes → ${flag("out")}`);
+  if (outPath) {
+    writePrivateSnapshot(outPath, prepared.body);
+    log(`▸ wrote ${prepared.bytes} bytes → restricted output file (mode 0600)`);
   }
 
   // ── dry-run: print exactly what WOULD be POSTed ───────────────────────────
@@ -271,17 +312,25 @@ async function main(): Promise<void> {
     log(`  X-Snapshot-Sha256: ${prepared.sha256}`);
     log(`  X-Ingest-Token:    <ROLE_SNAPSHOT_INGEST_TOKEN> (not read in dry-run)`);
     console.log(prepared.body); // stdout = the payload (pipe it to a file if you want it)
-    const client = await getBotClient();
-    if (client) await client.destroy();
+    await destroyBotClient();
     process.exit(0);
   }
 
   // ── the live POST ─────────────────────────────────────────────────────────
+  try {
+    assertLiveSnapshotHasSignal(stats);
+  } catch (e) {
+    if (e instanceof RoleSnapshotExportError) {
+      log(`✗ refusing to POST: ${e.message}`);
+      await destroyBotClient();
+      process.exit(1);
+    }
+    throw e;
+  }
   log(`\n▸ POST ${prepared.bytes} bytes → ${prepared.url}`);
   const result = await postRoleSnapshot(snapshot, { token: ingestToken!, endpoint });
 
-  const client = await getBotClient();
-  if (client) await client.destroy();
+  await destroyBotClient();
 
   if (result.kind === "accepted") {
     const r = result.receipt;
@@ -292,6 +341,11 @@ async function main(): Promise<void> {
     );
     process.exit(0);
   }
+  if (result.kind === "accepted_unverified") {
+    log(`⚠ 200 · ${result.reason}`);
+    log("  Treat the write as possibly committed; inspect the held snapshot before any retry.");
+    process.exit(1);
+  }
   if (result.kind === "refused") {
     log(`✗ ${result.status} · ${result.reason}`);
     log("  The service refuses rather than guesses — read the cause above; do not retry blindly.");
@@ -301,7 +355,8 @@ async function main(): Promise<void> {
   process.exit(1);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
+  await destroyBotClient().catch(() => undefined);
   log(`role-snapshot-export failed: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 });

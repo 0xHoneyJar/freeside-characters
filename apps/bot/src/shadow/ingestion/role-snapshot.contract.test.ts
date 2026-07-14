@@ -92,6 +92,8 @@ describe("/v1/role-snapshot cross-repo contract (S3 exporter side)", () => {
     expect(() => parseRoleSnapshot(withOffset)).toThrow(RoleSnapshotContractError);
     const notADate = { ...(golden as object), captured_at: "yesterday" };
     expect(() => parseRoleSnapshot(notADate)).toThrow(RoleSnapshotContractError);
+    const impossibleDate = { ...(golden as object), captured_at: "2026-02-30T00:00:00.000Z" };
+    expect(() => parseRoleSnapshot(impossibleDate)).toThrow(RoleSnapshotContractError);
   });
 
   test("freshness_threshold_seconds must be a POSITIVE INTEGER", () => {

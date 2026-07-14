@@ -152,3 +152,25 @@ LLM_PROVIDER=anthropic \
 ```
 
 Validate the entire pipeline before touching production cron cadences. The `digest:once` CLI fires one post per zone and exits — useful for voice-iteration without waiting for Sunday midnight.
+
+### Export a gated-role snapshot for Shadow Access Audit
+
+```bash
+# Sensitive discovery output: redirect to a restricted operator file.
+bun run --cwd apps/bot role-snapshot:export --list-roles > roles.tsv
+
+# Diagnose the exact payload without writing to the audit service.
+bun run --cwd apps/bot role-snapshot:export \
+  --role-ids <gated-role-snowflake> \
+  --owner <community-owner-wallet> \
+  --dry-run > role-snapshot.json
+
+# Live POST: also requires ROLE_SNAPSHOT_INGEST_TOKEN.
+bun run --cwd apps/bot role-snapshot:export \
+  --role-ids <gated-role-snowflake> \
+  --owner <community-owner-wallet>
+```
+
+`--role-ids` is mandatory: exporting the whole guild would make every member look like a gated-role
+holder. Human logs are redacted; stdout and snapshot files contain raw identity data. `--out` forces
+mode `0600`, but redirected stdout inherits the shell's permissions—use `umask 077` when persisting it.

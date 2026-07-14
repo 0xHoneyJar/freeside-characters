@@ -13,6 +13,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildRoleSnapshot,
+  assertLiveSnapshotHasSignal,
   redactDiscordId,
   redactWallet,
   RoleSnapshotExportError,
@@ -140,6 +141,26 @@ describe("buildRoleSnapshot — the gated-role filter (the correctness spine)", 
     await expect(buildRoleSnapshot({ ...BASE, gatedRoleIds: ["Mibera Holder"] })).rejects.toThrow(
       RoleSnapshotExportError,
     );
+  });
+});
+
+describe("assertLiveSnapshotHasSignal — live-write safety gate", () => {
+  test("REFUSES a live snapshot with no gated-role holders", () => {
+    expect(() =>
+      assertLiveSnapshotHasSignal({ guild_members: 100, gated_members: 0, resolved: 0, unmatched: 0 }),
+    ).toThrow(RoleSnapshotExportError);
+  });
+
+  test("REFUSES a live snapshot when every gated holder is unmatched", () => {
+    expect(() =>
+      assertLiveSnapshotHasSignal({ guild_members: 100, gated_members: 5, resolved: 0, unmatched: 5 }),
+    ).toThrow(RoleSnapshotExportError);
+  });
+
+  test("allows a live snapshot with at least one resolved gated holder", () => {
+    expect(() =>
+      assertLiveSnapshotHasSignal({ guild_members: 100, gated_members: 5, resolved: 1, unmatched: 4 }),
+    ).not.toThrow();
   });
 });
 

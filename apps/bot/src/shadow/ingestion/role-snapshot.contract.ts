@@ -4,8 +4,8 @@
  * ── PROVENANCE (this is a COPY — keep it in sync) ─────────────────────────────
  *   source repo:   0xHoneyJar/loa-freeside
  *   source path:   packages/services/shadow-audit/src/role-snapshot.ts
- *   source commit: 025cbe6d37f08346b1519c119d6982966836e894  (HEAD @ copy, 2026-07-12)
- *   schema commit: c674bd39  (the commit that last changed the schema itself)
+ *   source commit: 4c770ebfb444ece59de29249af5e9a182a1e2711  (HEAD @ copy, 2026-07-13)
+ *   schema commit: 4c770ebf  (the commit that last changed the schema itself)
  *   consumed by:   POST https://shadow-audit-api-production.up.railway.app/v1/role-snapshot
  *
  * ── WHY A COPY AND NOT AN IMPORT ──────────────────────────────────────────────
@@ -33,6 +33,7 @@
  *   RoleSnapshotSchema = z.object({
  *     source:                      z.string().min(1),
  *     community:                   z.string().min(1),
+ *     collection:                  SnapshotCollectionSchema,
  *     captured_at:                 z.string().datetime(),      // ISO-8601, UTC "Z"
  *     export_method:               z.string().min(1),
  *     owner:                       z.string().min(1),
@@ -43,11 +44,8 @@
  * `.strict()` is load-bearing: an EXTRA field is a 422 from the live service, not a
  * warning. The validator below rejects unknown keys for exactly that reason.
  *
- * KNOWN NUANCE: zod's `.datetime()` uses a calendar-aware regex (it rejects 2026-02-30).
- * This transcription checks the ISO-UTC *shape* by regex and delegates calendar validity
- * to `Date.parse` returning a real instant — equivalent for every value this exporter
- * emits (always `new Date().toISOString()`), and never LOOSER than the source in a way
- * that would let us emit a snapshot the service rejects.
+ * zod's `.datetime()` is calendar-aware (it rejects 2026-02-30). The transcription below
+ * validates both the ISO-UTC shape and exact UTC calendar components.
  */
 
 /** A rejected snapshot, with the offending path (mirrors a zod issue closely enough to debug a 422). */
@@ -62,7 +60,7 @@ export class RoleSnapshotContractError extends Error {
 export const WALLET_RE = /^0x[0-9a-fA-F]{40}$/;
 
 /** ISO-8601 UTC instant (zod `.datetime()`: the "Z" form; an offset like +02:00 is REJECTED). */
-const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?Z$/;
+const ISO_UTC_RE = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d+))?Z$/;
 
 /** One role-holder. `wallet` ABSENT ⇒ the holder is FLAGGED as unmatched, never dropped. */
 export interface RoleSnapshotEntry {
@@ -141,8 +139,28 @@ function nonEmptyString(v: unknown, path: string): string {
 /** z.string().datetime() */
 function isoUtcDatetime(v: unknown, path: string): string {
   const s = nonEmptyString(v, path);
-  if (!ISO_UTC_RE.test(s) || Number.isNaN(Date.parse(s))) {
+  const match = ISO_UTC_RE.exec(s);
+  if (!match) {
     throw new RoleSnapshotContractError(path, `expected an ISO-8601 UTC datetime (e.g. 2026-07-12T00:00:00.000Z), got '${s}'`);
+  }
+  const [, year, month, day, hour, minute, second, fraction = ""] = match;
+  const date = new Date(0);
+  date.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
+  date.setUTCHours(
+    Number(hour),
+    Number(minute),
+    Number(second),
+    Number(fraction.slice(0, 3).padEnd(3, "0")),
+  );
+  if (
+    date.getUTCFullYear() !== Number(year) ||
+    date.getUTCMonth() !== Number(month) - 1 ||
+    date.getUTCDate() !== Number(day) ||
+    date.getUTCHours() !== Number(hour) ||
+    date.getUTCMinutes() !== Number(minute) ||
+    date.getUTCSeconds() !== Number(second)
+  ) {
+    throw new RoleSnapshotContractError(path, `expected a real UTC calendar instant, got '${s}'`);
   }
   return s;
 }

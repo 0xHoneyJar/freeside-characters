@@ -5,6 +5,23 @@
 > Retroactive reconciliation of v0.10.0–v0.11.3 is a separate hygiene task. The
 > entry below resumes the log at the cycle-008 state.
 
+## [Unreleased] — Shadow Access Audit exporter
+
+### Added
+
+- **THJ `RoleSnapshot` exporter** — `bun run --cwd apps/bot role-snapshot:export` enumerates an
+  explicitly selected gated Discord role, resolves Discord members to wallets, emits the strict
+  cross-repo snapshot contract, and posts it to the Shadow Access Audit ingestion seam.
+- **Fail-closed live writes** — live POSTs refuse empty gated cohorts or zero resolved wallets;
+  dry-runs remain available for diagnosis. Request deadlines include response-body reads, and a
+  malformed HTTP 200 receipt is treated as possibly stored rather than safe to retry.
+- **PII floor** — human logs redact Discord and wallet identifiers. `--list-roles` and `--dry-run`
+  are explicit sensitive stdout channels; `--out` files are forced to mode `0600`.
+
+### Tests
+
+- RoleSnapshot exporter/contract/client/CLI: 46 focused tests; full bot suite 890 pass, 0 fail.
+
 ## [0.12.0] — 2026-05-23 — cycle-008 capability-wiring + FAGAN-thorough
 
 ### Added
