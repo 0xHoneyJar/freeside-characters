@@ -1,0 +1,63 @@
+{
+  "$schema": "https://raw.githubusercontent.com/0xHoneyJar/loa-freeside/177a57a4fdb18c071b4f82f7560ca705b5807a1c/spec/product/system-component.schema.json",
+  "schema_version": "1.0",
+  "component_id": "freeside-characters",
+  "repository": "github:0xHoneyJar/freeside-characters",
+  "layer": "agent-surface",
+  "operator": {
+    "role": "Community operator and character author",
+    "job": "Configure a character that can express approved substrate truth in voice without mixing persona, tools, and delivery responsibilities."
+  },
+  "object": {
+    "kind": "agent-product",
+    "description": "The multi-character Discord agent substrate with separate character voice, MCP orchestration, and delivery boundaries."
+  },
+  "question": "Can this character communicate the right community capability in its own voice while the substrate preserves tool and delivery contracts?",
+  "responsibility": "Own character configuration, prompt composition, MCP orchestration, scheduling, and Discord delivery while keeping voice in character-owned artifacts.",
+  "consumers": [
+    {
+      "name": "community operators",
+      "need": "Reliable character operations and inspectable tool scope."
+    },
+    {
+      "name": "character authors",
+      "need": "A narrow voice and exemplar surface without Discord or orchestration code."
+    },
+    {
+      "name": "community members",
+      "need": "Consistent in-character interactions grounded in approved capabilities."
+    }
+  ],
+  "trust": {
+    "contract_status": "declared",
+    "contract_refs": [
+      "file:packages/persona-engine/src/config.ts",
+      "file:packages/persona-engine/src/orchestrator/_schema/contract.ts"
+    ],
+    "evidence_refs": [
+      "file:README.md"
+    ],
+    "note": "CharacterConfig and orchestrator contracts separate voice from substrate behavior; configured MCP access does not itself authorize a new product flow or private feedback use."
+  },
+  "actions": [
+    "configure",
+    "compose",
+    "invoke-tools",
+    "deliver",
+    "inspect"
+  ],
+  "boundaries": {
+    "owns": [
+      "Character configuration, prompt composition, MCP orchestration, cron, and Discord delivery.",
+      "The separation between character voice and shared agent substrate."
+    ],
+    "does_not_own": [
+      "The truth or policy inside identity, score, inventory, or activity tools.",
+      "A community-manager Audit UI or an implied campaign action.",
+      "Use of private member feedback without an explicit consent and evidence contract."
+    ],
+    "missing_capability_handoff": "Add or request a typed MCP capability at its producer boundary; do not embed producer logic or new authority in character voice."
+  },
+  "flow_moments": [],
+  "unmapped_reason": "Characters are included in the system map, but the current Audit MVP has no activated Discord character surface or feedback role."
+}
